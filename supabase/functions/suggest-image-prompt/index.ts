@@ -79,8 +79,8 @@ Deno.serve(async (req) => {
       .order("position")
       .limit(8);
 
-    const projectKey = (project.ai_provider_planning as string) || "gemini-2.5-flash";
-    const model = PLANNING_MODEL[projectKey] ?? "google/gemini-2.5-flash";
+    const projectKey = (project.ai_provider_planning as string) || "lovable";
+    const model = PLANNING_MODEL[projectKey] ?? PLANNING_MODEL.lovable;
 
     const ctx = [
       project.title && `Title: ${project.title}`,
