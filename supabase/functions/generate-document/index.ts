@@ -91,6 +91,9 @@ Deno.serve(async (req) => {
       const userImageInstructions = (project?.image_prompt_instructions as string ?? "").trim();
 
       const imgPrompt = [
+        userImageInstructions
+          ? `USER GLOBAL IMAGE INSTRUCTIONS (apply to every image in this project — highest priority):\n${userImageInstructions}\n`
+          : "",
         `Create a single high-resolution, photorealistic, print-ready image of a ${doc.doc_type ?? "document"} for a premium Israeli mystery / detective game.`,
         `Game title: "${project?.title ?? ""}"${project?.subtitle ? ` — ${project.subtitle}` : ""}.`,
         `Era / setting: ${project?.year ?? "—"}, ${project?.setting ?? "Israeli setting"}.`,
@@ -111,7 +114,7 @@ Deno.serve(async (req) => {
         `- Do NOT add modern watermarks, logos of real companies, or AI-generated artifacts.`,
         `- High dynamic range, sharp focus on the document, neutral lighting, color-accurate.`,
         `- Output ONE image only. Fill the frame with the document.`,
-      ].join("\n");
+      ].filter(Boolean).join("\n");
 
       const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
