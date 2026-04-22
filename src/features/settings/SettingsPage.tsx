@@ -9,6 +9,7 @@ import { Sun, Moon, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useEffect, useRef, useState } from "react";
 import { ApiKeyManager } from "./ApiKeyManager";
+import { GeminiConnection } from "./GeminiConnection";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LOGIC_FLOW_MODELS, LOGIC_FLOW_MODEL_KEY, LOGIC_FLOW_MODEL_DEFAULT } from "@/features/project/CanvasSection";
 import { Textarea } from "@/components/ui/textarea";
@@ -221,7 +222,14 @@ export function SettingsPage() {
           </div>
         </Section>
 
-        <Section title="API keys" desc="Manage and test the API keys this workspace uses to call AI providers.">
+        <Section
+          title="Google Gemini (Nano Banana)"
+          desc="Connect your Google AI Studio API key to call Nano Banana, Nano Banana 2, and Nano Banana Pro directly — bypassing the Lovable AI Gateway and billing to your Google account."
+        >
+          <GeminiConnection />
+        </Section>
+
+        <Section title="API keys" desc="Manage and test all API keys this workspace uses to call AI providers.">
           <ApiKeyManager />
         </Section>
 

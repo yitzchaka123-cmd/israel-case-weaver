@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 export const IMAGE_MODELS = [
   { value: "chatgpt-image-2", label: "ChatGPT Image 2 (gpt-image-2) — latest" },
   { value: "chatgpt-image", label: "ChatGPT Image 1 (gpt-image-1)" },
-  { value: "nano-banana-2", label: "Nano Banana 2 — fast" },
-  { value: "nano-banana-pro", label: "Nano Banana Pro — top quality" },
-  { value: "nano-banana", label: "Nano Banana (classic)" },
+  { value: "nano-banana-pro", label: "Nano Banana Pro — top quality (Gemini)" },
+  { value: "nano-banana-2", label: "Nano Banana 2 — fast (Gemini)" },
+  { value: "nano-banana", label: "Nano Banana — classic (Gemini)" },
 ] as const;
 
 export type ImageModelKey = typeof IMAGE_MODELS[number]["value"];
