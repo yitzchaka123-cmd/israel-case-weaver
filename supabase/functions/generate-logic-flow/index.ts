@@ -1,6 +1,7 @@
 // Generate a proposed game-solving logic flow (clues, red herrings, suspects, summary)
 // for a project. Writes nodes/edges into the "logic" board and the solution_summary on the project.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { chatCompletions, providerLabel } from "../_shared/ai-router.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -10,7 +11,6 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 
 const PROVIDER_MODEL: Record<string, string> = {
   lovable: "google/gemini-3.1-pro-preview",
@@ -126,23 +126,20 @@ Position nodes in a left-to-right flow: clues on the left, deductions middle, so
       },
     };
 
-    const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model,
-        messages: [{ role: "system", content: sys }, { role: "user", content: userPrompt }],
-        tools: [tool],
-        tool_choice: { type: "function", function: { name: "emit_logic_flow" } },
-      }),
+    const resp = await chatCompletions({
+      model,
+      messages: [{ role: "system", content: sys }, { role: "user", content: userPrompt }],
+      tools: [tool],
+      tool_choice: { type: "function", function: { name: "emit_logic_flow" } },
     });
 
     if (!resp.ok) {
-      if (resp.status === 429) return new Response(JSON.stringify({ error: "Rate limit" }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      if (resp.status === 402) return new Response(JSON.stringify({ error: "Out of credits" }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const provider = model.startsWith("openai/") ? "OpenAI" : "Lovable AI";
+      if (resp.status === 429) return new Response(JSON.stringify({ error: `Rate limit on ${provider}` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      if (resp.status === 402 || resp.status === 401) return new Response(JSON.stringify({ error: `${provider} credits/key issue (status ${resp.status})` }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       const t = await resp.text();
       console.error("logic flow gen error", resp.status, t);
-      return new Response(JSON.stringify({ error: "Logic flow generation failed" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: `Logic flow generation failed (${provider})` }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     const data = await resp.json();
@@ -199,7 +196,7 @@ Position nodes in a left-to-right flow: clues on the left, deductions middle, so
       scope: "logic-flow",
       original_prompt: userPrompt,
       final_prompt: userPrompt,
-      provider: "lovable-ai",
+      provider: providerLabel(model),
       model,
     });
 

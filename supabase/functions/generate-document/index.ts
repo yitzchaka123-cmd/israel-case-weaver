@@ -1,5 +1,6 @@
 // Generate Hebrew document content + optional image using Lovable AI Gateway
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { chatCompletions, providerLabel } from "../_shared/ai-router.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -58,10 +59,9 @@ Deno.serve(async (req) => {
       const sys = `You write in-game evidence documents for premium printable Israeli mystery games. Output ONLY the document body in Hebrew, RTL-ready, realistic and immersive, tailored to the document type. No English. No meta-commentary. No disclaimers. For interrogation transcripts include pauses, body language and back-and-forth. Do not reveal the full solution.`;
       const userPrompt = `Case: ${project?.title ?? ""}\nPlayer role: ${project?.player_role ?? ""}\nCase goal: ${project?.case_goal ?? ""}\nYear: ${project?.year ?? ""}\nSetting: ${project?.setting ?? ""}\n\nDocument to produce:\nTitle: ${doc.title}\nType: ${doc.doc_type ?? "generic"}\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\n\nWrite the full Hebrew body now.`;
 
-      const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model, messages: [{ role: "system", content: sys }, { role: "user", content: userPrompt }] }),
+      const resp = await chatCompletions({
+        model,
+        messages: [{ role: "system", content: sys }, { role: "user", content: userPrompt }],
       });
 
       if (!resp.ok) {
@@ -79,7 +79,7 @@ Deno.serve(async (req) => {
         target_id: documentId,
         original_prompt: userPrompt,
         final_prompt: userPrompt,
-        provider: "lovable-ai",
+        provider: providerLabel(model),
         model,
       });
 
