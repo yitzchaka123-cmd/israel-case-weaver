@@ -316,28 +316,50 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
           </FieldBlock>
           <div className="md:col-span-2">
             <FieldBlock label="Design / graphic instructions">
-              <Textarea rows={4} value={draft.design_instructions ?? ""} onChange={(e) => update({ design_instructions: e.target.value })} />
+              <Textarea
+                rows={10}
+                value={draft.design_instructions ?? ""}
+                onChange={(e) => update({ design_instructions: e.target.value })}
+                placeholder={DESIGN_PLACEHOLDER}
+                className="font-mono text-xs leading-relaxed"
+              />
+              <p className="text-[11px] text-muted-foreground mt-1.5">
+                Tip: structure beats brevity. Include GOAL, FORMAT, VISUAL STYLE, LAYOUT, TYPOGRAPHY, EXACT HEBREW TEXT, and AUTHENTICITY rules — like the placeholder above.
+              </p>
             </FieldBlock>
           </div>
           <div className="md:col-span-2">
             <FieldBlock label="Hebrew content" dir="rtl">
-              <div className="flex gap-2 mb-2" dir="ltr">
+              <div className="flex flex-wrap gap-2 mb-2 items-center" dir="ltr">
                 <Button size="sm" variant="outline" className="gap-2" onClick={() => generate("text")} disabled={genText}>
                   {genText ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
                   Generate Hebrew content
                 </Button>
-                <Button size="sm" variant="outline" className="gap-2" onClick={() => generate("image")} disabled={genImage}>
-                  {genImage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
-                  Generate document image
-                </Button>
+                <div className="flex items-center gap-1.5 ml-auto">
+                  <Select value={imageModel} onValueChange={setImageModel}>
+                    <SelectTrigger className="h-8 text-xs w-[260px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {IMAGE_MODELS.map((m) => <SelectItem key={m.value} value={m.value} className="text-xs">{m.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Button size="sm" variant="outline" className="gap-2" onClick={() => generate("image")} disabled={genImage}>
+                    {genImage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
+                    Generate document image
+                  </Button>
+                </div>
               </div>
               <Textarea rows={6} value={draft.hebrew_content ?? ""} onChange={(e) => update({ hebrew_content: e.target.value })} dir="rtl" className="text-right" />
             </FieldBlock>
           </div>
           {draft.generated_asset_url && (
             <div className="md:col-span-2">
-              <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Generated document image</Label>
-              <img src={draft.generated_asset_url} alt="" className="mt-2 rounded-lg border w-full max-h-96 object-contain bg-muted" />
+              <div className="flex items-center justify-between mb-2">
+                <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Generated document image</Label>
+                <Button size="sm" variant="outline" className="gap-2" onClick={saveAsPdf}>
+                  <FileDown className="h-3.5 w-3.5" /> Save as PDF
+                </Button>
+              </div>
+              <img src={draft.generated_asset_url} alt="" className="rounded-lg border w-full max-h-96 object-contain bg-muted" />
             </div>
           )}
           <div className="md:col-span-2 border-t pt-4">
