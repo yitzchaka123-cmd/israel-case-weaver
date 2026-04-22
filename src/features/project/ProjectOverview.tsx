@@ -67,6 +67,40 @@ export function ProjectOverview({ project }: { project: any }) {
     toast.success("Cover updated");
   };
 
+  const [genCover, setGenCover] = useState(false);
+  const generateCover = async () => {
+    const desc = [
+      draft.title && `Title: "${draft.title}"`,
+      draft.subtitle && `Subtitle: "${draft.subtitle}"`,
+      draft.mystery_type && `Type: ${draft.mystery_type}`,
+      draft.genre && `Genre: ${draft.genre}`,
+      draft.year && `Year: ${draft.year}`,
+      draft.setting && `Setting: ${draft.setting}`,
+      draft.case_goal && `Case: ${draft.case_goal}`,
+    ].filter(Boolean).join(". ");
+    if (!desc) return toast.error("Fill in title / type / setting first");
+    setGenCover(true);
+    const t = toast.loading("Generating cover…");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const modelOverride = getStoredImageModel("cover", "chatgpt-image");
+      const prompt = `Premium printable BOX-COVER artwork for an Israeli mystery / detective board game. Cinematic, evocative, painterly photo-real style. Strong central focal subject, dramatic lighting, period-accurate. Composition leaves space at the top for a future title treatment. 3:4 portrait. NO text, NO logos, NO watermarks — pure illustration only. Brief: ${desc}.`;
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-image`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
+        body: JSON.stringify({ projectId: project.id, prompt, target: "project-cover", modelOverride, aspect: "portrait" }),
+      });
+      const json = await resp.json();
+      if (!resp.ok) throw new Error(json.error ?? "Failed");
+      setDraft({ ...draft, cover_image_url: json.url });
+      toast.success("Cover ready", { id: t });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed", { id: t });
+    } finally {
+      setGenCover(false);
+    }
+  };
+
   return (
     <div className="max-w-6xl mx-auto px-6 md:px-10 py-8 grid lg:grid-cols-3 gap-8">
       <div className="lg:col-span-2 space-y-6">
