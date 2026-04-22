@@ -373,12 +373,23 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
             </Select>
           </FieldBlock>
           <div className="md:col-span-2">
-            <FieldBlock label="Design / graphic instructions">
-              <div className="flex items-center justify-between mb-1.5 gap-2">
+            <FieldBlock label="Design / graphic instructions (this is the image prompt)">
+              <div className="flex items-center justify-between mb-1.5 gap-2 flex-wrap">
                 <p className="text-[11px] text-muted-foreground">
                   Structure beats brevity. Include GOAL, FORMAT, VISUAL STYLE, LAYOUT, TYPOGRAPHY, EXACT HEBREW TEXT, AUTHENTICITY rules.
                 </p>
                 <div className="flex items-center gap-2 shrink-0">
+                  <PromptWriterModelPicker surface="document" />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-[11px] gap-1.5"
+                    onClick={draftPrompt}
+                    disabled={draftingPrompt}
+                  >
+                    {draftingPrompt ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                    {draft.design_instructions ? "Revise with AI" : "Draft with AI"}
+                  </Button>
                   <span className="text-[10px] text-muted-foreground tabular-nums">
                     {(draft.design_instructions ?? "").length.toLocaleString()} chars
                   </span>
