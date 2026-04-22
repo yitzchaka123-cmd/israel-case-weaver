@@ -437,3 +437,227 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
     </div>
   );
 }
+
+// Side panel that opens when a canvas node is clicked.
+// Shows the node's metadata, any linked documents/suspects, and an
+// AI-generated explanation of the node's role in the case (on-demand).
+function NodeDetailPanel({
+  nodeId,
+  projectId,
+  modelOverride,
+  onClose,
+}: {
+  nodeId: string | null;
+  projectId: string;
+  modelOverride: string;
+  onClose: () => void;
+}) {
+  const open = nodeId !== null;
+  const [explaining, setExplaining] = useState(false);
+  const [explanation, setExplanation] = useState<string | null>(null);
+
+  const { data: node } = useQuery({
+    queryKey: ["canvas-node", nodeId],
+    enabled: !!nodeId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("canvas_nodes")
+        .select("*")
+        .eq("id", nodeId!)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const { data: linkedDocs = [] } = useQuery({
+    queryKey: ["canvas-node-docs", nodeId],
+    enabled: !!nodeId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("documents")
+        .select("id, title, doc_number, doc_type")
+        .eq("project_id", projectId)
+        .contains("linked_node_ids", [nodeId!]);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const { data: linkedSuspects = [] } = useQuery({
+    queryKey: ["canvas-node-suspects", nodeId, linkedDocs.map((d) => d.id).join(",")],
+    enabled: !!nodeId && linkedDocs.length > 0,
+    queryFn: async () => {
+      const { data: docs } = await supabase
+        .from("documents")
+        .select("linked_suspect_ids")
+        .in("id", linkedDocs.map((d) => d.id));
+      const ids = new Set<string>();
+      (docs ?? []).forEach((d) =>
+        (d.linked_suspect_ids ?? []).forEach((s: string) => ids.add(s)),
+      );
+      if (!ids.size) return [];
+      const { data: sus } = await supabase
+        .from("suspects")
+        .select("id, name")
+        .in("id", [...ids]);
+      return sus ?? [];
+    },
+  });
+
+  useEffect(() => {
+    setExplanation(null);
+  }, [nodeId]);
+
+  const explain = async () => {
+    if (!nodeId) return;
+    setExplaining(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/explain-canvas-node`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({ nodeId, modelOverride }),
+      });
+      if (!resp.ok) {
+        const e = await resp.json().catch(() => ({ error: "Failed" }));
+        toast.error(e.error ?? "Could not generate explanation");
+        return;
+      }
+      const data = await resp.json();
+      setExplanation(data.explanation ?? "");
+    } finally {
+      setExplaining(false);
+    }
+  };
+
+  const jumpToDocuments = (docId?: string) => {
+    window.dispatchEvent(
+      new CustomEvent("mystudio:navigate", {
+        detail: { tab: "documents", targetId: docId },
+      }),
+    );
+  };
+
+  const jumpToSuspects = (suspectId?: string) => {
+    window.dispatchEvent(
+      new CustomEvent("mystudio:navigate", {
+        detail: { tab: "suspects", targetId: suspectId },
+      }),
+    );
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <SheetContent side="right" className="w-full sm:max-w-md overflow-auto">
+        <SheetHeader>
+          <SheetTitle className="font-display text-xl flex items-start gap-2">
+            <span
+              className="mt-1.5 h-3 w-3 rounded-full shrink-0"
+              style={{ background: node?.color ?? "var(--color-border)" }}
+            />
+            <span className="leading-snug">{node?.title || "Loading…"}</span>
+          </SheetTitle>
+          {node?.node_type && (
+            <Badge variant="outline" className="self-start capitalize text-[10px]">
+              {node.node_type.replace(/_/g, " ")}
+            </Badge>
+          )}
+        </SheetHeader>
+
+        <div className="mt-6 space-y-6">
+          {node?.description && (
+            <section>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1.5">
+                Description
+              </div>
+              <p className="text-sm whitespace-pre-wrap leading-relaxed">{node.description}</p>
+            </section>
+          )}
+
+          <section>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                AI explanation
+              </div>
+              <Button
+                size="sm"
+                variant={explanation ? "outline" : "default"}
+                className="gap-1.5 h-7 text-xs"
+                onClick={explain}
+                disabled={explaining}
+              >
+                {explaining ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                {explanation ? "Regenerate" : "Explain this node"}
+              </Button>
+            </div>
+            {explanation ? (
+              <div className="text-sm whitespace-pre-wrap leading-relaxed text-foreground/90 bg-muted/40 rounded-md p-3 border">
+                {explanation}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Click <em>Explain this node</em> to get an AI breakdown of what this node does and how
+                it fits into the overall solution. Uses your current Logic Flow model.
+              </p>
+            )}
+          </section>
+
+          <section>
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">
+              Linked documents ({linkedDocs.length})
+            </div>
+            {linkedDocs.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                No documents are linked to this node yet. Link them from the Documents tab.
+              </p>
+            ) : (
+              <ul className="space-y-1.5">
+                {linkedDocs.map((d) => (
+                  <li key={d.id}>
+                    <button
+                      type="button"
+                      onClick={() => jumpToDocuments(d.id)}
+                      className="w-full text-left flex items-center gap-2 rounded-md border bg-card hover:bg-muted/60 transition-colors px-3 py-2 text-sm"
+                    >
+                      <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate flex-1">
+                        {d.doc_number != null ? `#${d.doc_number} · ` : ""}
+                        {d.title}
+                      </span>
+                      <ExternalLink className="h-3 w-3 opacity-60 shrink-0" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {linkedSuspects.length > 0 && (
+            <section>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">
+                Tags · suspects in linked documents
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {linkedSuspects.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => jumpToSuspects(s.id)}
+                    className="inline-flex items-center gap-1 rounded-full border bg-muted/50 hover:bg-muted px-2.5 py-1 text-[11px] transition-colors"
+                  >
+                    {s.name}
+                    <ExternalLink className="h-2.5 w-2.5 opacity-60" />
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
