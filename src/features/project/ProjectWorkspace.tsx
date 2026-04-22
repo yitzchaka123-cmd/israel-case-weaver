@@ -10,6 +10,7 @@ import { ProjectOverview } from "./ProjectOverview";
 import { SuspectsSection } from "./SuspectsSection";
 import { DocumentsSection } from "./DocumentsSection";
 import { CanvasSection } from "./CanvasSection";
+import { AssistantSection } from "./AssistantSection";
 
 export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
@@ -91,6 +92,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
             <TabsList className="bg-transparent p-0 h-auto gap-1 border-0">
               {[
                 { v: "overview", l: "Overview" },
+                { v: "assistant", l: "Assistant" },
                 { v: "canvas", l: "Case Board" },
                 { v: "suspects", l: "Suspects" },
                 { v: "documents", l: "Documents" },
@@ -112,6 +114,9 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
         <Tabs value={tab} onValueChange={setTab} className="h-full">
           <TabsContent value="overview" className="h-full overflow-auto m-0">
             <ProjectOverview project={project} />
+          </TabsContent>
+          <TabsContent value="assistant" className="h-full m-0">
+            <AssistantSection projectId={projectId} phase={project.phase} />
           </TabsContent>
           <TabsContent value="canvas" className="h-full m-0">
             <CanvasSection projectId={projectId} />

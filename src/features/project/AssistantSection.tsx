@@ -1,0 +1,284 @@
+import { useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Sparkles, Send, Loader2, Bot, User, Wand2, CheckCircle2 } from "lucide-react";
+import { toast } from "sonner";
+
+type Msg = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  metadata?: { tools?: Array<{ name: string; result: { ok: boolean; message: string } }> } | null;
+  created_at?: string;
+};
+
+const PHASES = [
+  { key: "setup", label: "Setup" },
+  { key: "summary", label: "Summary" },
+  { key: "structure", label: "Structure" },
+  { key: "documents", label: "Documents" },
+  { key: "envelopes", label: "Envelopes" },
+  { key: "hints", label: "Hints" },
+  { key: "packaging", label: "Packaging" },
+];
+
+const STARTERS = [
+  "Let's start a new case. Walk me through Phase 1 setup.",
+  "Propose 5 Hebrew title options with strong Israeli flavor.",
+  "Generate the detailed English case summary (Phase 2).",
+  "Draft the suspect list and deduction structure.",
+];
+
+export function AssistantSection({ projectId, phase }: { projectId: string; phase: string }) {
+  const qc = useQueryClient();
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const { data: messages = [] } = useQuery<Msg[]>({
+    queryKey: ["chat", projectId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("chat_messages")
+        .select("*")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as Msg[];
+    },
+  });
+
+  // Realtime sync for chat messages
+  useEffect(() => {
+    const ch = supabase
+      .channel(`chat-${projectId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "chat_messages", filter: `project_id=eq.${projectId}` },
+        () => qc.invalidateQueries({ queryKey: ["chat", projectId] }),
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [projectId, qc]);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, sending]);
+
+  const send = async (text: string) => {
+    const content = text.trim();
+    if (!content || sending) return;
+    setInput("");
+    setSending(true);
+    try {
+      const convo = [...messages, { role: "user" as const, content }].map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/assistant-chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({ projectId, messages: convo }),
+      });
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: "Request failed" }));
+        if (resp.status === 429) toast.error("Rate limit — please wait a moment.");
+        else if (resp.status === 402) toast.error("Out of AI credits. Top up in Settings → Workspace → Usage.");
+        else toast.error(err.error ?? "Assistant error");
+        return;
+      }
+      // Message is persisted by the edge function; realtime will refresh
+      qc.invalidateQueries({ queryKey: ["chat", projectId] });
+      qc.invalidateQueries({ queryKey: ["project", projectId] });
+      qc.invalidateQueries({ queryKey: ["suspects", projectId] });
+      qc.invalidateQueries({ queryKey: ["documents", projectId] });
+      qc.invalidateQueries({ queryKey: ["nodes", projectId] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Assistant error");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="flex h-full">
+      {/* Phase rail */}
+      <aside className="hidden lg:flex w-64 shrink-0 border-r bg-surface/40 flex-col">
+        <div className="p-5 border-b">
+          <div className="inline-flex items-center gap-2 text-[10px] uppercase tracking-widest text-muted-foreground">
+            <Sparkles className="h-3 w-3" /> Assistant
+          </div>
+          <div className="mt-1 font-display text-lg">Creative flow</div>
+        </div>
+        <div className="p-3 space-y-1 flex-1 overflow-auto">
+          {PHASES.map((p, i) => {
+            const currentIdx = PHASES.findIndex((x) => x.key === phase);
+            const state = i < currentIdx ? "done" : i === currentIdx ? "active" : "todo";
+            return (
+              <div
+                key={p.key}
+                className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm ${
+                  state === "active"
+                    ? "bg-accent/10 text-foreground border border-accent/20"
+                    : state === "done"
+                    ? "text-muted-foreground"
+                    : "text-muted-foreground/70"
+                }`}
+              >
+                <div
+                  className={`h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-semibold ${
+                    state === "active"
+                      ? "bg-accent text-accent-foreground"
+                      : state === "done"
+                      ? "bg-muted text-foreground"
+                      : "bg-muted/50"
+                  }`}
+                >
+                  {state === "done" ? <CheckCircle2 className="h-3.5 w-3.5" /> : i + 1}
+                </div>
+                <span className="flex-1">{p.label}</span>
+              </div>
+            );
+          })}
+        </div>
+        <div className="p-3 border-t text-[11px] text-muted-foreground leading-relaxed">
+          The assistant writes directly to your project — suspects, documents and canvas nodes update live as they're approved.
+        </div>
+      </aside>
+
+      {/* Chat */}
+      <div className="flex-1 flex flex-col min-w-0">
+        <div ref={scrollRef} className="flex-1 overflow-auto">
+          <div className="max-w-3xl mx-auto px-6 py-8 space-y-6">
+            {messages.length === 0 && (
+              <div className="text-center py-12">
+                <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-brand shadow-glow mb-5">
+                  <Wand2 className="h-6 w-6 text-white" />
+                </div>
+                <h2 className="font-display text-3xl">Mystery Studio Assistant</h2>
+                <p className="mt-2 text-muted-foreground max-w-md mx-auto">
+                  I'll guide you phase by phase through creating a premium Israeli mystery game. Everything I create updates your project instantly.
+                </p>
+                <div className="mt-8 grid sm:grid-cols-2 gap-2.5 text-left">
+                  {STARTERS.map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => send(s)}
+                      className="rounded-lg border bg-surface hover:bg-muted/60 transition-colors p-4 text-sm text-left"
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {messages.map((m) => (
+              <MessageBubble key={m.id} msg={m} />
+            ))}
+
+            {sending && (
+              <div className="flex gap-3 items-start">
+                <Avatar role="assistant" />
+                <div className="flex-1 pt-1.5">
+                  <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Thinking…
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Composer */}
+        <div className="border-t bg-surface/60 backdrop-blur">
+          <div className="max-w-3xl mx-auto px-6 py-4">
+            <div className="relative rounded-xl border bg-background shadow-sm focus-within:ring-2 focus-within:ring-accent/30 transition">
+              <Textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    send(input);
+                  }
+                }}
+                placeholder="Describe what you want to build, approve a proposal, or ask for the next step…"
+                className="min-h-[80px] resize-none border-0 focus-visible:ring-0 bg-transparent pr-14"
+                disabled={sending}
+              />
+              <Button
+                size="icon"
+                onClick={() => send(input)}
+                disabled={sending || !input.trim()}
+                className="absolute bottom-2.5 right-2.5 h-9 w-9 rounded-lg"
+              >
+                {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              </Button>
+            </div>
+            <div className="mt-2 text-[11px] text-muted-foreground text-center">
+              ⏎ to send · Shift+⏎ for newline · Planning uses your project's AI provider preference
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Avatar({ role }: { role: "user" | "assistant" }) {
+  return (
+    <div
+      className={`h-8 w-8 shrink-0 rounded-lg flex items-center justify-center ${
+        role === "assistant" ? "bg-gradient-brand text-white shadow-glow" : "bg-muted text-foreground"
+      }`}
+    >
+      {role === "assistant" ? <Bot className="h-4 w-4" /> : <User className="h-4 w-4" />}
+    </div>
+  );
+}
+
+function MessageBubble({ msg }: { msg: Msg }) {
+  const tools = msg.metadata?.tools ?? [];
+  return (
+    <div className="flex gap-3 items-start">
+      <Avatar role={msg.role} />
+      <div className="flex-1 min-w-0 pt-1">
+        <div className="text-xs font-medium mb-1 text-muted-foreground">
+          {msg.role === "assistant" ? "Assistant" : "You"}
+        </div>
+        <div className="prose prose-sm max-w-none dark:prose-invert whitespace-pre-wrap leading-relaxed text-[14.5px]">
+          {msg.content}
+        </div>
+        {tools.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {tools.map((t, i) => (
+              <Badge
+                key={i}
+                variant="outline"
+                className={`text-[10px] font-medium ${
+                  t.result.ok ? "border-accent/30 text-accent-foreground bg-accent/10" : "border-destructive/30 text-destructive bg-destructive/5"
+                }`}
+              >
+                {t.result.ok ? "✓" : "✗"} {t.name.replace(/_/g, " ")}
+              </Badge>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
