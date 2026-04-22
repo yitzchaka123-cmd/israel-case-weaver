@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { ApiKeyManager } from "./ApiKeyManager";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LOGIC_FLOW_MODELS, LOGIC_FLOW_MODEL_KEY, LOGIC_FLOW_MODEL_DEFAULT } from "@/features/project/CanvasSection";
+import { Textarea } from "@/components/ui/textarea";
 
 export function SettingsPage() {
   const { user } = useAuth();
@@ -21,6 +22,7 @@ export function SettingsPage() {
   const [planning, setPlanning] = useState("lovable");
   const [documents, setDocuments] = useState("lovable");
   const [images, setImages] = useState("lovable");
+  const [imgAssistantInstructions, setImgAssistantInstructions] = useState("");
   const [logicFlowModel, setLogicFlowModel] = useState<string>(() => {
     if (typeof window === "undefined") return LOGIC_FLOW_MODEL_DEFAULT;
     return localStorage.getItem(LOGIC_FLOW_MODEL_KEY) ?? LOGIC_FLOW_MODEL_DEFAULT;
@@ -43,8 +45,25 @@ export function SettingsPage() {
       setPlanning(profile.ai_provider_planning);
       setDocuments(profile.ai_provider_documents);
       setImages(profile.ai_provider_images);
+      setImgAssistantInstructions((profile as any).image_prompt_assistant_instructions ?? "");
     }
   }, [profile]);
+
+  const save = async () => {
+    if (!user) return;
+    const { error } = await supabase.from("profiles").upsert({
+      id: user.id,
+      display_name: displayName,
+      app_logo_url: logoUrl,
+      theme,
+      ai_provider_planning: planning,
+      ai_provider_documents: documents,
+      ai_provider_images: images,
+      image_prompt_assistant_instructions: imgAssistantInstructions,
+    } as any);
+    if (error) toast.error(error.message);
+    else toast.success("Settings saved");
+  };
 
   const save = async () => {
     if (!user) return;
