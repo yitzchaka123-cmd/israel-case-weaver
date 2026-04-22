@@ -229,21 +229,40 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
           </div>
           <div className="md:col-span-2">
             <FieldBlock label="Hebrew content" dir="rtl">
+              <div className="flex gap-2 mb-2" dir="ltr">
+                <Button size="sm" variant="outline" className="gap-2" onClick={() => generate("text")} disabled={genText}>
+                  {genText ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+                  Generate Hebrew content
+                </Button>
+                <Button size="sm" variant="outline" className="gap-2" onClick={() => generate("image")} disabled={genImage}>
+                  {genImage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
+                  Generate document image
+                </Button>
+              </div>
               <Textarea rows={6} value={draft.hebrew_content ?? ""} onChange={(e) => update({ hebrew_content: e.target.value })} dir="rtl" className="text-right" />
             </FieldBlock>
           </div>
+          {draft.generated_asset_url && (
+            <div className="md:col-span-2">
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Generated document image</Label>
+              <img src={draft.generated_asset_url} alt="" className="mt-2 rounded-lg border w-full max-h-96 object-contain bg-muted" />
+            </div>
+          )}
           <div className="md:col-span-2 border-t pt-4">
             <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Final asset</Label>
-            <div className="mt-2 flex gap-2">
+            <div className="mt-2 flex gap-2 items-center">
               <input ref={fileInput} type="file" className="hidden" onChange={(e) => e.target.files?.[0] && uploadReplacement(e.target.files[0])} />
               <Button variant="outline" className="gap-2" onClick={() => fileInput.current?.click()}>
                 <Upload className="h-4 w-4" /> Upload final file
               </Button>
               {draft.uploaded_asset_url && (
-                <a href={draft.uploaded_asset_url} target="_blank" rel="noreferrer" className="text-sm text-accent underline self-center">
-                  View current file
+                <a href={draft.uploaded_asset_url} target="_blank" rel="noreferrer" className="text-sm text-accent underline">
+                  View uploaded file
                 </a>
               )}
+              <span className="ml-auto text-[11px] text-muted-foreground uppercase tracking-widest">
+                Active: {draft.active_version}
+              </span>
             </div>
           </div>
         </div>
