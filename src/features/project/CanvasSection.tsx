@@ -291,6 +291,22 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
 
         {board === "logic" && (
           <>
+            <Select
+              value={logicModel}
+              onValueChange={(v) => {
+                setLogicModel(v);
+                if (typeof window !== "undefined") localStorage.setItem(LOGIC_FLOW_MODEL_KEY, v);
+              }}
+            >
+              <SelectTrigger className="h-9 text-xs w-[210px]" title="Model used to generate the logic flow">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LOGIC_FLOW_MODELS.map((m) => (
+                  <SelectItem key={m.value} value={m.value} className="text-xs">{m.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Button variant="outline" className="gap-2" onClick={generateLogicFlow} disabled={generatingFlow}>
               {generatingFlow ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
               {nodes.length === 0 ? "Generate logic flow" : "Re-generate"}
