@@ -219,12 +219,17 @@ export function ProjectOverview({ project }: { project: any }) {
             )}
           </div>
           <input ref={fileInput} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadCover(e.target.files[0])} />
-          <div className="mt-3 space-y-2">
+          <div className="mt-3 space-y-3">
             <ImageModelPicker surface="cover" defaultModel="chatgpt-image-2" className="w-full" />
-            <Button className="w-full gap-2" onClick={generateCover} disabled={genCover}>
-              {genCover ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-              Generate cover with AI
-            </Button>
+            <PromptPanel
+              projectId={project.id}
+              surface="cover"
+              category="cover"
+              initialPrompt={coverPrompt}
+              generating={genCover}
+              onGenerate={(p) => generateCover(p)}
+              mode={draft.cover_image_url ? "archive" : "inline"}
+            />
             <Button variant="outline" className="w-full" onClick={() => fileInput.current?.click()}>
               {draft.cover_image_url ? "Replace cover" : "Upload cover"}
             </Button>
