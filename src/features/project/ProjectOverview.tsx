@@ -90,9 +90,12 @@ export function ProjectOverview({ project }: { project: any }) {
     return () => { cancelled = true; };
   }, [project.id, draft.cover_image_url]);
 
-  const generateCover = async (promptOverride?: string) => {
+  const generateCover = async (promptOverride?: string): Promise<void> => {
     const promptToUse = promptOverride?.trim();
-    if (!promptToUse) return toast.error("Write a prompt first");
+    if (!promptToUse) {
+      toast.error("Write a prompt first");
+      return;
+    }
     setGenCover(true);
     const t = toast.loading("Generating cover…");
     try {
