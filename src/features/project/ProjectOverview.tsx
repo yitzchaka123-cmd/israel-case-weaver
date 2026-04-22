@@ -4,10 +4,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload, Wand2, Loader2 } from "lucide-react";
+import { Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { ImageModelPicker, getStoredImageModel } from "@/components/ImageModelPicker";
+import { PromptPanel } from "@/components/PromptPanel";
 
 const MYSTERY_TYPES = [
   "Espionage / Intelligence",
