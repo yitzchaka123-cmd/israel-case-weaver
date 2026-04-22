@@ -12,7 +12,8 @@ import { toast } from "sonner";
 import jsPDF from "jspdf";
 
 const IMAGE_MODELS = [
-  { value: "nano-banana-2", label: "Nano Banana 2 — fast, pro-quality (default)" },
+  { value: "chatgpt-image", label: "ChatGPT Image (gpt-image-1) — default" },
+  { value: "nano-banana-2", label: "Nano Banana 2 — fast, pro-quality" },
   { value: "nano-banana-pro", label: "Nano Banana Pro — highest quality, slower" },
   { value: "nano-banana", label: "Nano Banana (classic)" },
 ];
