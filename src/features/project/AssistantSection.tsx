@@ -54,6 +54,28 @@ export function AssistantSection({ projectId, phase }: { projectId: string; phas
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  const { data: project } = useQuery({
+    queryKey: ["project-ai", projectId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("projects")
+        .select("ai_provider_planning, ai_provider_images")
+        .eq("id", projectId)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const planningModel = project?.ai_provider_planning ?? "lovable";
+  const imageModel = project?.ai_provider_images ?? "nano-banana-2";
+
+  const setProjectAi = async (patch: { ai_provider_planning?: string; ai_provider_images?: string }) => {
+    const { error } = await supabase.from("projects").update(patch).eq("id", projectId);
+    if (error) toast.error(error.message);
+    else qc.invalidateQueries({ queryKey: ["project-ai", projectId] });
+  };
+
   const { data: messages = [] } = useQuery<Msg[]>({
     queryKey: ["chat", projectId],
     queryFn: async () => {
