@@ -430,27 +430,44 @@ function ToolReceipts({ tools }: { tools: ToolCall[] }) {
                 }),
               );
             };
+            // Pull a friendly entity name out of result.message
+            // (e.g. "Document created: Police Report (#3)" -> "Police Report (#3)")
+            const entityName = (() => {
+              if (!t.result.ok) return null;
+              const m = t.result.message.match(/:\s*(.+)$/);
+              return m?.[1]?.trim() || null;
+            })();
+            const verb = t.name.replace(/_/g, " ");
             return (
               <li key={i} className="flex items-start gap-2 text-[12px] leading-snug">
                 <span className={`mt-0.5 ${t.result.ok ? "text-accent-foreground/80" : "text-destructive"}`}>
                   {t.result.ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
                 </span>
                 <div className="flex-1 min-w-0">
-                  <div className="flex flex-wrap items-baseline gap-x-2">
-                    <span className="text-foreground/90 font-medium capitalize">{t.name.replace(/_/g, " ")}</span>
-                    <span className={`text-[11px] truncate ${t.result.ok ? "text-muted-foreground" : "text-destructive/90"}`}>
-                      {t.result.message}
-                    </span>
-                  </div>
-                  {clickable && (
-                    <button
-                      type="button"
-                      onClick={handleClick}
-                      className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-accent-foreground hover:underline"
-                    >
-                      <ExternalLink className="h-3 w-3" />
-                      {dest!.label}
-                    </button>
+                  {t.result.ok && entityName ? (
+                    clickable ? (
+                      <button
+                        type="button"
+                        onClick={handleClick}
+                        title={dest!.label}
+                        className="inline-flex items-center gap-1.5 text-foreground/90 font-medium hover:text-accent-foreground hover:underline text-left"
+                      >
+                        <span className="truncate">{entityName}</span>
+                        <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
+                      </button>
+                    ) : (
+                      <span className="text-foreground/90 font-medium">{entityName}</span>
+                    )
+                  ) : (
+                    <div className="flex flex-wrap items-baseline gap-x-2">
+                      <span className="text-foreground/90 font-medium capitalize">{verb}</span>
+                      <span className={`text-[11px] truncate ${t.result.ok ? "text-muted-foreground" : "text-destructive/90"}`}>
+                        {t.result.message}
+                      </span>
+                    </div>
+                  )}
+                  {t.result.ok && entityName && (
+                    <div className="text-[10.5px] text-muted-foreground/80 capitalize mt-0.5">{verb}</div>
                   )}
                 </div>
               </li>
