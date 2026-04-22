@@ -1,5 +1,6 @@
 import JSZip from "jszip";
-import { saveAs } from "file-saver";
+import pkg from "file-saver";
+const { saveAs } = pkg;
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
