@@ -1,6 +1,7 @@
-// Generate Hebrew document content + optional image using Lovable AI Gateway
+// Generate Hebrew document content + optional image. Routes through the shared
+// AI router so OpenAI / Anthropic / Gemini direct keys are used when configured.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { chatCompletions, providerLabel } from "../_shared/ai-router.ts";
+import { chatCompletions, providerLabel, generateImage, ImageGenError } from "../_shared/ai-router.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -10,23 +11,30 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OpenAi") ?? Deno.env.get("OPENAI_API_KEY") ?? "";
 
+// Planning/document text models — see ai-router.ts for prefix routing rules.
 const PROVIDER_MODEL: Record<string, string> = {
   lovable: "google/gemini-2.5-pro",
   gemini: "google/gemini-2.5-pro",
   "gemini-3-pro": "google/gemini-3.1-pro-preview",
+  "gemini-flash": "google/gemini-2.5-flash",
   openai: "openai/gpt-5",
   "openai-5.2": "openai/gpt-5.2",
-  claude: "openai/gpt-5", // Claude not on gateway; falls back
+  "openai-mini": "openai/gpt-5-mini",
+  claude: "anthropic/claude-sonnet-4-5",
+  "claude-opus": "anthropic/claude-opus-4-5",
+  "claude-haiku": "anthropic/claude-haiku-4-5",
+  "gemini-direct-pro": "gemini-direct/gemini-2.5-pro",
+  "gemini-direct-flash": "gemini-direct/gemini-2.5-flash",
 };
 
-// Image models. Default: ChatGPT Image 2 (gpt-image-2) via OpenAI direct API.
-// Lovable AI gateway models use Gemini family (Nano Banana series).
+// Image models. OpenAI's gpt-image-* go to OpenAI directly. Nano Banana
+// (Gemini family) goes through the shared generateImage helper, which prefers
+// GEMINI_API_KEY direct and falls back to Lovable AI Gateway.
 const IMAGE_MODEL: Record<string, string> = {
-  "chatgpt-image-2": "gpt-image-2", // OpenAI direct — latest (2026-04-21)
-  "chatgpt-image": "gpt-image-1",   // OpenAI direct — previous gen
+  "chatgpt-image-2": "gpt-image-2",
+  "chatgpt-image": "gpt-image-1",
   "nano-banana-2": "google/gemini-3.1-flash-image-preview",
   "nano-banana-pro": "google/gemini-3-pro-image-preview",
   "nano-banana": "google/gemini-2.5-flash-image",
