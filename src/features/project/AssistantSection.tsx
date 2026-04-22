@@ -4,8 +4,24 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Sparkles, Send, Loader2, Bot, User, Wand2, CheckCircle2 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Sparkles, Send, Loader2, Bot, User, Wand2, CheckCircle2, Cpu, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
+
+const PLANNING_MODELS = [
+  { value: "lovable", label: "Gemini 3.1 Pro (default)" },
+  { value: "gemini", label: "Gemini 2.5 Pro" },
+  { value: "gemini-flash", label: "Gemini 2.5 Flash (fast)" },
+  { value: "openai-5.2", label: "ChatGPT 5.2 (latest)" },
+  { value: "openai", label: "ChatGPT 5" },
+  { value: "openai-mini", label: "ChatGPT 5 mini" },
+];
+
+const IMAGE_MODELS = [
+  { value: "nano-banana-2", label: "Nano Banana 2 (default — fast + pro)" },
+  { value: "nano-banana-pro", label: "Nano Banana Pro (highest quality)" },
+  { value: "nano-banana", label: "Nano Banana (Gemini 2.5 Flash Image)" },
+];
 
 type Msg = {
   id: string;
