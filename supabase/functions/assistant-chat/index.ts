@@ -134,8 +134,31 @@ const TOOLS = [
           target_doc_count: { type: "number" },
         },
         additionalProperties: false,
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "set_solution_summary",
+      description:
+        "Save the full end-to-end case solution summary to the project. Call this AS SOON as the user approves the Phase 2 summary so it appears on the Case Board's Solution-summary button. Pass mark_approved=true ONLY if the user has explicitly approved the logic flow itself (not just the narrative).",
+      parameters: {
+        type: "object",
+        properties: {
+          summary: {
+            type: "string",
+            description: "Full multi-paragraph solution summary (English or Hebrew). 3–8 paragraphs covering setup → clue chain → red herrings → deduction → reveal.",
+          },
+          mark_approved: {
+            type: "boolean",
+            description: "Set to true to also stamp logic_approved_at = now (unlocks document generation). Default false.",
+          },
+        },
+        required: ["summary"],
+        additionalProperties: false,
       },
     },
+  },
   },
   {
     type: "function",
