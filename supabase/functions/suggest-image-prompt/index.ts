@@ -44,6 +44,8 @@ interface Body {
   category?: string;
   hint?: string; // optional user steering ("focus on the rainy alley")
   currentPrompt?: string; // if revising
+  writerModel?: string;   // override key from PLANNING_MODEL (per-image dropdown)
+  userId?: string;        // for global "image prompt assistant instructions"
 }
 
 Deno.serve(async (req) => {
