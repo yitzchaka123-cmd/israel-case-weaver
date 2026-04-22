@@ -173,10 +173,10 @@ function CategoryPanel({ projectId, category, items }: { projectId: string; cate
       const resp = await callEdge("generate-image", { projectId, category, prompt, title, modelOverride, quality });
       if (!resp.ok) {
         const e = await resp.json().catch(() => ({ error: "Failed" }));
-        if (resp.status === 429) toast.error("Rate limit — try again in a moment.");
-        else if (resp.status === 402) toast.error("Out of AI credits.");
-        else if (resp.status === 504) toast.error(e.error ?? "Image generation timed out — try Medium or Low quality.");
-        else toast.error(e.error ?? "Generation failed");
+        if (resp.status === 429) toast.error("Rate limit — try again in a moment.", { duration: 10000 });
+        else if (resp.status === 402) toast.error(e.error ?? "Out of AI credits.", { duration: 15000 });
+        else if (resp.status === 504) toast.error(e.error ?? "Image generation timed out — try Medium or Low quality.", { duration: 10000 });
+        else toast.error(e.error ?? "Generation failed", { duration: 10000 });
         return;
       }
       toast.success("Image generated");
@@ -418,10 +418,10 @@ function AssetDialog({
       });
       if (!resp.ok) {
         const e = await resp.json().catch(() => ({ error: "Failed" }));
-        if (resp.status === 429) toast.error("Rate limit — try again in a moment.");
-        else if (resp.status === 402) toast.error("Out of AI credits.");
-        else if (resp.status === 504) toast.error(e.error ?? "Image generation timed out — try Medium or Low quality.");
-        else toast.error(e.error ?? "Generation failed");
+        if (resp.status === 429) toast.error("Rate limit — try again in a moment.", { duration: 10000 });
+        else if (resp.status === 402) toast.error(e.error ?? "Out of AI credits.", { duration: 15000 });
+        else if (resp.status === 504) toast.error(e.error ?? "Image generation timed out — try Medium or Low quality.", { duration: 10000 });
+        else toast.error(e.error ?? "Generation failed", { duration: 10000 });
         return;
       }
       toast.success("New image generated");

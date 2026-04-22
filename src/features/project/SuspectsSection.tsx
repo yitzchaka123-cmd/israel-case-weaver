@@ -189,7 +189,7 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
       const msg = e instanceof Error
         ? (e.name === "AbortError" ? "Image generation timed out (>2 min). Try Medium/Low quality or a Gemini model." : e.message)
         : "Failed";
-      toast.error(msg, { id: t });
+      toast.error(msg, { id: t, duration: 15000 });
     } finally {
       window.clearTimeout(timer);
       setGenerating(false);
