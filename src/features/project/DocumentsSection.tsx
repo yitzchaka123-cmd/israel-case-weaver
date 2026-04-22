@@ -131,6 +131,17 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
         <h2 className="font-display text-3xl">Documents</h2>
         <Button onClick={addDoc} className="gap-2"><Plus className="h-4 w-4" /> New document</Button>
       </div>
+      {!project?.logic_approved_at && (
+        <div className="mb-6 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm flex items-start gap-3">
+          <span className="text-warning text-lg leading-none mt-0.5">⚠</span>
+          <div className="flex-1">
+            <p className="font-medium">Logic flow not approved yet</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              You can still generate documents, but it's recommended to design and approve the case logic first on the <strong>Case Board → Logic Flow</strong> tab. That way every document fits a coherent solution.
+            </p>
+          </div>
+        </div>
+      )}
       {!data?.length ? (
         <div className="border-2 border-dashed rounded-2xl p-12 text-center">
           <FileText className="h-10 w-10 mx-auto text-muted-foreground/40 mb-3" />
