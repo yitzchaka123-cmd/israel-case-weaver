@@ -61,10 +61,22 @@ const STARTERS = [
 
 export function AssistantSection({ projectId, phase }: { projectId: string; phase: string }) {
   const qc = useQueryClient();
+  const { user } = useAuth();
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const dictationBaseRef = useRef("");
+
+  const { data: tweakCount = 0 } = useQuery({
+    queryKey: ["assistant-tweaks-count", user?.id],
+    queryFn: async () => {
+      if (!user) return 0;
+      const { data } = await supabase.from("profiles").select("assistant_tweaks").eq("id", user.id).maybeSingle();
+      const raw = (data as { assistant_tweaks?: unknown } | null)?.assistant_tweaks;
+      return Array.isArray(raw) ? raw.length : 0;
+    },
+    enabled: !!user,
+  });
 
   const voice = useVoiceInput({
     onTranscript: (text) => {
