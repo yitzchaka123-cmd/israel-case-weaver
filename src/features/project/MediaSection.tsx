@@ -9,6 +9,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Upload, Wand2, Loader2, Trash2, Image as ImageIcon, Video, Film, Newspaper, Package, ExternalLink, Sparkles, FileText, RefreshCw } from "lucide-react";
 import { PromptWriterModelPicker, getStoredWriterModel } from "@/components/PromptWriterModelPicker";
+import { getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { toast } from "sonner";
 
 interface MediaAsset {
@@ -32,16 +33,23 @@ const CATEGORIES = [
   { key: "external", label: "External uploads", icon: Video },
 ];
 
-async function callEdge(name: string, body: unknown) {
+async function callEdge(name: string, body: unknown, timeoutMs = 120_000) {
   const { data: { session } } = await supabase.auth.getSession();
-  return fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${name}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-    },
-    body: JSON.stringify(body),
-  });
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${name}`, {
+      method: "POST",
+      signal: ctrl.signal,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+      },
+      body: JSON.stringify(body),
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export function MediaSection({ projectId }: { projectId: string }) {
@@ -160,11 +168,14 @@ function CategoryPanel({ projectId, category, items }: { projectId: string; cate
     if (!prompt.trim()) return toast.error("Add a prompt first (or click Generate Prompt)");
     setGenerating(true);
     try {
-      const resp = await callEdge("generate-image", { projectId, category, prompt, title });
+      const modelOverride = getStoredImageModel("media", "chatgpt-image-2");
+      const quality = getStoredImageQuality("media", "medium");
+      const resp = await callEdge("generate-image", { projectId, category, prompt, title, modelOverride, quality });
       if (!resp.ok) {
         const e = await resp.json().catch(() => ({ error: "Failed" }));
         if (resp.status === 429) toast.error("Rate limit — try again in a moment.");
         else if (resp.status === 402) toast.error("Out of AI credits.");
+        else if (resp.status === 504) toast.error(e.error ?? "Image generation timed out — try Medium or Low quality.");
         else toast.error(e.error ?? "Generation failed");
         return;
       }
@@ -172,6 +183,11 @@ function CategoryPanel({ projectId, category, items }: { projectId: string; cate
       setPrompt("");
       setHint("");
       setTitle("");
+    } catch (e) {
+      const msg = e instanceof Error
+        ? (e.name === "AbortError" ? "Image generation timed out (>2 min). Try Medium/Low quality or a Gemini model." : e.message)
+        : "Generation failed";
+      toast.error(msg);
     } finally {
       setGenerating(false);
     }
@@ -390,21 +406,31 @@ function AssetDialog({
     if (!editPrompt.trim()) return toast.error("Prompt is empty");
     setRetrying(true);
     try {
+      const modelOverride = getStoredImageModel("media", "chatgpt-image-2");
+      const quality = getStoredImageQuality("media", "medium");
       const resp = await callEdge("generate-image", {
         projectId,
         category: asset.category ?? category,
         prompt: editPrompt,
         title: asset.title ?? undefined,
+        modelOverride,
+        quality,
       });
       if (!resp.ok) {
         const e = await resp.json().catch(() => ({ error: "Failed" }));
         if (resp.status === 429) toast.error("Rate limit — try again in a moment.");
         else if (resp.status === 402) toast.error("Out of AI credits.");
+        else if (resp.status === 504) toast.error(e.error ?? "Image generation timed out — try Medium or Low quality.");
         else toast.error(e.error ?? "Generation failed");
         return;
       }
       toast.success("New image generated");
       onClose();
+    } catch (e) {
+      const msg = e instanceof Error
+        ? (e.name === "AbortError" ? "Image generation timed out (>2 min). Try Medium/Low quality or a Gemini model." : e.message)
+        : "Generation failed";
+      toast.error(msg);
     } finally {
       setRetrying(false);
     }

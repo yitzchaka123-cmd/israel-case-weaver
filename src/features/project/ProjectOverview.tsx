@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { ImageModelPicker, getStoredImageModel } from "@/components/ImageModelPicker";
+import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { PromptPanel } from "@/components/PromptPanel";
 
 const MYSTERY_TYPES = [
@@ -98,22 +98,30 @@ export function ProjectOverview({ project }: { project: any }) {
     }
     setGenCover(true);
     const t = toast.loading("Generating cover…");
+    const ctrl = new AbortController();
+    const timer = window.setTimeout(() => ctrl.abort(), 120_000);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const modelOverride = getStoredImageModel("cover", "chatgpt-image-2");
+      const quality = getStoredImageQuality("cover", "medium");
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-image`, {
         method: "POST",
+        signal: ctrl.signal,
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
-        body: JSON.stringify({ projectId: project.id, prompt: promptToUse, target: "project-cover", modelOverride, aspect: "portrait" }),
+        body: JSON.stringify({ projectId: project.id, prompt: promptToUse, target: "project-cover", modelOverride, aspect: "portrait", quality }),
       });
-      const json = await resp.json();
-      if (!resp.ok) throw new Error(json.error ?? "Failed");
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(json.error ?? `Failed (${resp.status})`);
       setDraft({ ...draft, cover_image_url: json.url });
       setCoverPrompt(promptToUse);
       toast.success("Cover ready", { id: t });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed", { id: t });
+      const msg = e instanceof Error
+        ? (e.name === "AbortError" ? "Image generation timed out (>2 min). Try Medium/Low quality or a Gemini model." : e.message)
+        : "Failed";
+      toast.error(msg, { id: t });
     } finally {
+      window.clearTimeout(timer);
       setGenCover(false);
     }
   };
