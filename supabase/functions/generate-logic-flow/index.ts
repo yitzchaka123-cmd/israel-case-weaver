@@ -12,6 +12,11 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
+// Mirrors assistant-chat / generate-document — see _shared/ai-router.ts for prefix routing.
+//   openai/*        → user's OpenAi key
+//   anthropic/*     → user's ANTHROPIC_API_KEY
+//   gemini-direct/* → user's GEMINI_API_KEY
+//   google/* | else → Lovable AI Gateway
 const PROVIDER_MODEL: Record<string, string> = {
   lovable: "google/gemini-3.1-pro-preview",
   gemini: "google/gemini-2.5-pro",
@@ -22,7 +27,11 @@ const PROVIDER_MODEL: Record<string, string> = {
   "openai-5.2": "openai/gpt-5.2",
   "openai-mini": "openai/gpt-5-mini",
   "openai-nano": "openai/gpt-5-nano",
-  claude: "openai/gpt-5",
+  claude: "anthropic/claude-sonnet-4-5",
+  "claude-opus": "anthropic/claude-opus-4-5",
+  "claude-haiku": "anthropic/claude-haiku-4-5",
+  "gemini-direct-pro": "gemini-direct/gemini-2.5-pro",
+  "gemini-direct-flash": "gemini-direct/gemini-2.5-flash",
 };
 
 const NODE_COLORS: Record<string, string> = {
@@ -134,12 +143,21 @@ Position nodes in a left-to-right flow: clues on the left, deductions middle, so
     });
 
     if (!resp.ok) {
-      const provider = model.startsWith("openai/") ? "OpenAI" : "Lovable AI";
-      if (resp.status === 429) return new Response(JSON.stringify({ error: `Rate limit on ${provider}` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      if (resp.status === 402 || resp.status === 401) return new Response(JSON.stringify({ error: `${provider} credits/key issue (status ${resp.status})` }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      const t = await resp.text();
-      console.error("logic flow gen error", resp.status, t);
-      return new Response(JSON.stringify({ error: `Logic flow generation failed (${provider})` }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const provider = model.startsWith("openai/") ? "OpenAI"
+        : model.startsWith("anthropic/") ? "Anthropic"
+        : model.startsWith("gemini-direct/") ? "Google Gemini"
+        : "Lovable AI";
+      const t = await resp.text().catch(() => "");
+      console.error(`logic-flow ${provider} error`, resp.status, t);
+      if (resp.status === 429) return new Response(JSON.stringify({ error: `${provider} rate limit — try again shortly.` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      if (resp.status === 402) {
+        const hint = provider === "Lovable AI"
+          ? "Add credits in Settings → Workspace → Usage, or switch this project's planning provider in Settings → AI provider routing."
+          : `Check your ${provider} account billing.`;
+        return new Response(JSON.stringify({ error: `${provider} credits/key issue. ${hint}` }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      if (resp.status === 401) return new Response(JSON.stringify({ error: `${provider} authentication failed — check the API key in Settings → API keys.` }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: `${provider} error (status ${resp.status})${t ? ": " + t.slice(0, 200) : ""}` }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     const data = await resp.json();
