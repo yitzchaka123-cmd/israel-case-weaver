@@ -235,6 +235,22 @@ async function executeTool(
       if (error) throw error;
       return { ok: true, message: `Project updated: ${Object.keys(args).join(", ")}` };
     }
+    if (name === "set_solution_summary") {
+      const summary = String((args as { summary?: string }).summary ?? "").trim();
+      const markApproved = Boolean((args as { mark_approved?: boolean }).mark_approved);
+      if (!summary) return { ok: false, message: "summary is required" };
+      const patch: Record<string, unknown> = { solution_summary: summary };
+      if (markApproved) patch.logic_approved_at = new Date().toISOString();
+      const { error } = await supa.from("projects").update(patch).eq("id", projectId);
+      if (error) throw error;
+      const wordCount = summary.split(/\s+/).filter(Boolean).length;
+      return {
+        ok: true,
+        message: markApproved
+          ? `Solution summary saved & logic approved (${wordCount} words). Visible on Case Board.`
+          : `Solution summary saved (${wordCount} words). Visible on Case Board's Solution-summary button.`,
+      };
+    }
     if (name === "add_suspect") {
       const { data, error } = await supa
         .from("suspects")
