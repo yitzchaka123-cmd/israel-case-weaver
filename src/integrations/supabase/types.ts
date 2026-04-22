@@ -363,6 +363,7 @@ export type Database = {
           ai_provider_images: string
           ai_provider_planning: string
           app_logo_url: string | null
+          assistant_tweaks: Json
           avatar_url: string | null
           created_at: string
           display_name: string | null
@@ -376,6 +377,7 @@ export type Database = {
           ai_provider_images?: string
           ai_provider_planning?: string
           app_logo_url?: string | null
+          assistant_tweaks?: Json
           avatar_url?: string | null
           created_at?: string
           display_name?: string | null
@@ -389,6 +391,7 @@ export type Database = {
           ai_provider_images?: string
           ai_provider_planning?: string
           app_logo_url?: string | null
+          assistant_tweaks?: Json
           avatar_url?: string | null
           created_at?: string
           display_name?: string | null
