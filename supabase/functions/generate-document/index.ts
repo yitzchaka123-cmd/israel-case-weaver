@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
     }
 
     if (mode === "image") {
-      const imgPref = (project?.ai_provider_images as string) ?? "nano-banana-2";
+      const imgPref = (imageModelOverride as string) || (project?.ai_provider_images as string) || "nano-banana-2";
       const model = IMAGE_MODEL[imgPref] ?? IMAGE_MODEL["nano-banana-2"];
 
       const designNotes = (doc.design_instructions ?? "").trim();
