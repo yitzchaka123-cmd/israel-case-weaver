@@ -1,7 +1,8 @@
-// Image generation — supports Lovable AI Gateway (Nano Banana / Gemini) AND
-// OpenAI direct (gpt-image-1 / "ChatGPT Image"). Can target media_assets, a
-// suspect thumbnail, or a project cover.
+// Image generation — supports OpenAI direct (gpt-image-*), Google Gemini direct
+// (Nano Banana via GEMINI_API_KEY), and Lovable AI Gateway fallback. Can target
+// media_assets, a suspect thumbnail, or a project cover.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { generateImage, ImageGenError } from "../_shared/ai-router.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,7 +12,6 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OpenAi") ?? Deno.env.get("OPENAI_API_KEY") ?? "";
 
 const IMAGE_MODEL: Record<string, string> = {
