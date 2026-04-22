@@ -146,6 +146,22 @@ export function SettingsPage() {
           </div>
         </Section>
 
+        <Section
+          title="Image-prompt assistant"
+          desc="Global style guide for the AI assistant that drafts image prompts (cover, suspect portraits, document images, media). Applied to every project."
+        >
+          <Textarea
+            rows={8}
+            value={imgAssistantInstructions}
+            onChange={(e) => setImgAssistantInstructions(e.target.value)}
+            placeholder={`e.g. Always cinematic, photo-real, 35mm film grain. Avoid AI-art tropes (oversaturated colors, glossy plastic skin). Prefer single strong focal subject and negative space for title placement. No text or watermarks.`}
+            className="font-mono text-xs leading-relaxed"
+          />
+          <p className="text-[11px] text-muted-foreground mt-2">
+            Per-image writer model can be picked next to each "Generate prompt" button. The AI also reads your project's own image style notes (Overview → image_prompt_instructions) on top of this.
+          </p>
+        </Section>
+
         <Section title="AI provider routing" desc="Choose which provider handles each task. Each prefix routes to its own billing account — see API keys below.">
           <div className="space-y-3 max-w-xl">
             <ProviderRow
