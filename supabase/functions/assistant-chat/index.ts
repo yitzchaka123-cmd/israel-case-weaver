@@ -345,8 +345,20 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Load owner's assistant tweaks (house rules)
+    let tweaks: Tweak[] = [];
+    if (project.owner_id) {
+      const { data: ownerProfile } = await supa
+        .from("profiles")
+        .select("assistant_tweaks")
+        .eq("id", project.owner_id)
+        .maybeSingle();
+      const raw = (ownerProfile as { assistant_tweaks?: unknown } | null)?.assistant_tweaks;
+      if (Array.isArray(raw)) tweaks = raw as Tweak[];
+    }
+
     const model = PROVIDER_MODEL[project.ai_provider_planning ?? "lovable"] ?? PROVIDER_MODEL.lovable;
-    const systemPrompt = buildSystemPrompt(project, suspectCount ?? 0, docCount ?? 0);
+    const systemPrompt = buildSystemPrompt(project, suspectCount ?? 0, docCount ?? 0, tweaks);
 
     // Persist the last user message
     const lastUser = [...messages].reverse().find((m: { role: string }) => m.role === "user");
