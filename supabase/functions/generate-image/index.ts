@@ -24,7 +24,21 @@ Deno.serve(async (req) => {
 
     const supa = createClient(SUPABASE_URL, SERVICE);
 
-    const model = "google/gemini-2.5-flash-image";
+    // Pull project's preferred image model.
+    const { data: project } = await supa
+      .from("projects")
+      .select("ai_provider_images")
+      .eq("id", projectId)
+      .single();
+
+    const IMAGE_MODEL: Record<string, string> = {
+      "nano-banana-2": "google/gemini-3.1-flash-image-preview",
+      "nano-banana-pro": "google/gemini-3-pro-image-preview",
+      "nano-banana": "google/gemini-2.5-flash-image",
+    };
+    const pref = (project?.ai_provider_images as string) ?? "nano-banana-2";
+    const model = IMAGE_MODEL[pref] ?? IMAGE_MODEL["nano-banana-2"];
+
     const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
