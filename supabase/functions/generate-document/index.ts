@@ -21,16 +21,17 @@ const PROVIDER_MODEL: Record<string, string> = {
   claude: "openai/gpt-5", // Claude not on gateway; falls back
 };
 
-// Image models. Default: ChatGPT Image (gpt-image-1) via OpenAI direct API.
+// Image models. Default: ChatGPT Image 2 (gpt-image-2) via OpenAI direct API.
 // Lovable AI gateway models use Gemini family (Nano Banana series).
 const IMAGE_MODEL: Record<string, string> = {
-  "chatgpt-image": "gpt-image-1", // OpenAI direct
+  "chatgpt-image-2": "gpt-image-2", // OpenAI direct — latest (2026-04-21)
+  "chatgpt-image": "gpt-image-1",   // OpenAI direct — previous gen
   "nano-banana-2": "google/gemini-3.1-flash-image-preview",
   "nano-banana-pro": "google/gemini-3-pro-image-preview",
   "nano-banana": "google/gemini-2.5-flash-image",
 };
 
-const OPENAI_IMAGE_KEYS = new Set(["chatgpt-image"]);
+const OPENAI_IMAGE_KEYS = new Set(["chatgpt-image-2", "chatgpt-image"]);
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -88,8 +89,8 @@ Deno.serve(async (req) => {
     }
 
     if (mode === "image") {
-      const imgPref = (imageModelOverride as string) || (project?.ai_provider_images as string) || "chatgpt-image";
-      const model = IMAGE_MODEL[imgPref] ?? IMAGE_MODEL["chatgpt-image"];
+      const imgPref = (imageModelOverride as string) || (project?.ai_provider_images as string) || "chatgpt-image-2";
+      const model = IMAGE_MODEL[imgPref] ?? IMAGE_MODEL["chatgpt-image-2"];
       const useOpenAI = OPENAI_IMAGE_KEYS.has(imgPref);
 
       const designNotes = (doc.design_instructions ?? "").trim();

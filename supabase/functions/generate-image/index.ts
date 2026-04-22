@@ -15,12 +15,13 @@ const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OpenAi") ?? Deno.env.get("OPENAI_API_KEY") ?? "";
 
 const IMAGE_MODEL: Record<string, string> = {
-  "chatgpt-image": "gpt-image-1", // OpenAI direct
+  "chatgpt-image-2": "gpt-image-2", // OpenAI direct — latest (2026-04-21)
+  "chatgpt-image": "gpt-image-1",   // OpenAI direct — previous gen
   "nano-banana-2": "google/gemini-3.1-flash-image-preview",
   "nano-banana-pro": "google/gemini-3-pro-image-preview",
   "nano-banana": "google/gemini-2.5-flash-image",
 };
-const OPENAI_KEYS = new Set(["chatgpt-image"]);
+const OPENAI_KEYS = new Set(["chatgpt-image-2", "chatgpt-image"]);
 
 // target = "media" (default, inserts media_assets row)
 //        | "suspect-thumbnail" | "suspect-alt-thumbnail"  (updates suspects row)

@@ -2,7 +2,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useEffect, useState } from "react";
 
 export const IMAGE_MODELS = [
-  { value: "chatgpt-image", label: "ChatGPT Image (gpt-image-1)" },
+  { value: "chatgpt-image-2", label: "ChatGPT Image 2 (gpt-image-2) — latest" },
+  { value: "chatgpt-image", label: "ChatGPT Image 1 (gpt-image-1)" },
   { value: "nano-banana-2", label: "Nano Banana 2 — fast" },
   { value: "nano-banana-pro", label: "Nano Banana Pro — top quality" },
   { value: "nano-banana", label: "Nano Banana (classic)" },

@@ -83,7 +83,7 @@ export function ProjectOverview({ project }: { project: any }) {
     const t = toast.loading("Generating cover…");
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const modelOverride = getStoredImageModel("cover", "chatgpt-image");
+      const modelOverride = getStoredImageModel("cover", "chatgpt-image-2");
       const prompt = `Premium printable BOX-COVER artwork for an Israeli mystery / detective board game. Cinematic, evocative, painterly photo-real style. Strong central focal subject, dramatic lighting, period-accurate. Composition leaves space at the top for a future title treatment. 3:4 portrait. NO text, NO logos, NO watermarks — pure illustration only. Brief: ${desc}.`;
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-image`, {
         method: "POST",
@@ -206,7 +206,7 @@ export function ProjectOverview({ project }: { project: any }) {
           </div>
           <input ref={fileInput} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadCover(e.target.files[0])} />
           <div className="mt-3 space-y-2">
-            <ImageModelPicker surface="cover" defaultModel="chatgpt-image" className="w-full" />
+            <ImageModelPicker surface="cover" defaultModel="chatgpt-image-2" className="w-full" />
             <Button className="w-full gap-2" onClick={generateCover} disabled={genCover}>
               {genCover ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
               Generate cover with AI
