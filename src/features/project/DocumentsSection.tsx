@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, FileText, Trash2, Upload } from "lucide-react";
+import { Plus, FileText, Trash2, Upload, Wand2, Image as ImageIcon, Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -121,6 +121,8 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
 
 function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
   const [draft, setDraft] = useState<Doc | null>(doc);
+  const [genText, setGenText] = useState(false);
+  const [genImage, setGenImage] = useState(false);
   const saveTimer = useRef<number | undefined>(undefined);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -149,6 +151,39 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
     await supabase.from("documents").update({ uploaded_asset_url: data.publicUrl, active_version: "uploaded" }).eq("id", doc.id);
     setDraft({ ...draft, uploaded_asset_url: data.publicUrl, active_version: "uploaded" });
     toast.success("Replacement uploaded");
+  };
+
+  const generate = async (mode: "text" | "image") => {
+    const setter = mode === "text" ? setGenText : setGenImage;
+    setter(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-document`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({ documentId: doc.id, mode }),
+      });
+      if (!resp.ok) {
+        const e = await resp.json().catch(() => ({ error: "Failed" }));
+        if (resp.status === 429) toast.error("Rate limit — try again in a moment.");
+        else if (resp.status === 402) toast.error("Out of AI credits.");
+        else toast.error(e.error ?? "Generation failed");
+        return;
+      }
+      const data = await resp.json();
+      if (mode === "text" && data.hebrew_content) {
+        setDraft((d) => d ? { ...d, hebrew_content: data.hebrew_content, status: "review" } : d);
+      }
+      if (mode === "image" && data.url) {
+        setDraft((d) => d ? { ...d, generated_asset_url: data.url, active_version: "generated", status: "review" } : d);
+      }
+      toast.success(`${mode === "text" ? "Hebrew content" : "Document image"} generated`);
+    } finally {
+      setter(false);
+    }
   };
 
   const remove = async () => {
@@ -194,21 +229,40 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
           </div>
           <div className="md:col-span-2">
             <FieldBlock label="Hebrew content" dir="rtl">
+              <div className="flex gap-2 mb-2" dir="ltr">
+                <Button size="sm" variant="outline" className="gap-2" onClick={() => generate("text")} disabled={genText}>
+                  {genText ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+                  Generate Hebrew content
+                </Button>
+                <Button size="sm" variant="outline" className="gap-2" onClick={() => generate("image")} disabled={genImage}>
+                  {genImage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
+                  Generate document image
+                </Button>
+              </div>
               <Textarea rows={6} value={draft.hebrew_content ?? ""} onChange={(e) => update({ hebrew_content: e.target.value })} dir="rtl" className="text-right" />
             </FieldBlock>
           </div>
+          {draft.generated_asset_url && (
+            <div className="md:col-span-2">
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Generated document image</Label>
+              <img src={draft.generated_asset_url} alt="" className="mt-2 rounded-lg border w-full max-h-96 object-contain bg-muted" />
+            </div>
+          )}
           <div className="md:col-span-2 border-t pt-4">
             <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Final asset</Label>
-            <div className="mt-2 flex gap-2">
+            <div className="mt-2 flex gap-2 items-center">
               <input ref={fileInput} type="file" className="hidden" onChange={(e) => e.target.files?.[0] && uploadReplacement(e.target.files[0])} />
               <Button variant="outline" className="gap-2" onClick={() => fileInput.current?.click()}>
                 <Upload className="h-4 w-4" /> Upload final file
               </Button>
               {draft.uploaded_asset_url && (
-                <a href={draft.uploaded_asset_url} target="_blank" rel="noreferrer" className="text-sm text-accent underline self-center">
-                  View current file
+                <a href={draft.uploaded_asset_url} target="_blank" rel="noreferrer" className="text-sm text-accent underline">
+                  View uploaded file
                 </a>
               )}
+              <span className="ml-auto text-[11px] text-muted-foreground uppercase tracking-widest">
+                Active: {draft.active_version}
+              </span>
             </div>
           </div>
         </div>
