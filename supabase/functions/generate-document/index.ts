@@ -73,9 +73,16 @@ Deno.serve(async (req) => {
       });
 
       if (!resp.ok) {
-        if (resp.status === 429) return new Response(JSON.stringify({ error: "Rate limit" }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        if (resp.status === 402) return new Response(JSON.stringify({ error: "Out of credits" }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        return new Response(JSON.stringify({ error: "Generation failed" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        const provider = model.startsWith("openai/") ? "OpenAI"
+          : model.startsWith("anthropic/") ? "Anthropic"
+          : model.startsWith("gemini-direct/") ? "Google Gemini"
+          : "Lovable AI";
+        const t = await resp.text().catch(() => "");
+        console.error(`${provider} text error`, resp.status, t);
+        if (resp.status === 429) return new Response(JSON.stringify({ error: `${provider} rate limit` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        if (resp.status === 402) return new Response(JSON.stringify({ error: `${provider} credits/key issue` }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        if (resp.status === 401) return new Response(JSON.stringify({ error: `${provider} auth failed — check Settings → API keys` }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ error: `${provider} error (${resp.status})` }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       const data = await resp.json();
       const hebrew = data.choices?.[0]?.message?.content ?? "";
