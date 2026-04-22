@@ -263,14 +263,20 @@ Deno.serve(async (req) => {
     ];
     const executedTools: Array<{ name: string; result: unknown }> = [];
 
-    for (let round = 0; round < 4; round++) {
+    const MAX_ROUNDS = 8;
+    for (let round = 0; round < MAX_ROUNDS; round++) {
+      // On the final round, drop tools so the model MUST produce a text answer.
+      const isFinalRound = round === MAX_ROUNDS - 1;
+      const body: Record<string, unknown> = { model, messages: convo, stream: false };
+      if (!isFinalRound) body.tools = TOOLS;
+
       const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${LOVABLE_API_KEY}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ model, messages: convo, tools: TOOLS, stream: false }),
+        body: JSON.stringify(body),
       });
 
       if (!resp.ok) {
