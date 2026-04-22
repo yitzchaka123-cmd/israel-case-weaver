@@ -9,6 +9,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Upload, Wand2, Loader2, Trash2, Image as ImageIcon, Video, Film, Newspaper, Package, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
+import { ImageModelPicker, getStoredImageModel } from "@/components/ImageModelPicker";
 
 interface MediaAsset {
   id: string;

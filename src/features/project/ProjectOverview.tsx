@@ -4,9 +4,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload } from "lucide-react";
+import { Upload, Wand2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { ImageModelPicker, getStoredImageModel } from "@/components/ImageModelPicker";
 
 const MYSTERY_TYPES = [
   "Espionage / Intelligence",
@@ -170,9 +171,16 @@ export function ProjectOverview({ project }: { project: any }) {
             )}
           </div>
           <input ref={fileInput} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadCover(e.target.files[0])} />
-          <Button variant="outline" className="w-full mt-3" onClick={() => fileInput.current?.click()}>
-            {draft.cover_image_url ? "Replace cover" : "Upload cover"}
-          </Button>
+          <div className="mt-3 space-y-2">
+            <ImageModelPicker surface="cover" defaultModel="chatgpt-image" className="w-full" />
+            <Button className="w-full gap-2" onClick={generateCover} disabled={genCover}>
+              {genCover ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+              Generate cover with AI
+            </Button>
+            <Button variant="outline" className="w-full" onClick={() => fileInput.current?.click()}>
+              {draft.cover_image_url ? "Replace cover" : "Upload cover"}
+            </Button>
+          </div>
           <p className="text-xs text-muted-foreground mt-2">
             The cover becomes your dashboard thumbnail.
           </p>
