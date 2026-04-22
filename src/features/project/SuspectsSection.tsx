@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, Upload, Trash2, UserCircle2, Loader2 } from "lucide-react";
+import { Plus, Upload, Trash2, UserCircle2 } from "lucide-react";
 import { useRef, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { ImageModelPicker, getStoredImageModel } from "@/components/ImageModelPicker";
