@@ -417,6 +417,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
         <ReactFlow
           nodes={nodes}
           edges={edges}
+          nodeTypes={caseNodeTypes}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
@@ -430,7 +431,17 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
           }}
         >
           <Background gap={24} size={1} color="var(--color-border)" />
-          <MiniMap pannable zoomable />
+          <MiniMap
+            pannable
+            zoomable
+            maskColor="color-mix(in oklab, var(--color-background) 70%, transparent)"
+            nodeColor={(n) => {
+              const t = (n.data as { type?: string } | undefined)?.type;
+              return getNodeMeta(t).accent;
+            }}
+            nodeStrokeWidth={2}
+            nodeBorderRadius={6}
+          />
           <Controls />
         </ReactFlow>
       </div>
