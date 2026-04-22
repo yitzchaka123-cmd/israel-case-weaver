@@ -164,6 +164,13 @@ export function SettingsPage() {
           </p>
         </Section>
 
+        <Section
+          title="Assistant tweaks"
+          desc="Your house rules for the main game-building Assistant. Talk to the mini-assistant in plain English to add, edit or remove rules — they're injected into every project's Assistant prompt as USER OVERRIDES."
+        >
+          <AssistantTweaksPanel />
+        </Section>
+
         <Section title="AI provider routing" desc="Choose which provider handles each task. Each prefix routes to its own billing account — see API keys below.">
           <div className="space-y-3 max-w-xl">
             <ProviderRow
