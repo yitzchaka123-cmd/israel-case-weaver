@@ -190,10 +190,7 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
   const [draft, setDraft] = useState<Doc | null>(doc);
   const [genText, setGenText] = useState(false);
   const [genImage, setGenImage] = useState(false);
-  const [draft, setDraft] = useState<Doc | null>(doc);
-  const [genText, setGenText] = useState(false);
-  const [genImage, setGenImage] = useState(false);
-  const [imageModel, setImageModel] = useState<string>("chatgpt-image");
+  const [imageModel, setImageModel] = useState<string>(getStoredImageModel("document", "chatgpt-image"));
   const saveTimer = useRef<number | undefined>(undefined);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -372,12 +369,15 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
                   Generate Hebrew content
                 </Button>
                 <div className="flex items-center gap-1.5 ml-auto">
-                  <Select value={imageModel} onValueChange={setImageModel}>
-                    <SelectTrigger className="h-8 text-xs w-[260px]"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {IMAGE_MODELS.map((m) => <SelectItem key={m.value} value={m.value} className="text-xs">{m.label}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <ImageModelPicker
+                    surface="document"
+                    defaultModel="chatgpt-image"
+                  />
+                  <Button size="sm" variant="outline" className="gap-2" onClick={() => { setImageModel(getStoredImageModel("document", "chatgpt-image")); generate("image"); }} disabled={genImage}>
+                    {genImage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
+                    Generate document image
+                  </Button>
+                </div>
                   <Button size="sm" variant="outline" className="gap-2" onClick={() => generate("image")} disabled={genImage}>
                     {genImage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
                     Generate document image
