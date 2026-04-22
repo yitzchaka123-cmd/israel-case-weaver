@@ -11,6 +11,10 @@ import { SuspectsSection } from "./SuspectsSection";
 import { DocumentsSection } from "./DocumentsSection";
 import { CanvasSection } from "./CanvasSection";
 import { AssistantSection } from "./AssistantSection";
+import { EnvelopesSection } from "./EnvelopesSection";
+import { HintsSection } from "./HintsSection";
+import { MediaSection } from "./MediaSection";
+import { ExportMenu } from "./ExportMenu";
 
 export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
@@ -82,6 +86,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
             <span className="hidden md:inline text-xs text-muted-foreground capitalize px-2.5 py-1 rounded-md bg-muted">
               Phase · {project.phase}
             </span>
+            <ExportMenu projectId={projectId} />
             <Button size="icon" variant="ghost" onClick={deleteProject} className="text-muted-foreground hover:text-destructive">
               <Trash2 className="h-4 w-4" />
             </Button>
