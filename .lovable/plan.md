@@ -1,53 +1,54 @@
 
 
-## Fix OpenAI `gpt-image-2` image generation
+## Fix the "Lovable AI credits" error on Nano Banana
 
-### Root cause (from the docs + the code)
+### What's happening
 
-I pulled the latest OpenAI Image API docs and compared them to `supabase/functions/generate-image/index.ts`:
+When you pick a Nano Banana model and generate an image, the request goes through the Lovable AI Gateway (because `GEMINI_API_KEY` isn't set as a secret — only `LOVABLE_API_KEY` and `OpenAi` are). The gateway then returns **402 Payment Required** because your workspace's monthly Lovable AI credits are exhausted, and the edge function surfaces that as the generic "credits/key issue" toast you're seeing.
 
-1. **`gpt-image-2` is real** — it is OpenAI's current flagship image model. The model name in the code is correct.
-2. **The size/quality params are valid** — `1024x1024`, `1024x1536`, `1536x1024` and `quality: "high"` are all officially supported.
-3. **The actual problem is latency.** The OpenAI docs explicitly say *"Complex prompts may take up to **2 minutes** to process"* for `gpt-image-2`, and at `quality: "high"` (what we pass today) it routinely takes **60–120 seconds**. Our edge function awaits the whole call, so the request gets killed by the platform's edge-function timeout long before OpenAI returns — surfacing as the runtime error you saw (`has_blank_screen: true`, no logs because the function was killed mid-flight, not because it threw).
-4. Two smaller issues hidden behind the timeout:
-   - `quality: "high"` is hardcoded — even drafts pay the worst-case latency.
-   - There's no client-side timeout / abort, so the browser also hangs and you see a blank screen instead of an error toast.
+So this isn't a bug in the call — it's a real "out of credits" signal. What's broken is:
 
-### What I'll change
+1. The error message is vague — it doesn't tell you *which* credits ran out or what to do.
+2. There's no path to use Google's API directly to bypass the gateway entirely (which would solve it permanently).
+3. There's no automatic fallback when one Nano Banana variant 402s.
 
-**1. `supabase/functions/generate-image/index.ts` — actually call the API the way the docs recommend, and survive long waits**
+### The plan
 
-- **Lower default quality**: switch `quality` from hardcoded `"high"` to **`"medium"`** for `gpt-image-2` (huge latency win, still excellent — docs say medium is the sweet spot). High stays available via an explicit override.
-- **Output format = `jpeg` with `output_compression: 90`**: docs explicitly say *"Using jpeg is faster than png, so you should prioritize this format if latency is a concern."* This alone shaves a large chunk off both generation time and upload time.
-- **Add explicit `AbortController` with a 110 s timeout** on the OpenAI fetch, and translate timeouts into a clean 504 response so the UI can show a real error instead of a blank screen.
-- **Add `n: 1` and the `moderation: "auto"` fields explicitly** (matches the documented schema; some routes 400 without them on edge runtimes).
-- **Stream-friendly small fix**: extend the `Access-Control-Allow-Headers` list to include `prefer` and the OpenAI org headers we may need later.
-- **Better verification-error surfacing**: keep the existing "verify your org" message but also forward OpenAI's `request_id` so support tickets are traceable.
-- **Update the model registry comment** to match the docs (`gpt-image-2` = current flagship, `gpt-image-1.5` available, `gpt-image-1` legacy, `gpt-image-1-mini` cheap option). No new keys exposed in the picker yet — just accurate comments.
+**1. Make the error message actionable** (`supabase/functions/generate-image/index.ts`)
 
-**2. `src/components/ImageModelPicker.tsx` (and any model-picker call sites) — let the user pick quality**
+Replace the current 402 branch with a clear, specific message:
+> *"Your Lovable AI workspace is out of credits for this month. Top up at Settings → Workspace → Usage in Lovable, switch to ChatGPT Image (uses your OpenAI key directly), or add a Google `GEMINI_API_KEY` in backend secrets to call Nano Banana directly and bypass the gateway."*
 
-- Add a small **Quality** dropdown next to the OpenAI model picker (`Low / Medium / High`, default Medium). Pass the choice to the edge function as `quality` in the request body. When the user picks High we show an inline note: *"Up to 2 min — may time out on very long prompts."*
+Surface the gateway's raw error body too so you can see exactly which limit hit.
 
-**3. Frontend timeout + clear error UX**
+**2. Add a "Google Gemini API key" field in Settings → API keys** (`src/features/settings/ApiKeyManager.tsx` + `supabase/functions/api-key-manager/index.ts`)
 
-- Wrap every `callEdge("generate-image", …)` call in `MediaSection.tsx`, `SuspectsSection.tsx`, and `ProjectOverview.tsx` (cover) with a 120 s `AbortController` and a `toast.error` on timeout/non-2xx that surfaces the server's `error` message verbatim. Today some of these silently spin forever.
+You already have a manager for OpenAI keys. Add a parallel field for `GEMINI_API_KEY`. Once you paste a Google AI Studio key, every Nano Banana call automatically routes direct to Google (the router code in `_shared/ai-router.ts` already prefers `GEMINI_API_KEY` when present — no router changes needed). This is the real fix: it permanently removes the dependency on Lovable AI credits for image generation.
 
-### Why not a queue?
+**3. Auto-fallback inside `generate-image`** when the gateway returns 402
 
-The Lovable Cloud edge timeout is generous enough for `quality: "medium"` `gpt-image-2` (~20–40 s typical). A full job-queue rewrite would be overkill — switching to medium + jpeg + a real abort/timeout solves the actual failure mode without any schema changes. We can revisit a queue later if you ever need consistent `quality: "high"` 2K renders.
+If a Nano Banana request hits 402 on the Lovable gateway and `GEMINI_API_KEY` isn't set, automatically try **`google/gemini-2.5-flash-image`** (the cheapest variant) once before failing — sometimes only the Pro/preview models are gated. If that also 402s, return the actionable message above.
+
+**4. Frontend: show the actionable message verbatim**
+
+`MediaSection.tsx`, `SuspectsSection.tsx`, and `ProjectOverview.tsx` already toast the server's `error` field — once step 1 is done these will read correctly with no UI changes needed. Just verify the toasts have enough room (use `toast.error(..., { duration: 10000 })` so you can read the link).
+
+**5. Tiny model-picker hint** (`src/components/ImageModelPicker.tsx`)
+
+Under the Nano Banana options, add a one-line muted helper: *"Uses Lovable AI credits unless a Google API key is set in Settings."* So the credit dependency is visible **before** you hit Generate.
 
 ### Files to change
 
-- `supabase/functions/generate-image/index.ts` — quality default, jpeg output, AbortController, better error mapping.
-- `src/components/ImageModelPicker.tsx` — quality dropdown + helper export.
-- `src/features/project/MediaSection.tsx` — pass quality, frontend timeout + toast on failure.
-- `src/features/project/SuspectsSection.tsx` — pass quality, frontend timeout + toast on failure.
-- `src/features/project/ProjectOverview.tsx` (cover generation flow) — same.
+- `supabase/functions/generate-image/index.ts` — better 402 message + auto-fallback to cheapest Nano Banana
+- `supabase/functions/api-key-manager/index.ts` — accept/store `GEMINI_API_KEY`
+- `src/features/settings/ApiKeyManager.tsx` — UI field for the Google key
+- `src/components/ImageModelPicker.tsx` — credit-source hint under Nano Banana
+- `src/features/project/MediaSection.tsx`, `SuspectsSection.tsx`, `ProjectOverview.tsx` — bump toast duration to 10 s so the actionable message is readable
 
 ### Acceptance check
 
-1. Pick **ChatGPT Image 2** in the model picker → leave quality on **Medium** → generate a cover → image appears within ~30 s, no blank screen.
-2. Switch to **High** → see the latency warning → generation succeeds within ~90 s or you get a clear toast *"OpenAI took too long — try Medium quality."* — never a silent blank screen.
-3. If your OpenAI org isn't verified, the toast clearly says so with the verification link (already in code, kept intact).
+1. Without a Google key set: Nano Banana → clear toast naming Lovable AI credits + 3 concrete fixes.
+2. Add Google key in Settings → re-run Nano Banana → image generates with no Lovable AI involvement.
+3. Remove the key + try Pro variant → auto-falls back to Flash variant once before erroring.
+4. Picker shows the credit-source hint under Nano Banana options.
 
