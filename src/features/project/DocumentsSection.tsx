@@ -313,7 +313,7 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
             Document <span className="text-muted-foreground font-mono text-lg">#{draft.doc_number}</span>
           </DialogTitle>
         </DialogHeader>
-        <div className="grid md:grid-cols-2 gap-4 max-h-[65vh] overflow-y-auto pr-2">
+        <div className="grid md:grid-cols-2 gap-4 max-h-[78vh] overflow-y-auto pr-2">
           <FieldBlock label="Title">
             <Input value={draft.title} onChange={(e) => update({ title: e.target.value })} />
           </FieldBlock>
@@ -337,16 +337,33 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
           </FieldBlock>
           <div className="md:col-span-2">
             <FieldBlock label="Design / graphic instructions">
+              <div className="flex items-center justify-between mb-1.5 gap-2">
+                <p className="text-[11px] text-muted-foreground">
+                  Structure beats brevity. Include GOAL, FORMAT, VISUAL STYLE, LAYOUT, TYPOGRAPHY, EXACT HEBREW TEXT, AUTHENTICITY rules.
+                </p>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-[10px] text-muted-foreground tabular-nums">
+                    {(draft.design_instructions ?? "").length.toLocaleString()} chars
+                  </span>
+                  {!draft.design_instructions && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-[11px]"
+                      onClick={() => update({ design_instructions: DESIGN_PLACEHOLDER })}
+                    >
+                      Insert template
+                    </Button>
+                  )}
+                </div>
+              </div>
               <Textarea
-                rows={10}
+                rows={28}
                 value={draft.design_instructions ?? ""}
                 onChange={(e) => update({ design_instructions: e.target.value })}
                 placeholder={DESIGN_PLACEHOLDER}
-                className="font-mono text-xs leading-relaxed"
+                className="font-mono text-xs leading-relaxed min-h-[520px] resize-y"
               />
-              <p className="text-[11px] text-muted-foreground mt-1.5">
-                Tip: structure beats brevity. Include GOAL, FORMAT, VISUAL STYLE, LAYOUT, TYPOGRAPHY, EXACT HEBREW TEXT, and AUTHENTICITY rules — like the placeholder above.
-              </p>
             </FieldBlock>
           </div>
           <div className="md:col-span-2">
