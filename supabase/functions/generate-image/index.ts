@@ -29,6 +29,52 @@ const IMAGE_MODEL: Record<string, string> = {
 };
 const OPENAI_KEYS = new Set(["chatgpt-image-2", "chatgpt-image"]);
 
+// Build an actionable error response for image-gen failures coming from the
+// Lovable AI Gateway or direct Google Gemini. Surfaces 3 concrete fixes when
+// credits are exhausted so the user knows exactly what to do next.
+function handleImageGenError(e: unknown, headers: Record<string, string>): Response {
+  if (e instanceof ImageGenError) {
+    const provider = e.provider === "gemini-direct" ? "Google Gemini" : "Lovable AI";
+    console.error(`${provider} image error`, e.status, e.message);
+
+    // Try to extract the gateway's raw error body for transparency.
+    let raw = "";
+    const m = e.message.match(/:\s*(\{.*\}|.+)$/);
+    if (m) raw = m[1].slice(0, 300);
+
+    if (e.status === 429) {
+      return new Response(
+        JSON.stringify({ error: `${provider} rate limit — wait a moment and try again. ${raw}` }),
+        { status: 429, headers: { ...headers, "Content-Type": "application/json" } },
+      );
+    }
+    if (e.status === 402) {
+      const msg = e.provider === "lovable-ai"
+        ? `Your Lovable AI workspace is out of credits for this month. Three ways to fix it: ` +
+          `(1) top up at Settings → Workspace → Usage in Lovable, ` +
+          `(2) switch to "ChatGPT Image" in the model picker (uses your OpenAI key directly, no Lovable credits), ` +
+          `(3) add a Google GEMINI_API_KEY in Settings → API keys to call Nano Banana directly and bypass the gateway entirely. ` +
+          `(Gateway said: ${raw || "402 Payment Required"})`
+        : `Google Gemini billing issue — check that billing is enabled for your Google AI Studio key. ${raw}`;
+      return new Response(
+        JSON.stringify({ error: msg }),
+        { status: 402, headers: { ...headers, "Content-Type": "application/json" } },
+      );
+    }
+    if (e.status === 401 || e.status === 403) {
+      return new Response(
+        JSON.stringify({ error: `${provider} auth failed — check the API key in Settings → API keys. ${raw}` }),
+        { status: e.status, headers: { ...headers, "Content-Type": "application/json" } },
+      );
+    }
+    return new Response(
+      JSON.stringify({ error: `${provider} image generation failed (${e.status}). ${raw}` }),
+      { status: 500, headers: { ...headers, "Content-Type": "application/json" } },
+    );
+  }
+  throw e;
+}
+
 // target = "media" (default, inserts media_assets row)
 //        | "suspect-thumbnail" | "suspect-alt-thumbnail"  (updates suspects row)
 //        | "project-cover" (updates projects.cover_image_url)
@@ -161,20 +207,37 @@ Deno.serve(async (req) => {
       bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
       mime = "image/jpeg";
     } else {
+      const hasGeminiDirect = !!Deno.env.get("GEMINI_API_KEY");
+      const FALLBACK_MODEL = "google/gemini-2.5-flash-image";
+      const tryGenerate = async (m: string) => generateImage({ prompt: finalPrompt, model: m });
+
       try {
-        const result = await generateImage({ prompt: finalPrompt, model });
+        const result = await tryGenerate(model);
         bytes = result.bytes;
         mime = result.mime;
       } catch (e) {
-        if (e instanceof ImageGenError) {
-          const provider = e.provider === "gemini-direct" ? "Google Gemini" : "Lovable AI";
-          console.error(`${provider} image error`, e.status, e.message);
-          if (e.status === 429) return new Response(JSON.stringify({ error: `${provider} rate limit` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-          if (e.status === 402) return new Response(JSON.stringify({ error: `${provider} credits/key issue` }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-          if (e.status === 401 || e.status === 403) return new Response(JSON.stringify({ error: `${provider} auth failed — check Settings → API keys` }), { status: e.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-          return new Response(JSON.stringify({ error: `${provider} image generation failed` }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        // Auto-fallback: if we hit 402 on the Lovable gateway with a Pro/preview
+        // Nano Banana model and we don't have a direct Google key, try the
+        // cheapest variant once before erroring.
+        const canFallback =
+          e instanceof ImageGenError &&
+          e.status === 402 &&
+          e.provider === "lovable-ai" &&
+          !hasGeminiDirect &&
+          model !== FALLBACK_MODEL;
+
+        if (canFallback) {
+          console.warn(`gateway 402 on ${model} — falling back to ${FALLBACK_MODEL}`);
+          try {
+            const result = await tryGenerate(FALLBACK_MODEL);
+            bytes = result.bytes;
+            mime = result.mime;
+          } catch (e2) {
+            return handleImageGenError(e2, corsHeaders);
+          }
+        } else {
+          return handleImageGenError(e, corsHeaders);
         }
-        throw e;
       }
     }
 
