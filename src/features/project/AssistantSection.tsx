@@ -374,6 +374,8 @@ function destinationFor(toolName: string): { tab: string; label: string } | null
     case "add_canvas_edge":
     case "update_canvas_node":
       return { tab: "canvas", label: "Open in Case Board" };
+    case "set_solution_summary":
+      return { tab: "canvas", label: "Open Solution summary on Case Board" };
     case "generate_image":
     case "add_media":
       return { tab: "media", label: "Open in Media" };
