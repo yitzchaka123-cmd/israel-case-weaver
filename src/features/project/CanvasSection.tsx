@@ -13,6 +13,19 @@ import { Plus, Wand2, CheckCircle2, Loader2, ScrollText } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+const LOGIC_FLOW_MODELS = [
+  { value: "lovable", label: "Gemini 3.1 Pro (default)" },
+  { value: "gemini", label: "Gemini 2.5 Pro" },
+  { value: "gemini-flash", label: "Gemini 2.5 Flash (fast)" },
+  { value: "gemini-flash-lite", label: "Gemini 2.5 Flash Lite (fastest)" },
+  { value: "openai-5.2", label: "ChatGPT 5.2 (latest)" },
+  { value: "openai", label: "ChatGPT 5" },
+  { value: "openai-mini", label: "ChatGPT 5 mini" },
+  { value: "openai-nano", label: "ChatGPT 5 nano" },
+];
+const LOGIC_FLOW_MODEL_KEY = "logic-flow-model";
 
 type Board = "logic" | "final";
 
