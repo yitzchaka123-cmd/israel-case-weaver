@@ -353,21 +353,7 @@ function MessageBubble({ msg }: { msg: Msg }) {
         <div className="prose prose-sm max-w-none dark:prose-invert whitespace-pre-wrap leading-relaxed text-[14.5px]">
           {msg.content}
         </div>
-        {tools.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            {tools.map((t, i) => (
-              <Badge
-                key={i}
-                variant="outline"
-                className={`text-[10px] font-medium ${
-                  t.result.ok ? "border-accent/30 text-accent-foreground bg-accent/10" : "border-destructive/30 text-destructive bg-destructive/5"
-                }`}
-              >
-                {t.result.ok ? "✓" : "✗"} {t.name.replace(/_/g, " ")}
-              </Badge>
-            ))}
-          </div>
-        )}
+        {tools.length > 0 && <ToolReceipts tools={tools} />}
       </div>
     </div>
   );
