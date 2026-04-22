@@ -244,6 +244,46 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
     onClose();
   };
 
+  const saveAsPdf = async () => {
+    const url = draft.generated_asset_url;
+    if (!url) return;
+    toast.loading("Building PDF…", { id: "pdf" });
+    try {
+      const blob = await (await fetch(url)).blob();
+      const dataUrl: string = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result as string);
+        r.onerror = rej;
+        r.readAsDataURL(blob);
+      });
+      const img = new Image();
+      img.src = dataUrl;
+      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+
+      const sizeMap: Record<string, [number, number]> = {
+        A3: [297, 420], A4: [210, 297], A5: [148, 210], A6: [105, 148],
+        "Business card": [85, 55],
+      };
+      const [pw, ph] = sizeMap[draft.print_size ?? "A4"] ?? [210, 297];
+      const orientation = pw > ph ? "landscape" : "portrait";
+      const pdf = new jsPDF({ orientation, unit: "mm", format: [pw, ph] });
+
+      // Fit image with letterboxing
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const ratio = Math.min(pageW / img.width, pageH / img.height);
+      const w = img.width * ratio;
+      const h = img.height * ratio;
+      const x = (pageW - w) / 2;
+      const y = (pageH - h) / 2;
+      pdf.addImage(dataUrl, "PNG", x, y, w, h);
+      pdf.save(`${(draft.title || "document").replace(/[^\p{L}\p{N}_\- ]+/gu, "_")}.pdf`);
+      toast.success("PDF saved", { id: "pdf" });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "PDF failed", { id: "pdf" });
+    }
+  };
+
   return (
     <Dialog open={!!doc} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-3xl">
