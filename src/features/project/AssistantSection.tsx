@@ -239,6 +239,11 @@ export function AssistantSection({ projectId, phase }: { projectId: string; phas
               </SelectContent>
             </Select>
           </div>
+          <PromptInstructionsPopover
+            imageInstructions={project?.image_prompt_instructions ?? ""}
+            videoInstructions={project?.video_prompt_instructions ?? ""}
+            onSave={(patch) => setProjectAi(patch)}
+          />
         </div>
         <div ref={scrollRef} className="flex-1 overflow-auto">
           <div className="max-w-3xl mx-auto px-6 py-8 space-y-6">
