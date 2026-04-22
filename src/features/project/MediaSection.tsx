@@ -429,17 +429,20 @@ function AssetDialog({
               <FileText className="h-3 w-3" /> Prompt — edit and retry
             </Label>
             {isImageAsset && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1.5 text-xs"
-                onClick={handleRegeneratePrompt}
-                disabled={regenPrompt}
-              >
-                {regenPrompt ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                Revise prompt with AI
-              </Button>
+              <div className="flex items-center gap-1.5">
+                <PromptWriterModelPicker surface="media" />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1.5 text-xs"
+                  onClick={handleRegeneratePrompt}
+                  disabled={regenPrompt}
+                >
+                  {regenPrompt ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                  Revise prompt with AI
+                </Button>
+              </div>
             )}
           </div>
           <Textarea
