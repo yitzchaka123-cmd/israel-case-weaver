@@ -88,8 +88,9 @@ Deno.serve(async (req) => {
     }
 
     if (mode === "image") {
-      const imgPref = (imageModelOverride as string) || (project?.ai_provider_images as string) || "nano-banana-2";
-      const model = IMAGE_MODEL[imgPref] ?? IMAGE_MODEL["nano-banana-2"];
+      const imgPref = (imageModelOverride as string) || (project?.ai_provider_images as string) || "chatgpt-image";
+      const model = IMAGE_MODEL[imgPref] ?? IMAGE_MODEL["chatgpt-image"];
+      const useOpenAI = OPENAI_IMAGE_KEYS.has(imgPref);
 
       const designNotes = (doc.design_instructions ?? "").trim();
       const hebrewExcerpt = (doc.hebrew_content ?? "").trim().slice(0, 1200);
@@ -121,23 +122,55 @@ Deno.serve(async (req) => {
         `- Output ONE image only. Fill the frame with the document.`,
       ].filter(Boolean).join("\n");
 
-      const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model, messages: [{ role: "user", content: imgPrompt }], modalities: ["image", "text"] }),
-      });
+      let mime = "image/png";
+      let bytes: Uint8Array;
 
-      if (!resp.ok) {
-        if (resp.status === 429) return new Response(JSON.stringify({ error: "Rate limit" }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        if (resp.status === 402) return new Response(JSON.stringify({ error: "Out of credits" }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        return new Response(JSON.stringify({ error: "Image generation failed" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      if (useOpenAI) {
+        if (!OPENAI_API_KEY) {
+          return new Response(JSON.stringify({ error: "OpenAI API key not configured" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        // Map print size → closest gpt-image-1 supported size
+        const ps = (doc.print_size ?? "A4").toLowerCase();
+        const portraitSizes = ["a3", "a4", "a5", "a6"];
+        const size = portraitSizes.includes(ps) ? "1024x1536"
+          : ps === "business card" ? "1536x1024"
+          : "1024x1536";
+        const oResp = await fetch("https://api.openai.com/v1/images/generations", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ model, prompt: imgPrompt, size, quality: "high", n: 1 }),
+        });
+        if (!oResp.ok) {
+          const t = await oResp.text();
+          console.error("openai image error", oResp.status, t);
+          if (oResp.status === 429) return new Response(JSON.stringify({ error: "OpenAI rate limit" }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          return new Response(JSON.stringify({ error: "OpenAI image generation failed" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        const oData = await oResp.json();
+        const b64: string | undefined = oData.data?.[0]?.b64_json;
+        if (!b64) return new Response(JSON.stringify({ error: "No image returned (OpenAI)" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        mime = "image/png";
+      } else {
+        const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ model, messages: [{ role: "user", content: imgPrompt }], modalities: ["image", "text"] }),
+        });
+
+        if (!resp.ok) {
+          if (resp.status === 429) return new Response(JSON.stringify({ error: "Rate limit" }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          if (resp.status === 402) return new Response(JSON.stringify({ error: "Out of credits" }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          return new Response(JSON.stringify({ error: "Image generation failed" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        const data = await resp.json();
+        const imageUrl: string | undefined = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+        const m = imageUrl?.match(/^data:([^;]+);base64,(.*)$/);
+        if (!m) return new Response(JSON.stringify({ error: "No image returned" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        mime = m[1];
+        bytes = Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0));
       }
-      const data = await resp.json();
-      const imageUrl: string | undefined = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-      const m = imageUrl?.match(/^data:([^;]+);base64,(.*)$/);
-      if (!m) return new Response(JSON.stringify({ error: "No image returned" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      const mime = m[1];
-      const bytes = Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0));
+
       const ext = mime.split("/")[1] ?? "png";
       const path = `${doc.project_id}/${documentId}-${Date.now()}.${ext}`;
       await supa.storage.from("documents").upload(path, bytes, { contentType: mime, upsert: true });
