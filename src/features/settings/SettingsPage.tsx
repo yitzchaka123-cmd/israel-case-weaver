@@ -65,20 +65,6 @@ export function SettingsPage() {
     else toast.success("Settings saved");
   };
 
-  const save = async () => {
-    if (!user) return;
-    const { error } = await supabase.from("profiles").upsert({
-      id: user.id,
-      display_name: displayName,
-      app_logo_url: logoUrl,
-      theme,
-      ai_provider_planning: planning,
-      ai_provider_documents: documents,
-      ai_provider_images: images,
-    });
-    if (error) toast.error(error.message);
-    else toast.success("Settings saved");
-  };
 
   const uploadLogo = async (file: File) => {
     if (!user) return;
