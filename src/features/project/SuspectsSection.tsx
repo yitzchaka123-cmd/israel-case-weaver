@@ -107,6 +107,7 @@ export function SuspectsSection({ projectId }: { projectId: string }) {
 
 function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose: () => void }) {
   const [draft, setDraft] = useState<Suspect | null>(suspect);
+  const [generating, setGenerating] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<number | undefined>(undefined);
 
@@ -136,7 +137,6 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
     setDraft({ ...draft, thumbnail_url: data.publicUrl });
   };
 
-  const [generating, setGenerating] = useState(false);
   const generatePortrait = async () => {
     const desc = [
       draft.name && `Name: ${draft.name}`,
@@ -167,7 +167,28 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
   };
 
   const remove = async () => {
-...
+    if (!confirm("Delete this suspect?")) return;
+    await supabase.from("suspects").delete().eq("id", suspect.id);
+    onClose();
+  };
+
+  return (
+    <Dialog open={!!suspect} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="font-display text-2xl">Suspect file</DialogTitle>
+        </DialogHeader>
+        <div className="grid md:grid-cols-[170px_1fr] gap-6">
+          <div>
+            <div className="aspect-[3/4] rounded-xl overflow-hidden border bg-muted">
+              {draft.thumbnail_url ? (
+                <img src={draft.thumbnail_url} alt={draft.name} className="w-full h-full object-cover" />
+              ) : (
+                <div className="h-full flex items-center justify-center">
+                  <UserCircle2 className="h-10 w-10 text-muted-foreground/40" />
+                </div>
+              )}
+            </div>
             <input ref={fileInput} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadThumb(e.target.files[0])} />
             <div className="mt-2 space-y-1.5">
               <ImageModelPicker surface="suspect" defaultModel="nano-banana-2" className="w-full" />
