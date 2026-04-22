@@ -187,21 +187,28 @@ function Section({ title, desc, children }: { title: string; desc?: string; chil
   );
 }
 
+const PROVIDER_LABEL: Record<string, string> = {
+  lovable: "Lovable",
+  openai: "OpenAI",
+  claude: "Claude",
+  "gemini-direct-pro": "Gemini",
+};
+
 function ProviderRow({ label, value, onChange, providers }: { label: string; value: string; onChange: (v: string) => void; providers: string[] }) {
   return (
-    <div className="flex items-center justify-between gap-4">
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
       <div className="text-sm">{label}</div>
-      <div className="flex gap-1 p-1 bg-muted rounded-lg">
+      <div className="flex flex-wrap gap-1 p-1 bg-muted rounded-lg">
         {providers.map((p) => (
           <button
             key={p}
             onClick={() => onChange(p)}
             className={[
-              "px-3 py-1.5 text-xs font-medium rounded-md capitalize transition-colors",
+              "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
               value === p ? "bg-surface shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground",
             ].join(" ")}
           >
-            {p}
+            {PROVIDER_LABEL[p] ?? p}
           </button>
         ))}
       </div>
