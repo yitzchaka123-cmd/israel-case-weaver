@@ -92,6 +92,10 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
   const [generatingFlow, setGeneratingFlow] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [summaryDraft, setSummaryDraft] = useState("");
+  const [logicModel, setLogicModel] = useState<string>(() => {
+    if (typeof window === "undefined") return "lovable";
+    return localStorage.getItem(LOGIC_FLOW_MODEL_KEY) ?? "lovable";
+  });
   const posTimers = useRef<Record<string, number>>({});
 
   useEffect(() => {
