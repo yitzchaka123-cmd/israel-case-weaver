@@ -6,9 +6,60 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, FileText, Trash2, Upload, Wand2, Image as ImageIcon, Loader2 } from "lucide-react";
+import { Plus, FileText, Trash2, Upload, Wand2, Image as ImageIcon, Loader2, FileDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import jsPDF from "jspdf";
+
+const IMAGE_MODELS = [
+  { value: "nano-banana-2", label: "Nano Banana 2 — fast, pro-quality (default)" },
+  { value: "nano-banana-pro", label: "Nano Banana Pro — highest quality, slower" },
+  { value: "nano-banana", label: "Nano Banana (classic)" },
+];
+
+const DESIGN_PLACEHOLDER = `Describe EXACTLY how this document should look. The more specific, the better the result.
+
+Recommended structure (copy + adapt):
+
+GOAL: One fictional in-world prop — e.g. a 1987 "Top Secret" internal letter from the Prime Minister's Office. Cinematic, serious, authentic. Must remain fictional (no real names, emblems, addresses).
+
+CRITICAL TEXT QUALITY:
+- All Hebrew real, fluent, grammatical, RTL.
+- No gibberish, mirrored letters, lorem ipsum.
+- The exact Hebrew below must appear cleanly.
+
+OUTPUT FORMAT:
+- Single A4 portrait page, 2480x3508px, 300 DPI.
+- Flat archival scan, no hands/desk/background.
+
+VISUAL STYLE:
+- Late 1980s Israeli bureaucracy.
+- Off-white aged paper, faint fold marks, mild edge wear.
+- Typewriter-style body, dark red classification stamps.
+- Subtle scan softness, fully legible.
+- Punch-hole marks left margin, faint horizontal fold center.
+
+LAYOUT:
+1. Top center: header lines.
+2. Top right: date, classification, reference number.
+3. Top left: recipient block.
+4. Bold subject line.
+5. 3 formal body paragraphs.
+6. Closing + signature block.
+7. Distribution list + footer code.
+8. Diagonal red stamp "סודי ביותר".
+9. Smaller box stamp "לעיני הנמען בלבד".
+10. Handwritten marginal note.
+
+TYPOGRAPHY:
+- Bold formal Hebrew header.
+- Classic serif/typewriter body.
+- Distressed red ink stamps.
+
+EXACT HEBREW TEXT TO PLACE:
+[paste your full Hebrew block here]
+
+AUTHENTICITY: photocopied 1987 archival memo, NOT modern Canva design.`;
 
 const DOC_TYPES = [
   "Memo", "Interrogation transcript", "Suspect profile", "Map", "Chat log",
@@ -123,6 +174,7 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
   const [draft, setDraft] = useState<Doc | null>(doc);
   const [genText, setGenText] = useState(false);
   const [genImage, setGenImage] = useState(false);
+  const [imageModel, setImageModel] = useState<string>("nano-banana-2");
   const saveTimer = useRef<number | undefined>(undefined);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -164,7 +216,7 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
-        body: JSON.stringify({ documentId: doc.id, mode }),
+        body: JSON.stringify({ documentId: doc.id, mode, imageModelOverride: mode === "image" ? imageModel : undefined }),
       });
       if (!resp.ok) {
         const e = await resp.json().catch(() => ({ error: "Failed" }));
@@ -190,6 +242,46 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
     if (!confirm("Delete this document?")) return;
     await supabase.from("documents").delete().eq("id", doc.id);
     onClose();
+  };
+
+  const saveAsPdf = async () => {
+    const url = draft.generated_asset_url;
+    if (!url) return;
+    toast.loading("Building PDF…", { id: "pdf" });
+    try {
+      const blob = await (await fetch(url)).blob();
+      const dataUrl: string = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(r.result as string);
+        r.onerror = rej;
+        r.readAsDataURL(blob);
+      });
+      const img = new Image();
+      img.src = dataUrl;
+      await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+
+      const sizeMap: Record<string, [number, number]> = {
+        A3: [297, 420], A4: [210, 297], A5: [148, 210], A6: [105, 148],
+        "Business card": [85, 55],
+      };
+      const [pw, ph] = sizeMap[draft.print_size ?? "A4"] ?? [210, 297];
+      const orientation = pw > ph ? "landscape" : "portrait";
+      const pdf = new jsPDF({ orientation, unit: "mm", format: [pw, ph] });
+
+      // Fit image with letterboxing
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const ratio = Math.min(pageW / img.width, pageH / img.height);
+      const w = img.width * ratio;
+      const h = img.height * ratio;
+      const x = (pageW - w) / 2;
+      const y = (pageH - h) / 2;
+      pdf.addImage(dataUrl, "PNG", x, y, w, h);
+      pdf.save(`${(draft.title || "document").replace(/[^\p{L}\p{N}_\- ]+/gu, "_")}.pdf`);
+      toast.success("PDF saved", { id: "pdf" });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "PDF failed", { id: "pdf" });
+    }
   };
 
   return (
@@ -224,28 +316,50 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
           </FieldBlock>
           <div className="md:col-span-2">
             <FieldBlock label="Design / graphic instructions">
-              <Textarea rows={4} value={draft.design_instructions ?? ""} onChange={(e) => update({ design_instructions: e.target.value })} />
+              <Textarea
+                rows={10}
+                value={draft.design_instructions ?? ""}
+                onChange={(e) => update({ design_instructions: e.target.value })}
+                placeholder={DESIGN_PLACEHOLDER}
+                className="font-mono text-xs leading-relaxed"
+              />
+              <p className="text-[11px] text-muted-foreground mt-1.5">
+                Tip: structure beats brevity. Include GOAL, FORMAT, VISUAL STYLE, LAYOUT, TYPOGRAPHY, EXACT HEBREW TEXT, and AUTHENTICITY rules — like the placeholder above.
+              </p>
             </FieldBlock>
           </div>
           <div className="md:col-span-2">
             <FieldBlock label="Hebrew content" dir="rtl">
-              <div className="flex gap-2 mb-2" dir="ltr">
+              <div className="flex flex-wrap gap-2 mb-2 items-center" dir="ltr">
                 <Button size="sm" variant="outline" className="gap-2" onClick={() => generate("text")} disabled={genText}>
                   {genText ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
                   Generate Hebrew content
                 </Button>
-                <Button size="sm" variant="outline" className="gap-2" onClick={() => generate("image")} disabled={genImage}>
-                  {genImage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
-                  Generate document image
-                </Button>
+                <div className="flex items-center gap-1.5 ml-auto">
+                  <Select value={imageModel} onValueChange={setImageModel}>
+                    <SelectTrigger className="h-8 text-xs w-[260px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {IMAGE_MODELS.map((m) => <SelectItem key={m.value} value={m.value} className="text-xs">{m.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Button size="sm" variant="outline" className="gap-2" onClick={() => generate("image")} disabled={genImage}>
+                    {genImage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
+                    Generate document image
+                  </Button>
+                </div>
               </div>
               <Textarea rows={6} value={draft.hebrew_content ?? ""} onChange={(e) => update({ hebrew_content: e.target.value })} dir="rtl" className="text-right" />
             </FieldBlock>
           </div>
           {draft.generated_asset_url && (
             <div className="md:col-span-2">
-              <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Generated document image</Label>
-              <img src={draft.generated_asset_url} alt="" className="mt-2 rounded-lg border w-full max-h-96 object-contain bg-muted" />
+              <div className="flex items-center justify-between mb-2">
+                <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Generated document image</Label>
+                <Button size="sm" variant="outline" className="gap-2" onClick={saveAsPdf}>
+                  <FileDown className="h-3.5 w-3.5" /> Save as PDF
+                </Button>
+              </div>
+              <img src={draft.generated_asset_url} alt="" className="rounded-lg border w-full max-h-96 object-contain bg-muted" />
             </div>
           )}
           <div className="md:col-span-2 border-t pt-4">

@@ -31,7 +31,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { documentId, mode } = await req.json() as { documentId: string; mode: "text" | "image" };
+    const { documentId, mode, imageModelOverride } = await req.json() as { documentId: string; mode: "text" | "image"; imageModelOverride?: string };
     if (!documentId || !mode) {
       return new Response(JSON.stringify({ error: "documentId and mode required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
     }
 
     if (mode === "image") {
-      const imgPref = (project?.ai_provider_images as string) ?? "nano-banana-2";
+      const imgPref = (imageModelOverride as string) || (project?.ai_provider_images as string) || "nano-banana-2";
       const model = IMAGE_MODEL[imgPref] ?? IMAGE_MODEL["nano-banana-2"];
 
       const designNotes = (doc.design_instructions ?? "").trim();
