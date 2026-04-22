@@ -9,6 +9,8 @@ import { Sun, Moon, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useEffect, useRef, useState } from "react";
 import { ApiKeyManager } from "./ApiKeyManager";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { LOGIC_FLOW_MODELS, LOGIC_FLOW_MODEL_KEY, LOGIC_FLOW_MODEL_DEFAULT } from "@/features/project/CanvasSection";
 
 export function SettingsPage() {
   const { user } = useAuth();
@@ -19,6 +21,10 @@ export function SettingsPage() {
   const [planning, setPlanning] = useState("lovable");
   const [documents, setDocuments] = useState("lovable");
   const [images, setImages] = useState("lovable");
+  const [logicFlowModel, setLogicFlowModel] = useState<string>(() => {
+    if (typeof window === "undefined") return LOGIC_FLOW_MODEL_DEFAULT;
+    return localStorage.getItem(LOGIC_FLOW_MODEL_KEY) ?? LOGIC_FLOW_MODEL_DEFAULT;
+  });
 
   const { data: profile } = useQuery({
     queryKey: ["profile", user?.id],
@@ -162,6 +168,35 @@ export function SettingsPage() {
             <p><strong>claude</strong> uses your ANTHROPIC_API_KEY directly (billed to your Anthropic account).</p>
             <p><strong>gemini-direct-pro</strong> uses your GEMINI_API_KEY directly (billed to your Google AI account).</p>
             <p>Image generation: Nano Banana models automatically prefer your GEMINI_API_KEY when present, otherwise fall back to the Lovable AI Gateway. ChatGPT Image always uses your OpenAi key.</p>
+          </div>
+
+          <div className="border-t mt-5 pt-5 max-w-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-sm font-medium">Logic Flow generator</div>
+                <div className="text-xs text-muted-foreground">
+                  Default model for the canvas "Generate logic flow" button. Stored on this device.
+                </div>
+              </div>
+              <Select
+                value={logicFlowModel}
+                onValueChange={(v) => {
+                  setLogicFlowModel(v);
+                  localStorage.setItem(LOGIC_FLOW_MODEL_KEY, v);
+                  window.dispatchEvent(new StorageEvent("storage", { key: LOGIC_FLOW_MODEL_KEY, newValue: v }));
+                  toast.success("Logic Flow default updated");
+                }}
+              >
+                <SelectTrigger className="h-9 text-xs w-[280px] shrink-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {LOGIC_FLOW_MODELS.map((m) => (
+                    <SelectItem key={m.value} value={m.value} className="text-xs">{m.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </Section>
 
