@@ -56,6 +56,12 @@ WORKFLOW — proceed ONE STEP AT A TIME, WAIT FOR APPROVAL before advancing phas
 Phase 1 Setup: mystery_type → genre → 5 numbered Hebrew title options → difficulty → player role → case goal → year. For Hard games discuss an "extra selling point" (physical artifact, USB puzzle, coded insert, etc.).
 Phase 2 Summary: English news-style summary of how the case is solved, layered evidence, balanced red herrings, fictional quoted evidence.
 Phase 3 Structure: suspects, clue sequence, red herrings, deduction logic, envelope flow. Output fits the node canvas.
+Phase 3.5 LOGIC FLOW (MANDATORY GATE before Phase 4):
+- Before producing ANY documents, the user MUST generate and approve a Logic Flow on the Canvas.
+- The Logic Flow board (clues → deductions → solution + red herrings) is what guarantees the case is solvable, layered, and consistent.
+- If \`solution_summary\` is empty OR \`logic_approved_at\` is null, you MUST refuse to call \`add_document\`. Instead, instruct the user (in 2–3 sentences):
+    "Before we generate documents, jump to the Canvas → Logic Flow board and click 'Generate logic flow'. Review the clues, red herrings and final solution it proposes, edit anything you want, then click 'Approve logic'. Once that solution summary is locked in, every document I write will be consistent with it."
+- After approval is in place, you may proceed to Phase 4.
 Phase 4 Documents: Doc 0 = contents; then randomized doc numbers, varied types & print sizes, Hebrew bodies. Interrogations must be long, realistic, with pauses & body language.
 Envelopes (fixed 5): Open First / 1 / 2 / 3 / 4. Tasks short, bold, not overly revealing. Every envelope ends with: "פתחו את המעטפה הבאה רק אם אתם בטוחים שביצעתם את המשימה הקודמת כראוי."
 Hints: 3 per stage — vague → helpful → gives away task.
@@ -97,6 +103,8 @@ Extra selling point: ${project.selling_point ?? "—"}
 Target documents: ${project.target_doc_count ?? "—"}
 Existing suspects: ${suspectCount}
 Existing documents: ${docCount}
+Logic flow approved: ${project.logic_approved_at ? "YES (" + project.logic_approved_at + ")" : "NO — must be approved on the Canvas before generating documents"}
+Solution summary set: ${project.solution_summary ? "YES" : "NO"}
 
 Respond in English for planning. Write Hebrew for any final in-game text. Keep outputs concise unless the user requests depth.`;
 }
@@ -213,6 +221,24 @@ async function executeTool(
       return { ok: true, message: `Suspect created: ${data.name}`, id: data.id };
     }
     if (name === "add_document") {
+      // Server-side gate: refuse to create documents until the Logic Flow has
+      // been generated AND approved. This mirrors the system-prompt rule so a
+      // misbehaving model can't bypass it.
+      const { data: proj } = await supa
+        .from("projects")
+        .select("solution_summary, logic_approved_at")
+        .eq("id", projectId)
+        .single();
+      if (!proj?.solution_summary || !proj?.logic_approved_at) {
+        return {
+          ok: false,
+          message:
+            "Cannot create document yet — the Logic Flow has not been approved. " +
+            "Tell the user to open Canvas → Logic Flow, click 'Generate logic flow', " +
+            "review/edit the proposed clues + solution, then click 'Approve logic'. " +
+            "Only after that can documents be generated.",
+        };
+      }
       const docNumber = args.doc_number ?? Math.floor(100 + Math.random() * 900);
       const { data, error } = await supa
         .from("documents")
