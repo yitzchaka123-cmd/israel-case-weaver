@@ -14,15 +14,21 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
+// Mirrors assistant-chat / generate-document so the same provider key resolves
+// the same way everywhere. See ai-router.ts for prefix routing rules.
 const PLANNING_MODEL: Record<string, string> = {
-  "gpt-5.2": "openai/gpt-5.2",
-  "gpt-5": "openai/gpt-5",
-  "gpt-5-mini": "openai/gpt-5-mini",
-  "gpt-5-nano": "openai/gpt-5-nano",
-  "gemini-2.5-pro": "google/gemini-2.5-pro",
-  "gemini-2.5-flash": "google/gemini-2.5-flash",
-  "gemini-3.1-pro": "google/gemini-3.1-pro-preview",
-  "gemini-3-flash": "google/gemini-3-flash-preview",
+  lovable: "google/gemini-2.5-flash",
+  gemini: "google/gemini-2.5-pro",
+  "gemini-3-pro": "google/gemini-3.1-pro-preview",
+  "gemini-flash": "google/gemini-2.5-flash",
+  openai: "openai/gpt-5",
+  "openai-5.2": "openai/gpt-5.2",
+  "openai-mini": "openai/gpt-5-mini",
+  claude: "anthropic/claude-sonnet-4-5",
+  "claude-opus": "anthropic/claude-opus-4-5",
+  "claude-haiku": "anthropic/claude-haiku-4-5",
+  "gemini-direct-pro": "gemini-direct/gemini-2.5-pro",
+  "gemini-direct-flash": "gemini-direct/gemini-2.5-flash",
 };
 
 const CATEGORY_GUIDANCE: Record<string, string> = {
