@@ -90,6 +90,15 @@ interface Doc {
 export function DocumentsSection({ projectId }: { projectId: string }) {
   const [selected, setSelected] = useState<string | null>(null);
 
+  const { data: project } = useQuery({
+    queryKey: ["project", projectId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("projects").select("logic_approved_at, solution_summary").eq("id", projectId).single();
+      if (error) throw error;
+      return data;
+    },
+  });
+
   const { data, refetch } = useQuery({
     queryKey: ["documents", projectId],
     queryFn: async () => {
