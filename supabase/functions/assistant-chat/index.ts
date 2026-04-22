@@ -1,6 +1,7 @@
 // Mystery Studio Assistant — streaming chat with structured tool calls
 // Uses Lovable AI Gateway (Gemini + GPT-5). Tools mutate project state server-side.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { chatCompletions } from "../_shared/ai-router.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -10,7 +11,6 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 
 // Map provider preferences to actual gateway model IDs
 const PROVIDER_MODEL: Record<string, string> = {
@@ -284,14 +284,7 @@ Deno.serve(async (req) => {
       const body: Record<string, unknown> = { model, messages: convo, stream: false };
       if (!isFinalRound) body.tools = TOOLS;
 
-      const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(body),
-      });
+      const resp = await chatCompletions(body);
 
       if (!resp.ok) {
         if (resp.status === 429) {
