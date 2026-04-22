@@ -25,11 +25,17 @@ const IMAGE_MODELS = [
   { value: "nano-banana", label: "Nano Banana (Gemini 2.5 Flash Image)" },
 ];
 
+type ToolCall = {
+  name: string;
+  args?: Record<string, unknown>;
+  result: { ok: boolean; message: string; id?: string };
+};
+
 type Msg = {
   id: string;
   role: "user" | "assistant";
   content: string;
-  metadata?: { tools?: Array<{ name: string; result: { ok: boolean; message: string } }> } | null;
+  metadata?: { tools?: ToolCall[] } | null;
   created_at?: string;
 };
 
