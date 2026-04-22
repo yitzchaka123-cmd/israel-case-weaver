@@ -345,6 +345,12 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
             </Button>
             <Button variant="outline" className="gap-2" onClick={() => setSummaryOpen(true)}>
               <ScrollText className="h-4 w-4" /> Solution summary
+              {project?.solution_summary ? (
+                <span
+                  className="inline-block h-1.5 w-1.5 rounded-full bg-success"
+                  title="A solution summary is saved (visible to the assistant + document generator)"
+                />
+              ) : null}
             </Button>
           </>
         )}
