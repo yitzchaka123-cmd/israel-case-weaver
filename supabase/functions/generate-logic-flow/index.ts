@@ -13,11 +13,15 @@ const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 
 const PROVIDER_MODEL: Record<string, string> = {
-  lovable: "google/gemini-2.5-pro",
+  lovable: "google/gemini-3.1-pro-preview",
   gemini: "google/gemini-2.5-pro",
   "gemini-3-pro": "google/gemini-3.1-pro-preview",
+  "gemini-flash": "google/gemini-2.5-flash",
+  "gemini-flash-lite": "google/gemini-2.5-flash-lite",
   openai: "openai/gpt-5",
   "openai-5.2": "openai/gpt-5.2",
+  "openai-mini": "openai/gpt-5-mini",
+  "openai-nano": "openai/gpt-5-nano",
   claude: "openai/gpt-5",
 };
 
