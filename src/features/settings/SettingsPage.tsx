@@ -136,7 +136,7 @@ export function SettingsPage() {
 
         <Section title="AI provider routing" desc="Choose which provider handles each task. Images only use OpenAI/Lovable.">
           <div className="space-y-3 max-w-lg">
-            <ProviderRow label="Planning / Game design" value={planning} onChange={setPlanning} providers={["lovable", "claude"]} />
+            <ProviderRow label="Planning / Game design" value={planning} onChange={setPlanning} providers={["lovable", "openai", "claude"]} />
             <ProviderRow label="Document generation" value={documents} onChange={setDocuments} providers={["lovable", "claude", "openai"]} />
             <ProviderRow label="Image generation" value={images} onChange={setImages} providers={["lovable", "openai"]} />
           </div>
