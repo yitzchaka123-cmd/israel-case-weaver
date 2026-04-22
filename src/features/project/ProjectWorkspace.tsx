@@ -101,6 +101,9 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
                 { v: "canvas", l: "Case Board" },
                 { v: "suspects", l: "Suspects" },
                 { v: "documents", l: "Documents" },
+                { v: "envelopes", l: "Envelopes" },
+                { v: "hints", l: "Hints" },
+                { v: "media", l: "Media" },
               ].map((t) => (
                 <TabsTrigger
                   key={t.v}
@@ -131,6 +134,15 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
           </TabsContent>
           <TabsContent value="documents" className="h-full overflow-auto m-0">
             <DocumentsSection projectId={projectId} />
+          </TabsContent>
+          <TabsContent value="envelopes" className="h-full overflow-auto m-0">
+            <EnvelopesSection projectId={projectId} />
+          </TabsContent>
+          <TabsContent value="hints" className="h-full overflow-auto m-0">
+            <HintsSection projectId={projectId} />
+          </TabsContent>
+          <TabsContent value="media" className="h-full overflow-auto m-0">
+            <MediaSection projectId={projectId} />
           </TabsContent>
         </Tabs>
       </div>
