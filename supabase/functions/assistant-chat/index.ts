@@ -14,12 +14,14 @@ const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 
 // Map provider preferences to actual gateway model IDs
 const PROVIDER_MODEL: Record<string, string> = {
-  lovable: "google/gemini-2.5-pro",
+  lovable: "google/gemini-3.1-pro-preview",
   gemini: "google/gemini-2.5-pro",
+  "gemini-3-pro": "google/gemini-3.1-pro-preview",
   "gemini-flash": "google/gemini-2.5-flash",
   openai: "openai/gpt-5",
+  "openai-5.2": "openai/gpt-5.2",
   "openai-mini": "openai/gpt-5-mini",
-  claude: "openai/gpt-5", // Claude not on gateway; fall back to GPT-5 for planning
+  claude: "openai/gpt-5", // Claude not on gateway; falls back to GPT-5
 };
 
 // ---------- System prompt ----------
