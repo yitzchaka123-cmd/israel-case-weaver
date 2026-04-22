@@ -12,6 +12,8 @@ import { toast } from "sonner";
 import jsPDF from "jspdf";
 
 import { ImageModelPicker, getStoredImageModel } from "@/components/ImageModelPicker";
+import { PromptWriterModelPicker, getStoredWriterModel } from "@/components/PromptWriterModelPicker";
+import { Sparkles } from "lucide-react";
 
 const DESIGN_PLACEHOLDER = `Describe EXACTLY how this document should look. The more specific, the better the result.
 
