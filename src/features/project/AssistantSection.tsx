@@ -62,6 +62,28 @@ export function AssistantSection({ projectId, phase }: { projectId: string; phas
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const dictationBaseRef = useRef("");
+
+  const voice = useVoiceInput({
+    onTranscript: (text) => {
+      // Append live transcript to whatever the user had typed before starting.
+      setInput(dictationBaseRef.current ? `${dictationBaseRef.current} ${text}` : text);
+    },
+    onError: (msg) => toast.error(msg),
+  });
+
+  const toggleVoice = () => {
+    if (voice.listening) {
+      voice.stop();
+      return;
+    }
+    if (!voice.supported) {
+      toast.error("Voice input isn't supported in this browser. Try Chrome, Edge, or Safari.");
+      return;
+    }
+    dictationBaseRef.current = input.trim();
+    voice.start();
+  };
 
   const { data: project } = useQuery({
     queryKey: ["project-ai", projectId],
