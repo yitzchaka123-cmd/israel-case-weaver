@@ -319,7 +319,7 @@ export function AssistantSection({ projectId, phase }: { projectId: string; phas
         {/* Composer */}
         <div className="border-t bg-surface/60 backdrop-blur">
           <div className="max-w-3xl mx-auto px-6 py-4">
-            <div className="relative rounded-xl border bg-background shadow-sm focus-within:ring-2 focus-within:ring-accent/30 transition">
+            <div className={`relative rounded-xl border bg-background shadow-sm focus-within:ring-2 focus-within:ring-accent/30 transition ${voice.listening ? "ring-2 ring-destructive/40" : ""}`}>
               <Textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -329,10 +329,22 @@ export function AssistantSection({ projectId, phase }: { projectId: string; phas
                     send(input);
                   }
                 }}
-                placeholder="Describe what you want to build, approve a proposal, or ask for the next step…"
-                className="min-h-[80px] resize-none border-0 focus-visible:ring-0 bg-transparent pr-14"
+                placeholder={voice.listening ? "Listening… speak now" : "Describe what you want to build, approve a proposal, or ask for the next step…"}
+                className="min-h-[80px] resize-none border-0 focus-visible:ring-0 bg-transparent pr-24"
                 disabled={sending}
               />
+              <Button
+                type="button"
+                size="icon"
+                variant={voice.listening ? "destructive" : "ghost"}
+                onClick={toggleVoice}
+                disabled={sending}
+                title={voice.supported ? (voice.listening ? "Stop recording" : "Dictate with voice") : "Voice not supported in this browser"}
+                aria-label={voice.listening ? "Stop voice input" : "Start voice input"}
+                className={`absolute bottom-2.5 right-14 h-9 w-9 rounded-lg ${voice.listening ? "animate-pulse" : ""}`}
+              >
+                {voice.listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+              </Button>
               <Button
                 size="icon"
                 onClick={() => send(input)}
@@ -343,7 +355,11 @@ export function AssistantSection({ projectId, phase }: { projectId: string; phas
               </Button>
             </div>
             <div className="mt-2 text-[11px] text-muted-foreground text-center">
-              ⏎ to send · Shift+⏎ for newline · Planning uses your project's AI provider preference
+              {voice.listening ? (
+                <span className="inline-flex items-center gap-1.5 text-destructive"><span className="inline-block h-1.5 w-1.5 rounded-full bg-destructive animate-pulse" /> Recording — click the mic again to stop</span>
+              ) : (
+                "⏎ to send · Shift+⏎ for newline · 🎤 to dictate"
+              )}
             </div>
           </div>
         </div>
