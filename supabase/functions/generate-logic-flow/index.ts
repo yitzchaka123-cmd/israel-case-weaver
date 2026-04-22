@@ -13,11 +13,15 @@ const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 
 const PROVIDER_MODEL: Record<string, string> = {
-  lovable: "google/gemini-2.5-pro",
+  lovable: "google/gemini-3.1-pro-preview",
   gemini: "google/gemini-2.5-pro",
   "gemini-3-pro": "google/gemini-3.1-pro-preview",
+  "gemini-flash": "google/gemini-2.5-flash",
+  "gemini-flash-lite": "google/gemini-2.5-flash-lite",
   openai: "openai/gpt-5",
   "openai-5.2": "openai/gpt-5.2",
+  "openai-mini": "openai/gpt-5-mini",
+  "openai-nano": "openai/gpt-5-nano",
   claude: "openai/gpt-5",
 };
 
@@ -33,7 +37,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { projectId, replace = true } = await req.json();
+    const { projectId, replace = true, modelOverride } = await req.json();
     if (!projectId) {
       return new Response(JSON.stringify({ error: "projectId required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -49,7 +53,8 @@ Deno.serve(async (req) => {
     }
     const { data: suspects } = await supa.from("suspects").select("*").eq("project_id", projectId).order("position", { ascending: true });
 
-    const model = PROVIDER_MODEL[project.ai_provider_planning ?? "lovable"] ?? PROVIDER_MODEL.lovable;
+    const modelKey = (modelOverride as string) || (project.ai_provider_planning as string) || "lovable";
+    const model = PROVIDER_MODEL[modelKey] ?? PROVIDER_MODEL.lovable;
 
     const sys = `You are a senior mystery game designer. Produce a tight, solvable case logic flow for a printable detective game. The output must be a single JSON tool call. No prose. Hebrew is allowed for short labels but English keys.`;
 

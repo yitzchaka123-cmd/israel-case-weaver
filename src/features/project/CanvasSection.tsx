@@ -13,6 +13,19 @@ import { Plus, Wand2, CheckCircle2, Loader2, ScrollText } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+const LOGIC_FLOW_MODELS = [
+  { value: "lovable", label: "Gemini 3.1 Pro (default)" },
+  { value: "gemini", label: "Gemini 2.5 Pro" },
+  { value: "gemini-flash", label: "Gemini 2.5 Flash (fast)" },
+  { value: "gemini-flash-lite", label: "Gemini 2.5 Flash Lite (fastest)" },
+  { value: "openai-5.2", label: "ChatGPT 5.2 (latest)" },
+  { value: "openai", label: "ChatGPT 5" },
+  { value: "openai-mini", label: "ChatGPT 5 mini" },
+  { value: "openai-nano", label: "ChatGPT 5 nano" },
+];
+const LOGIC_FLOW_MODEL_KEY = "logic-flow-model";
 
 type Board = "logic" | "final";
 
@@ -79,6 +92,10 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
   const [generatingFlow, setGeneratingFlow] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [summaryDraft, setSummaryDraft] = useState("");
+  const [logicModel, setLogicModel] = useState<string>(() => {
+    if (typeof window === "undefined") return "lovable";
+    return localStorage.getItem(LOGIC_FLOW_MODEL_KEY) ?? "lovable";
+  });
   const posTimers = useRef<Record<string, number>>({});
 
   useEffect(() => {
@@ -192,7 +209,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
           "Content-Type": "application/json",
           Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
-        body: JSON.stringify({ projectId, replace: true }),
+        body: JSON.stringify({ projectId, replace: true, modelOverride: logicModel }),
       });
       if (!resp.ok) {
         const e = await resp.json().catch(() => ({ error: "Failed" }));
@@ -274,6 +291,22 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
 
         {board === "logic" && (
           <>
+            <Select
+              value={logicModel}
+              onValueChange={(v) => {
+                setLogicModel(v);
+                if (typeof window !== "undefined") localStorage.setItem(LOGIC_FLOW_MODEL_KEY, v);
+              }}
+            >
+              <SelectTrigger className="h-9 text-xs w-[210px]" title="Model used to generate the logic flow">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {LOGIC_FLOW_MODELS.map((m) => (
+                  <SelectItem key={m.value} value={m.value} className="text-xs">{m.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Button variant="outline" className="gap-2" onClick={generateLogicFlow} disabled={generatingFlow}>
               {generatingFlow ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
               {nodes.length === 0 ? "Generate logic flow" : "Re-generate"}
