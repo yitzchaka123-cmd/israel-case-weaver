@@ -101,6 +101,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
   const [generatingFlow, setGeneratingFlow] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [summaryDraft, setSummaryDraft] = useState("");
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [logicModel, setLogicModel] = useState<string>(() => {
     if (typeof window === "undefined") return LOGIC_FLOW_MODEL_DEFAULT;
     const stored = localStorage.getItem(LOGIC_FLOW_MODEL_KEY);
@@ -139,6 +140,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
           boxShadow: "var(--shadow-md)",
           color: "var(--color-foreground)",
           fontSize: 13,
+          cursor: "pointer",
         },
       }))
     );
@@ -152,7 +154,14 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
         source: e.source_id,
         target: e.target_id,
         label: e.label ?? undefined,
+        type: "smoothstep",
         animated: false,
+        style: { stroke: "var(--color-accent, #6366f1)", strokeWidth: 2 },
+        markerEnd: { type: MarkerType.ArrowClosed, color: "var(--color-accent, #6366f1)", width: 18, height: 18 },
+        labelStyle: { fontSize: 11, fontWeight: 500, fill: "var(--color-foreground)" },
+        labelBgStyle: { fill: "var(--color-card)", fillOpacity: 0.9 },
+        labelBgPadding: [6, 3] as [number, number],
+        labelBgBorderRadius: 4,
       }))
     );
   }, [dbEdges, setEdges]);
