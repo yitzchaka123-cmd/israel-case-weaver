@@ -94,8 +94,22 @@ Deno.serve(async (req) => {
       if (!oResp.ok) {
         const t = await oResp.text();
         console.error("openai image error", oResp.status, t);
-        if (oResp.status === 429) return new Response(JSON.stringify({ error: "OpenAI rate limit" }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        return new Response(JSON.stringify({ error: "OpenAI image generation failed" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        // Surface OpenAI's actual error message so the user sees actionable info
+        // (e.g. "organization must be verified to use gpt-image-2").
+        let detail = t;
+        try {
+          const parsed = JSON.parse(t);
+          detail = parsed?.error?.message ?? t;
+        } catch { /* keep raw text */ }
+        const isVerify = /verified to use the model/i.test(detail);
+        const friendly = isVerify
+          ? `OpenAI requires organization verification to use ${model}. Open https://platform.openai.com/settings/organization/general → "Verify Organization". After verifying it can take up to 15 min. (Tip: switch to "ChatGPT Image 1" or a Gemini model in the meantime.)`
+          : detail || "OpenAI image generation failed";
+        if (oResp.status === 429) return new Response(JSON.stringify({ error: `OpenAI rate limit: ${detail}` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        if (oResp.status === 401) return new Response(JSON.stringify({ error: `OpenAI auth failed — check the OpenAI API key in Settings. ${detail}` }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        if (oResp.status === 403) return new Response(JSON.stringify({ error: friendly }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        if (oResp.status === 400) return new Response(JSON.stringify({ error: `OpenAI rejected request: ${detail}` }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ error: friendly }), { status: oResp.status || 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       const oData = await oResp.json();
       const b64: string | undefined = oData.data?.[0]?.b64_json;
