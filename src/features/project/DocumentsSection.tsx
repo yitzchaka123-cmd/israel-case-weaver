@@ -231,7 +231,7 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
-        body: JSON.stringify({ documentId: doc.id, mode, imageModelOverride: mode === "image" ? getStoredImageModel("document", "chatgpt-image") : undefined }),
+        body: JSON.stringify({ documentId: doc.id, mode, imageModelOverride: mode === "image" ? getStoredImageModel("document", "chatgpt-image-2") : undefined }),
       });
       if (!resp.ok) {
         const e = await resp.json().catch(() => ({ error: "Failed" }));
@@ -370,7 +370,7 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
                 <div className="flex items-center gap-1.5 ml-auto">
                   <ImageModelPicker
                     surface="document"
-                    defaultModel="chatgpt-image"
+                    defaultModel="chatgpt-image-2"
                   />
                   <Button size="sm" variant="outline" className="gap-2" onClick={() => generate("image")} disabled={genImage}>
                     {genImage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
