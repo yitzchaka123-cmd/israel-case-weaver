@@ -18,8 +18,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { theme, toggle } = useTheme();
 
   return (
-    <div className="flex min-h-screen bg-background">
-      <aside className="hidden md:flex w-60 flex-col border-r bg-sidebar text-sidebar-foreground">
+    <div className="flex min-h-screen">
+      <aside className="hidden md:flex w-60 flex-col border-r border-white/40 dark:border-border bg-sidebar/70 dark:bg-sidebar text-sidebar-foreground backdrop-blur-2xl">
         <div className="px-5 py-6 flex items-center gap-2.5">
           <div className="h-9 w-9 rounded-xl bg-gradient-brand flex items-center justify-center shadow-glow">
             <Sparkles className="h-4 w-4 text-white" />

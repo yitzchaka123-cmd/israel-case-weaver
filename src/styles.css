@@ -147,12 +147,42 @@
   * { border-color: var(--color-border); }
   html, body { height: 100%; }
   body {
-    background-color: var(--color-background);
+    background-color: #FFE5F1;
     color: var(--color-foreground);
     font-family: var(--font-sans);
     font-feature-settings: "cv02","cv03","cv04","cv11";
     -webkit-font-smoothing: antialiased;
+    position: relative;
+    min-height: 100dvh;
   }
+
+  /* Bubblegum Mesh — fixed full-page background (light mode only) */
+  body::before,
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: -1;
+  }
+  body::before {
+    background:
+      radial-gradient(circle at 10% -10%, #FF007F 0%, transparent 45%),
+      radial-gradient(circle at 110% 110%, #00F0FF 0%, transparent 45%),
+      radial-gradient(circle at 60% 50%, #CCFF00 0%, transparent 35%);
+    filter: blur(60px) saturate(1.05);
+    opacity: 0.55;
+  }
+  body::after {
+    background-image: radial-gradient(rgba(13, 5, 20, 0.18) 1.5px, transparent 1.5px);
+    background-size: 24px 24px;
+    opacity: 0.18;
+  }
+
+  .dark body { background-color: var(--color-background); }
+  .dark body::before,
+  .dark body::after { display: none; }
+
   .font-display { font-family: var(--font-display); letter-spacing: -0.02em; }
 }
 
