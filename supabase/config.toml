@@ -1,10 +1,10 @@
 project_id = "disanuvopbwdruathmfx"
 
 [functions.assistant-chat]
-verify_jwt = true
+verify_jwt = false
 
 [functions.generate-image]
-verify_jwt = true
+verify_jwt = false
 
 [functions.generate-document]
-verify_jwt = true
+verify_jwt = false
