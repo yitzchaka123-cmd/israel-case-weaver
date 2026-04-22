@@ -12,16 +12,29 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-// Map provider preferences to actual gateway model IDs
+// Map provider preferences to provider-prefixed model ids understood by the
+// shared AI router. Prefix legend:
+//   openai/...         → OpenAi secret, billed to user's OpenAI account
+//   anthropic/...      → ANTHROPIC_API_KEY, billed to user's Anthropic account
+//   gemini-direct/...  → GEMINI_API_KEY, billed to user's Google AI account
+//   google/... | none  → Lovable AI Gateway (workspace credits)
 const PROVIDER_MODEL: Record<string, string> = {
+  // Lovable-gateway aliases
   lovable: "google/gemini-3.1-pro-preview",
   gemini: "google/gemini-2.5-pro",
   "gemini-3-pro": "google/gemini-3.1-pro-preview",
   "gemini-flash": "google/gemini-2.5-flash",
+  // OpenAI direct (uses OpenAi secret)
   openai: "openai/gpt-5",
   "openai-5.2": "openai/gpt-5.2",
   "openai-mini": "openai/gpt-5-mini",
-  claude: "openai/gpt-5", // Claude not on gateway; falls back to GPT-5
+  // Anthropic direct (uses ANTHROPIC_API_KEY)
+  claude: "anthropic/claude-sonnet-4-5",
+  "claude-opus": "anthropic/claude-opus-4-5",
+  "claude-haiku": "anthropic/claude-haiku-4-5",
+  // Gemini direct (uses GEMINI_API_KEY)
+  "gemini-direct-pro": "gemini-direct/gemini-2.5-pro",
+  "gemini-direct-flash": "gemini-direct/gemini-2.5-flash",
 };
 
 // ---------- System prompt ----------
@@ -287,19 +300,34 @@ Deno.serve(async (req) => {
       const resp = await chatCompletions(body);
 
       if (!resp.ok) {
+        const provider = model.startsWith("openai/")
+          ? "OpenAI"
+          : model.startsWith("anthropic/")
+            ? "Anthropic"
+            : model.startsWith("gemini-direct/")
+              ? "Google Gemini"
+              : "Lovable AI";
+        const t = await resp.text();
+        console.error(`${provider} error`, resp.status, t);
         if (resp.status === 429) {
-          return new Response(JSON.stringify({ error: "Rate limit reached. Please try again in a moment." }), {
+          return new Response(JSON.stringify({ error: `${provider} rate limit — try again in a moment.` }), {
             status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
         if (resp.status === 402) {
-          return new Response(JSON.stringify({ error: "AI workspace is out of credits. Add funds in Settings → Workspace → Usage." }), {
+          const hint = provider === "Lovable AI"
+            ? "Add credits in Settings → Workspace → Usage, or switch this project's planning provider."
+            : `Check your ${provider} account billing or switch this project's planning provider.`;
+          return new Response(JSON.stringify({ error: `${provider} credits/key issue (status 402). ${hint}` }), {
             status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
-        const t = await resp.text();
-        console.error("Gateway error", resp.status, t);
-        return new Response(JSON.stringify({ error: "AI gateway error" }), {
+        if (resp.status === 401) {
+          return new Response(JSON.stringify({ error: `${provider} authentication failed — check the API key in Settings → API keys.` }), {
+            status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ error: `${provider} error (status ${resp.status})` }), {
           status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
