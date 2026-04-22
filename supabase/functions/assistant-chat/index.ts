@@ -134,6 +134,7 @@ const TOOLS = [
           target_doc_count: { type: "number" },
         },
         additionalProperties: false,
+      },
     },
   },
   {
@@ -158,7 +159,6 @@ const TOOLS = [
         additionalProperties: false,
       },
     },
-  },
   },
   {
     type: "function",
