@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { useEffect, useRef, useState } from "react";
 import { ApiKeyManager } from "./ApiKeyManager";
 import { GeminiConnection } from "./GeminiConnection";
+import { AssistantTweaksPanel } from "./AssistantTweaksPanel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LOGIC_FLOW_MODELS, LOGIC_FLOW_MODEL_KEY, LOGIC_FLOW_MODEL_DEFAULT } from "@/features/project/CanvasSection";
 import { Textarea } from "@/components/ui/textarea";
