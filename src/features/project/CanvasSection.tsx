@@ -602,39 +602,77 @@ function NodeDetailPanel({
     );
   };
 
+  const meta = getNodeMeta(node?.node_type);
+  const accent = node?.color || meta.accent;
+  const Icon = meta.icon;
+
   return (
     <Sheet open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <SheetContent side="right" className="w-full sm:max-w-md overflow-auto">
-        <SheetHeader>
-          <SheetTitle className="font-display text-xl flex items-start gap-2">
+      <SheetContent
+        side="right"
+        className="w-full sm:max-w-md p-0 overflow-hidden flex flex-col gap-0 border-l"
+      >
+        {/* Hero header — colored band, icon chip, title, close */}
+        <div
+          className="relative px-6 pt-6 pb-5"
+          style={{
+            background: `linear-gradient(135deg, color-mix(in oklab, ${accent} 16%, var(--color-card)) 0%, var(--color-card) 100%)`,
+            borderBottom: `1px solid color-mix(in oklab, ${accent} 25%, var(--color-border))`,
+          }}
+        >
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="absolute top-4 right-4 inline-flex h-7 w-7 items-center justify-center rounded-full bg-card/80 backdrop-blur border text-muted-foreground hover:text-foreground hover:bg-card transition-colors"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+
+          <div className="flex items-start gap-3 pr-8">
             <span
-              className="mt-1.5 h-3 w-3 rounded-full shrink-0"
-              style={{ background: node?.color ?? "var(--color-border)" }}
-            />
-            <span className="leading-snug">{node?.title || "Loading…"}</span>
-          </SheetTitle>
-          {node?.node_type && (
-            <Badge variant="outline" className="self-start capitalize text-[10px]">
-              {node.node_type.replace(/_/g, " ")}
-            </Badge>
-          )}
-        </SheetHeader>
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+              style={{
+                background: accent,
+                color: "white",
+                boxShadow: `0 6px 18px -6px color-mix(in oklab, ${accent} 60%, transparent)`,
+              }}
+            >
+              <Icon className="h-5 w-5" strokeWidth={2.4} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div
+                className="text-[10px] font-semibold uppercase tracking-[0.14em] mb-1"
+                style={{ color: `color-mix(in oklab, ${accent} 70%, var(--color-foreground))` }}
+              >
+                {meta.label}
+              </div>
+              <h2 className="font-display text-[22px] leading-tight text-foreground">
+                {node?.title || "Loading…"}
+              </h2>
+            </div>
+          </div>
 
-        <div className="mt-6 space-y-6">
+          {/* Quick stats row */}
+          <div className="mt-5 grid grid-cols-2 gap-2">
+            <Stat label="Documents" value={linkedDocs.length} />
+            <Stat label="Suspects" value={linkedSuspects.length} />
+          </div>
+        </div>
+
+        {/* Scrollable body */}
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
           {node?.description && (
-            <section>
-              <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1.5">
-                Description
-              </div>
-              <p className="text-sm whitespace-pre-wrap leading-relaxed">{node.description}</p>
-            </section>
+            <PanelSection title="Description">
+              <p className="text-sm whitespace-pre-wrap leading-relaxed text-foreground/90">
+                {node.description}
+              </p>
+            </PanelSection>
           )}
 
-          <section>
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
-                AI explanation
-              </div>
+          <PanelSection
+            title="AI explanation"
+            action={
               <Button
                 size="sm"
                 variant={explanation ? "outline" : "default"}
@@ -643,25 +681,29 @@ function NodeDetailPanel({
                 disabled={explaining}
               >
                 {explaining ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                {explanation ? "Regenerate" : "Explain this node"}
+                {explanation ? "Regenerate" : "Explain"}
               </Button>
-            </div>
+            }
+          >
             {explanation ? (
-              <div className="text-sm whitespace-pre-wrap leading-relaxed text-foreground/90 bg-muted/40 rounded-md p-3 border">
+              <div
+                className="text-sm whitespace-pre-wrap leading-relaxed text-foreground/90 rounded-lg p-3.5"
+                style={{
+                  background: `color-mix(in oklab, ${accent} 6%, var(--color-muted))`,
+                  border: `1px solid color-mix(in oklab, ${accent} 18%, var(--color-border))`,
+                }}
+              >
                 {explanation}
               </div>
             ) : (
-              <p className="text-xs text-muted-foreground">
-                Click <em>Explain this node</em> to get an AI breakdown of what this node does and how
-                it fits into the overall solution. Uses your current Logic Flow model.
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Click <em>Explain</em> for an AI breakdown of what this node does and how it fits into the
+                overall solution. Uses your current Logic Flow model.
               </p>
             )}
-          </section>
+          </PanelSection>
 
-          <section>
-            <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">
-              Linked documents ({linkedDocs.length})
-            </div>
+          <PanelSection title={`Linked documents · ${linkedDocs.length}`}>
             {linkedDocs.length === 0 ? (
               <p className="text-xs text-muted-foreground">
                 No documents are linked to this node yet. Link them from the Documents tab.
@@ -673,43 +715,77 @@ function NodeDetailPanel({
                     <button
                       type="button"
                       onClick={() => jumpToDocuments(d.id)}
-                      className="w-full text-left flex items-center gap-2 rounded-md border bg-card hover:bg-muted/60 transition-colors px-3 py-2 text-sm"
+                      className="group w-full text-left flex items-center gap-2.5 rounded-lg border bg-card hover:bg-muted/60 hover:border-foreground/20 transition-colors px-3 py-2.5 text-sm"
                     >
-                      <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      <span className="truncate flex-1">
-                        {d.doc_number != null ? `#${d.doc_number} · ` : ""}
+                      <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-muted shrink-0">
+                        <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                      </span>
+                      <span className="truncate flex-1 font-medium">
+                        {d.doc_number != null ? (
+                          <span className="text-muted-foreground mr-1.5 font-normal">#{d.doc_number}</span>
+                        ) : null}
                         {d.title}
                       </span>
-                      <ExternalLink className="h-3 w-3 opacity-60 shrink-0" />
+                      <ExternalLink className="h-3.5 w-3.5 opacity-40 group-hover:opacity-100 transition-opacity shrink-0" />
                     </button>
                   </li>
                 ))}
               </ul>
             )}
-          </section>
+          </PanelSection>
 
           {linkedSuspects.length > 0 && (
-            <section>
-              <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">
-                Tags · suspects in linked documents
-              </div>
+            <PanelSection title="Suspects in linked documents">
               <div className="flex flex-wrap gap-1.5">
                 {linkedSuspects.map((s) => (
                   <button
                     key={s.id}
                     type="button"
                     onClick={() => jumpToSuspects(s.id)}
-                    className="inline-flex items-center gap-1 rounded-full border bg-muted/50 hover:bg-muted px-2.5 py-1 text-[11px] transition-colors"
+                    className="inline-flex items-center gap-1.5 rounded-full border bg-card hover:bg-muted hover:border-foreground/20 px-3 py-1 text-[11px] font-medium transition-colors"
                   >
                     {s.name}
-                    <ExternalLink className="h-2.5 w-2.5 opacity-60" />
+                    <ExternalLink className="h-2.5 w-2.5 opacity-50" />
                   </button>
                 ))}
               </div>
-            </section>
+            </PanelSection>
           )}
         </div>
       </SheetContent>
     </Sheet>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border bg-card/70 backdrop-blur px-3 py-2">
+      <div className="text-[9px] uppercase tracking-widest text-muted-foreground font-semibold">
+        {label}
+      </div>
+      <div className="text-lg font-display leading-none mt-0.5 text-foreground">{value}</div>
+    </div>
+  );
+}
+
+function PanelSection({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-2.5">
+        <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground font-semibold">
+          {title}
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
   );
 }
