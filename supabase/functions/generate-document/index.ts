@@ -14,8 +14,17 @@ const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 const PROVIDER_MODEL: Record<string, string> = {
   lovable: "google/gemini-2.5-pro",
   gemini: "google/gemini-2.5-pro",
+  "gemini-3-pro": "google/gemini-3.1-pro-preview",
   openai: "openai/gpt-5",
-  claude: "openai/gpt-5",
+  "openai-5.2": "openai/gpt-5.2",
+  claude: "openai/gpt-5", // Claude not on gateway; falls back
+};
+
+// Image models. Default: Nano Banana 2 (Gemini 3.1 Flash Image — fast, pro-quality).
+const IMAGE_MODEL: Record<string, string> = {
+  "nano-banana-2": "google/gemini-3.1-flash-image-preview",
+  "nano-banana-pro": "google/gemini-3-pro-image-preview",
+  "nano-banana": "google/gemini-2.5-flash-image",
 };
 
 Deno.serve(async (req) => {
@@ -74,8 +83,34 @@ Deno.serve(async (req) => {
     }
 
     if (mode === "image") {
-      const model = "google/gemini-2.5-flash-image";
-      const imgPrompt = `Realistic, print-ready ${doc.doc_type ?? "document"} for a premium Israeli mystery game titled "${project?.title ?? ""}". Final print size: ${doc.print_size ?? "A4"}. Design: ${doc.design_instructions ?? "authentic, high-detail, aged paper where appropriate"}. Title: ${doc.title}. Content in Hebrew where visible text is needed. High-resolution, lifelike, professional.`;
+      const imgPref = (project?.ai_provider_images as string) ?? "nano-banana-2";
+      const model = IMAGE_MODEL[imgPref] ?? IMAGE_MODEL["nano-banana-2"];
+
+      const designNotes = (doc.design_instructions ?? "").trim();
+      const hebrewExcerpt = (doc.hebrew_content ?? "").trim().slice(0, 1200);
+
+      const imgPrompt = [
+        `Create a single high-resolution, photorealistic, print-ready image of a ${doc.doc_type ?? "document"} for a premium Israeli mystery / detective game.`,
+        `Game title: "${project?.title ?? ""}"${project?.subtitle ? ` — ${project.subtitle}` : ""}.`,
+        `Era / setting: ${project?.year ?? "—"}, ${project?.setting ?? "Israeli setting"}.`,
+        `Genre: ${project?.genre ?? "mystery"}. Mystery type: ${project?.mystery_type ?? "—"}.`,
+        `Document title (visible if appropriate): "${doc.title}".`,
+        `Final print size: ${doc.print_size ?? "A4"} — compose to that aspect ratio with safe margins.`,
+        ``,
+        `STRICT DESIGN & GRAPHIC INSTRUCTIONS (FOLLOW EVERY DETAIL — this is the primary brief):`,
+        designNotes ? designNotes : "Authentic, period-correct, high-detail. Realistic paper texture; aged, slightly worn where appropriate. Believable typography for the document type. Realistic stamps, signatures, headers, logos, watermarks, perforations, paperclips, coffee stains, fold lines or staples where they would naturally appear. No cartoon style. No watermark text. No copyright marks.",
+        ``,
+        `CONTENT TO RENDER (Hebrew, RTL, grammatically correct, fully legible):`,
+        hebrewExcerpt ? hebrewExcerpt : "Use plausible Hebrew text appropriate to the document type. All Hebrew must be perfectly readable, properly kerned, and right-to-left.",
+        ``,
+        `RULES:`,
+        `- Render as a real-world physical document photographed or scanned, not a UI mockup.`,
+        `- All visible text must be in Hebrew unless the document type explicitly calls for another language (e.g. an English passport stamp).`,
+        `- Do NOT include English placeholder text like "Lorem ipsum".`,
+        `- Do NOT add modern watermarks, logos of real companies, or AI-generated artifacts.`,
+        `- High dynamic range, sharp focus on the document, neutral lighting, color-accurate.`,
+        `- Output ONE image only. Fill the frame with the document.`,
+      ].join("\n");
 
       const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",

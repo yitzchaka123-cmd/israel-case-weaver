@@ -4,8 +4,24 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Sparkles, Send, Loader2, Bot, User, Wand2, CheckCircle2 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Sparkles, Send, Loader2, Bot, User, Wand2, CheckCircle2, Cpu, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
+
+const PLANNING_MODELS = [
+  { value: "lovable", label: "Gemini 3.1 Pro (default)" },
+  { value: "gemini", label: "Gemini 2.5 Pro" },
+  { value: "gemini-flash", label: "Gemini 2.5 Flash (fast)" },
+  { value: "openai-5.2", label: "ChatGPT 5.2 (latest)" },
+  { value: "openai", label: "ChatGPT 5" },
+  { value: "openai-mini", label: "ChatGPT 5 mini" },
+];
+
+const IMAGE_MODELS = [
+  { value: "nano-banana-2", label: "Nano Banana 2 (default — fast + pro)" },
+  { value: "nano-banana-pro", label: "Nano Banana Pro (highest quality)" },
+  { value: "nano-banana", label: "Nano Banana (Gemini 2.5 Flash Image)" },
+];
 
 type Msg = {
   id: string;
@@ -37,6 +53,28 @@ export function AssistantSection({ projectId, phase }: { projectId: string; phas
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const { data: project } = useQuery({
+    queryKey: ["project-ai", projectId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("projects")
+        .select("ai_provider_planning, ai_provider_images")
+        .eq("id", projectId)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const planningModel = project?.ai_provider_planning ?? "lovable";
+  const imageModel = project?.ai_provider_images ?? "nano-banana-2";
+
+  const setProjectAi = async (patch: { ai_provider_planning?: string; ai_provider_images?: string }) => {
+    const { error } = await supabase.from("projects").update(patch).eq("id", projectId);
+    if (error) toast.error(error.message);
+    else qc.invalidateQueries({ queryKey: ["project-ai", projectId] });
+  };
 
   const { data: messages = [] } = useQuery<Msg[]>({
     queryKey: ["chat", projectId],
@@ -161,6 +199,35 @@ export function AssistantSection({ projectId, phase }: { projectId: string; phas
 
       {/* Chat */}
       <div className="flex-1 flex flex-col min-w-0">
+        {/* Model picker bar */}
+        <div className="border-b bg-surface/40 px-4 md:px-6 py-2 flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 text-[11px] uppercase tracking-widest text-muted-foreground">
+            <Cpu className="h-3 w-3" /> Models
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-muted-foreground">Chat</span>
+            <Select value={planningModel} onValueChange={(v) => setProjectAi({ ai_provider_planning: v })}>
+              <SelectTrigger className="h-8 text-xs w-[210px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {PLANNING_MODELS.map((m) => (
+                  <SelectItem key={m.value} value={m.value} className="text-xs">{m.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-2">
+            <ImageIcon className="h-3 w-3 text-muted-foreground" />
+            <span className="text-[11px] text-muted-foreground">Images</span>
+            <Select value={imageModel} onValueChange={(v) => setProjectAi({ ai_provider_images: v })}>
+              <SelectTrigger className="h-8 text-xs w-[260px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {IMAGE_MODELS.map((m) => (
+                  <SelectItem key={m.value} value={m.value} className="text-xs">{m.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
         <div ref={scrollRef} className="flex-1 overflow-auto">
           <div className="max-w-3xl mx-auto px-6 py-8 space-y-6">
             {messages.length === 0 && (
