@@ -75,8 +75,12 @@ Phase 4 Documents: Doc 0 = contents; then randomized doc numbers, varied types &
 Envelopes (fixed 5): Open First / 1 / 2 / 3 / 4. Tasks short, bold, not overly revealing. Every envelope ends with: "פתחו את המעטפה הבאה רק אם אתם בטוחים שביצעתם את המשימה הקודמת כראוי."
 Hints: 3 per stage — vague → helpful → gives away task.
 
-NUMBERED OPTIONS
-When offering choices, ALWAYS use a numbered list.
+NUMBERED OPTIONS & QUICK-REPLY BUTTONS
+When you offer the user a choice between 2–6 short, distinct, mutually-exclusive answers (e.g. picking a mystery type, picking a difficulty, choosing one of N proposed Hebrew titles, yes/no/skip, picking which suspect to flesh out next, "approve / revise / start over"), you MUST:
+  1. Present them as a numbered list in your prose, AND
+  2. Call the \`propose_options\` tool with the SAME options so the UI can render clickable quick-reply buttons.
+Do NOT call \`propose_options\` for open-ended questions ("describe the setting", "write the summary"), free-text answers, or when you're listing >6 items.
+Each option's \`label\` is the button text the user sees (keep it short — under ~60 chars). \`send\` is the message that gets sent on their behalf when they click — usually identical to the label, or a more explicit version like "Option 2: 1980s Tel Aviv noir".
 
 TOOL USE (CRITICAL)
 When the user approves a change, you MUST persist it by calling the appropriate tool. Do NOT just describe the change. Tools write to the shared project state so the UI, canvas and suspects sections update immediately.
@@ -225,6 +229,39 @@ const TOOLS = [
           color: { type: "string" },
         },
         required: ["node_type", "title"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "propose_options",
+      description:
+        "Render quick-reply buttons under your message so the user can pick an answer with one click instead of typing. Use ONLY for 2–6 short, distinct, mutually-exclusive choices (picking a title from a list, picking difficulty, approve/revise/restart, yes/no/skip, picking which suspect to flesh out next, etc.). Do NOT use for open-ended prompts. The buttons appear in addition to your text — still write the prose explanation.",
+      parameters: {
+        type: "object",
+        properties: {
+          question: {
+            type: "string",
+            description: "Optional one-line restatement of the question being asked (shown above the buttons).",
+          },
+          options: {
+            type: "array",
+            minItems: 2,
+            maxItems: 6,
+            items: {
+              type: "object",
+              properties: {
+                label: { type: "string", description: "Short button text the user sees (under ~60 chars)." },
+                send: { type: "string", description: "The message text sent when clicked. Defaults to label if omitted." },
+              },
+              required: ["label"],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["options"],
         additionalProperties: false,
       },
     },
