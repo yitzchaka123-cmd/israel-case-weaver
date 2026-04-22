@@ -199,6 +199,35 @@ export function AssistantSection({ projectId, phase }: { projectId: string; phas
 
       {/* Chat */}
       <div className="flex-1 flex flex-col min-w-0">
+        {/* Model picker bar */}
+        <div className="border-b bg-surface/40 px-4 md:px-6 py-2 flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 text-[11px] uppercase tracking-widest text-muted-foreground">
+            <Cpu className="h-3 w-3" /> Models
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-muted-foreground">Chat</span>
+            <Select value={planningModel} onValueChange={(v) => setProjectAi({ ai_provider_planning: v })}>
+              <SelectTrigger className="h-8 text-xs w-[210px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {PLANNING_MODELS.map((m) => (
+                  <SelectItem key={m.value} value={m.value} className="text-xs">{m.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-2">
+            <ImageIcon className="h-3 w-3 text-muted-foreground" />
+            <span className="text-[11px] text-muted-foreground">Images</span>
+            <Select value={imageModel} onValueChange={(v) => setProjectAi({ ai_provider_images: v })}>
+              <SelectTrigger className="h-8 text-xs w-[260px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {IMAGE_MODELS.map((m) => (
+                  <SelectItem key={m.value} value={m.value} className="text-xs">{m.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
         <div ref={scrollRef} className="flex-1 overflow-auto">
           <div className="max-w-3xl mx-auto px-6 py-8 space-y-6">
             {messages.length === 0 && (
