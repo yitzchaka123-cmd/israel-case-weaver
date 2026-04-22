@@ -403,6 +403,7 @@ export type Database = {
           genre: string | null
           hint_settings: Json
           id: string
+          image_prompt_instructions: string | null
           mystery_type: string | null
           owner_id: string
           packaging_notes: string | null
@@ -414,6 +415,7 @@ export type Database = {
           target_doc_count: number | null
           title: string
           updated_at: string
+          video_prompt_instructions: string | null
           year: number | null
         }
         Insert: {
@@ -428,6 +430,7 @@ export type Database = {
           genre?: string | null
           hint_settings?: Json
           id?: string
+          image_prompt_instructions?: string | null
           mystery_type?: string | null
           owner_id: string
           packaging_notes?: string | null
@@ -439,6 +442,7 @@ export type Database = {
           target_doc_count?: number | null
           title?: string
           updated_at?: string
+          video_prompt_instructions?: string | null
           year?: number | null
         }
         Update: {
@@ -453,6 +457,7 @@ export type Database = {
           genre?: string | null
           hint_settings?: Json
           id?: string
+          image_prompt_instructions?: string | null
           mystery_type?: string | null
           owner_id?: string
           packaging_notes?: string | null
@@ -464,6 +469,7 @@ export type Database = {
           target_doc_count?: number | null
           title?: string
           updated_at?: string
+          video_prompt_instructions?: string | null
           year?: number | null
         }
         Relationships: []

@@ -5,7 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Sparkles, Send, Loader2, Bot, User, Wand2, CheckCircle2, Cpu, Image as ImageIcon } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Label } from "@/components/ui/label";
+import { Sparkles, Send, Loader2, Bot, User, Wand2, CheckCircle2, Cpu, Image as ImageIcon, Settings2, Video } from "lucide-react";
 import { toast } from "sonner";
 
 const PLANNING_MODELS = [
@@ -59,18 +61,28 @@ export function AssistantSection({ projectId, phase }: { projectId: string; phas
     queryFn: async () => {
       const { data, error } = await supabase
         .from("projects")
-        .select("ai_provider_planning, ai_provider_images")
+        .select("ai_provider_planning, ai_provider_images, image_prompt_instructions, video_prompt_instructions")
         .eq("id", projectId)
         .single();
       if (error) throw error;
-      return data;
+      return data as {
+        ai_provider_planning: string | null;
+        ai_provider_images: string | null;
+        image_prompt_instructions: string | null;
+        video_prompt_instructions: string | null;
+      };
     },
   });
 
   const planningModel = project?.ai_provider_planning ?? "lovable";
   const imageModel = project?.ai_provider_images ?? "nano-banana-2";
 
-  const setProjectAi = async (patch: { ai_provider_planning?: string; ai_provider_images?: string }) => {
+  const setProjectAi = async (patch: {
+    ai_provider_planning?: string;
+    ai_provider_images?: string;
+    image_prompt_instructions?: string;
+    video_prompt_instructions?: string;
+  }) => {
     const { error } = await supabase.from("projects").update(patch).eq("id", projectId);
     if (error) toast.error(error.message);
     else qc.invalidateQueries({ queryKey: ["project-ai", projectId] });
@@ -227,6 +239,11 @@ export function AssistantSection({ projectId, phase }: { projectId: string; phas
               </SelectContent>
             </Select>
           </div>
+          <PromptInstructionsPopover
+            imageInstructions={project?.image_prompt_instructions ?? ""}
+            videoInstructions={project?.video_prompt_instructions ?? ""}
+            onSave={(patch) => setProjectAi(patch)}
+          />
         </div>
         <div ref={scrollRef} className="flex-1 overflow-auto">
           <div className="max-w-3xl mx-auto px-6 py-8 space-y-6">
@@ -347,5 +364,81 @@ function MessageBubble({ msg }: { msg: Msg }) {
         )}
       </div>
     </div>
+  );
+}
+
+function PromptInstructionsPopover({
+  imageInstructions,
+  videoInstructions,
+  onSave,
+}: {
+  imageInstructions: string;
+  videoInstructions: string;
+  onSave: (patch: { image_prompt_instructions?: string; video_prompt_instructions?: string }) => void;
+}) {
+  const [imgDraft, setImgDraft] = useState(imageInstructions);
+  const [vidDraft, setVidDraft] = useState(videoInstructions);
+  useEffect(() => setImgDraft(imageInstructions), [imageInstructions]);
+  useEffect(() => setVidDraft(videoInstructions), [videoInstructions]);
+
+  const save = () => {
+    onSave({ image_prompt_instructions: imgDraft, video_prompt_instructions: vidDraft });
+    toast.success("Generation instructions saved");
+  };
+
+  const hasContent = (imageInstructions?.trim().length ?? 0) > 0 || (videoInstructions?.trim().length ?? 0) > 0;
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5">
+          <Settings2 className="h-3.5 w-3.5" />
+          Generation instructions
+          {hasContent && <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-accent" />}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[460px] p-4 space-y-4" align="end">
+        <div>
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+              Image generation instructions
+            </Label>
+          </div>
+          <p className="text-[11px] text-muted-foreground mb-2 leading-relaxed">
+            Prepended to every image prompt (covers, suspects, documents, media). Use this to lock in style,
+            language, lighting, paper texture, do/don'ts. Applies to Nano Banana 2, Pro, OpenAI image, and any future model.
+          </p>
+          <Textarea
+            rows={5}
+            value={imgDraft}
+            onChange={(e) => setImgDraft(e.target.value)}
+            placeholder={`e.g. "All Hebrew text must be perfectly legible and right-to-left. Use authentic 1970s Israeli paper textures. Avoid modern fonts. No watermarks."`}
+            className="text-xs"
+          />
+        </div>
+        <div>
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <Video className="h-3.5 w-3.5 text-muted-foreground" />
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+              Video generation instructions
+            </Label>
+          </div>
+          <p className="text-[11px] text-muted-foreground mb-2 leading-relaxed">
+            Prepended to every video prompt. Use this for camera motion, pacing, mood, color grading, aspect ratio guidance.
+          </p>
+          <Textarea
+            rows={4}
+            value={vidDraft}
+            onChange={(e) => setVidDraft(e.target.value)}
+            placeholder={`e.g. "Slow cinematic dolly-in. Cool teal/orange grade. No on-screen text. Subtle film grain."`}
+            className="text-xs"
+          />
+        </div>
+        <div className="flex justify-end pt-1">
+          <Button size="sm" onClick={save}>Save instructions</Button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
