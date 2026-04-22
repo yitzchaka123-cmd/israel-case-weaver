@@ -15,17 +15,23 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-const LOGIC_FLOW_MODELS = [
-  { value: "lovable", label: "Gemini 3.1 Pro (default)" },
-  { value: "gemini", label: "Gemini 2.5 Pro" },
-  { value: "gemini-flash", label: "Gemini 2.5 Flash (fast)" },
-  { value: "gemini-flash-lite", label: "Gemini 2.5 Flash Lite (fastest)" },
-  { value: "openai-5.2", label: "ChatGPT 5.2 (latest)" },
-  { value: "openai", label: "ChatGPT 5" },
-  { value: "openai-mini", label: "ChatGPT 5 mini" },
-  { value: "openai-nano", label: "ChatGPT 5 nano" },
+// Per-device default. Overridable from Settings → AI provider routing → Logic flow.
+// Stored in localStorage so it persists per-browser. Note: "openai-5.2" routes
+// through your OpenAI key directly (not Lovable AI credits) — see ai-router.ts.
+export const LOGIC_FLOW_MODELS = [
+  { value: "openai-5.2", label: "ChatGPT 5.2 (default · your OpenAI key)" },
+  { value: "openai", label: "ChatGPT 5 (your OpenAI key)" },
+  { value: "openai-mini", label: "ChatGPT 5 mini (your OpenAI key)" },
+  { value: "openai-nano", label: "ChatGPT 5 nano (your OpenAI key)" },
+  { value: "claude", label: "Claude Sonnet 4.5 (your Anthropic key)" },
+  { value: "claude-opus", label: "Claude Opus 4.5 (your Anthropic key)" },
+  { value: "gemini-direct-pro", label: "Gemini 2.5 Pro (your Gemini key)" },
+  { value: "lovable", label: "Gemini 3.1 Pro (Lovable AI credits)" },
+  { value: "gemini-flash", label: "Gemini 2.5 Flash (Lovable AI credits)" },
+  { value: "gemini-flash-lite", label: "Gemini 2.5 Flash Lite (Lovable AI credits)" },
 ];
-const LOGIC_FLOW_MODEL_KEY = "logic-flow-model";
+export const LOGIC_FLOW_MODEL_KEY = "logic-flow-model";
+export const LOGIC_FLOW_MODEL_DEFAULT = "openai-5.2";
 
 type Board = "logic" | "final";
 
@@ -93,8 +99,12 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [summaryDraft, setSummaryDraft] = useState("");
   const [logicModel, setLogicModel] = useState<string>(() => {
-    if (typeof window === "undefined") return "lovable";
-    return localStorage.getItem(LOGIC_FLOW_MODEL_KEY) ?? "lovable";
+    if (typeof window === "undefined") return LOGIC_FLOW_MODEL_DEFAULT;
+    const stored = localStorage.getItem(LOGIC_FLOW_MODEL_KEY);
+    // Migrate the old "lovable" default to the new direct-OpenAI default so
+    // existing users stop hitting Lovable AI credit walls unintentionally.
+    if (!stored || stored === "lovable-default") return LOGIC_FLOW_MODEL_DEFAULT;
+    return stored;
   });
   const posTimers = useRef<Record<string, number>>({});
 
