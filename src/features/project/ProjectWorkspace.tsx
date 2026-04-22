@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Trash2 } from "lucide-react";
+import { ArrowLeft, Trash2, LayoutDashboard, Sparkles, Network, Users, FileText, Mail, Lightbulb, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 import { ProjectOverview } from "./ProjectOverview";
 import { SuspectsSection } from "./SuspectsSection";
@@ -107,23 +107,27 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
           <div className="px-6 md:px-10">
             <TabsList className="bg-transparent p-0 h-auto gap-1 border-0">
               {[
-                { v: "overview", l: "Overview" },
-                { v: "assistant", l: "Assistant" },
-                { v: "canvas", l: "Case Board" },
-                { v: "suspects", l: "Suspects" },
-                { v: "documents", l: "Documents" },
-                { v: "envelopes", l: "Envelopes" },
-                { v: "hints", l: "Hints" },
-                { v: "media", l: "Media" },
-              ].map((t) => (
-                <TabsTrigger
-                  key={t.v}
-                  value={t.v}
-                  className="data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none text-muted-foreground relative px-3 py-2.5 rounded-none data-[state=active]:after:absolute data-[state=active]:after:inset-x-3 data-[state=active]:after:bottom-0 data-[state=active]:after:h-0.5 data-[state=active]:after:bg-accent data-[state=active]:after:rounded-full"
-                >
-                  {t.l}
-                </TabsTrigger>
-              ))}
+                { v: "overview", l: "Overview", icon: LayoutDashboard },
+                { v: "assistant", l: "Assistant", icon: Sparkles },
+                { v: "canvas", l: "Case Board", icon: Network },
+                { v: "suspects", l: "Suspects", icon: Users },
+                { v: "documents", l: "Documents", icon: FileText },
+                { v: "envelopes", l: "Envelopes", icon: Mail },
+                { v: "hints", l: "Hints", icon: Lightbulb },
+                { v: "media", l: "Media", icon: ImageIcon },
+              ].map((t) => {
+                const Icon = t.icon;
+                return (
+                  <TabsTrigger
+                    key={t.v}
+                    value={t.v}
+                    className="data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none text-muted-foreground relative px-3 py-2.5 rounded-none data-[state=active]:after:absolute data-[state=active]:after:inset-x-3 data-[state=active]:after:bottom-0 data-[state=active]:after:h-0.5 data-[state=active]:after:bg-accent data-[state=active]:after:rounded-full inline-flex items-center gap-1.5"
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {t.l}
+                  </TabsTrigger>
+                );
+              })}
             </TabsList>
           </div>
         </Tabs>
