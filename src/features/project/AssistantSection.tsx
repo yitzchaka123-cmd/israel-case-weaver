@@ -287,6 +287,16 @@ export function AssistantSection({ projectId, phase }: { projectId: string; phas
             videoInstructions={project?.video_prompt_instructions ?? ""}
             onSave={(patch) => setProjectAi(patch)}
           />
+          {tweakCount > 0 && (
+            <Link
+              to="/settings"
+              className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-accent/10 hover:bg-accent/20 border border-accent/30 px-2.5 py-1 text-[11px] font-medium text-accent transition-colors"
+              title="Your house rules are influencing the assistant. Click to manage."
+            >
+              <Sliders className="h-3 w-3" />
+              {tweakCount} tweak{tweakCount === 1 ? "" : "s"} active
+            </Link>
+          )}
         </div>
         <div ref={scrollRef} className="flex-1 overflow-auto">
           <div className="max-w-3xl mx-auto px-6 py-8 space-y-6">
