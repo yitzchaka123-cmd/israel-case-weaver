@@ -14,8 +14,17 @@ const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 const PROVIDER_MODEL: Record<string, string> = {
   lovable: "google/gemini-2.5-pro",
   gemini: "google/gemini-2.5-pro",
+  "gemini-3-pro": "google/gemini-3.1-pro-preview",
   openai: "openai/gpt-5",
-  claude: "openai/gpt-5",
+  "openai-5.2": "openai/gpt-5.2",
+  claude: "openai/gpt-5", // Claude not on gateway; falls back
+};
+
+// Image models. Default: Nano Banana 2 (Gemini 3.1 Flash Image — fast, pro-quality).
+const IMAGE_MODEL: Record<string, string> = {
+  "nano-banana-2": "google/gemini-3.1-flash-image-preview",
+  "nano-banana-pro": "google/gemini-3-pro-image-preview",
+  "nano-banana": "google/gemini-2.5-flash-image",
 };
 
 Deno.serve(async (req) => {
