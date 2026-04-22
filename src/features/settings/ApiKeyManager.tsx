@@ -155,7 +155,7 @@ export function ApiKeyManager() {
                   <code className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{k.name}</code>
                   {k.managed && <Badge variant="secondary">managed</Badge>}
                   {k.present ? (
-                    <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20">configured</Badge>
+                    <Badge className="bg-accent/15 text-accent hover:bg-accent/20">configured</Badge>
                   ) : (
                     <Badge variant="outline" className="text-muted-foreground">not set</Badge>
                   )}
@@ -171,7 +171,7 @@ export function ApiKeyManager() {
                     {t.loading ? (
                       <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Testing…</>
                     ) : t.ok ? (
-                      <><CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> {t.detail} {t.latencyMs ? `· ${t.latencyMs}ms` : ""}</>
+                      <><CheckCircle2 className="h-3.5 w-3.5 text-accent" /> {t.detail} {t.latencyMs ? `· ${t.latencyMs}ms` : ""}</>
                     ) : (
                       <><XCircle className="h-3.5 w-3.5 text-destructive" /> {t.detail || "failed"}{t.status ? ` (${t.status})` : ""}</>
                     )}

@@ -8,6 +8,7 @@ import { useTheme } from "@/lib/theme";
 import { Sun, Moon, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useEffect, useRef, useState } from "react";
+import { ApiKeyManager } from "./ApiKeyManager";
 
 export function SettingsPage() {
   const { user } = useAuth();
@@ -144,6 +145,10 @@ export function SettingsPage() {
             Lovable AI works out of the box. Bring-your-own Claude / OpenAI keys can be
             added later — contact your workspace admin.
           </p>
+        </Section>
+
+        <Section title="API keys" desc="Manage and test the API keys this workspace uses to call AI providers.">
+          <ApiKeyManager />
         </Section>
 
         <div className="flex justify-end pt-2">
