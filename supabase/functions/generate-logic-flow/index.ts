@@ -134,11 +134,12 @@ Position nodes in a left-to-right flow: clues on the left, deductions middle, so
     });
 
     if (!resp.ok) {
-      if (resp.status === 429) return new Response(JSON.stringify({ error: "Rate limit" }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      if (resp.status === 402) return new Response(JSON.stringify({ error: "Out of credits" }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const provider = model.startsWith("openai/") ? "OpenAI" : "Lovable AI";
+      if (resp.status === 429) return new Response(JSON.stringify({ error: `Rate limit on ${provider}` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      if (resp.status === 402 || resp.status === 401) return new Response(JSON.stringify({ error: `${provider} credits/key issue (status ${resp.status})` }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       const t = await resp.text();
       console.error("logic flow gen error", resp.status, t);
-      return new Response(JSON.stringify({ error: "Logic flow generation failed" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ error: `Logic flow generation failed (${provider})` }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     const data = await resp.json();
