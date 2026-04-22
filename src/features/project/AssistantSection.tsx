@@ -359,6 +359,109 @@ function MessageBubble({ msg }: { msg: Msg }) {
   );
 }
 
+// Maps a tool name to the workspace tab the user should jump to when clicking
+// the receipt. Returns null for tools that have no obvious destination
+// (e.g. update_project, which doesn't navigate anywhere meaningful).
+function destinationFor(toolName: string): { tab: string; label: string } | null {
+  switch (toolName) {
+    case "add_document":
+    case "update_document":
+      return { tab: "documents", label: "Open in Documents" };
+    case "add_suspect":
+    case "update_suspect":
+      return { tab: "suspects", label: "Open in Suspects" };
+    case "add_canvas_node":
+    case "add_canvas_edge":
+    case "update_canvas_node":
+      return { tab: "canvas", label: "Open in Case Board" };
+    case "generate_image":
+    case "add_media":
+      return { tab: "media", label: "Open in Media" };
+    case "add_envelope":
+    case "update_envelope":
+      return { tab: "envelopes", label: "Open in Envelopes" };
+    case "add_hint":
+    case "update_hint":
+      return { tab: "hints", label: "Open in Hints" };
+    default:
+      return null;
+  }
+}
+
+function ToolReceipts({ tools }: { tools: ToolCall[] }) {
+  const [open, setOpen] = useState(false);
+  const okCount = tools.filter((t) => t.result.ok).length;
+  const failCount = tools.length - okCount;
+
+  return (
+    <div className="mt-3">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+        aria-expanded={open}
+      >
+        <ChevronRight className={`h-3 w-3 transition-transform ${open ? "rotate-90" : ""}`} />
+        <span>
+          {tools.length} action{tools.length === 1 ? "" : "s"} performed
+          {failCount > 0 ? (
+            <>
+              {" "}
+              <span className="text-accent-foreground/70">({okCount} ✓</span>
+              <span className="text-destructive">, {failCount} ✗</span>
+              <span className="text-accent-foreground/70">)</span>
+            </>
+          ) : (
+            <span className="text-muted-foreground/70"> ({okCount} ✓)</span>
+          )}
+        </span>
+      </button>
+
+      {open && (
+        <ul className="mt-2 space-y-1 border-l-2 border-border/60 pl-3">
+          {tools.map((t, i) => {
+            const dest = destinationFor(t.name);
+            const clickable = t.result.ok && dest !== null;
+            const handleClick = () => {
+              if (!clickable || !dest) return;
+              window.dispatchEvent(
+                new CustomEvent("mystudio:navigate", {
+                  detail: { tab: dest.tab, targetId: t.result.id },
+                }),
+              );
+            };
+            return (
+              <li key={i} className="flex items-start gap-2 text-[12px] leading-snug">
+                <span className={`mt-0.5 ${t.result.ok ? "text-accent-foreground/80" : "text-destructive"}`}>
+                  {t.result.ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-baseline gap-x-2">
+                    <span className="text-foreground/90 font-medium capitalize">{t.name.replace(/_/g, " ")}</span>
+                    <span className={`text-[11px] truncate ${t.result.ok ? "text-muted-foreground" : "text-destructive/90"}`}>
+                      {t.result.message}
+                    </span>
+                  </div>
+                  {clickable && (
+                    <button
+                      type="button"
+                      onClick={handleClick}
+                      className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-accent-foreground hover:underline"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      {dest!.label}
+                    </button>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function PromptInstructionsPopover({
   imageInstructions,
   videoInstructions,
