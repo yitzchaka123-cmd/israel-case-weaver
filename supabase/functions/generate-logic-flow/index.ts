@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { projectId, replace = true, modelOverride } = await req.json();
+    const { projectId, replace = true, modelOverride, useExistingSummary } = await req.json();
     if (!projectId) {
       return new Response(JSON.stringify({ error: "projectId required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -65,7 +65,18 @@ Deno.serve(async (req) => {
     const modelKey = (modelOverride as string) || (project.ai_provider_planning as string) || "lovable";
     const model = PROVIDER_MODEL[modelKey] ?? PROVIDER_MODEL.lovable;
 
-    const sys = `You are a senior mystery game designer. Produce a tight, solvable case logic flow for a printable detective game. The output must be a single JSON tool call. No prose. Hebrew is allowed for short labels but English keys.`;
+    // Default: if a solution_summary exists and the caller didn't explicitly pass false,
+    // treat it as the source of truth.
+    const approvedSummary = (project.solution_summary ?? "").trim();
+    const useApproved = useExistingSummary === undefined ? !!approvedSummary : (useExistingSummary && !!approvedSummary);
+
+    const sys = useApproved
+      ? `You are a senior mystery game designer. The user has ALREADY APPROVED the case's solution narrative — your job is to break that exact narrative into a printable case logic flow (clues, deductions, red herrings, edges). DO NOT invent a different culprit, motive, weapon, or chain of events. Every node and edge must directly support or mislead from the approved narrative. The output must be a single JSON tool call. No prose. Hebrew is allowed for short labels but English keys.`
+      : `You are a senior mystery game designer. Produce a tight, solvable case logic flow for a printable detective game. The output must be a single JSON tool call. No prose. Hebrew is allowed for short labels but English keys.`;
+
+    const approvedBlock = useApproved
+      ? `\nAPPROVED SOLUTION (source of truth — your flow MUST match this exactly):\n"""\n${approvedSummary}\n"""\n\nYour job is NOT to write a new solution. Your job is to decompose the approved solution above into the nodes/edges below. The "summary" field you return should restate the approved solution faithfully (you may tighten wording but must not change facts, culprit, motive, or method).\n`
+      : "";
 
     const userPrompt = `CASE DESIGN BRIEF
 Title: ${project.title}
@@ -75,7 +86,7 @@ Genre: ${project.genre ?? "mystery"} · Type: ${project.mystery_type ?? "—"} �
 Player role: ${project.player_role ?? "—"}
 Case goal: ${project.case_goal ?? "—"}
 Selling point: ${project.selling_point ?? "—"}
-
+${approvedBlock}
 KNOWN SUSPECTS:
 ${(suspects ?? []).map((s, i) => `${i + 1}. ${s.name}${s.is_red_herring ? " (red herring)" : ""} — role: ${s.role_in_case ?? "—"} — motive: ${s.motives ?? "—"}`).join("\n") || "(none yet — invent 3-5 plausible ones)"}
 
@@ -207,7 +218,12 @@ Position nodes in a left-to-right flow: clues on the left, deductions middle, so
       if (eErr) console.error("edge insert", eErr);
     }
 
-    await supa.from("projects").update({ solution_summary: parsed.summary }).eq("id", projectId);
+    // Only overwrite the canonical solution_summary when the caller explicitly
+    // asked for a fresh case. When using the approved summary, preserve the
+    // assistant-approved text exactly.
+    if (!useApproved) {
+      await supa.from("projects").update({ solution_summary: parsed.summary }).eq("id", projectId);
+    }
 
     await supa.from("prompts").insert({
       project_id: projectId,
@@ -218,7 +234,13 @@ Position nodes in a left-to-right flow: clues on the left, deductions middle, so
       model,
     });
 
-    return new Response(JSON.stringify({ ok: true, summary: parsed.summary, nodeCount: parsed.nodes.length, edgeCount: edgeRows.length }), {
+    return new Response(JSON.stringify({
+      ok: true,
+      summary: useApproved ? approvedSummary : parsed.summary,
+      usedApprovedSummary: useApproved,
+      nodeCount: parsed.nodes.length,
+      edgeCount: edgeRows.length,
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
