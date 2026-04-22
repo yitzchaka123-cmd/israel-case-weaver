@@ -216,7 +216,7 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
-        body: JSON.stringify({ documentId: doc.id, mode }),
+        body: JSON.stringify({ documentId: doc.id, mode, imageModelOverride: mode === "image" ? imageModel : undefined }),
       });
       if (!resp.ok) {
         const e = await resp.json().catch(() => ({ error: "Failed" }));
