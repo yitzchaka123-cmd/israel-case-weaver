@@ -1,19 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactFlow, {
   Background, Controls, MiniMap, addEdge, useEdgesState, useNodesState,
-  type Connection, type Edge, type NodeChange, type EdgeChange,
+  type Connection, type Edge, type NodeChange, type EdgeChange, type Node as RFNode,
   applyNodeChanges, applyEdgeChanges, ReactFlowProvider,
+  MarkerType,
 } from "reactflow";
 import "reactflow/dist/style.css";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Plus, Wand2, CheckCircle2, Loader2, ScrollText } from "lucide-react";
+import { Plus, Wand2, CheckCircle2, Loader2, ScrollText, Sparkles, FileText, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Badge } from "@/components/ui/badge";
 
 // Per-device default. Overridable from Settings → AI provider routing → Logic flow.
 // Stored in localStorage so it persists per-browser. Note: "openai-5.2" routes
