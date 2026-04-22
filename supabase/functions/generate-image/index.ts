@@ -1,7 +1,8 @@
-// Image generation — supports Lovable AI Gateway (Nano Banana / Gemini) AND
-// OpenAI direct (gpt-image-1 / "ChatGPT Image"). Can target media_assets, a
-// suspect thumbnail, or a project cover.
+// Image generation — supports OpenAI direct (gpt-image-*), Google Gemini direct
+// (Nano Banana via GEMINI_API_KEY), and Lovable AI Gateway fallback. Can target
+// media_assets, a suspect thumbnail, or a project cover.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { generateImage, ImageGenError } from "../_shared/ai-router.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,7 +12,6 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OpenAi") ?? Deno.env.get("OPENAI_API_KEY") ?? "";
 
 const IMAGE_MODEL: Record<string, string> = {
@@ -103,24 +103,21 @@ Deno.serve(async (req) => {
       bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
       mime = "image/png";
     } else {
-      const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model, messages: [{ role: "user", content: finalPrompt }], modalities: ["image", "text"] }),
-      });
-      if (!resp.ok) {
-        if (resp.status === 429) return new Response(JSON.stringify({ error: "Rate limit" }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        if (resp.status === 402) return new Response(JSON.stringify({ error: "Out of credits" }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        const t = await resp.text();
-        console.error("image gen error", resp.status, t);
-        return new Response(JSON.stringify({ error: "Image generation failed" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      try {
+        const result = await generateImage({ prompt: finalPrompt, model });
+        bytes = result.bytes;
+        mime = result.mime;
+      } catch (e) {
+        if (e instanceof ImageGenError) {
+          const provider = e.provider === "gemini-direct" ? "Google Gemini" : "Lovable AI";
+          console.error(`${provider} image error`, e.status, e.message);
+          if (e.status === 429) return new Response(JSON.stringify({ error: `${provider} rate limit` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          if (e.status === 402) return new Response(JSON.stringify({ error: `${provider} credits/key issue` }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          if (e.status === 401 || e.status === 403) return new Response(JSON.stringify({ error: `${provider} auth failed — check Settings → API keys` }), { status: e.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          return new Response(JSON.stringify({ error: `${provider} image generation failed` }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        throw e;
       }
-      const data = await resp.json();
-      const imageUrl: string | undefined = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-      const m = imageUrl?.match(/^data:([^;]+);base64,(.*)$/);
-      if (!m) return new Response(JSON.stringify({ error: "No image returned" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      mime = m[1];
-      bytes = Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0));
     }
 
     const ext = mime.split("/")[1] ?? "png";
@@ -152,7 +149,7 @@ Deno.serve(async (req) => {
         title: title ?? null,
         url: pub.publicUrl,
         prompt,
-        provider: useOpenAI ? "openai" : "lovable-ai",
+        provider: useOpenAI ? "openai" : (Deno.env.get("GEMINI_API_KEY") ? "gemini-direct" : "lovable-ai"),
         model,
         mime_type: mime,
       }).select().single();
@@ -174,7 +171,7 @@ Deno.serve(async (req) => {
       target_id: targetId ?? asset?.id ?? null,
       original_prompt: prompt,
       final_prompt: finalPrompt,
-      provider: useOpenAI ? "openai" : "lovable-ai",
+      provider: useOpenAI ? "openai" : (Deno.env.get("GEMINI_API_KEY") ? "gemini-direct" : "lovable-ai"),
       model,
     });
 

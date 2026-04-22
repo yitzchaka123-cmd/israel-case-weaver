@@ -135,16 +135,34 @@ export function SettingsPage() {
           </div>
         </Section>
 
-        <Section title="AI provider routing" desc="Choose which provider handles each task. Images only use OpenAI/Lovable.">
-          <div className="space-y-3 max-w-lg">
-            <ProviderRow label="Planning / Game design" value={planning} onChange={setPlanning} providers={["lovable", "openai", "claude"]} />
-            <ProviderRow label="Document generation" value={documents} onChange={setDocuments} providers={["lovable", "claude", "openai"]} />
-            <ProviderRow label="Image generation" value={images} onChange={setImages} providers={["lovable", "openai"]} />
+        <Section title="AI provider routing" desc="Choose which provider handles each task. Each prefix routes to its own billing account — see API keys below.">
+          <div className="space-y-3 max-w-xl">
+            <ProviderRow
+              label="Planning / Game design"
+              value={planning}
+              onChange={setPlanning}
+              providers={["lovable", "openai", "claude", "gemini-direct-pro"]}
+            />
+            <ProviderRow
+              label="Document generation"
+              value={documents}
+              onChange={setDocuments}
+              providers={["lovable", "openai", "claude", "gemini-direct-pro"]}
+            />
+            <ProviderRow
+              label="Image generation"
+              value={images}
+              onChange={setImages}
+              providers={["lovable", "openai"]}
+            />
           </div>
-          <p className="text-xs text-muted-foreground mt-3">
-            Lovable AI works out of the box. Bring-your-own Claude / OpenAI keys can be
-            added later — contact your workspace admin.
-          </p>
+          <div className="text-xs text-muted-foreground mt-4 space-y-1">
+            <p><strong>lovable</strong> uses the Lovable AI Gateway (workspace credits).</p>
+            <p><strong>openai</strong> uses your OpenAi key directly (billed to your OpenAI account).</p>
+            <p><strong>claude</strong> uses your ANTHROPIC_API_KEY directly (billed to your Anthropic account).</p>
+            <p><strong>gemini-direct-pro</strong> uses your GEMINI_API_KEY directly (billed to your Google AI account).</p>
+            <p>Image generation: Nano Banana models automatically prefer your GEMINI_API_KEY when present, otherwise fall back to the Lovable AI Gateway. ChatGPT Image always uses your OpenAi key.</p>
+          </div>
         </Section>
 
         <Section title="API keys" desc="Manage and test the API keys this workspace uses to call AI providers.">
@@ -169,21 +187,28 @@ function Section({ title, desc, children }: { title: string; desc?: string; chil
   );
 }
 
+const PROVIDER_LABEL: Record<string, string> = {
+  lovable: "Lovable",
+  openai: "OpenAI",
+  claude: "Claude",
+  "gemini-direct-pro": "Gemini",
+};
+
 function ProviderRow({ label, value, onChange, providers }: { label: string; value: string; onChange: (v: string) => void; providers: string[] }) {
   return (
-    <div className="flex items-center justify-between gap-4">
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
       <div className="text-sm">{label}</div>
-      <div className="flex gap-1 p-1 bg-muted rounded-lg">
+      <div className="flex flex-wrap gap-1 p-1 bg-muted rounded-lg">
         {providers.map((p) => (
           <button
             key={p}
             onClick={() => onChange(p)}
             className={[
-              "px-3 py-1.5 text-xs font-medium rounded-md capitalize transition-colors",
+              "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
               value === p ? "bg-surface shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground",
             ].join(" ")}
           >
-            {p}
+            {PROVIDER_LABEL[p] ?? p}
           </button>
         ))}
       </div>
