@@ -103,24 +103,21 @@ Deno.serve(async (req) => {
       bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
       mime = "image/png";
     } else {
-      const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model, messages: [{ role: "user", content: finalPrompt }], modalities: ["image", "text"] }),
-      });
-      if (!resp.ok) {
-        if (resp.status === 429) return new Response(JSON.stringify({ error: "Rate limit" }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        if (resp.status === 402) return new Response(JSON.stringify({ error: "Out of credits" }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        const t = await resp.text();
-        console.error("image gen error", resp.status, t);
-        return new Response(JSON.stringify({ error: "Image generation failed" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      try {
+        const result = await generateImage({ prompt: finalPrompt, model });
+        bytes = result.bytes;
+        mime = result.mime;
+      } catch (e) {
+        if (e instanceof ImageGenError) {
+          const provider = e.provider === "gemini-direct" ? "Google Gemini" : "Lovable AI";
+          console.error(`${provider} image error`, e.status, e.message);
+          if (e.status === 429) return new Response(JSON.stringify({ error: `${provider} rate limit` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          if (e.status === 402) return new Response(JSON.stringify({ error: `${provider} credits/key issue` }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          if (e.status === 401 || e.status === 403) return new Response(JSON.stringify({ error: `${provider} auth failed — check Settings → API keys` }), { status: e.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          return new Response(JSON.stringify({ error: `${provider} image generation failed` }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        throw e;
       }
-      const data = await resp.json();
-      const imageUrl: string | undefined = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-      const m = imageUrl?.match(/^data:([^;]+);base64,(.*)$/);
-      if (!m) return new Response(JSON.stringify({ error: "No image returned" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      mime = m[1];
-      bytes = Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0));
     }
 
     const ext = mime.split("/")[1] ?? "png";
