@@ -62,12 +62,15 @@ function RootShell({ children }: { children: React.ReactNode }) {
 }
 
 function RootComponent() {
+  const { queryClient } = Route.useRouteContext();
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <Outlet />
-        <Toaster position="top-right" richColors closeButton />
-      </AuthProvider>
-    </ThemeProvider>
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <AuthProvider>
+          <Outlet />
+          <Toaster position="top-right" richColors closeButton />
+        </AuthProvider>
+      </ThemeProvider>
+    </QueryClientProvider>
   );
 }
