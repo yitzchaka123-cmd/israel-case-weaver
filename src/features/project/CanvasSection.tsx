@@ -38,17 +38,8 @@ export const LOGIC_FLOW_MODEL_DEFAULT = "openai-5.2";
 
 type Board = "logic" | "final";
 
-const NODE_TYPES = [
-  { t: "clue", l: "Clue", c: "oklch(0.68 0.15 155)" },
-  { t: "suspect", l: "Suspect", c: "oklch(0.62 0.2 30)" },
-  { t: "deduction", l: "Deduction", c: "oklch(0.65 0.18 285)" },
-  { t: "contradiction", l: "Contradiction", c: "oklch(0.58 0.22 27)" },
-  { t: "red_herring", l: "Red Herring", c: "oklch(0.78 0.16 75)" },
-  { t: "envelope", l: "Envelope", c: "oklch(0.55 0.18 220)" },
-  { t: "document", l: "Document", c: "oklch(0.5 0.05 260)" },
-  { t: "solution", l: "Final Solution", c: "oklch(0.45 0.15 285)" },
-  { t: "note", l: "Note", c: "oklch(0.7 0.02 260)" },
-];
+const NODE_TYPES = (Object.entries(NODE_META) as [string, { label: string; accent: string }][])
+  .map(([t, m]) => ({ t, l: m.label, c: m.accent }));
 
 export function CanvasSection({ projectId }: { projectId: string }) {
   const [board, setBoard] = useState<Board>("logic");
