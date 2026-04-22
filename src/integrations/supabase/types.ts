@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       canvas_edges: {
         Row: {
+          board: string
           created_at: string
           id: string
           label: string | null
@@ -24,6 +25,7 @@ export type Database = {
           target_id: string
         }
         Insert: {
+          board?: string
           created_at?: string
           id?: string
           label?: string | null
@@ -32,6 +34,7 @@ export type Database = {
           target_id: string
         }
         Update: {
+          board?: string
           created_at?: string
           id?: string
           label?: string | null
@@ -65,6 +68,7 @@ export type Database = {
       }
       canvas_nodes: {
         Row: {
+          board: string
           color: string | null
           created_at: string
           data: Json
@@ -81,6 +85,7 @@ export type Database = {
           width: number | null
         }
         Insert: {
+          board?: string
           color?: string | null
           created_at?: string
           data?: Json
@@ -97,6 +102,7 @@ export type Database = {
           width?: number | null
         }
         Update: {
+          board?: string
           color?: string | null
           created_at?: string
           data?: Json
@@ -404,6 +410,7 @@ export type Database = {
           hint_settings: Json
           id: string
           image_prompt_instructions: string | null
+          logic_approved_at: string | null
           mystery_type: string | null
           owner_id: string
           packaging_notes: string | null
@@ -411,6 +418,7 @@ export type Database = {
           player_role: string | null
           selling_point: string | null
           setting: string | null
+          solution_summary: string | null
           subtitle: string | null
           target_doc_count: number | null
           title: string
@@ -431,6 +439,7 @@ export type Database = {
           hint_settings?: Json
           id?: string
           image_prompt_instructions?: string | null
+          logic_approved_at?: string | null
           mystery_type?: string | null
           owner_id: string
           packaging_notes?: string | null
@@ -438,6 +447,7 @@ export type Database = {
           player_role?: string | null
           selling_point?: string | null
           setting?: string | null
+          solution_summary?: string | null
           subtitle?: string | null
           target_doc_count?: number | null
           title?: string
@@ -458,6 +468,7 @@ export type Database = {
           hint_settings?: Json
           id?: string
           image_prompt_instructions?: string | null
+          logic_approved_at?: string | null
           mystery_type?: string | null
           owner_id?: string
           packaging_notes?: string | null
@@ -465,6 +476,7 @@ export type Database = {
           player_role?: string | null
           selling_point?: string | null
           setting?: string | null
+          solution_summary?: string | null
           subtitle?: string | null
           target_doc_count?: number | null
           title?: string
