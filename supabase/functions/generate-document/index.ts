@@ -10,6 +10,7 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
+const OPENAI_API_KEY = Deno.env.get("OpenAi") ?? Deno.env.get("OPENAI_API_KEY") ?? "";
 
 const PROVIDER_MODEL: Record<string, string> = {
   lovable: "google/gemini-2.5-pro",
@@ -20,12 +21,16 @@ const PROVIDER_MODEL: Record<string, string> = {
   claude: "openai/gpt-5", // Claude not on gateway; falls back
 };
 
-// Image models. Default: Nano Banana 2 (Gemini 3.1 Flash Image — fast, pro-quality).
+// Image models. Default: ChatGPT Image (gpt-image-1) via OpenAI direct API.
+// Lovable AI gateway models use Gemini family (Nano Banana series).
 const IMAGE_MODEL: Record<string, string> = {
+  "chatgpt-image": "gpt-image-1", // OpenAI direct
   "nano-banana-2": "google/gemini-3.1-flash-image-preview",
   "nano-banana-pro": "google/gemini-3-pro-image-preview",
   "nano-banana": "google/gemini-2.5-flash-image",
 };
+
+const OPENAI_IMAGE_KEYS = new Set(["chatgpt-image"]);
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
