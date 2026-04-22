@@ -11,12 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
 
-const IMAGE_MODELS = [
-  { value: "chatgpt-image", label: "ChatGPT Image (gpt-image-1) — default" },
-  { value: "nano-banana-2", label: "Nano Banana 2 — fast, pro-quality" },
-  { value: "nano-banana-pro", label: "Nano Banana Pro — highest quality, slower" },
-  { value: "nano-banana", label: "Nano Banana (classic)" },
-];
+import { ImageModelPicker, getStoredImageModel } from "@/components/ImageModelPicker";
 
 const DESIGN_PLACEHOLDER = `Describe EXACTLY how this document should look. The more specific, the better the result.
 
@@ -192,6 +187,9 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
 }
 
 function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
+  const [draft, setDraft] = useState<Doc | null>(doc);
+  const [genText, setGenText] = useState(false);
+  const [genImage, setGenImage] = useState(false);
   const [draft, setDraft] = useState<Doc | null>(doc);
   const [genText, setGenText] = useState(false);
   const [genImage, setGenImage] = useState(false);
