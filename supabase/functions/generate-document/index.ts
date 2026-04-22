@@ -88,6 +88,7 @@ Deno.serve(async (req) => {
 
       const designNotes = (doc.design_instructions ?? "").trim();
       const hebrewExcerpt = (doc.hebrew_content ?? "").trim().slice(0, 1200);
+      const userImageInstructions = (project?.image_prompt_instructions as string ?? "").trim();
 
       const imgPrompt = [
         `Create a single high-resolution, photorealistic, print-ready image of a ${doc.doc_type ?? "document"} for a premium Israeli mystery / detective game.`,
