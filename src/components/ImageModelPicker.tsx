@@ -71,6 +71,7 @@ export function ImageModelPicker({ surface, defaultModel, className, size = "sm"
   };
 
   const isOpenAI = value === "chatgpt-image-2" || value === "chatgpt-image";
+  const isNanoBanana = value.startsWith("nano-banana");
   const triggerCls = size === "sm" ? "h-8 text-xs" : "h-9 text-sm";
 
   return (
@@ -87,6 +88,12 @@ export function ImageModelPicker({ surface, defaultModel, className, size = "sm"
           ))}
         </SelectContent>
       </Select>
+
+      {isNanoBanana && (
+        <p className="text-[10px] text-muted-foreground leading-tight">
+          Uses Lovable AI credits unless a Google <code className="text-[10px]">GEMINI_API_KEY</code> is set in Settings → API keys.
+        </p>
+      )}
 
       {isOpenAI && (
         <>
