@@ -6,10 +6,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, Upload, Trash2, UserCircle2, Wand2, Loader2 } from "lucide-react";
+import { Plus, Upload, Trash2, UserCircle2, Loader2 } from "lucide-react";
 import { useRef, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { ImageModelPicker, getStoredImageModel } from "@/components/ImageModelPicker";
+import { PromptPanel } from "@/components/PromptPanel";
 
 interface Suspect {
   id: string;
@@ -108,10 +109,32 @@ export function SuspectsSection({ projectId }: { projectId: string }) {
 function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose: () => void }) {
   const [draft, setDraft] = useState<Suspect | null>(suspect);
   const [generating, setGenerating] = useState(false);
+  const [portraitPrompt, setPortraitPrompt] = useState<string>("");
   const fileInput = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => setDraft(suspect), [suspect?.id]);
+
+  // Load the most recent portrait prompt for this suspect (so we can show
+  // and edit what produced the current image).
+  useEffect(() => {
+    if (!suspect?.id) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("prompts")
+        .select("original_prompt, final_prompt")
+        .eq("project_id", suspect.project_id)
+        .eq("scope", "suspect-thumbnail")
+        .eq("target_id", suspect.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (cancelled) return;
+      setPortraitPrompt(data?.original_prompt ?? data?.final_prompt ?? "");
+    })();
+    return () => { cancelled = true; };
+  }, [suspect?.id, suspect?.project_id, draft?.thumbnail_url]);
 
   if (!suspect || !draft) return null;
 
