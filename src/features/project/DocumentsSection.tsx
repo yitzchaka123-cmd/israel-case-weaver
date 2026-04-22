@@ -378,11 +378,6 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
                     Generate document image
                   </Button>
                 </div>
-                  <Button size="sm" variant="outline" className="gap-2" onClick={() => generate("image")} disabled={genImage}>
-                    {genImage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
-                    Generate document image
-                  </Button>
-                </div>
               </div>
               <Textarea rows={6} value={draft.hebrew_content ?? ""} onChange={(e) => update({ hebrew_content: e.target.value })} dir="rtl" className="text-right" />
             </FieldBlock>
