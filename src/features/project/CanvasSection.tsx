@@ -209,7 +209,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
           "Content-Type": "application/json",
           Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
-        body: JSON.stringify({ projectId, replace: true }),
+        body: JSON.stringify({ projectId, replace: true, modelOverride: logicModel }),
       });
       if (!resp.ok) {
         const e = await resp.json().catch(() => ({ error: "Failed" }));
