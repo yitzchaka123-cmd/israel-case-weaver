@@ -12,6 +12,8 @@ import { toast } from "sonner";
 import jsPDF from "jspdf";
 
 import { ImageModelPicker, getStoredImageModel } from "@/components/ImageModelPicker";
+import { PromptWriterModelPicker, getStoredWriterModel } from "@/components/PromptWriterModelPicker";
+import { Sparkles } from "lucide-react";
 
 const DESIGN_PLACEHOLDER = `Describe EXACTLY how this document should look. The more specific, the better the result.
 
@@ -190,6 +192,7 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
   const [draft, setDraft] = useState<Doc | null>(doc);
   const [genText, setGenText] = useState(false);
   const [genImage, setGenImage] = useState(false);
+  const [draftingPrompt, setDraftingPrompt] = useState(false);
   const saveTimer = useRef<number | undefined>(undefined);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -257,6 +260,46 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
     if (!confirm("Delete this document?")) return;
     await supabase.from("documents").delete().eq("id", doc.id);
     onClose();
+  };
+
+  // Draft a fresh design-instructions / image prompt for this document using
+  // the project context. Replaces any existing draft.
+  const draftPrompt = async () => {
+    setDraftingPrompt(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const writerModel = getStoredWriterModel("document");
+      const hint = [
+        draft.title && `Document title: ${draft.title}`,
+        draft.doc_type && `Type: ${draft.doc_type}`,
+        draft.print_size && `Print size: ${draft.print_size}`,
+        draft.hebrew_content && `Hebrew text to include: ${draft.hebrew_content}`,
+      ].filter(Boolean).join(". ");
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/suggest-image-prompt`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({
+          projectId: doc.project_id,
+          category: "external",
+          hint: hint || undefined,
+          currentPrompt: draft.design_instructions ?? undefined,
+          writerModel: writerModel === "__project" ? undefined : writerModel,
+          userId: session?.user?.id,
+        }),
+      });
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        toast.error(json.error ?? "Couldn't draft a prompt");
+        return;
+      }
+      update({ design_instructions: json.prompt });
+      toast.success("Prompt drafted — review before generating");
+    } finally {
+      setDraftingPrompt(false);
+    }
   };
 
   const saveAsPdf = async () => {
@@ -330,12 +373,23 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
             </Select>
           </FieldBlock>
           <div className="md:col-span-2">
-            <FieldBlock label="Design / graphic instructions">
-              <div className="flex items-center justify-between mb-1.5 gap-2">
+            <FieldBlock label="Design / graphic instructions (this is the image prompt)">
+              <div className="flex items-center justify-between mb-1.5 gap-2 flex-wrap">
                 <p className="text-[11px] text-muted-foreground">
                   Structure beats brevity. Include GOAL, FORMAT, VISUAL STYLE, LAYOUT, TYPOGRAPHY, EXACT HEBREW TEXT, AUTHENTICITY rules.
                 </p>
                 <div className="flex items-center gap-2 shrink-0">
+                  <PromptWriterModelPicker surface="document" />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-[11px] gap-1.5"
+                    onClick={draftPrompt}
+                    disabled={draftingPrompt}
+                  >
+                    {draftingPrompt ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                    {draft.design_instructions ? "Revise with AI" : "Draft with AI"}
+                  </Button>
                   <span className="text-[10px] text-muted-foreground tabular-nums">
                     {(draft.design_instructions ?? "").length.toLocaleString()} chars
                   </span>

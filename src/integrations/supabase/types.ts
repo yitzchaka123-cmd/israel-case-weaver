@@ -367,6 +367,7 @@ export type Database = {
           created_at: string
           display_name: string | null
           id: string
+          image_prompt_assistant_instructions: string | null
           theme: string
           updated_at: string
         }
@@ -379,6 +380,7 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           id: string
+          image_prompt_assistant_instructions?: string | null
           theme?: string
           updated_at?: string
         }
@@ -391,6 +393,7 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           id?: string
+          image_prompt_assistant_instructions?: string | null
           theme?: string
           updated_at?: string
         }

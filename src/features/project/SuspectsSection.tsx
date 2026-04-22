@@ -6,10 +6,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, Upload, Trash2, UserCircle2, Wand2, Loader2 } from "lucide-react";
+import { Plus, Upload, Trash2, UserCircle2 } from "lucide-react";
 import { useRef, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { ImageModelPicker, getStoredImageModel } from "@/components/ImageModelPicker";
+import { PromptPanel } from "@/components/PromptPanel";
 
 interface Suspect {
   id: string;
@@ -108,10 +109,32 @@ export function SuspectsSection({ projectId }: { projectId: string }) {
 function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose: () => void }) {
   const [draft, setDraft] = useState<Suspect | null>(suspect);
   const [generating, setGenerating] = useState(false);
+  const [portraitPrompt, setPortraitPrompt] = useState<string>("");
   const fileInput = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => setDraft(suspect), [suspect?.id]);
+
+  // Load the most recent portrait prompt for this suspect (so we can show
+  // and edit what produced the current image).
+  useEffect(() => {
+    if (!suspect?.id) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("prompts")
+        .select("original_prompt, final_prompt")
+        .eq("project_id", suspect.project_id)
+        .eq("scope", "suspect-thumbnail")
+        .eq("target_id", suspect.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (cancelled) return;
+      setPortraitPrompt(data?.original_prompt ?? data?.final_prompt ?? "");
+    })();
+    return () => { cancelled = true; };
+  }, [suspect?.id, suspect?.project_id, draft?.thumbnail_url]);
 
   if (!suspect || !draft) return null;
 
@@ -137,19 +160,17 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
     setDraft({ ...draft, thumbnail_url: data.publicUrl });
   };
 
-  const generatePortrait = async () => {
-    const desc = [
-      draft.name && `Name: ${draft.name}`,
-      draft.role_in_case && `Role: ${draft.role_in_case}`,
-      draft.summary && `About: ${draft.summary}`,
-    ].filter(Boolean).join(". ");
-    if (!desc) return toast.error("Add a name / role / summary first");
+  const generatePortrait = async (promptOverride?: string): Promise<void> => {
+    const prompt = promptOverride?.trim();
+    if (!prompt) {
+      toast.error("Write a prompt first (or click Generate prompt)");
+      return;
+    }
     setGenerating(true);
     const t = toast.loading("Generating portrait…");
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const modelOverride = getStoredImageModel("suspect", "nano-banana-2");
-      const prompt = `Photorealistic editorial portrait, head-and-shoulders, neutral studio background, soft cinematic lighting, period-appropriate clothing. Subject: ${desc}. Believable real-person look, NOT a cartoon, NOT a 3D render. Sharp focus on the face. 3:4 portrait composition. No text, no captions, no watermarks.`;
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-image`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
@@ -158,6 +179,7 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
       const json = await resp.json();
       if (!resp.ok) throw new Error(json.error ?? "Failed");
       setDraft({ ...draft, thumbnail_url: json.url });
+      setPortraitPrompt(prompt);
       toast.success("Portrait ready", { id: t });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed", { id: t });
@@ -192,10 +214,16 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
             <input ref={fileInput} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadThumb(e.target.files[0])} />
             <div className="mt-2 space-y-1.5">
               <ImageModelPicker surface="suspect" defaultModel="nano-banana-2" className="w-full" />
-              <Button size="sm" className="w-full gap-2" onClick={generatePortrait} disabled={generating}>
-                {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-                Generate portrait
-              </Button>
+              <PromptPanel
+                projectId={suspect.project_id}
+                surface="suspect"
+                category="external"
+                hint={[draft.name && `Name: ${draft.name}`, draft.role_in_case && `Role: ${draft.role_in_case}`, draft.summary && `About: ${draft.summary}`].filter(Boolean).join(". ")}
+                initialPrompt={portraitPrompt}
+                generating={generating}
+                onGenerate={(p) => generatePortrait(p)}
+                mode={draft.thumbnail_url ? "archive" : "inline"}
+              />
               <Button variant="outline" size="sm" className="w-full gap-2" onClick={() => fileInput.current?.click()}>
                 <Upload className="h-3.5 w-3.5" /> Upload
               </Button>

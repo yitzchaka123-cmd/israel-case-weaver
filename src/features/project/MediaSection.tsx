@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Upload, Wand2, Loader2, Trash2, Image as ImageIcon, Video, Film, Newspaper, Package, ExternalLink, Sparkles, FileText, RefreshCw } from "lucide-react";
+import { PromptWriterModelPicker, getStoredWriterModel } from "@/components/PromptWriterModelPicker";
 import { toast } from "sonner";
 
 interface MediaAsset {
@@ -133,11 +134,15 @@ function CategoryPanel({ projectId, category, items }: { projectId: string; cate
   const handleSuggestPrompt = async () => {
     setSuggestingPrompt(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const writerModel = getStoredWriterModel("media");
       const resp = await callEdge("suggest-image-prompt", {
         projectId,
         category,
         hint: hint.trim() || undefined,
         currentPrompt: prompt.trim() || undefined,
+        writerModel: writerModel === "__project" ? undefined : writerModel,
+        userId: session?.user?.id,
       });
       const json = await resp.json().catch(() => ({}));
       if (!resp.ok) {
@@ -195,21 +200,24 @@ function CategoryPanel({ projectId, category, items }: { projectId: string; cate
 
         {isImage && (
           <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
               <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium flex items-center gap-1.5">
                 <FileText className="h-3 w-3" /> Image prompt — preview & edit before generating
               </Label>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1.5 text-xs"
-                onClick={handleSuggestPrompt}
-                disabled={suggestingPrompt}
-              >
-                {suggestingPrompt ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                {prompt.trim() ? "Regenerate prompt" : "Generate prompt"}
-              </Button>
+              <div className="flex items-center gap-1.5">
+                <PromptWriterModelPicker surface="media" />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1.5 text-xs"
+                  onClick={handleSuggestPrompt}
+                  disabled={suggestingPrompt}
+                >
+                  {suggestingPrompt ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                  {prompt.trim() ? "Regenerate prompt" : "Generate prompt"}
+                </Button>
+              </div>
             </div>
             <Textarea
               value={prompt}
@@ -357,10 +365,14 @@ function AssetDialog({
   const handleRegeneratePrompt = async () => {
     setRegenPrompt(true);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const writerModel = getStoredWriterModel("media");
       const resp = await callEdge("suggest-image-prompt", {
         projectId,
         category: asset.category ?? category,
         currentPrompt: editPrompt.trim() || undefined,
+        writerModel: writerModel === "__project" ? undefined : writerModel,
+        userId: session?.user?.id,
       });
       const json = await resp.json().catch(() => ({}));
       if (!resp.ok) {
@@ -417,17 +429,20 @@ function AssetDialog({
               <FileText className="h-3 w-3" /> Prompt — edit and retry
             </Label>
             {isImageAsset && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1.5 text-xs"
-                onClick={handleRegeneratePrompt}
-                disabled={regenPrompt}
-              >
-                {regenPrompt ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                Revise prompt with AI
-              </Button>
+              <div className="flex items-center gap-1.5">
+                <PromptWriterModelPicker surface="media" />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1.5 text-xs"
+                  onClick={handleRegeneratePrompt}
+                  disabled={regenPrompt}
+                >
+                  {regenPrompt ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                  Revise prompt with AI
+                </Button>
+              </div>
             )}
           </div>
           <Textarea

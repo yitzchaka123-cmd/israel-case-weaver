@@ -44,6 +44,8 @@ interface Body {
   category?: string;
   hint?: string; // optional user steering ("focus on the rainy alley")
   currentPrompt?: string; // if revising
+  writerModel?: string;   // override key from PLANNING_MODEL (per-image dropdown)
+  userId?: string;        // for global "image prompt assistant instructions"
 }
 
 Deno.serve(async (req) => {
@@ -51,7 +53,7 @@ Deno.serve(async (req) => {
 
   try {
     const body = (await req.json()) as Body;
-    const { projectId, category = "cover", hint, currentPrompt } = body;
+    const { projectId, category = "cover", hint, currentPrompt, writerModel, userId } = body;
     if (!projectId) {
       return new Response(JSON.stringify({ error: "projectId required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -62,7 +64,7 @@ Deno.serve(async (req) => {
 
     const { data: project } = await supa
       .from("projects")
-      .select("title, subtitle, genre, setting, year, mystery_type, player_role, case_goal, selling_point, image_prompt_instructions, ai_provider_planning")
+      .select("title, subtitle, genre, setting, year, mystery_type, player_role, case_goal, selling_point, image_prompt_instructions, ai_provider_planning, owner_id")
       .eq("id", projectId)
       .single();
 
@@ -79,8 +81,23 @@ Deno.serve(async (req) => {
       .order("position")
       .limit(8);
 
-    const projectKey = (project.ai_provider_planning as string) || "lovable";
+    // Resolve writer model: explicit override → project planning provider → lovable
+    const projectKey = (writerModel && PLANNING_MODEL[writerModel])
+      ? writerModel
+      : ((project.ai_provider_planning as string) || "lovable");
     const model = PLANNING_MODEL[projectKey] ?? PLANNING_MODEL.lovable;
+
+    // Pull global "image prompt assistant instructions" from the user's profile
+    const profileOwnerId = userId ?? project.owner_id;
+    let globalAssistantInstructions = "";
+    if (profileOwnerId) {
+      const { data: profile } = await supa
+        .from("profiles")
+        .select("image_prompt_assistant_instructions")
+        .eq("id", profileOwnerId)
+        .maybeSingle();
+      globalAssistantInstructions = ((profile as any)?.image_prompt_assistant_instructions ?? "").trim();
+    }
 
     const ctx = [
       project.title && `Title: ${project.title}`,
@@ -92,13 +109,16 @@ Deno.serve(async (req) => {
       project.player_role && `Player role: ${project.player_role}`,
       project.case_goal && `Case goal: ${project.case_goal}`,
       project.selling_point && `Selling point: ${project.selling_point}`,
-      project.image_prompt_instructions && `Global image style notes: ${project.image_prompt_instructions}`,
+      project.image_prompt_instructions && `Project image style notes: ${project.image_prompt_instructions}`,
       suspects?.length && `Key characters: ${suspects.map((s) => `${s.name}${s.role_in_case ? ` (${s.role_in_case})` : ""}`).join("; ")}`,
     ].filter(Boolean).join("\n");
 
     const guidance = CATEGORY_GUIDANCE[category] ?? CATEGORY_GUIDANCE.external;
 
-    const system = `You are an expert art director for boxed murder-mystery games. You write concise, vivid image-generation prompts (3–6 sentences) that an image model like Gemini Nano Banana or OpenAI gpt-image will turn into a single still image. Focus on subject, composition, lighting, mood, color palette, medium/style, and lens. No camera-shake instructions, no text overlays unless requested. Never output anything except the prompt itself.`;
+    const baseSystem = `You are an expert art director for boxed murder-mystery games. You write concise, vivid image-generation prompts (3–6 sentences) that an image model like Gemini Nano Banana or OpenAI gpt-image will turn into a single still image. Focus on subject, composition, lighting, mood, color palette, medium/style, and lens. No camera-shake instructions, no text overlays unless requested. Never output anything except the prompt itself.`;
+    const system = globalAssistantInstructions
+      ? `${baseSystem}\n\nUSER GLOBAL STYLE GUIDE (highest priority — apply to every prompt you write):\n${globalAssistantInstructions}`
+      : baseSystem;
 
     const userMsg = `PROJECT CONTEXT:\n${ctx || "(no context yet)"}\n\nIMAGE PURPOSE: ${category.toUpperCase()} — ${guidance}${
       hint ? `\n\nUSER STEERING: ${hint}` : ""

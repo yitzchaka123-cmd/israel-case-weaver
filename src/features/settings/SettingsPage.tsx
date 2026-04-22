@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { ApiKeyManager } from "./ApiKeyManager";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LOGIC_FLOW_MODELS, LOGIC_FLOW_MODEL_KEY, LOGIC_FLOW_MODEL_DEFAULT } from "@/features/project/CanvasSection";
+import { Textarea } from "@/components/ui/textarea";
 
 export function SettingsPage() {
   const { user } = useAuth();
@@ -21,6 +22,7 @@ export function SettingsPage() {
   const [planning, setPlanning] = useState("lovable");
   const [documents, setDocuments] = useState("lovable");
   const [images, setImages] = useState("lovable");
+  const [imgAssistantInstructions, setImgAssistantInstructions] = useState("");
   const [logicFlowModel, setLogicFlowModel] = useState<string>(() => {
     if (typeof window === "undefined") return LOGIC_FLOW_MODEL_DEFAULT;
     return localStorage.getItem(LOGIC_FLOW_MODEL_KEY) ?? LOGIC_FLOW_MODEL_DEFAULT;
@@ -43,6 +45,7 @@ export function SettingsPage() {
       setPlanning(profile.ai_provider_planning);
       setDocuments(profile.ai_provider_documents);
       setImages(profile.ai_provider_images);
+      setImgAssistantInstructions((profile as any).image_prompt_assistant_instructions ?? "");
     }
   }, [profile]);
 
@@ -56,10 +59,12 @@ export function SettingsPage() {
       ai_provider_planning: planning,
       ai_provider_documents: documents,
       ai_provider_images: images,
-    });
+      image_prompt_assistant_instructions: imgAssistantInstructions,
+    } as any);
     if (error) toast.error(error.message);
     else toast.success("Settings saved");
   };
+
 
   const uploadLogo = async (file: File) => {
     if (!user) return;
@@ -139,6 +144,22 @@ export function SettingsPage() {
             <Label>Display name</Label>
             <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
           </div>
+        </Section>
+
+        <Section
+          title="Image-prompt assistant"
+          desc="Global style guide for the AI assistant that drafts image prompts (cover, suspect portraits, document images, media). Applied to every project."
+        >
+          <Textarea
+            rows={8}
+            value={imgAssistantInstructions}
+            onChange={(e) => setImgAssistantInstructions(e.target.value)}
+            placeholder={`e.g. Always cinematic, photo-real, 35mm film grain. Avoid AI-art tropes (oversaturated colors, glossy plastic skin). Prefer single strong focal subject and negative space for title placement. No text or watermarks.`}
+            className="font-mono text-xs leading-relaxed"
+          />
+          <p className="text-[11px] text-muted-foreground mt-2">
+            Per-image writer model can be picked next to each "Generate prompt" button. The AI also reads your project's own image style notes (Overview → image_prompt_instructions) on top of this.
+          </p>
         </Section>
 
         <Section title="AI provider routing" desc="Choose which provider handles each task. Each prefix routes to its own billing account — see API keys below.">
