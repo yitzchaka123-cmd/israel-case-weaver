@@ -21,6 +21,17 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const nav = useNavigate();
   const [tab, setTab] = useState("overview");
 
+  // Allow other components (e.g. assistant tool-call receipts) to switch tabs
+  // and optionally focus a specific item by dispatching a `mystudio:navigate` event.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ tab: string }>).detail;
+      if (detail?.tab) setTab(detail.tab);
+    };
+    window.addEventListener("mystudio:navigate", handler as EventListener);
+    return () => window.removeEventListener("mystudio:navigate", handler as EventListener);
+  }, []);
+
   const { data: project, isLoading } = useQuery({
     queryKey: ["project", projectId],
     queryFn: async () => {
