@@ -171,7 +171,7 @@ Deno.serve(async (req) => {
       target_id: targetId ?? asset?.id ?? null,
       original_prompt: prompt,
       final_prompt: finalPrompt,
-      provider: useOpenAI ? "openai" : "lovable-ai",
+      provider: useOpenAI ? "openai" : (Deno.env.get("GEMINI_API_KEY") ? "gemini-direct" : "lovable-ai"),
       model,
     });
 
