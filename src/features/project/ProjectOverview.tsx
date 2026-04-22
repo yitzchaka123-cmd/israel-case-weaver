@@ -69,31 +69,44 @@ export function ProjectOverview({ project }: { project: any }) {
   };
 
   const [genCover, setGenCover] = useState(false);
-  const generateCover = async () => {
-    const desc = [
-      draft.title && `Title: "${draft.title}"`,
-      draft.subtitle && `Subtitle: "${draft.subtitle}"`,
-      draft.mystery_type && `Type: ${draft.mystery_type}`,
-      draft.genre && `Genre: ${draft.genre}`,
-      draft.year && `Year: ${draft.year}`,
-      draft.setting && `Setting: ${draft.setting}`,
-      draft.case_goal && `Case: ${draft.case_goal}`,
-    ].filter(Boolean).join(". ");
-    if (!desc) return toast.error("Fill in title / type / setting first");
+  const [coverPrompt, setCoverPrompt] = useState<string>("");
+
+  // Load the most recent cover prompt so users can see what produced the
+  // current image (and edit it for a regen).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("prompts")
+        .select("original_prompt, final_prompt")
+        .eq("project_id", project.id)
+        .eq("scope", "project-cover")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (cancelled) return;
+      setCoverPrompt(data?.original_prompt ?? data?.final_prompt ?? "");
+    })();
+    return () => { cancelled = true; };
+  }, [project.id, draft.cover_image_url]);
+
+  const generateCover = async (promptOverride?: string) => {
+    const promptToUse = promptOverride?.trim();
+    if (!promptToUse) return toast.error("Write a prompt first");
     setGenCover(true);
     const t = toast.loading("Generating cover…");
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const modelOverride = getStoredImageModel("cover", "chatgpt-image-2");
-      const prompt = `Premium printable BOX-COVER artwork for an Israeli mystery / detective board game. Cinematic, evocative, painterly photo-real style. Strong central focal subject, dramatic lighting, period-accurate. Composition leaves space at the top for a future title treatment. 3:4 portrait. NO text, NO logos, NO watermarks — pure illustration only. Brief: ${desc}.`;
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-image`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
-        body: JSON.stringify({ projectId: project.id, prompt, target: "project-cover", modelOverride, aspect: "portrait" }),
+        body: JSON.stringify({ projectId: project.id, prompt: promptToUse, target: "project-cover", modelOverride, aspect: "portrait" }),
       });
       const json = await resp.json();
       if (!resp.ok) throw new Error(json.error ?? "Failed");
       setDraft({ ...draft, cover_image_url: json.url });
+      setCoverPrompt(promptToUse);
       toast.success("Cover ready", { id: t });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed", { id: t });
