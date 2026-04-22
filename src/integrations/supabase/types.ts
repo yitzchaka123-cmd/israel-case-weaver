@@ -14,7 +14,566 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      canvas_edges: {
+        Row: {
+          created_at: string
+          id: string
+          label: string | null
+          project_id: string
+          source_id: string
+          target_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          label?: string | null
+          project_id: string
+          source_id: string
+          target_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          label?: string | null
+          project_id?: string
+          source_id?: string
+          target_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "canvas_edges_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "canvas_edges_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "canvas_nodes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "canvas_edges_target_id_fkey"
+            columns: ["target_id"]
+            isOneToOne: false
+            referencedRelation: "canvas_nodes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      canvas_nodes: {
+        Row: {
+          color: string | null
+          created_at: string
+          data: Json
+          description: string | null
+          height: number | null
+          id: string
+          locked: boolean
+          node_type: string
+          position_x: number
+          position_y: number
+          project_id: string
+          title: string
+          updated_at: string
+          width: number | null
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          data?: Json
+          description?: string | null
+          height?: number | null
+          id?: string
+          locked?: boolean
+          node_type?: string
+          position_x?: number
+          position_y?: number
+          project_id: string
+          title?: string
+          updated_at?: string
+          width?: number | null
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          data?: Json
+          description?: string | null
+          height?: number | null
+          id?: string
+          locked?: boolean
+          node_type?: string
+          position_x?: number
+          position_y?: number
+          project_id?: string
+          title?: string
+          updated_at?: string
+          width?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "canvas_nodes_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      chat_messages: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          metadata: Json | null
+          project_id: string
+          role: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          project_id: string
+          role: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          project_id?: string
+          role?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_messages_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      documents: {
+        Row: {
+          active_version: string
+          created_at: string
+          design_instructions: string | null
+          doc_number: number | null
+          doc_type: string | null
+          envelope_number: number | null
+          generated_asset_url: string | null
+          hebrew_content: string | null
+          id: string
+          linked_node_ids: string[] | null
+          linked_suspect_ids: string[] | null
+          print_size: string | null
+          project_id: string
+          status: string
+          title: string
+          updated_at: string
+          uploaded_asset_url: string | null
+        }
+        Insert: {
+          active_version?: string
+          created_at?: string
+          design_instructions?: string | null
+          doc_number?: number | null
+          doc_type?: string | null
+          envelope_number?: number | null
+          generated_asset_url?: string | null
+          hebrew_content?: string | null
+          id?: string
+          linked_node_ids?: string[] | null
+          linked_suspect_ids?: string[] | null
+          print_size?: string | null
+          project_id: string
+          status?: string
+          title?: string
+          updated_at?: string
+          uploaded_asset_url?: string | null
+        }
+        Update: {
+          active_version?: string
+          created_at?: string
+          design_instructions?: string | null
+          doc_number?: number | null
+          doc_type?: string | null
+          envelope_number?: number | null
+          generated_asset_url?: string | null
+          hebrew_content?: string | null
+          id?: string
+          linked_node_ids?: string[] | null
+          linked_suspect_ids?: string[] | null
+          print_size?: string | null
+          project_id?: string
+          status?: string
+          title?: string
+          updated_at?: string
+          uploaded_asset_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "documents_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      envelopes: {
+        Row: {
+          created_at: string
+          id: string
+          label: string | null
+          notes: string | null
+          number: number
+          project_id: string
+          status: string
+          task: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          label?: string | null
+          notes?: string | null
+          number: number
+          project_id: string
+          status?: string
+          task?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          label?: string | null
+          notes?: string | null
+          number?: number
+          project_id?: string
+          status?: string
+          task?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "envelopes_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      hints: {
+        Row: {
+          created_at: string
+          id: string
+          level: number
+          project_id: string
+          stage: number
+          text: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          level: number
+          project_id: string
+          stage: number
+          text?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          level?: number
+          project_id?: string
+          stage?: number
+          text?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hints_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      media_assets: {
+        Row: {
+          category: string
+          created_at: string
+          id: string
+          mime_type: string | null
+          model: string | null
+          project_id: string
+          prompt: string | null
+          provider: string | null
+          title: string | null
+          url: string | null
+        }
+        Insert: {
+          category?: string
+          created_at?: string
+          id?: string
+          mime_type?: string | null
+          model?: string | null
+          project_id: string
+          prompt?: string | null
+          provider?: string | null
+          title?: string | null
+          url?: string | null
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          id?: string
+          mime_type?: string | null
+          model?: string | null
+          project_id?: string
+          prompt?: string | null
+          provider?: string | null
+          title?: string | null
+          url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "media_assets_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          ai_provider_documents: string
+          ai_provider_images: string
+          ai_provider_planning: string
+          app_logo_url: string | null
+          avatar_url: string | null
+          created_at: string
+          display_name: string | null
+          id: string
+          theme: string
+          updated_at: string
+        }
+        Insert: {
+          ai_provider_documents?: string
+          ai_provider_images?: string
+          ai_provider_planning?: string
+          app_logo_url?: string | null
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id: string
+          theme?: string
+          updated_at?: string
+        }
+        Update: {
+          ai_provider_documents?: string
+          ai_provider_images?: string
+          ai_provider_planning?: string
+          app_logo_url?: string | null
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          theme?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      projects: {
+        Row: {
+          ai_provider_documents: string | null
+          ai_provider_images: string | null
+          ai_provider_planning: string | null
+          case_goal: string | null
+          cover_image_url: string | null
+          created_at: string
+          difficulty: string | null
+          envelope_settings: Json
+          genre: string | null
+          hint_settings: Json
+          id: string
+          mystery_type: string | null
+          owner_id: string
+          packaging_notes: string | null
+          phase: string
+          player_role: string | null
+          selling_point: string | null
+          setting: string | null
+          subtitle: string | null
+          target_doc_count: number | null
+          title: string
+          updated_at: string
+          year: number | null
+        }
+        Insert: {
+          ai_provider_documents?: string | null
+          ai_provider_images?: string | null
+          ai_provider_planning?: string | null
+          case_goal?: string | null
+          cover_image_url?: string | null
+          created_at?: string
+          difficulty?: string | null
+          envelope_settings?: Json
+          genre?: string | null
+          hint_settings?: Json
+          id?: string
+          mystery_type?: string | null
+          owner_id: string
+          packaging_notes?: string | null
+          phase?: string
+          player_role?: string | null
+          selling_point?: string | null
+          setting?: string | null
+          subtitle?: string | null
+          target_doc_count?: number | null
+          title?: string
+          updated_at?: string
+          year?: number | null
+        }
+        Update: {
+          ai_provider_documents?: string | null
+          ai_provider_images?: string | null
+          ai_provider_planning?: string | null
+          case_goal?: string | null
+          cover_image_url?: string | null
+          created_at?: string
+          difficulty?: string | null
+          envelope_settings?: Json
+          genre?: string | null
+          hint_settings?: Json
+          id?: string
+          mystery_type?: string | null
+          owner_id?: string
+          packaging_notes?: string | null
+          phase?: string
+          player_role?: string | null
+          selling_point?: string | null
+          setting?: string | null
+          subtitle?: string | null
+          target_doc_count?: number | null
+          title?: string
+          updated_at?: string
+          year?: number | null
+        }
+        Relationships: []
+      }
+      prompts: {
+        Row: {
+          created_at: string
+          final_prompt: string | null
+          id: string
+          model: string | null
+          original_prompt: string | null
+          project_id: string
+          provider: string | null
+          revised_prompt: string | null
+          scope: string
+          target_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          final_prompt?: string | null
+          id?: string
+          model?: string | null
+          original_prompt?: string | null
+          project_id: string
+          provider?: string | null
+          revised_prompt?: string | null
+          scope: string
+          target_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          final_prompt?: string | null
+          id?: string
+          model?: string | null
+          original_prompt?: string | null
+          project_id?: string
+          provider?: string | null
+          revised_prompt?: string | null
+          scope?: string
+          target_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "prompts_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      suspects: {
+        Row: {
+          alt_thumbnail_url: string | null
+          contradictions: string | null
+          created_at: string
+          id: string
+          is_red_herring: boolean
+          motives: string | null
+          name: string
+          position: number
+          project_id: string
+          role_in_case: string | null
+          secrets: string | null
+          summary: string | null
+          thumbnail_url: string | null
+          updated_at: string
+        }
+        Insert: {
+          alt_thumbnail_url?: string | null
+          contradictions?: string | null
+          created_at?: string
+          id?: string
+          is_red_herring?: boolean
+          motives?: string | null
+          name?: string
+          position?: number
+          project_id: string
+          role_in_case?: string | null
+          secrets?: string | null
+          summary?: string | null
+          thumbnail_url?: string | null
+          updated_at?: string
+        }
+        Update: {
+          alt_thumbnail_url?: string | null
+          contradictions?: string | null
+          created_at?: string
+          id?: string
+          is_red_herring?: boolean
+          motives?: string | null
+          name?: string
+          position?: number
+          project_id?: string
+          role_in_case?: string | null
+          secrets?: string | null
+          summary?: string | null
+          thumbnail_url?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "suspects_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
