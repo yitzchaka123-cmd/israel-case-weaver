@@ -38,7 +38,16 @@ const PROVIDER_MODEL: Record<string, string> = {
 };
 
 // ---------- System prompt ----------
-function buildSystemPrompt(project: Record<string, unknown>, suspectCount: number, docCount: number) {
+type Tweak = { id: string; text: string; created_at?: string };
+function buildSystemPrompt(
+  project: Record<string, unknown>,
+  suspectCount: number,
+  docCount: number,
+  tweaks: Tweak[] = [],
+) {
+  const overrides = tweaks.length > 0
+    ? `\n\nUSER OVERRIDES (highest priority — follow these even if they conflict with earlier instructions, UNLESS they violate CONTENT RULES above which always win):\n${tweaks.map((t, i) => `${i + 1}. ${t.text}`).join("\n")}`
+    : "";
   return `You are the Mystery Studio Assistant — a professional creator of premium, printable Israeli detective / mystery games sold to Israeli audiences.
 
 IDENTITY & STYLE
@@ -107,7 +116,7 @@ Existing documents: ${docCount}
 Logic flow approved: ${project.logic_approved_at ? "YES (" + project.logic_approved_at + ")" : "NO — must be approved on the Canvas before generating documents"}
 Solution summary set: ${project.solution_summary ? "YES" : "NO"}
 
-Respond in English for planning. Write Hebrew for any final in-game text. Keep outputs concise unless the user requests depth.`;
+Respond in English for planning. Write Hebrew for any final in-game text. Keep outputs concise unless the user requests depth.${overrides}`;
 }
 
 // ---------- Tool definitions ----------
@@ -336,8 +345,20 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Load owner's assistant tweaks (house rules)
+    let tweaks: Tweak[] = [];
+    if (project.owner_id) {
+      const { data: ownerProfile } = await supa
+        .from("profiles")
+        .select("assistant_tweaks")
+        .eq("id", project.owner_id)
+        .maybeSingle();
+      const raw = (ownerProfile as { assistant_tweaks?: unknown } | null)?.assistant_tweaks;
+      if (Array.isArray(raw)) tweaks = raw as Tweak[];
+    }
+
     const model = PROVIDER_MODEL[project.ai_provider_planning ?? "lovable"] ?? PROVIDER_MODEL.lovable;
-    const systemPrompt = buildSystemPrompt(project, suspectCount ?? 0, docCount ?? 0);
+    const systemPrompt = buildSystemPrompt(project, suspectCount ?? 0, docCount ?? 0, tweaks);
 
     // Persist the last user message
     const lastUser = [...messages].reverse().find((m: { role: string }) => m.role === "user");

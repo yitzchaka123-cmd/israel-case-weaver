@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { useEffect, useRef, useState } from "react";
 import { ApiKeyManager } from "./ApiKeyManager";
 import { GeminiConnection } from "./GeminiConnection";
+import { AssistantTweaksPanel } from "./AssistantTweaksPanel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LOGIC_FLOW_MODELS, LOGIC_FLOW_MODEL_KEY, LOGIC_FLOW_MODEL_DEFAULT } from "@/features/project/CanvasSection";
 import { Textarea } from "@/components/ui/textarea";
@@ -161,6 +162,13 @@ export function SettingsPage() {
           <p className="text-[11px] text-muted-foreground mt-2">
             Per-image writer model can be picked next to each "Generate prompt" button. The AI also reads your project's own image style notes (Overview → image_prompt_instructions) on top of this.
           </p>
+        </Section>
+
+        <Section
+          title="Assistant tweaks"
+          desc="Your house rules for the main game-building Assistant. Talk to the mini-assistant in plain English to add, edit or remove rules — they're injected into every project's Assistant prompt as USER OVERRIDES."
+        >
+          <AssistantTweaksPanel />
         </Section>
 
         <Section title="AI provider routing" desc="Choose which provider handles each task. Each prefix routes to its own billing account — see API keys below.">

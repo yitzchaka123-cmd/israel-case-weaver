@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth";
+import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
-import { Sparkles, Send, Loader2, Bot, User, Wand2, CheckCircle2, Cpu, Image as ImageIcon, Settings2, Video, ChevronRight, ExternalLink, AlertCircle, Mic, MicOff } from "lucide-react";
+import { Sparkles, Send, Loader2, Bot, User, Wand2, CheckCircle2, Cpu, Image as ImageIcon, Settings2, Video, ChevronRight, ExternalLink, AlertCircle, Mic, MicOff, Sliders } from "lucide-react";
 import { toast } from "sonner";
 import { useVoiceInput } from "@/hooks/use-voice-input";
 
@@ -59,10 +61,22 @@ const STARTERS = [
 
 export function AssistantSection({ projectId, phase }: { projectId: string; phase: string }) {
   const qc = useQueryClient();
+  const { user } = useAuth();
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const dictationBaseRef = useRef("");
+
+  const { data: tweakCount = 0 } = useQuery({
+    queryKey: ["assistant-tweaks-count", user?.id],
+    queryFn: async () => {
+      if (!user) return 0;
+      const { data } = await supabase.from("profiles").select("assistant_tweaks").eq("id", user.id).maybeSingle();
+      const raw = (data as { assistant_tweaks?: unknown } | null)?.assistant_tweaks;
+      return Array.isArray(raw) ? raw.length : 0;
+    },
+    enabled: !!user,
+  });
 
   const voice = useVoiceInput({
     onTranscript: (text) => {
@@ -273,6 +287,16 @@ export function AssistantSection({ projectId, phase }: { projectId: string; phas
             videoInstructions={project?.video_prompt_instructions ?? ""}
             onSave={(patch) => setProjectAi(patch)}
           />
+          {tweakCount > 0 && (
+            <Link
+              to="/settings"
+              className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-accent/10 hover:bg-accent/20 border border-accent/30 px-2.5 py-1 text-[11px] font-medium text-accent transition-colors"
+              title="Your house rules are influencing the assistant. Click to manage."
+            >
+              <Sliders className="h-3 w-3" />
+              {tweakCount} tweak{tweakCount === 1 ? "" : "s"} active
+            </Link>
+          )}
         </div>
         <div ref={scrollRef} className="flex-1 overflow-auto">
           <div className="max-w-3xl mx-auto px-6 py-8 space-y-6">

@@ -3,6 +3,9 @@ project_id = "disanuvopbwdruathmfx"
 [functions.assistant-chat]
 verify_jwt = false
 
+[functions.assistant-tweaks-edit]
+verify_jwt = false
+
 [functions.generate-image]
 verify_jwt = false
 
