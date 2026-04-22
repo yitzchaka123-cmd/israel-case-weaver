@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
     // Pull project's preferred image model.
     const { data: project } = await supa
       .from("projects")
-      .select("ai_provider_images")
+      .select("ai_provider_images, image_prompt_instructions")
       .eq("id", projectId)
       .single();
 
@@ -39,6 +39,11 @@ Deno.serve(async (req) => {
     const pref = (project?.ai_provider_images as string) ?? "nano-banana-2";
     const model = IMAGE_MODEL[pref] ?? IMAGE_MODEL["nano-banana-2"];
 
+    const userImageInstructions = (project?.image_prompt_instructions as string ?? "").trim();
+    const finalPrompt = userImageInstructions
+      ? `USER GLOBAL IMAGE INSTRUCTIONS (apply to every image in this project — highest priority):\n${userImageInstructions}\n\n---\n\n${prompt}`
+      : prompt;
+
     const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -47,7 +52,7 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         model,
-        messages: [{ role: "user", content: prompt }],
+        messages: [{ role: "user", content: finalPrompt }],
         modalities: ["image", "text"],
       }),
     });
