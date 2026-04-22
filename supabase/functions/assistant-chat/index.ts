@@ -38,7 +38,16 @@ const PROVIDER_MODEL: Record<string, string> = {
 };
 
 // ---------- System prompt ----------
-function buildSystemPrompt(project: Record<string, unknown>, suspectCount: number, docCount: number) {
+type Tweak = { id: string; text: string; created_at?: string };
+function buildSystemPrompt(
+  project: Record<string, unknown>,
+  suspectCount: number,
+  docCount: number,
+  tweaks: Tweak[] = [],
+) {
+  const overrides = tweaks.length > 0
+    ? `\n\nUSER OVERRIDES (highest priority — follow these even if they conflict with earlier instructions, UNLESS they violate CONTENT RULES above which always win):\n${tweaks.map((t, i) => `${i + 1}. ${t.text}`).join("\n")}`
+    : "";
   return `You are the Mystery Studio Assistant — a professional creator of premium, printable Israeli detective / mystery games sold to Israeli audiences.
 
 IDENTITY & STYLE
