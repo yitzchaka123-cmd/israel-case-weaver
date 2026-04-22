@@ -262,6 +262,46 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
     onClose();
   };
 
+  // Draft a fresh design-instructions / image prompt for this document using
+  // the project context. Replaces any existing draft.
+  const draftPrompt = async () => {
+    setDraftingPrompt(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const writerModel = getStoredWriterModel("document");
+      const hint = [
+        draft.title && `Document title: ${draft.title}`,
+        draft.doc_type && `Type: ${draft.doc_type}`,
+        draft.print_size && `Print size: ${draft.print_size}`,
+        draft.hebrew_content && `Hebrew text to include: ${draft.hebrew_content}`,
+      ].filter(Boolean).join(". ");
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/suggest-image-prompt`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({
+          projectId: doc.project_id,
+          category: "external",
+          hint: hint || undefined,
+          currentPrompt: draft.design_instructions ?? undefined,
+          writerModel: writerModel === "__project" ? undefined : writerModel,
+          userId: session?.user?.id,
+        }),
+      });
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        toast.error(json.error ?? "Couldn't draft a prompt");
+        return;
+      }
+      update({ design_instructions: json.prompt });
+      toast.success("Prompt drafted — review before generating");
+    } finally {
+      setDraftingPrompt(false);
+    }
+  };
+
   const saveAsPdf = async () => {
     const url = draft.generated_asset_url;
     if (!url) return;
