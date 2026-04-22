@@ -174,6 +174,7 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
   const [draft, setDraft] = useState<Doc | null>(doc);
   const [genText, setGenText] = useState(false);
   const [genImage, setGenImage] = useState(false);
+  const [imageModel, setImageModel] = useState<string>("nano-banana-2");
   const saveTimer = useRef<number | undefined>(undefined);
   const fileInput = useRef<HTMLInputElement>(null);
 
