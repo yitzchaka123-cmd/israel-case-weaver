@@ -120,19 +120,8 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
         id: n.id,
         position: { x: n.position_x, y: n.position_y },
         data: { label: n.title || "(untitled)", type: n.node_type, color: n.color, description: n.description },
-        type: "default",
+        type: "case",
         draggable: !n.locked,
-        style: {
-          background: "var(--color-card)",
-          border: `2px solid ${n.color ?? "var(--color-border)"}`,
-          borderRadius: 12,
-          padding: "10px 14px",
-          minWidth: 160,
-          boxShadow: "var(--shadow-md)",
-          color: "var(--color-foreground)",
-          fontSize: 13,
-          cursor: "pointer",
-        },
       }))
     );
   }, [dbNodes, setNodes]);
