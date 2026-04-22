@@ -72,6 +72,7 @@ When offering choices, ALWAYS use a numbered list.
 TOOL USE (CRITICAL)
 When the user approves a change, you MUST persist it by calling the appropriate tool. Do NOT just describe the change. Tools write to the shared project state so the UI, canvas and suspects sections update immediately.
 - update_project: change project metadata/phase after approvals.
+- set_solution_summary: AS SOON as the user approves the Phase 2 case summary (or whenever they approve a revised end-to-end solution narrative), call this tool with the full summary text. This single source of truth feeds the Case Board's "Solution summary" button, the Logic Flow generator, and every future document. NEVER skip this step after an approval — without it, the Canvas summary button will be empty and document generation will refuse to run.
 - add_suspect / update_suspect: manage cast.
 - add_document: create a document record (Hebrew content, design notes, print size).
 - add_canvas_node: add a logic/clue/deduction/envelope/solution node.
@@ -132,6 +133,29 @@ const TOOLS = [
           selling_point: { type: "string" },
           target_doc_count: { type: "number" },
         },
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "set_solution_summary",
+      description:
+        "Save the full end-to-end case solution summary to the project. Call this AS SOON as the user approves the Phase 2 summary so it appears on the Case Board's Solution-summary button. Pass mark_approved=true ONLY if the user has explicitly approved the logic flow itself (not just the narrative).",
+      parameters: {
+        type: "object",
+        properties: {
+          summary: {
+            type: "string",
+            description: "Full multi-paragraph solution summary (English or Hebrew). 3–8 paragraphs covering setup → clue chain → red herrings → deduction → reveal.",
+          },
+          mark_approved: {
+            type: "boolean",
+            description: "Set to true to also stamp logic_approved_at = now (unlocks document generation). Default false.",
+          },
+        },
+        required: ["summary"],
         additionalProperties: false,
       },
     },
@@ -210,6 +234,22 @@ async function executeTool(
       const { error } = await supa.from("projects").update(args).eq("id", projectId);
       if (error) throw error;
       return { ok: true, message: `Project updated: ${Object.keys(args).join(", ")}` };
+    }
+    if (name === "set_solution_summary") {
+      const summary = String((args as { summary?: string }).summary ?? "").trim();
+      const markApproved = Boolean((args as { mark_approved?: boolean }).mark_approved);
+      if (!summary) return { ok: false, message: "summary is required" };
+      const patch: Record<string, unknown> = { solution_summary: summary };
+      if (markApproved) patch.logic_approved_at = new Date().toISOString();
+      const { error } = await supa.from("projects").update(patch).eq("id", projectId);
+      if (error) throw error;
+      const wordCount = summary.split(/\s+/).filter(Boolean).length;
+      return {
+        ok: true,
+        message: markApproved
+          ? `Solution summary saved & logic approved (${wordCount} words). Visible on Case Board.`
+          : `Solution summary saved (${wordCount} words). Visible on Case Board's Solution-summary button.`,
+      };
     }
     if (name === "add_suspect") {
       const { data, error } = await supa
