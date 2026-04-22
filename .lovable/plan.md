@@ -1,45 +1,42 @@
 
 
-## What those badges are
+## Wire the assistant's approved summary into the Logic Flow
 
-Under each assistant reply, you may see small pills like `✓ add document`, `✓ add suspect`, `✗ generate image`. These are **tool-call receipts** — a log of every backend action the assistant performed in that turn (writing a document, adding a suspect, creating a canvas node, etc.). The ✓/✗ tells you whether each one succeeded.
+### The problem (what I found in the code)
 
-They are *informational only* today. They look like buttons but do nothing on click — that's the confusion.
+When you approve the case narrative in the Assistant, it calls a tool called `set_solution_summary` that writes the text to `projects.solution_summary`. This is the same field the Case Board's **Solution summary** button reads from — so that button already shows the approved text correctly.
 
-## Three ways to fix this — pick one
+But the **Generate logic flow** button is disconnected from that pipeline:
 
-### Option A — Make them obviously non-interactive (smallest change)
-Restyle the pills so they read as log entries, not buttons:
-- Smaller, lighter, no border, muted text (e.g. `· added document · added suspect`)
-- Group duplicates: `✓ added 4 documents, 2 suspects` instead of 6 separate pills
-- Tooltip on hover shows the full action name + any returned message
+- `supabase/functions/generate-logic-flow/index.ts` builds its prompt from title/setting/suspects only. It **never reads `project.solution_summary`**, so the model has no idea what narrative you already approved.
+- After the model invents its own clues + summary, the function **overwrites** `projects.solution_summary` with that newly-invented text — wiping the version you approved in the assistant.
+- The Logic Flow toolbar gives no visual hint that an approved summary already exists, or that clicking Generate will replace it.
 
-Result: clear they're a status log, not controls. Zero new behavior.
+### What changes
 
-### Option B — Make them actually useful (clickable shortcuts)
-Each pill becomes a real link to the thing that was created/modified:
-- `add_document` → opens that document in the Documents tab
-- `add_suspect` → jumps to that suspect card
-- `add_node` → focuses that node on the Canvas
-- `generate_image` → opens the asset in Media
+**1. `generate-logic-flow` edge function — use the approved summary as the source of truth**
 
-Failed ones (✗) get a "Retry" action and show the error reason in a tooltip.
+Add a new mode driven by a `useExistingSummary` flag (default `true` when `solution_summary` is non-empty):
 
-Result: the receipts double as a fast jump-to-result navigation.
+- If a `solution_summary` exists, prepend it to the user prompt as **`APPROVED SOLUTION (source of truth — your flow MUST match this exactly)`**, and instruct the model: *do not invent a different culprit, motive, or chain — only break the approved narrative into clues, deductions, red herrings, and edges that prove it.*
+- After generation, **only overwrite `solution_summary`** when the user explicitly asked for a fresh case (`useExistingSummary: false`). When using the approved summary, leave the existing text untouched and instead store the model's expanded version in a new optional field `logic_flow_notes` (or just discard it — the canonical text stays the assistant's).
 
-### Option C — Hide them by default, show on demand
-Replace the row of pills with a single collapsible line:
-`▸ 6 actions performed (5 ✓, 1 ✗)` → expands to the full list with the same Option B behavior inside.
+**2. `CanvasSection.tsx` — make the connection visible and controllable**
 
-Result: cleanest chat surface, full detail one click away.
+In the Logic Flow toolbar, when `project.solution_summary` exists:
 
-## Recommendation
+- Replace the bare "Generate logic flow" button with a small grouped control:
+  - Status chip: *"Using approved summary from Assistant"* (green dot, links to open the Solution summary dialog read-only).
+  - Primary button: **Generate from approved summary** (calls function with `useExistingSummary: true`).
+  - Dropdown menu next to it with the alternative: *Generate fresh (ignore summary)* — shows a confirm dialog warning that the approved text will be replaced.
+- When no `solution_summary` exists yet, show today's button label but with a hint: *"Tip: approve a Phase 2 summary in the Assistant first for a flow that matches your narrative."*
 
-**Option C + B combined**: collapse by default to keep the conversation clean, and when expanded each item is clickable (jump-to-result for ✓, retry + error for ✗). Best of both — quiet UI, powerful when you need it.
+**3. `CanvasSection.tsx` — preserve the summary on regenerate**
 
-## Files that would change
+The current `generateLogicFlow` opens the Summary dialog after generation and overwrites the textarea with whatever came back. Change it so:
+- When `useExistingSummary` was true, the dialog opens with the **unchanged** approved text (no surprise edits).
+- When `useExistingSummary` was false, behave as today (show the new model-generated summary).
 
-- `src/features/project/AssistantSection.tsx` — `MessageBubble` component (the `tools.length > 0` block, lines ~350–363) gets replaced with the new collapsible receipt component. No backend changes needed; the data is already there in `msg.metadata.tools`.
+**4. Pass the request through end-to-end**
 
-Tell me which option you want (A, B, C, or the C+B combo) and I'll build it.
-
+`CanvasSection` → POST `{ projectId, replace,
