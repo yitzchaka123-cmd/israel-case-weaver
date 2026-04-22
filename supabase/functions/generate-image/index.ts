@@ -149,7 +149,7 @@ Deno.serve(async (req) => {
         title: title ?? null,
         url: pub.publicUrl,
         prompt,
-        provider: useOpenAI ? "openai" : "lovable-ai",
+        provider: useOpenAI ? "openai" : (Deno.env.get("GEMINI_API_KEY") ? "gemini-direct" : "lovable-ai"),
         model,
         mime_type: mime,
       }).select().single();
