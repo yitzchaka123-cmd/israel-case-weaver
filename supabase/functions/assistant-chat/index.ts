@@ -116,7 +116,7 @@ Existing documents: ${docCount}
 Logic flow approved: ${project.logic_approved_at ? "YES (" + project.logic_approved_at + ")" : "NO — must be approved on the Canvas before generating documents"}
 Solution summary set: ${project.solution_summary ? "YES" : "NO"}
 
-Respond in English for planning. Write Hebrew for any final in-game text. Keep outputs concise unless the user requests depth.`;
+Respond in English for planning. Write Hebrew for any final in-game text. Keep outputs concise unless the user requests depth.${overrides}`;
 }
 
 // ---------- Tool definitions ----------
