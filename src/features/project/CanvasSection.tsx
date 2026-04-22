@@ -10,7 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Plus, Wand2, CheckCircle2, Loader2, ScrollText, Sparkles, FileText, ExternalLink } from "lucide-react";
+import { Plus, Wand2, CheckCircle2, Loader2, ScrollText, Sparkles, FileText, ExternalLink, ChevronDown, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -224,14 +224,22 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
     if (error) toast.error(error.message);
   };
 
-  const generateLogicFlow = async () => {
+  const generateLogicFlow = async (opts?: { useExistingSummary?: boolean }) => {
     if (board !== "logic") {
       toast.error("Switch to the Logic Flow board first");
       return;
     }
+    const approvedSummary = (project?.solution_summary ?? "").trim();
+    // Default: if an approved summary exists, use it. Caller can override.
+    const useExistingSummary = opts?.useExistingSummary ?? !!approvedSummary;
+
     if (nodes.length > 0) {
       if (!confirm("This will replace the current Logic Flow board. Continue?")) return;
     }
+    if (!useExistingSummary && approvedSummary) {
+      if (!confirm("This will REPLACE your approved solution summary with a freshly invented one. Continue?")) return;
+    }
+
     setGeneratingFlow(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -241,7 +249,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
           "Content-Type": "application/json",
           Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
-        body: JSON.stringify({ projectId, replace: true, modelOverride: logicModel }),
+        body: JSON.stringify({ projectId, replace: true, modelOverride: logicModel, useExistingSummary }),
       });
       if (!resp.ok) {
         const e = await resp.json().catch(() => ({ error: "Failed" }));
@@ -251,10 +259,13 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
         return;
       }
       const data = await resp.json();
-      toast.success(`Logic flow generated · ${data.nodeCount} nodes, ${data.edgeCount} connections`);
+      const note = data.usedApprovedSummary ? " (using approved summary)" : "";
+      toast.success(`Logic flow generated · ${data.nodeCount} nodes, ${data.edgeCount} connections${note}`);
       qc.invalidateQueries({ queryKey: ["nodes", projectId, "logic"] });
       qc.invalidateQueries({ queryKey: ["edges", projectId, "logic"] });
       qc.invalidateQueries({ queryKey: ["project", projectId] });
+      // When we used the approved summary, preserve the textarea exactly as the user wrote it.
+      if (data.usedApprovedSummary) setSummaryDraft(approvedSummary);
       setSummaryOpen(true);
     } finally {
       setGeneratingFlow(false);
@@ -339,10 +350,60 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
                 ))}
               </SelectContent>
             </Select>
-            <Button variant="outline" className="gap-2" onClick={generateLogicFlow} disabled={generatingFlow}>
-              {generatingFlow ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-              {nodes.length === 0 ? "Generate logic flow" : "Re-generate"}
-            </Button>
+            {project?.solution_summary ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setSummaryOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-success/40 bg-success/10 px-2 py-1 text-xs text-foreground hover:bg-success/15 transition-colors"
+                  title="Click to view the approved summary"
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                  Using approved summary
+                </button>
+                <div className="inline-flex rounded-md border bg-card shadow-soft overflow-hidden">
+                  <Button
+                    variant="ghost"
+                    className="gap-2 rounded-none border-r h-9"
+                    onClick={() => generateLogicFlow({ useExistingSummary: true })}
+                    disabled={generatingFlow}
+                  >
+                    {generatingFlow ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+                    {nodes.length === 0 ? "Generate from approved summary" : "Re-generate from summary"}
+                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" className="rounded-none px-2 h-9" disabled={generatingFlow} title="More generation options">
+                        <ChevronDown className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-72">
+                      <DropdownMenuItem
+                        onClick={() => generateLogicFlow({ useExistingSummary: false })}
+                        className="gap-2 items-start"
+                      >
+                        <AlertTriangle className="h-4 w-4 mt-0.5 text-warning shrink-0" />
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium">Generate fresh (ignore summary)</span>
+                          <span className="text-xs text-muted-foreground">Replaces your approved solution summary with a new one.</span>
+                        </div>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </>
+            ) : (
+              <Button
+                variant="outline"
+                className="gap-2"
+                onClick={() => generateLogicFlow()}
+                disabled={generatingFlow}
+                title="Tip: approve a Phase 2 summary in the Assistant first for a flow that matches your narrative."
+              >
+                {generatingFlow ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+                {nodes.length === 0 ? "Generate logic flow" : "Re-generate"}
+              </Button>
+            )}
             <Button variant="outline" className="gap-2" onClick={() => setSummaryOpen(true)}>
               <ScrollText className="h-4 w-4" /> Solution summary
               {project?.solution_summary ? (
