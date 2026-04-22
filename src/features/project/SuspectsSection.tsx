@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Plus, Upload, Trash2, UserCircle2 } from "lucide-react";
 import { useRef, useState, useEffect } from "react";
 import { toast } from "sonner";
-import { ImageModelPicker, getStoredImageModel } from "@/components/ImageModelPicker";
+import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { PromptPanel } from "@/components/PromptPanel";
 
 interface Suspect {
@@ -168,22 +168,30 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
     }
     setGenerating(true);
     const t = toast.loading("Generating portrait…");
+    const ctrl = new AbortController();
+    const timer = window.setTimeout(() => ctrl.abort(), 120_000);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const modelOverride = getStoredImageModel("suspect", "nano-banana-2");
+      const quality = getStoredImageQuality("suspect", "medium");
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-image`, {
         method: "POST",
+        signal: ctrl.signal,
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
-        body: JSON.stringify({ projectId: suspect.project_id, prompt, target: "suspect-thumbnail", targetId: suspect.id, modelOverride, aspect: "portrait" }),
+        body: JSON.stringify({ projectId: suspect.project_id, prompt, target: "suspect-thumbnail", targetId: suspect.id, modelOverride, aspect: "portrait", quality }),
       });
-      const json = await resp.json();
-      if (!resp.ok) throw new Error(json.error ?? "Failed");
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(json.error ?? `Failed (${resp.status})`);
       setDraft({ ...draft, thumbnail_url: json.url });
       setPortraitPrompt(prompt);
       toast.success("Portrait ready", { id: t });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed", { id: t });
+      const msg = e instanceof Error
+        ? (e.name === "AbortError" ? "Image generation timed out (>2 min). Try Medium/Low quality or a Gemini model." : e.message)
+        : "Failed";
+      toast.error(msg, { id: t });
     } finally {
+      window.clearTimeout(timer);
       setGenerating(false);
     }
   };

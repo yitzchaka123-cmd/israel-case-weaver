@@ -7,16 +7,22 @@ import { generateImage, ImageGenError } from "../_shared/ai-router.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+    "authorization, x-client-info, apikey, content-type, prefer, openai-organization, openai-project, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OpenAi") ?? Deno.env.get("OPENAI_API_KEY") ?? "";
 
+// Per OpenAI image API docs (Apr 2026):
+//   gpt-image-2     — current flagship; best quality, ~30–120 s depending on quality.
+//                     "high" can take up to 2 min; "medium" is the recommended sweet spot.
+//   gpt-image-1.5   — incremental update on gpt-image-1, available.
+//   gpt-image-1     — legacy generation, faster but lower fidelity.
+//   gpt-image-1-mini — cheap/fast option for drafts.
 const IMAGE_MODEL: Record<string, string> = {
-  "chatgpt-image-2": "gpt-image-2", // OpenAI direct — latest (2026-04-21)
-  "chatgpt-image": "gpt-image-1",   // OpenAI direct — previous gen
+  "chatgpt-image-2": "gpt-image-2", // OpenAI direct — current flagship
+  "chatgpt-image": "gpt-image-1",   // OpenAI direct — legacy
   "nano-banana-2": "google/gemini-3.1-flash-image-preview",
   "nano-banana-pro": "google/gemini-3-pro-image-preview",
   "nano-banana": "google/gemini-2.5-flash-image",
@@ -32,6 +38,8 @@ type Target =
   | "suspect-alt-thumbnail"
   | "project-cover";
 
+type Quality = "low" | "medium" | "high";
+
 interface Body {
   projectId: string;
   prompt: string;
@@ -41,6 +49,7 @@ interface Body {
   target?: Target;
   targetId?: string; // suspect id when target is suspect-*
   aspect?: "portrait" | "landscape" | "square";
+  quality?: Quality;
 }
 
 Deno.serve(async (req) => {
@@ -48,7 +57,7 @@ Deno.serve(async (req) => {
 
   try {
     const body = (await req.json()) as Body;
-    const { projectId, prompt, title, category, modelOverride, targetId, aspect } = body;
+    const { projectId, prompt, title, category, modelOverride, targetId, aspect, quality } = body;
     const target: Target = body.target ?? "media";
 
     if (!projectId || !prompt) {
@@ -86,14 +95,48 @@ Deno.serve(async (req) => {
       // Suspect thumbnails are 3:4 portrait; covers are 3:4 portrait too; media defaults landscape.
       const ar = aspect ?? (target.startsWith("suspect") || target === "project-cover" ? "portrait" : "landscape");
       const size = ar === "portrait" ? "1024x1536" : ar === "landscape" ? "1536x1024" : "1024x1024";
-      const oResp = await fetch("https://api.openai.com/v1/images/generations", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model, prompt: finalPrompt, size, quality: "high", n: 1 }),
-      });
+      // Default to "medium" — per OpenAI docs this is the latency/quality sweet spot.
+      // "high" can take up to 2 min and risks exceeding the edge function timeout.
+      const q: Quality = quality ?? "medium";
+
+      // 110 s abort: edge function platform timeout is ~150s — give us headroom
+      // to translate the abort into a clean 504 instead of being killed.
+      const ctrl = new AbortController();
+      const timeoutId = setTimeout(() => ctrl.abort(), 110_000);
+
+      let oResp: Response;
+      try {
+        oResp = await fetch("https://api.openai.com/v1/images/generations", {
+          method: "POST",
+          signal: ctrl.signal,
+          headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
+          // jpeg + compression 90 is dramatically faster than png per OpenAI docs.
+          body: JSON.stringify({
+            model,
+            prompt: finalPrompt,
+            size,
+            quality: q,
+            n: 1,
+            moderation: "auto",
+            output_format: "jpeg",
+            output_compression: 90,
+          }),
+        });
+      } catch (e) {
+        clearTimeout(timeoutId);
+        if (e instanceof Error && e.name === "AbortError") {
+          return new Response(
+            JSON.stringify({ error: `OpenAI took too long (>110s). Try Medium or Low quality, or switch to a Gemini "Nano Banana" model.` }),
+            { status: 504, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+        throw e;
+      }
+      clearTimeout(timeoutId);
       if (!oResp.ok) {
         const t = await oResp.text();
-        console.error("openai image error", oResp.status, t);
+        const requestId = oResp.headers.get("x-request-id") ?? "";
+        console.error("openai image error", oResp.status, requestId, t);
         // Surface OpenAI's actual error message so the user sees actionable info
         // (e.g. "organization must be verified to use gpt-image-2").
         let detail = t;
@@ -101,21 +144,22 @@ Deno.serve(async (req) => {
           const parsed = JSON.parse(t);
           detail = parsed?.error?.message ?? t;
         } catch { /* keep raw text */ }
+        const tail = requestId ? ` (request_id: ${requestId})` : "";
         const isVerify = /verified to use the model/i.test(detail);
         const friendly = isVerify
-          ? `OpenAI requires organization verification to use ${model}. Open https://platform.openai.com/settings/organization/general → "Verify Organization". After verifying it can take up to 15 min. (Tip: switch to "ChatGPT Image 1" or a Gemini model in the meantime.)`
-          : detail || "OpenAI image generation failed";
-        if (oResp.status === 429) return new Response(JSON.stringify({ error: `OpenAI rate limit: ${detail}` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        if (oResp.status === 401) return new Response(JSON.stringify({ error: `OpenAI auth failed — check the OpenAI API key in Settings. ${detail}` }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          ? `OpenAI requires organization verification to use ${model}. Open https://platform.openai.com/settings/organization/general → "Verify Organization". After verifying it can take up to 15 min. (Tip: switch to "ChatGPT Image 1" or a Gemini model in the meantime.)${tail}`
+          : (detail || "OpenAI image generation failed") + tail;
+        if (oResp.status === 429) return new Response(JSON.stringify({ error: `OpenAI rate limit: ${detail}${tail}` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        if (oResp.status === 401) return new Response(JSON.stringify({ error: `OpenAI auth failed — check the OpenAI API key in Settings. ${detail}${tail}` }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         if (oResp.status === 403) return new Response(JSON.stringify({ error: friendly }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        if (oResp.status === 400) return new Response(JSON.stringify({ error: `OpenAI rejected request: ${detail}` }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        if (oResp.status === 400) return new Response(JSON.stringify({ error: `OpenAI rejected request: ${detail}${tail}` }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         return new Response(JSON.stringify({ error: friendly }), { status: oResp.status || 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       const oData = await oResp.json();
       const b64: string | undefined = oData.data?.[0]?.b64_json;
       if (!b64) return new Response(JSON.stringify({ error: "No image returned (OpenAI)" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-      mime = "image/png";
+      mime = "image/jpeg";
     } else {
       try {
         const result = await generateImage({ prompt: finalPrompt, model });
@@ -134,7 +178,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    const ext = mime.split("/")[1] ?? "png";
+    const ext = mime === "image/jpeg" ? "jpg" : (mime.split("/")[1] ?? "png");
 
     // Pick bucket + path + post-write logic per target
     let bucket = "media";
