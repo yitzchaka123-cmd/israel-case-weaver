@@ -108,6 +108,16 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
   });
   const posTimers = useRef<Record<string, number>>({});
 
+  // Pick up changes made from Settings → AI provider routing → Logic Flow.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handler = (e: StorageEvent) => {
+      if (e.key === LOGIC_FLOW_MODEL_KEY && e.newValue) setLogicModel(e.newValue);
+    };
+    window.addEventListener("storage", handler);
+    return () => window.removeEventListener("storage", handler);
+  }, []);
+
   useEffect(() => {
     if (!dbNodes) return;
     setNodes(
