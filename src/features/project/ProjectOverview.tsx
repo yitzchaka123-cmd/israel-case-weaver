@@ -4,9 +4,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload } from "lucide-react";
+import { Upload, Wand2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { ImageModelPicker, getStoredImageModel } from "@/components/ImageModelPicker";
 
 const MYSTERY_TYPES = [
   "Espionage / Intelligence",
@@ -64,6 +65,40 @@ export function ProjectOverview({ project }: { project: any }) {
     await supabase.from("projects").update({ cover_image_url: data.publicUrl }).eq("id", project.id);
     setDraft({ ...draft, cover_image_url: data.publicUrl });
     toast.success("Cover updated");
+  };
+
+  const [genCover, setGenCover] = useState(false);
+  const generateCover = async () => {
+    const desc = [
+      draft.title && `Title: "${draft.title}"`,
+      draft.subtitle && `Subtitle: "${draft.subtitle}"`,
+      draft.mystery_type && `Type: ${draft.mystery_type}`,
+      draft.genre && `Genre: ${draft.genre}`,
+      draft.year && `Year: ${draft.year}`,
+      draft.setting && `Setting: ${draft.setting}`,
+      draft.case_goal && `Case: ${draft.case_goal}`,
+    ].filter(Boolean).join(". ");
+    if (!desc) return toast.error("Fill in title / type / setting first");
+    setGenCover(true);
+    const t = toast.loading("Generating cover…");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const modelOverride = getStoredImageModel("cover", "chatgpt-image");
+      const prompt = `Premium printable BOX-COVER artwork for an Israeli mystery / detective board game. Cinematic, evocative, painterly photo-real style. Strong central focal subject, dramatic lighting, period-accurate. Composition leaves space at the top for a future title treatment. 3:4 portrait. NO text, NO logos, NO watermarks — pure illustration only. Brief: ${desc}.`;
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-image`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
+        body: JSON.stringify({ projectId: project.id, prompt, target: "project-cover", modelOverride, aspect: "portrait" }),
+      });
+      const json = await resp.json();
+      if (!resp.ok) throw new Error(json.error ?? "Failed");
+      setDraft({ ...draft, cover_image_url: json.url });
+      toast.success("Cover ready", { id: t });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed", { id: t });
+    } finally {
+      setGenCover(false);
+    }
   };
 
   return (
@@ -170,9 +205,16 @@ export function ProjectOverview({ project }: { project: any }) {
             )}
           </div>
           <input ref={fileInput} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadCover(e.target.files[0])} />
-          <Button variant="outline" className="w-full mt-3" onClick={() => fileInput.current?.click()}>
-            {draft.cover_image_url ? "Replace cover" : "Upload cover"}
-          </Button>
+          <div className="mt-3 space-y-2">
+            <ImageModelPicker surface="cover" defaultModel="chatgpt-image" className="w-full" />
+            <Button className="w-full gap-2" onClick={generateCover} disabled={genCover}>
+              {genCover ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+              Generate cover with AI
+            </Button>
+            <Button variant="outline" className="w-full" onClick={() => fileInput.current?.click()}>
+              {draft.cover_image_url ? "Replace cover" : "Upload cover"}
+            </Button>
+          </div>
           <p className="text-xs text-muted-foreground mt-2">
             The cover becomes your dashboard thumbnail.
           </p>

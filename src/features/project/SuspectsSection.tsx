@@ -6,9 +6,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, Upload, Trash2, UserCircle2 } from "lucide-react";
+import { Plus, Upload, Trash2, UserCircle2, Wand2, Loader2 } from "lucide-react";
 import { useRef, useState, useEffect } from "react";
 import { toast } from "sonner";
+import { ImageModelPicker, getStoredImageModel } from "@/components/ImageModelPicker";
 
 interface Suspect {
   id: string;
@@ -106,6 +107,7 @@ export function SuspectsSection({ projectId }: { projectId: string }) {
 
 function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose: () => void }) {
   const [draft, setDraft] = useState<Suspect | null>(suspect);
+  const [generating, setGenerating] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<number | undefined>(undefined);
 
@@ -135,6 +137,35 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
     setDraft({ ...draft, thumbnail_url: data.publicUrl });
   };
 
+  const generatePortrait = async () => {
+    const desc = [
+      draft.name && `Name: ${draft.name}`,
+      draft.role_in_case && `Role: ${draft.role_in_case}`,
+      draft.summary && `About: ${draft.summary}`,
+    ].filter(Boolean).join(". ");
+    if (!desc) return toast.error("Add a name / role / summary first");
+    setGenerating(true);
+    const t = toast.loading("Generating portrait…");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const modelOverride = getStoredImageModel("suspect", "nano-banana-2");
+      const prompt = `Photorealistic editorial portrait, head-and-shoulders, neutral studio background, soft cinematic lighting, period-appropriate clothing. Subject: ${desc}. Believable real-person look, NOT a cartoon, NOT a 3D render. Sharp focus on the face. 3:4 portrait composition. No text, no captions, no watermarks.`;
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-image`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
+        body: JSON.stringify({ projectId: suspect.project_id, prompt, target: "suspect-thumbnail", targetId: suspect.id, modelOverride, aspect: "portrait" }),
+      });
+      const json = await resp.json();
+      if (!resp.ok) throw new Error(json.error ?? "Failed");
+      setDraft({ ...draft, thumbnail_url: json.url });
+      toast.success("Portrait ready", { id: t });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed", { id: t });
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   const remove = async () => {
     if (!confirm("Delete this suspect?")) return;
     await supabase.from("suspects").delete().eq("id", suspect.id);
@@ -147,7 +178,7 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
         <DialogHeader>
           <DialogTitle className="font-display text-2xl">Suspect file</DialogTitle>
         </DialogHeader>
-        <div className="grid md:grid-cols-[140px_1fr] gap-6">
+        <div className="grid md:grid-cols-[170px_1fr] gap-6">
           <div>
             <div className="aspect-[3/4] rounded-xl overflow-hidden border bg-muted">
               {draft.thumbnail_url ? (
@@ -159,9 +190,16 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
               )}
             </div>
             <input ref={fileInput} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadThumb(e.target.files[0])} />
-            <Button variant="outline" size="sm" className="w-full mt-2 gap-2" onClick={() => fileInput.current?.click()}>
-              <Upload className="h-3.5 w-3.5" /> Change
-            </Button>
+            <div className="mt-2 space-y-1.5">
+              <ImageModelPicker surface="suspect" defaultModel="nano-banana-2" className="w-full" />
+              <Button size="sm" className="w-full gap-2" onClick={generatePortrait} disabled={generating}>
+                {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+                Generate portrait
+              </Button>
+              <Button variant="outline" size="sm" className="w-full gap-2" onClick={() => fileInput.current?.click()}>
+                <Upload className="h-3.5 w-3.5" /> Upload
+              </Button>
+            </div>
           </div>
           <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
             <div>
