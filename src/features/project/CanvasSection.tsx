@@ -379,14 +379,27 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
+          onNodeClick={(_e, n: RFNode) => setSelectedNodeId(n.id)}
           fitView
           proOptions={{ hideAttribution: true }}
+          defaultEdgeOptions={{
+            type: "smoothstep",
+            style: { stroke: "var(--color-accent, #6366f1)", strokeWidth: 2 },
+            markerEnd: { type: MarkerType.ArrowClosed, color: "var(--color-accent, #6366f1)", width: 18, height: 18 },
+          }}
         >
           <Background gap={24} size={1} color="var(--color-border)" />
           <MiniMap pannable zoomable />
           <Controls />
         </ReactFlow>
       </div>
+
+      <NodeDetailPanel
+        nodeId={selectedNodeId}
+        projectId={projectId}
+        modelOverride={logicModel}
+        onClose={() => setSelectedNodeId(null)}
+      />
 
       <Dialog open={summaryOpen} onOpenChange={setSummaryOpen}>
         <DialogContent className="max-w-2xl">
