@@ -739,6 +739,20 @@ function formatRelativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
+// Pull all "1. foo / 2. bar / …" items from prose. Used to validate that
+// metadata.options labels actually appear in this turn's prose — guards
+// against the model copying a previous turn's propose_options arguments.
+function extractNumberedListItems(text: string): string[] {
+  if (!text) return [];
+  const itemLineRegex = /^\s*\d+[\.\)]\s+(.+?)\s*$/;
+  const out: string[] = [];
+  for (const line of text.split("\n")) {
+    const m = itemLineRegex.exec(line);
+    if (m) out.push(m[1].trim());
+  }
+  return out;
+}
+
 // Mirror of the server-side fallback in supabase/functions/assistant-chat/index.ts.
 // When the model wrote a numbered choice list in prose but no `options` were
 // attached to the message metadata (e.g. older messages, or the server
