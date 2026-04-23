@@ -4,6 +4,7 @@
 // the user picked an openai/* planning model, otherwise Lovable AI Gateway).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { chatCompletions } from "../_shared/ai-router.ts";
+import { resolvePlaybook, renderEnvelopeDesignTemplate } from "../_shared/assistant-playbook.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -38,6 +39,7 @@ const CATEGORY_GUIDANCE: Record<string, string> = {
   news: "A still frame as if from a televised news report covering the case. Lower-third / chyron friendly. Photorealistic, broadcast feel.",
   promo: "Cinematic key art / promo still that could anchor a short trailer. Dramatic lighting, strong silhouette.",
   external: "A general supporting visual related to the case world.",
+  envelope: "A single sealed in-world envelope, photographed flat. Tactile period-correct paper, wax seal, era-appropriate stamps, large RTL Hebrew label visible. Archival-scan look — no hands, no desk, no modern Canva styling.",
 };
 
 interface Body {
