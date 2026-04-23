@@ -135,9 +135,21 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
 
       <div className="grid lg:grid-cols-[3fr_2fr] gap-5">
         <div className="rounded-xl border bg-muted/30 overflow-hidden">
-          <div className="aspect-[3/4] bg-muted relative">
+          <div className="group aspect-[3/4] bg-muted relative">
             {cover ? (
-              <img src={cover} alt={project?.title ?? "Cover"} className="w-full h-full object-cover" />
+              <>
+                <img src={cover} alt={project?.title ?? "Cover"} className="w-full h-full object-cover" />
+                {(project?.cover_effective_model || project?.cover_fallback) && (
+                  <AiOriginBadge
+                    hoverOnly
+                    info={{
+                      requested: project?.ai_provider_images ?? null,
+                      effective: project?.cover_effective_model ?? null,
+                      fallback: project?.cover_fallback ?? "none",
+                    }}
+                  />
+                )}
+              </>
             ) : (
               <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground gap-2 text-center px-6">
                 <ImageIcon className="h-8 w-8" />
