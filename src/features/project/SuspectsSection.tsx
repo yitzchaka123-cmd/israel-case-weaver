@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { PromptPanel } from "@/components/PromptPanel";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
+import { AiOriginBadge } from "@/components/AiOriginBadge";
 
 interface Suspect {
   id: string;
@@ -27,6 +28,9 @@ interface Suspect {
   is_red_herring: boolean;
   position: number;
   created_by_message_id: string | null;
+  thumbnail_prompt?: string | null;
+  thumbnail_effective_model?: string | null;
+  thumbnail_fallback?: string | null;
 }
 
 export function SuspectsSection({ projectId }: { projectId: string }) {
@@ -74,7 +78,7 @@ export function SuspectsSection({ projectId }: { projectId: string }) {
               onClick={() => setSelected(s.id)}
               className="group text-left bg-card border rounded-2xl overflow-hidden shadow-soft hover:shadow-pop hover:-translate-y-0.5 transition-all"
             >
-              <div className="aspect-[3/4] bg-muted relative">
+              <div className="aspect-[3/4] bg-muted relative group">
                 {s.thumbnail_url ? (
                   <img src={s.thumbnail_url} alt={s.name} className="w-full h-full object-cover" />
                 ) : (
@@ -82,8 +86,14 @@ export function SuspectsSection({ projectId }: { projectId: string }) {
                     <UserCircle2 className="h-10 w-10 text-muted-foreground/40" />
                   </div>
                 )}
+                {s.thumbnail_url && (
+                  <AiOriginBadge
+                    info={{ requested: s.thumbnail_url ? "nano-banana" : null, effective: s.thumbnail_effective_model ?? null, fallback: s.thumbnail_fallback ?? null }}
+                    hoverOnly
+                  />
+                )}
                 {s.is_red_herring && (
-                  <span className="absolute top-2 right-2 text-[10px] font-medium uppercase tracking-wider px-2 py-0.5 rounded-md bg-destructive text-destructive-foreground">
+                  <span className="absolute top-2 left-2 text-[10px] font-medium uppercase tracking-wider px-2 py-0.5 rounded-md bg-destructive text-destructive-foreground">
                     Red herring
                   </span>
                 )}
