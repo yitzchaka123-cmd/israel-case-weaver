@@ -69,13 +69,16 @@ export function CaseNode({ data, selected }: NodeProps<CaseNodeData>) {
   const meta = getNodeMeta(data.type);
   const accent = data.color || meta.accent;
   const Icon = meta.icon;
+  const isEnvelope = data.type === "envelope";
+  const isSolution = data.type === "solution";
+  const envelopeNumber = (data as unknown as { envelopeNumber?: number }).envelopeNumber;
 
   return (
     <div
       className="group relative rounded-xl overflow-hidden bg-card text-card-foreground transition-all"
       style={{
-        minWidth: 200,
-        maxWidth: 240,
+        minWidth: isEnvelope ? 240 : 200,
+        maxWidth: isEnvelope ? 280 : 240,
         border: `1.5px solid ${selected ? accent : "var(--color-border)"}`,
         boxShadow: selected
           ? `0 0 0 3px color-mix(in oklab, ${accent} 25%, transparent), 0 10px 24px -10px color-mix(in oklab, ${accent} 35%, transparent)`
@@ -115,7 +118,9 @@ export function CaseNode({ data, selected }: NodeProps<CaseNodeData>) {
           className="text-[10px] font-semibold uppercase tracking-wider truncate flex-1"
           style={{ color: `color-mix(in oklab, ${accent} 75%, var(--color-foreground))` }}
         >
-          {meta.label}
+          {isEnvelope && typeof envelopeNumber === "number"
+            ? `Envelope #${envelopeNumber}`
+            : meta.label}
         </span>
         {data.createdByMessageId && (
           <AssistantOriginBadge messageId={data.createdByMessageId} label="" />
@@ -128,7 +133,11 @@ export function CaseNode({ data, selected }: NodeProps<CaseNodeData>) {
           {data.label || "(untitled)"}
         </div>
         {data.description && (
-          <div className="mt-1.5 text-[11px] text-muted-foreground line-clamp-2 leading-snug">
+          <div
+            className={`mt-1.5 text-[11px] text-muted-foreground leading-snug whitespace-pre-line ${
+              isEnvelope || isSolution ? "line-clamp-6" : "line-clamp-2"
+            }`}
+          >
             {data.description}
           </div>
         )}

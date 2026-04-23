@@ -12,11 +12,6 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-// Mirrors assistant-chat / generate-document — see _shared/ai-router.ts for prefix routing.
-//   openai/*        → user's OpenAi key
-//   anthropic/*     → user's ANTHROPIC_API_KEY
-//   gemini-direct/* → user's GEMINI_API_KEY
-//   google/* | else → Lovable AI Gateway
 const PROVIDER_MODEL: Record<string, string> = {
   lovable: "google/gemini-3.1-pro-preview",
   gemini: "google/gemini-2.5-pro",
@@ -68,13 +63,19 @@ Deno.serve(async (req) => {
       });
     }
     const { data: suspects } = await supa.from("suspects").select("*").eq("project_id", projectId).order("position", { ascending: true });
-    const { data: envelopes } = await supa.from("envelopes").select("id, number, label, task, design_instructions, linked_document_ids").eq("project_id", projectId).order("number", { ascending: true });
+    const { data: existingEnvelopes } = await supa.from("envelopes").select("id, number, label, task, design_instructions, linked_document_ids").eq("project_id", projectId).order("number", { ascending: true });
+
+    // If no envelopes exist yet, ask the model to scaffold them. Derive a sensible
+    // default count from target_doc_count (≈ one envelope per 7 docs, clamped 4-7).
+    const noEnvelopes = !existingEnvelopes || existingEnvelopes.length === 0;
+    const targetDocs = Number(project.target_doc_count ?? 40);
+    const scaffoldCount = noEnvelopes
+      ? Math.max(4, Math.min(7, Math.round(targetDocs / 7)))
+      : 0;
 
     const modelKey = (modelOverride as string) || (project.ai_provider_planning as string) || "lovable";
     const model = PROVIDER_MODEL[modelKey] ?? PROVIDER_MODEL.lovable;
 
-    // Default: if a solution_summary exists and the caller didn't explicitly pass false,
-    // treat it as the source of truth.
     const approvedSummary = (project.solution_summary ?? "").trim();
     const useApproved = useExistingSummary === undefined ? !!approvedSummary : (useExistingSummary && !!approvedSummary);
 
@@ -86,9 +87,9 @@ Deno.serve(async (req) => {
       ? `\nAPPROVED SOLUTION (source of truth — your flow MUST match this exactly):\n"""\n${approvedSummary}\n"""\n\nYour job is NOT to write a new solution. Your job is to decompose the approved solution above into the nodes/edges below. The "summary" field you return should restate the approved solution faithfully (you may tighten wording but must not change facts, culprit, motive, or method).\n`
       : "";
 
-    const envelopesBlock = (envelopes && envelopes.length > 0)
-      ? `\nENVELOPES (player-facing flow gates — each MUST become an "envelope" node, in numerical order, in a vertical lane on the right side of the canvas):\n${envelopes.map((e) => `  #${e.number} "${e.label ?? ""}" — task: ${e.task ?? "—"}`).join("\n")}\n\nFor each envelope, draw edges showing which clues / deductions belong inside it (clue → envelope, deduction → envelope). Also draw chain edges envelope_n → envelope_{n+1} so the player flow is visible.\n`
-      : "";
+    const envelopesBlock = !noEnvelopes
+      ? `\nENVELOPES (player-facing flow gates — each MUST become an "envelope" node, in numerical order, in a vertical lane on the right side of the canvas):\n${existingEnvelopes!.map((e) => `  #${e.number} "${e.label ?? ""}" — task: ${e.task ?? "—"}`).join("\n")}\n\nFor each envelope, draw edges showing which clues / deductions belong inside it (clue → envelope, deduction → envelope). Also draw chain edges envelope_n → envelope_{n+1} so the player flow is visible.\n\nFor EVERY envelope node, the "description" field is REQUIRED and MUST contain exactly three lines, in this format:\nTask: <what the player physically does with this envelope — open, scan QR, assemble, etc.>\nContains: <one-line summary of which clues/deductions sit inside it>\nWhy it matters: <one sentence on how it advances the case structure / what it unlocks for the next envelope>\n`
+      : `\nENVELOPES — this project has no envelopes yet. You MUST scaffold ${scaffoldCount} envelopes that segment the case into a clear player flow.\n\nReturn them in BOTH the top-level "envelopes" array (number, label, task, design_instructions) AND as "envelope" nodes on the canvas (one node per envelope, numbered 1..${scaffoldCount}, in a vertical lane on the right at x ≈ 1400 with y stepping down by 160 starting at y = 0). The first envelope is the case opener, the last contains/locks the final reveal.\n\nFor EVERY envelope node, the "description" field is REQUIRED and MUST contain exactly three lines, in this format:\nTask: <what the player physically does with this envelope — open, scan QR, assemble, etc.>\nContains: <one-line summary of which clues/deductions sit inside it>\nWhy it matters: <one sentence on how it advances the case structure / what it unlocks for the next envelope>\n\nAlso draw envelope_n → envelope_{n+1} chain edges, and clue/deduction → envelope edges showing which evidence sits in which envelope.\n`;
 
     const userPrompt = `CASE DESIGN BRIEF
 Title: ${project.title}
@@ -107,12 +108,15 @@ PRODUCE a logic flow with:
 - 2-4 RED HERRINGS that look meaningful but don't lead to the truth — explain briefly why each is misleading.
 - 1-3 KEY DEDUCTIONS the player makes by combining clues.
 - 1 FINAL SOLUTION node identifying the culprit and method.
-${envelopes && envelopes.length > 0 ? `- ${envelopes.length} ENVELOPE nodes (one per envelope above), positioned in a vertical lane on the right (x ≈ 1400, y stepping down by 160 per envelope, ordered by number).\n` : ""}- 3-5 HINT nodes (one per clue/deduction that warrants a hint stage), titled "Hint stage N — for: <clue/deduction title>". Position them in a vertical lane to the LEFT of clues at x ≈ -200, with y matching the clue/deduction they support. These are STRUCTURAL placeholders only — the user will fill in the actual hint text later. Do NOT write Hebrew hint text into the description; a one-line English note about WHAT this stage hints toward is enough.
-- EDGES connecting clues → deductions → solution, red_herring → suspect (false trail), AND hint → clue/deduction (label "hints toward")${envelopes && envelopes.length > 0 ? `, clue/deduction → envelope (which envelope holds which evidence), and envelope_n → envelope_{n+1} (player chain).` : "."}
+- ${noEnvelopes ? scaffoldCount : existingEnvelopes!.length} ENVELOPE nodes (one per envelope above), positioned in a vertical lane on the right (x ≈ 1400, y stepping down by 160 per envelope, ordered by number).
+- 3-5 HINT nodes (one per clue/deduction that warrants a hint stage), titled "Hint stage N — for: <clue/deduction title>". Position them in a vertical lane to the LEFT of clues at x ≈ -200, with y matching the clue/deduction they support. These are STRUCTURAL placeholders only — the user will fill in the actual hint text later. Do NOT write Hebrew hint text into the description; a one-line English note about WHAT this stage hints toward is enough.
+- EDGES connecting clues → deductions → solution, red_herring → suspect (false trail), hint → clue/deduction (label "hints toward"), clue/deduction → envelope (which envelope holds which evidence), and envelope_n → envelope_{n+1} (player chain).
 - A SOLUTION SUMMARY (3-5 short paragraphs in Hebrew if the game is Hebrew, otherwise English) explaining EXACTLY how the case is solved end-to-end.
 
-Use stable string ids like "clue_1", "rh_1", "ded_1", "sus_1", "sol_1", "hint_1", "hint_2", …${envelopes && envelopes.length > 0 ? `, "env_0", "env_1", … (one per envelope)` : ""}.
-Position nodes in a left-to-right flow: hints far left (x ≈ -200), clues left (x ≈ 0-300), deductions middle, solution right${envelopes && envelopes.length > 0 ? ", envelopes far right" : ""}, red herrings + suspects below.`;
+Use stable string ids like "clue_1", "rh_1", "ded_1", "sus_1", "sol_1", "hint_1", …, "env_1", "env_2", … (one per envelope, numbered from 1).
+Position nodes in a left-to-right flow: hints far left (x ≈ -200), clues left (x ≈ 0-300), deductions middle, solution right, envelopes far right (x ≈ 1400), red herrings + suspects below.
+
+For envelope nodes specifically, set the node "id" to "env_<number>" matching its envelope number (env_1, env_2, …) so they can be cross-referenced.`;
 
     const tool = {
       type: "function",
@@ -123,6 +127,23 @@ Position nodes in a left-to-right flow: hints far left (x ≈ -200), clues left 
           type: "object",
           properties: {
             summary: { type: "string", description: "3-5 short paragraphs explaining how the case is solved" },
+            envelopes: {
+              type: "array",
+              description: noEnvelopes
+                ? `REQUIRED: scaffold exactly ${scaffoldCount} envelopes for this case.`
+                : "Optional — leave empty when envelopes already exist on the project.",
+              items: {
+                type: "object",
+                properties: {
+                  number: { type: "integer", description: "1-indexed envelope number" },
+                  label: { type: "string", description: "Short envelope name (e.g. 'Crime scene packet')" },
+                  task: { type: "string", description: "What the player does with this envelope" },
+                  design_instructions: { type: "string", description: "Brief art-direction note for the envelope cover" },
+                },
+                required: ["number", "label", "task"],
+                additionalProperties: false,
+              },
+            },
             nodes: {
               type: "array",
               items: {
@@ -132,6 +153,7 @@ Position nodes in a left-to-right flow: hints far left (x ≈ -200), clues left 
                   type: { type: "string", enum: ["clue", "red_herring", "deduction", "suspect", "solution", "envelope", "hint"] },
                   title: { type: "string" },
                   description: { type: "string" },
+                  envelope_number: { type: "integer", description: "REQUIRED for envelope nodes — must match the envelope's number" },
                   x: { type: "number" },
                   y: { type: "number" },
                 },
@@ -200,7 +222,8 @@ Position nodes in a left-to-right flow: hints far left (x ≈ -200), clues left 
     }
     const parsed = JSON.parse(call) as {
       summary: string;
-      nodes: { id: string; type: string; title: string; description?: string; x: number; y: number }[];
+      envelopes?: { number: number; label: string; task: string; design_instructions?: string }[];
+      nodes: { id: string; type: string; title: string; description?: string; envelope_number?: number; x: number; y: number }[];
       edges: { source: string; target: string; label?: string }[];
     };
 
@@ -209,17 +232,45 @@ Position nodes in a left-to-right flow: hints far left (x ≈ -200), clues left 
       await supa.from("canvas_nodes").delete().eq("project_id", projectId).eq("board", "logic");
     }
 
+    // If envelopes were scaffolded, insert them BEFORE nodes so we can link them.
+    let envelopesForLinking = existingEnvelopes ?? [];
+    if (noEnvelopes && parsed.envelopes && parsed.envelopes.length > 0) {
+      const envRows = parsed.envelopes
+        .sort((a, b) => a.number - b.number)
+        .map((e) => ({
+          project_id: projectId,
+          number: e.number,
+          label: e.label ?? null,
+          task: e.task ?? null,
+          design_instructions: e.design_instructions ?? null,
+          status: "draft",
+        }));
+      const { data: insertedEnvs, error: envErr } = await supa.from("envelopes").insert(envRows).select("id, number, label, task, design_instructions, linked_node_ids");
+      if (envErr) {
+        console.error("envelope scaffold insert", envErr);
+      } else if (insertedEnvs) {
+        envelopesForLinking = insertedEnvs.sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
+      }
+    }
+
     const idMap = new Map<string, string>();
-    const nodeRows = parsed.nodes.map((n) => ({
-      project_id: projectId,
-      board: "logic",
-      node_type: n.type,
-      title: n.title.slice(0, 200),
-      description: n.description ?? null,
-      color: NODE_COLORS[n.type] ?? null,
-      position_x: n.x,
-      position_y: n.y,
-    }));
+    const nodeRows = parsed.nodes.map((n) => {
+      const data: Record<string, unknown> = {};
+      if (n.type === "envelope" && typeof n.envelope_number === "number") {
+        data.envelopeNumber = n.envelope_number;
+      }
+      return {
+        project_id: projectId,
+        board: "logic",
+        node_type: n.type,
+        title: n.title.slice(0, 200),
+        description: n.description ?? null,
+        color: NODE_COLORS[n.type] ?? null,
+        position_x: n.x,
+        position_y: n.y,
+        data,
+      };
+    });
     const { data: insertedNodes, error: nErr } = await supa.from("canvas_nodes").insert(nodeRows).select();
     if (nErr) {
       console.error("node insert", nErr);
@@ -227,18 +278,22 @@ Position nodes in a left-to-right flow: hints far left (x ≈ -200), clues left 
     }
     insertedNodes?.forEach((row, i) => idMap.set(parsed.nodes[i].id, row.id));
 
-    // Write back envelope-node ids onto the matching envelopes rows so the
-    // Envelopes tab and the canvas can cross-link.
-    if (envelopes && envelopes.length > 0 && insertedNodes) {
+    // Cross-link envelope nodes ↔ envelope rows by matching envelope_number
+    // (falling back to order-of-appearance for older clients that don't emit it).
+    if (envelopesForLinking.length > 0 && insertedNodes) {
       const envNodes = parsed.nodes
         .map((n, i) => ({ n, rowId: insertedNodes[i]?.id }))
         .filter((x) => x.n.type === "envelope" && x.rowId);
-      // Match by order of appearance — model was instructed to emit them in numerical order.
-      for (let i = 0; i < envNodes.length && i < envelopes.length; i += 1) {
-        const env = envelopes[i];
-        const nodeId = envNodes[i].rowId!;
+
+      for (let i = 0; i < envNodes.length; i += 1) {
+        const { n, rowId } = envNodes[i];
+        // Match by envelope_number first, then fall back to ordinal
+        const env = (typeof n.envelope_number === "number"
+          ? envelopesForLinking.find((e) => e.number === n.envelope_number)
+          : null) ?? envelopesForLinking[i];
+        if (!env || !rowId) continue;
         const existing = (env.linked_node_ids ?? []) as string[];
-        const next = Array.from(new Set([...existing, nodeId]));
+        const next = Array.from(new Set([...existing, rowId]));
         await supa.from("envelopes").update({ linked_node_ids: next }).eq("id", env.id);
       }
     }
@@ -280,9 +335,6 @@ Position nodes in a left-to-right flow: hints far left (x ≈ -200), clues left 
       if (eErr) console.error("edge insert", eErr);
     }
 
-    // Only overwrite the canonical solution_summary when the caller explicitly
-    // asked for a fresh case. When using the approved summary, preserve the
-    // assistant-approved text exactly.
     if (!useApproved) {
       await supa.from("projects").update({ solution_summary: parsed.summary }).eq("id", projectId);
     }
@@ -307,6 +359,7 @@ Position nodes in a left-to-right flow: hints far left (x ≈ -200), clues left 
       usedApprovedSummary: useApproved,
       nodeCount: parsed.nodes.length,
       edgeCount: edgeRows.length,
+      scaffoldedEnvelopes: noEnvelopes ? (parsed.envelopes?.length ?? 0) : 0,
       model,
       effectiveModel: fb.effectiveModel,
       fallback: fb.fallback,
