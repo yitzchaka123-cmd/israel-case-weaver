@@ -43,6 +43,7 @@ export const NODE_META: Record<CanvasNodeType, Meta> = {
   envelope:      { label: "Envelope",      icon: Mail,          accent: "oklch(0.55 0.18 220)" },
   document:      { label: "Document",      icon: FileText,      accent: "oklch(0.50 0.05 260)" },
   solution:      { label: "Solution",      icon: Trophy,        accent: "oklch(0.45 0.15 285)" },
+  hint:          { label: "Hint",          icon: Lightbulb,     accent: "oklch(0.78 0.16 75)"  },
   note:          { label: "Note",          icon: StickyNote,    accent: "oklch(0.70 0.02 260)" },
 };
 
