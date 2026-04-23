@@ -76,13 +76,28 @@ export function SettingsPage() {
   };
 
 
+  const persistLogoUrl = async (url: string | null) => {
+    if (!user) return;
+    setLogoUrl(url);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ app_logo_url: url })
+      .eq("id", user.id);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    qc.invalidateQueries({ queryKey: ["app-logo", user.id] });
+    qc.invalidateQueries({ queryKey: ["profile", user.id] });
+  };
+
   const uploadLogo = async (file: File) => {
     if (!user) return;
     const path = `${user.id}/${Date.now()}-${file.name}`;
     const { error } = await supabase.storage.from("logos").upload(path, file, { upsert: true });
     if (error) return toast.error(error.message);
     const { data } = supabase.storage.from("logos").getPublicUrl(path);
-    setLogoUrl(data.publicUrl);
+    await persistLogoUrl(data.publicUrl);
     toast.success("Logo uploaded");
   };
 
@@ -117,7 +132,7 @@ export function SettingsPage() {
                 Upload logo
               </Button>
               {logoUrl && (
-                <Button variant="ghost" className="ml-2" onClick={() => setLogoUrl(null)}>
+                <Button variant="ghost" className="ml-2" onClick={() => persistLogoUrl(null)}>
                   Remove
                 </Button>
               )}
