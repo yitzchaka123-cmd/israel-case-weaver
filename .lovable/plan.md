@@ -1,58 +1,51 @@
 
 
-## Two assistant fixes: stale option buttons + invisible edit button
+## Envelope nodes in the logic flow — make them appear and make them useful
 
-### Issue 1 — Buttons under the message don't match the message
+### Why you didn't see envelope nodes
 
-**Root cause (confirmed in the DB):** the model wrote prose asking *"Pick the setting: Haifa / Tel Aviv / Jerusalem / Be'er Sheva / Ashdod"* but the `propose_options` tool call it made in the same turn carried the **previous turn's** arguments (`Late 1980s / 1990s / …`). Looking at row `19187ff4` in `chat_messages`:
+Your project currently has **zero envelopes** in the database. The logic-flow generator is conditional: it only emits envelope nodes when `envelopes.length > 0`. With no envelopes drafted, the entire envelope section of the prompt is omitted, so the model has nothing to render on the right-hand lane of the canvas.
 
-- `content`: cities list (Haifa…Ashdod)
-- `metadata.options`: year/era buttons (Late 1980s…Present day)
+On top of that, even when envelopes exist, the envelope nodes today only carry a short title — **not the task or how it ties into the case structure**, which is exactly what you want to read at a glance on the board.
 
-The current model (`openai-5.4` per the screenshot) copied the previous `propose_options` call from conversation context instead of rewriting it for the new question. The system prompt warns about forgetting the call entirely but does NOT warn about reusing stale arguments.
+### Fix — three changes
 
-**Fix — three layers (defense in depth):**
+**1. `supabase/functions/generate-logic-flow/index.ts`**
 
-**A. Server-side validation in `executeTool` (`supabase/functions/assistant-chat/index.ts`, the `propose_options` branch around line 843).** When the model returns from a tool round, run a lightweight **prose↔options consistency check** before attaching options to the final message:
-- Take `finalText` (the prose the model is about to send).
-- Take `cleaned.options[].label`.
-- If the prose contains a numbered list (`/^\s*\d+[\.\)]\s+(.+)$/m`) AND none of the option labels appear (case-insensitively, fuzzy contains) in any of the listed prose items → **reject** the options as stale, log a warning, and fall through to the prose synthesizer (`synthesizeOptionsFromProse(finalText)`) to derive the correct buttons from the actual prose. The synthesizer was already strengthened last turn to scan the whole message — it'll pick up `1. Haifa industrial zone …` correctly.
-- This applies right where `quickOptions` is selected (lines 1279-1288 and the mirror at 1579-1582).
+- **Auto-scaffold envelopes when none exist.** Before building the prompt, if `envelopes.length === 0`, derive a sensible default count from `project.target_doc_count` (≈ one envelope per 6-8 documents, clamped to 4-7) and ask the model to also propose `{ number, label, task }` for each as part of the same tool call. After the response, insert these into the `envelopes` table so the Envelopes tab is populated and the canvas nodes link to real rows.
+  - Add an `envelopes` array to the `emit_logic_flow` tool schema (only required when no envelopes exist on input): `{ number, label, task, design_instructions }`.
+  - Insert the new envelope rows BEFORE inserting nodes, then map the envelope node ids onto them via the existing `linked_node_ids` write-back loop.
+- **Make every envelope node body informative.** Update the prompt so each `envelope` node's `description` field is required and must contain three lines:
+  - **Task:** _<what the player physically does with this envelope — open, scan QR, assemble, etc.>_
+  - **Contains:** _<one-line summary of which clues/deductions sit inside it>_
+  - **Why it matters:** _<one sentence on how it advances the case structure / what it unlocks for the next envelope>_
+- Keep the existing right-side vertical lane positioning (x ≈ 1400, y stepping 160) and the `envelope_n → envelope_{n+1}` chain edges.
 
-**B. Tightened system-prompt rule.** Add one explicit hard-rule line right under the existing `TOOL-CALL-BEFORE-PROSE RULE 2`:
+**2. `src/features/project/canvas/CanvasNodeTypes.tsx`**
 
-> *Every `propose_options` call must carry the EXACT options from THIS turn's prose. Do NOT copy a previous turn's `propose_options` arguments. The labels you pass in `options[].label` must match (substring-match) the items you just wrote in the numbered list above. Stale-option reuse is the #2 cause of broken UX after forgetting the tool entirely.*
+- The `CaseNode` body already renders `data.description` but truncates with `line-clamp-2`. Bump envelope nodes specifically to `line-clamp-4` (or remove the clamp on envelope/solution types) and slightly widen the max width from 240 → 280 for envelope nodes so the three-line "Task / Contains / Why it matters" body is readable without opening the node.
+- Add a small **"Envelope #N"** label in the colored header strip when `node_type === "envelope"` (pull the number from `data.envelopeNumber`, which we'll start writing during node insert), so the player flow order is visible at a glance.
 
-Plus one negative-example block: shows the bad pattern (cities prose + year-era options) labelled "WRONG — never do this".
+**3. Persist the envelope number on the node** (small migration-free change)
 
-**C. Client-side guard in `MessageBubble` (`src/features/project/AssistantSection.tsx` ~line 513).** Even with A+B in place, every existing message in the user's history (like row `19187ff4`) is still poisoned in the DB. So before trusting `metaOptions`, run the same consistency check on the client:
-- If `metaOptions.length > 0` AND the message body contains a numbered list AND none of the option labels match any list item → **discard** `metaOptions`, fall through to `synthesizeOptionsFromProse(msg.content)`. Result: stale rows self-heal on render without a migration.
+- In `generate-logic-flow`, when a node is type `envelope`, store the envelope number in the `data` JSONB column (e.g. `data: { envelopeNumber: 1 }`). The canvas reads this directly via `data.envelopeNumber` — no schema change required.
 
-### Issue 2 — Edit button is only visible when the assistant is thinking, and unclickable
+### What you'll see after this lands
 
-**Root cause (`AssistantSection.tsx` lines 593-603):** the Edit button has `opacity-0 group-hover:opacity-100 … disabled:opacity-30 disabled:cursor-not-allowed`. Tailwind's `disabled:` variant wins over `opacity-0`, so:
-- Assistant idle → button is `opacity-0` (invisible) until you happen to hover over the message header.
-- Assistant thinking → `disabled` flag flips on → `disabled:opacity-30` makes the button visible at 30% but unclickable.
-
-That's exactly the behaviour the user described.
-
-**Fix:**
-1. **Always show Edit at low opacity, brighten on hover.** Replace `opacity-0 group-hover:opacity-100` with `opacity-40 group-hover:opacity-100`. Same treatment for the Copy button on assistant messages (line 614-623), so users actually discover them.
-2. **Allow editing while the assistant is thinking.** When the user clicks Edit on an in-flight turn, `editAndResend` should:
-   - First call the existing `assistant_runs` cancel path — abort the local `AbortController` (already in `RunState.controller` in `useAssistantRun.ts`) and mark the in-flight run as superseded so the realtime spinner clears,
-   - Then proceed with the existing delete-tail + resend logic.
-3. New helper `cancel()` exported from `useAssistantRun` that aborts the controller and sets `isRunning=false` locally (the next turn the user kicks off via Edit will re-flip it). Server-side cleanup happens naturally because the orphaned background task will still write its result; we just need to delete that result too — which `editAndResend`'s existing `delete().in("id", toDelete)` already does for any messages added after the edit point.
-4. Tooltip update: when sending, change the title from "Edit and re-run" to "Cancel current reply and edit this message", so the user understands what clicking does.
+Re-running "Generate logic flow" on this project will:
+1. Scaffold ~5 envelopes (based on your 40-doc target) into the Envelopes tab with placeholder labels and tasks the AI proposes from the case brief.
+2. Add 5 colored envelope nodes in a vertical lane on the right side of the canvas, each labeled `Envelope #1 … #5` in the header strip.
+3. Each node body shows the **task**, what it **contains**, and **why it matters** — three short lines, fully visible on the card.
+4. Edges connect clues/deductions → their envelope, and `Envelope #N → Envelope #N+1` so the player flow reads top-to-bottom on the right edge.
 
 ### Files touched
 
-- `supabase/functions/assistant-chat/index.ts` — add prose↔options consistency check before attaching `quickOptions`; tighten system prompt with stale-args rule + negative example. Deploy.
-- `src/features/project/AssistantSection.tsx` — mirror the consistency check in `MessageBubble` (self-heal stale DB rows); change Edit/Copy button opacity from `0`→`40`; route Edit-while-sending through new `cancel()` then `send()`.
-- `src/features/project/assistant/useAssistantRun.ts` — export `cancel()` that aborts the local `AbortController` and clears `isRunning`.
+- `supabase/functions/generate-logic-flow/index.ts` — auto-scaffold envelopes when none exist; require richer envelope-node descriptions; persist `envelopeNumber` in node `data`.
+- `src/features/project/canvas/CanvasNodeTypes.tsx` — wider envelope nodes, looser line clamp, header shows envelope number.
 
 ### Out of scope
 
-- Backfill migration to clean stale `metadata.options` in old chat rows — the client-side self-heal makes this unnecessary.
-- A "Stop generating" composer button (separate UX request).
-- Per-model prompt overrides — the new hard-rule should be enough; we can revisit if the dev-only diagnostic log added last turn shows specific models still slipping through.
+- Re-running this on projects that already have envelopes will NOT overwrite their labels/tasks — auto-scaffolding only triggers when zero envelopes exist.
+- Two-way sync (editing the envelope node body on the canvas writing back to the `envelopes` row) — out of scope; the node is a read-only mirror for now.
+- Auto-generating envelope cover art — separate flow, untouched.
 
