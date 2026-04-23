@@ -284,7 +284,11 @@ export function ProjectOverview({ project }: { project: any }) {
               <Input value={draft.title ?? ""} onChange={(e) => update({ title: e.target.value })} />
             </Field>
             <Field label="Subtitle" originId={draft.assistant_origins?.subtitle}>
-              <Input value={draft.subtitle ?? ""} onChange={(e) => update({ subtitle: e.target.value })} />
+              <Input
+                value={draft.subtitle ?? ""}
+                onChange={(e) => update({ subtitle: e.target.value })}
+                placeholder="The assistant will fill this in during setup — or type your own."
+              />
             </Field>
             <Field label="Mystery type" originId={draft.assistant_origins?.mystery_type}>
               <TolerantSelect
@@ -328,11 +332,35 @@ export function ProjectOverview({ project }: { project: any }) {
               <Textarea value={draft.case_goal ?? ""} onChange={(e) => update({ case_goal: e.target.value })} rows={3} />
             </Field>
             <Field label="Setting / location" originId={draft.assistant_origins?.setting}>
-              <Input value={draft.setting ?? ""} onChange={(e) => update({ setting: e.target.value })} placeholder="e.g. Tel Aviv, 2019" />
+              <Input
+                value={draft.setting ?? ""}
+                onChange={(e) => update({ setting: e.target.value })}
+                placeholder="The assistant will fill this in during setup — or type your own."
+              />
             </Field>
-            <Field label="Extra selling point (hard games)" originId={draft.assistant_origins?.selling_point}>
-              <Textarea value={draft.selling_point ?? ""} onChange={(e) => update({ selling_point: e.target.value })} rows={2} />
-            </Field>
+            <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1">
+                  <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium flex items-center gap-1.5">
+                    Extra selling point
+                    <AssistantOriginBadge messageId={draft.assistant_origins?.selling_point} label="" />
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    A standout hook that elevates the case. Defaults ON for Hard, OFF for Easy/Medium — toggle anytime.
+                  </p>
+                </div>
+                <Switch checked={sellingOn} onCheckedChange={handleSellingToggle} />
+              </div>
+              {sellingOn && (
+                <Textarea
+                  value={draft.selling_point ?? ""}
+                  onChange={(e) => update({ selling_point: e.target.value })}
+                  rows={2}
+                  placeholder="e.g. a 1980s telex machine that decodes the final clue. The assistant can help you plan this — check the bell."
+                  className="bg-background"
+                />
+              )}
+            </div>
           </div>
         </Panel>
 
