@@ -104,7 +104,6 @@ Deno.serve(async (req) => {
     }
 
     if (mode === "image") {
-      const { quality: qualityOverride } = (await Promise.resolve(null), {} as { quality?: string }); // placeholder, replaced below
       const imgPref = (imageModelOverride as string) || (project?.ai_provider_images as string) || "chatgpt-image-2";
       const model = IMAGE_MODEL[imgPref] ?? IMAGE_MODEL["chatgpt-image-2"];
       const useOpenAI = OPENAI_IMAGE_KEYS.has(imgPref);
