@@ -557,6 +557,22 @@ function MessageBubble({
   // older proposals are stale and clicking them would be confusing.
   const showOptions = msg.role === "assistant" && isLast && options.length > 0;
 
+  // Dev-only diagnostic: flag latest assistant messages that look like a
+  // numbered choice list but produced zero buttons (tool missed AND synth missed).
+  if (
+    import.meta.env.DEV &&
+    msg.role === "assistant" &&
+    isLast &&
+    options.length === 0 &&
+    /^\s*1[\.\)]\s+.+$/m.test(msg.content)
+  ) {
+    const model = (msg.metadata as { model?: string } | undefined)?.model ?? "unknown";
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[assistant] missed quick-reply: ${model} – numbered list detected but no propose_options tool call and prose synthesizer returned null`,
+    );
+  }
+
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(msg.content);
   const isUser = msg.role === "user";
@@ -753,22 +769,39 @@ function synthesizeOptionsFromProse(text: string): { options: QuickOption[]; que
     /(בחר|בחרי|בחרו|איזה|איזו|תבחר|מעדיף|מעדיפה|לאשר)/.test(trimmed);
   if (!looksLikeQuestion) return null;
 
-  const blocks = trimmed.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
-  if (blocks.length === 0) return null;
-  const lastBlock = blocks[blocks.length - 1];
-
-  const lineRegex = /^\s*(\d+)[\.\)]\s+(.+?)\s*$/gm;
-  const matches: Array<{ n: number; text: string }> = [];
-  let m: RegExpExecArray | null;
-  while ((m = lineRegex.exec(lastBlock)) !== null) {
-    const n = Number(m[1]);
-    const itemText = m[2].trim();
-    if (!itemText || itemText.length > 120) return null;
-    matches.push({ n, text: itemText });
+  // Scan the WHOLE message line-by-line for a contiguous run of numbered
+  // items (1, 2, 3, …) — list may sit anywhere, not just last paragraph.
+  const lines = trimmed.split("\n");
+  const itemLineRegex = /^\s*(\d+)[\.\)]\s+(.+?)\s*$/;
+  let bestRun: { startIdx: number; items: Array<{ n: number; text: string }> } | null = null;
+  let i = 0;
+  while (i < lines.length) {
+    const first = itemLineRegex.exec(lines[i]);
+    if (first && Number(first[1]) === 1) {
+      const run: Array<{ n: number; text: string }> = [{ n: 1, text: first[2].trim() }];
+      const startIdx = i;
+      let j = i + 1;
+      while (j < lines.length) {
+        const next = itemLineRegex.exec(lines[j]);
+        if (!next) break;
+        const n = Number(next[1]);
+        if (n !== run.length + 1) break;
+        run.push({ n, text: next[2].trim() });
+        j++;
+      }
+      if (run.length >= 2 && run.length <= 6) {
+        if (!bestRun || run.length > bestRun.items.length) {
+          bestRun = { startIdx, items: run };
+        }
+      }
+      i = j;
+      continue;
+    }
+    i++;
   }
-  if (matches.length < 2 || matches.length > 6) return null;
-  for (let i = 0; i < matches.length; i++) {
-    if (matches[i].n !== i + 1) return null;
+  if (!bestRun) return null;
+  for (const it of bestRun.items) {
+    if (!it.text || it.text.length > 120) return null;
   }
 
   const toLabel = (s: string) => {
@@ -777,13 +810,17 @@ function synthesizeOptionsFromProse(text: string): { options: QuickOption[]; que
     return base.length > 60 ? `${base.slice(0, 57)}…` : base;
   };
 
-  const beforeNumbers = lastBlock.split(lineRegex)[0]?.trim() ?? "";
-  const questionLine = beforeNumbers
-    ? beforeNumbers.split("\n").map((l) => l.trim()).filter(Boolean).pop() ?? null
-    : null;
+  let questionLine: string | null = null;
+  for (let k = bestRun.startIdx - 1; k >= 0; k--) {
+    const candidate = lines[k].trim();
+    if (candidate) {
+      questionLine = candidate;
+      break;
+    }
+  }
 
   return {
-    options: matches.map((mm) => ({ label: toLabel(mm.text), send: mm.text })),
+    options: bestRun.items.map((mm) => ({ label: toLabel(mm.text), send: mm.text })),
     question: questionLine && questionLine.length <= 140 ? questionLine : null,
   };
 }
