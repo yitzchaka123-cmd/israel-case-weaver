@@ -620,8 +620,19 @@ Deno.serve(async (req) => {
       const optionsResult = lastOptionsTool?.result as
         | { options?: Array<{ label: string; send: string }>; question?: string }
         | undefined;
-      const quickOptions = optionsResult?.options ?? null;
-      const quickQuestion = optionsResult?.question ?? null;
+      let quickOptions = optionsResult?.options ?? null;
+      let quickQuestion = optionsResult?.question ?? null;
+
+      // Fallback: model wrote a numbered list in prose but forgot to call
+      // propose_options. Synthesize buttons from the prose so the UI still
+      // renders quick replies.
+      if (!quickOptions || quickOptions.length === 0) {
+        const synth = synthesizeOptionsFromProse(finalText);
+        if (synth) {
+          quickOptions = synth.options;
+          quickQuestion = synth.question;
+        }
+      }
 
       await supa.from("chat_messages").insert({
         id: assistantMessageId,
