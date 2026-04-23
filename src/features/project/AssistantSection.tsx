@@ -473,12 +473,14 @@ function MessageBubble({
   msg,
   isLast,
   onPickOption,
+  onEdit,
   disabled,
   highlighted,
 }: {
   msg: Msg;
   isLast: boolean;
   onPickOption: (text: string) => void;
+  onEdit: (newText: string) => void;
   disabled: boolean;
   highlighted?: boolean;
 }) {
@@ -489,22 +491,88 @@ function MessageBubble({
   // older proposals are stale and clicking them would be confusing.
   const showOptions = msg.role === "assistant" && isLast && options.length > 0;
 
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(msg.content);
+  const isUser = msg.role === "user";
+
+  const startEdit = () => {
+    setDraft(msg.content);
+    setEditing(true);
+  };
+  const cancelEdit = () => {
+    setEditing(false);
+    setDraft(msg.content);
+  };
+  const submitEdit = () => {
+    const trimmed = draft.trim();
+    if (!trimmed || trimmed === msg.content.trim()) {
+      cancelEdit();
+      return;
+    }
+    setEditing(false);
+    onEdit(trimmed);
+  };
+
   return (
     <div
       data-msg-id={msg.id}
-      className={`flex gap-3 items-start scroll-mt-24 rounded-xl transition-colors duration-700 ${
+      className={`group flex gap-3 items-start scroll-mt-24 rounded-xl transition-colors duration-700 ${
         highlighted ? "bg-accent/15 ring-2 ring-accent/50 -mx-2 px-2 py-2" : ""
       }`}
     >
       <Avatar role={msg.role} />
       <div className="flex-1 min-w-0 pt-1">
-        <div className="text-xs font-medium mb-1 text-muted-foreground">
-          {msg.role === "assistant" ? "Assistant" : "You"}
+        <div className="text-xs font-medium mb-1 text-muted-foreground flex items-center gap-2">
+          <span>{msg.role === "assistant" ? "Assistant" : "You"}</span>
+          {isUser && !editing && (
+            <button
+              type="button"
+              onClick={startEdit}
+              disabled={disabled}
+              title="Edit this message and re-run the assistant"
+              className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10.5px] text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <Pencil className="h-3 w-3" /> Edit
+            </button>
+          )}
         </div>
-        <div className="prose prose-sm max-w-none dark:prose-invert whitespace-pre-wrap leading-relaxed text-[14.5px]">
-          {msg.content}
-        </div>
-        {showOptions && (
+        {editing ? (
+          <div className="rounded-xl border border-accent/30 bg-accent/5 p-2 space-y-2">
+            <Textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  submitEdit();
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  cancelEdit();
+                }
+              }}
+              autoFocus
+              className="min-h-[80px] text-[14.5px] bg-background"
+            />
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[10.5px] text-muted-foreground">
+                Editing will delete the assistant's reply and any later messages, then re-run from here.
+              </p>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <Button type="button" variant="ghost" size="sm" onClick={cancelEdit} className="h-7 px-2 text-xs">
+                  <X className="h-3.5 w-3.5 mr-1" /> Cancel
+                </Button>
+                <Button type="button" size="sm" onClick={submitEdit} disabled={!draft.trim()} className="h-7 px-2.5 text-xs">
+                  <Check className="h-3.5 w-3.5 mr-1" /> Save & re-run
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="prose prose-sm max-w-none dark:prose-invert whitespace-pre-wrap leading-relaxed text-[14.5px]">
+            {msg.content}
+          </div>
+        )}
+        {!editing && showOptions && (
           <div className="mt-3 rounded-xl border border-accent/20 bg-accent/5 p-3">
             {question && (
               <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2 font-medium">
@@ -529,7 +597,7 @@ function MessageBubble({
             </div>
           </div>
         )}
-        {tools.length > 0 && <ToolReceipts tools={tools} />}
+        {!editing && tools.length > 0 && <ToolReceipts tools={tools} />}
       </div>
     </div>
   );
