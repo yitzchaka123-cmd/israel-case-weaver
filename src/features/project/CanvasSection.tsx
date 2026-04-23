@@ -145,7 +145,14 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
       dbNodes.map((n) => ({
         id: n.id,
         position: { x: n.position_x, y: n.position_y },
-        data: { label: n.title || "(untitled)", type: n.node_type, color: n.color, description: n.description, createdByMessageId: (n as { created_by_message_id?: string | null }).created_by_message_id ?? null },
+        data: {
+          label: n.title || "(untitled)",
+          type: n.node_type,
+          color: n.color,
+          description: n.description,
+          createdByMessageId: (n as { created_by_message_id?: string | null }).created_by_message_id ?? null,
+          envelopeNumber: (n.data as { envelopeNumber?: number } | null)?.envelopeNumber,
+        },
         type: "case",
         draggable: !n.locked,
       }))
