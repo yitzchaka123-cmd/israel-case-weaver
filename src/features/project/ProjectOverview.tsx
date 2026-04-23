@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload, Lock } from "lucide-react";
+import { Upload, Lock, Sparkles, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
@@ -135,6 +135,7 @@ export function ProjectOverview({ project }: { project: any }) {
   // difficulty: Hard → on, otherwise off. Honors any pre-existing text.
   const initialSellingOn = !!project.selling_point || normalizeDifficulty(project.difficulty) === "Hard";
   const [sellingOn, setSellingOn] = useState<boolean>(initialSellingOn);
+  const [genSelling, setGenSelling] = useState(false);
 
   useEffect(() => {
     setDraft(project);
