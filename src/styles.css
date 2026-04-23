@@ -184,6 +184,7 @@
   .dark body::after { display: none; }
 
   .font-display { font-family: var(--font-display); letter-spacing: -0.02em; }
+  .font-overview-title { font-family: "Space Grotesk", system-ui, sans-serif; letter-spacing: -0.01em; font-weight: 600; }
 }
 
 @layer utilities {

@@ -546,7 +546,7 @@ function Panel({ children }: { children: React.ReactNode }) {
   return <div className="bg-card border rounded-2xl p-6 shadow-soft">{children}</div>;
 }
 function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <h2 className="font-display text-xl mb-4">{children}</h2>;
+  return <h2 className="font-overview-title text-xl mb-4">{children}</h2>;
 }
 function Field({ label, children, originId }: { label: string; children: React.ReactNode; originId?: string | null }) {
   return (
