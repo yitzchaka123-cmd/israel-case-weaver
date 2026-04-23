@@ -162,24 +162,45 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     };
   }, [projectId, qc]);
 
+  // Track when an external focus request is in flight, so the
+  // auto-scroll-to-bottom effect doesn't yank the user away from the
+  // highlighted message they just clicked through to.
+  const focusInFlightRef = useRef(false);
+
   useEffect(() => {
+    if (focusInFlightRef.current) return;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, sending]);
 
   // Scroll-to and briefly highlight a message when an outside component
   // (e.g. the AssistantOriginBadge on a suspect/document) asks to focus it.
+  // Retries a few times because the messages query may not have rendered yet
+  // when the tab first switches in.
   useEffect(() => {
     if (!focusMessageId) return;
-    // Wait a tick for the tab switch + render
-    const t = window.setTimeout(() => {
+    focusInFlightRef.current = true;
+    let cancelled = false;
+    let attempts = 0;
+    const tryFocus = () => {
+      if (cancelled) return;
       const el = scrollRef.current?.querySelector<HTMLElement>(`[data-msg-id="${focusMessageId}"]`);
       if (el) {
         el.scrollIntoView({ behavior: "smooth", block: "center" });
         setHighlightedId(focusMessageId);
         window.setTimeout(() => setHighlightedId(null), 2400);
+        // Release the auto-scroll lock a bit after the smooth-scroll completes.
+        window.setTimeout(() => { focusInFlightRef.current = false; }, 800);
+        return;
       }
-    }, 120);
-    return () => window.clearTimeout(t);
+      attempts += 1;
+      if (attempts < 12) window.setTimeout(tryFocus, 100);
+      else focusInFlightRef.current = false;
+    };
+    const t = window.setTimeout(tryFocus, 60);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
   }, [focusMessageId, messages]);
 
   const send = async (text: string, baseMessages?: Msg[]) => {
@@ -604,8 +625,7 @@ function MessageBubble({
 }
 
 // Maps a tool name to the workspace tab the user should jump to when clicking
-// the receipt. Returns null for tools that have no obvious destination
-// (e.g. update_project, which doesn't navigate anywhere meaningful).
+// the receipt. Returns null for tools that have no obvious destination.
 function destinationFor(toolName: string): { tab: string; label: string } | null {
   switch (toolName) {
     case "add_document":
@@ -620,6 +640,8 @@ function destinationFor(toolName: string): { tab: string; label: string } | null
       return { tab: "canvas", label: "Open in Case Board" };
     case "set_solution_summary":
       return { tab: "canvas", label: "Open Solution summary on Case Board" };
+    case "update_project":
+      return { tab: "overview", label: "Open in Overview" };
     case "generate_image":
     case "add_media":
       return { tab: "media", label: "Open in Media" };
@@ -632,6 +654,78 @@ function destinationFor(toolName: string): { tab: string; label: string } | null
     default:
       return null;
   }
+}
+
+// Friendly labels for the project field keys touched by `update_project`,
+// so the receipt reads "Mystery type · Year · Difficulty" instead of the
+// raw column names.
+const PROJECT_FIELD_LABELS: Record<string, string> = {
+  title: "Title",
+  subtitle: "Subtitle",
+  phase: "Phase",
+  mystery_type: "Mystery type",
+  genre: "Genre",
+  year: "Year",
+  difficulty: "Difficulty",
+  player_role: "Player role",
+  case_goal: "Case goal",
+  setting: "Setting",
+  selling_point: "Selling point",
+  target_doc_count: "Target doc count",
+};
+
+function formatFieldValue(v: unknown): string {
+  if (v === null || v === undefined) return "—";
+  if (typeof v === "string") {
+    const trimmed = v.trim();
+    if (!trimmed) return "—";
+    return trimmed.length > 80 ? `${trimmed.slice(0, 77)}…` : trimmed;
+  }
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  try { return JSON.stringify(v); } catch { return String(v); }
+}
+
+function ProjectUpdateReceipt({ args, ok, message }: { args: Record<string, unknown>; ok: boolean; message: string }) {
+  const entries = Object.entries(args).filter(([, v]) => v !== undefined);
+  const handleJump = () => {
+    if (!ok) return;
+    window.dispatchEvent(new CustomEvent("mystudio:navigate", { detail: { tab: "overview" } }));
+  };
+  if (entries.length === 0) {
+    return (
+      <div className="flex flex-wrap items-baseline gap-x-2">
+        <span className="text-foreground/90 font-medium">Project updated</span>
+        <span className="text-[11px] text-muted-foreground">{message}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-lg border border-border/60 bg-muted/30 p-2.5 space-y-1.5">
+      <button
+        type="button"
+        onClick={handleJump}
+        disabled={!ok}
+        title={ok ? "Open in Overview" : message}
+        className="flex w-full items-center justify-between gap-2 text-left text-foreground/90 font-medium hover:text-accent-foreground disabled:cursor-default disabled:hover:text-foreground/90"
+      >
+        <span className="inline-flex items-center gap-1.5">
+          Case details updated
+          <span className="rounded-full bg-accent/15 text-accent text-[10px] font-bold px-1.5 py-0.5 leading-none">
+            {entries.length}
+          </span>
+        </span>
+        {ok && <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />}
+      </button>
+      <dl className="grid grid-cols-1 sm:grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-[12px] leading-snug">
+        {entries.map(([k, v]) => (
+          <div key={k} className="contents">
+            <dt className="text-muted-foreground capitalize">{PROJECT_FIELD_LABELS[k] ?? k.replace(/_/g, " ")}</dt>
+            <dd className="text-foreground/90 break-words">{formatFieldValue(v)}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
 }
 
 function ToolReceipts({ tools }: { tools: ToolCall[] }) {
@@ -664,8 +758,27 @@ function ToolReceipts({ tools }: { tools: ToolCall[] }) {
       </button>
 
       {open && (
-        <ul className="mt-2 space-y-1 border-l-2 border-border/60 pl-3">
+        <ul className="mt-2 space-y-1.5 border-l-2 border-border/60 pl-3">
           {tools.map((t, i) => {
+            // Special-case update_project: render a structured field list
+            // showing every property the assistant just changed, with values.
+            if (t.name === "update_project") {
+              return (
+                <li key={i} className="flex items-start gap-2">
+                  <span className={`mt-1 ${t.result.ok ? "text-accent-foreground/80" : "text-destructive"}`}>
+                    {t.result.ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <ProjectUpdateReceipt
+                      args={(t.args ?? {}) as Record<string, unknown>}
+                      ok={t.result.ok}
+                      message={t.result.message}
+                    />
+                  </div>
+                </li>
+              );
+            }
+
             const dest = destinationFor(t.name);
             const clickable = t.result.ok && dest !== null;
             const handleClick = () => {
