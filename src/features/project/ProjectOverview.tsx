@@ -4,12 +4,25 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload } from "lucide-react";
+import { Upload, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { PromptPanel } from "@/components/PromptPanel";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
+import { ProductionDashboard } from "./ProductionDashboard";
+import { normalizePhase } from "./PhaseStatusBar";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const MYSTERY_TYPES = [
   "Espionage / Intelligence",
@@ -22,7 +35,7 @@ const MYSTERY_TYPES = [
 ];
 const GENRES = ["Technological", "Mathematical", "Historical", "Forensics", "Psychological"];
 const DIFFICULTIES = ["Easy", "Medium", "Hard"];
-const PHASES = ["setup", "summary", "structure", "documents", "hints", "packaging", "done"];
+
 
 export function ProjectOverview({ project }: { project: any }) {
   const [draft, setDraft] = useState(project);
@@ -193,27 +206,77 @@ export function ProjectOverview({ project }: { project: any }) {
 
         <Panel>
           <SectionTitle>Production</SectionTitle>
-          <div className="grid md:grid-cols-2 gap-4">
+          <ProductionDashboard
+            projectId={project.id}
+            phase={draft.phase}
+            targetDocCount={draft.target_doc_count ?? null}
+            logicApprovedAt={draft.logic_approved_at ?? null}
+            onJump={(tab) => window.dispatchEvent(new CustomEvent("mystudio:navigate", { detail: { tab } }))}
+          />
+
+          <div className="grid md:grid-cols-2 gap-4 mt-6">
             <Field label="Target document count">
-              <Input
-                type="number"
-                value={draft.target_doc_count ?? ""}
-                onChange={(e) => update({ target_doc_count: e.target.value ? Number(e.target.value) : null })}
-              />
+              {draft.target_doc_count ? (
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 px-3 py-2 rounded-md border bg-muted/40 text-sm flex items-center gap-2">
+                    <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="font-medium">{draft.target_doc_count}</span>
+                  </div>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="ghost" size="sm" className="text-xs text-muted-foreground">Unlock</Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Override target document count?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Are you sure? Changing this can desync your production — document numbering and envelope flow rely on this number.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => update({ target_doc_count: null })}>
+                          Yes, unlock
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+              ) : (
+                <Input
+                  type="number"
+                  value={draft.target_doc_count ?? ""}
+                  onChange={(e) => update({ target_doc_count: e.target.value ? Number(e.target.value) : null })}
+                  placeholder="e.g. 40"
+                />
+              )}
+              {draft.target_doc_count ? (
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Locked. Changing this would derail document numbering and envelope flow.
+                </p>
+              ) : null}
             </Field>
             <Field label="Current phase">
-              <Select value={draft.phase} onValueChange={(v) => update({ phase: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {PHASES.map((t) => <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <div className="px-3 py-2 rounded-md border bg-muted/40 text-sm flex items-center gap-2">
+                <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="font-medium capitalize">{normalizePhase(draft.phase)}</span>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Phase advances automatically as the assistant moves you through Setup → Summary → Structure → …
+              </p>
             </Field>
           </div>
+
           <div className="mt-4">
-            <Field label="Packaging notes">
-              <Textarea value={draft.packaging_notes ?? ""} onChange={(e) => update({ packaging_notes: e.target.value })} rows={3} />
-            </Field>
+            {(draft.phase === "packaging" || draft.phase === "done") ? (
+              <Field label="Packaging notes" originId={draft.assistant_origins?.packaging_notes}>
+                <Textarea value={draft.packaging_notes ?? ""} onChange={(e) => update({ packaging_notes: e.target.value })} rows={3} />
+              </Field>
+            ) : (
+              <div className="px-4 py-3 rounded-lg border border-dashed bg-muted/20 text-xs text-muted-foreground">
+                Packaging notes appear here when the assistant reaches the Packaging phase.
+              </div>
+            )}
           </div>
         </Panel>
       </div>
