@@ -208,6 +208,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     const content = text.trim();
     if (!content || sending) return;
     setInput("");
+    void content;
     setSending(true);
     try {
       const source = baseMessages ?? messages;
