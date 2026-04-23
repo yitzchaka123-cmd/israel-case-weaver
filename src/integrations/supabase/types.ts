@@ -425,6 +425,45 @@ export type Database = {
         }
         Relationships: []
       }
+      project_notifications: {
+        Row: {
+          body: string | null
+          created_at: string
+          created_by: string
+          id: string
+          kind: string
+          project_id: string
+          read_at: string | null
+          starter_prompt: string | null
+          status: string
+          title: string
+        }
+        Insert: {
+          body?: string | null
+          created_at?: string
+          created_by?: string
+          id?: string
+          kind?: string
+          project_id: string
+          read_at?: string | null
+          starter_prompt?: string | null
+          status?: string
+          title: string
+        }
+        Update: {
+          body?: string | null
+          created_at?: string
+          created_by?: string
+          id?: string
+          kind?: string
+          project_id?: string
+          read_at?: string | null
+          starter_prompt?: string | null
+          status?: string
+          title?: string
+        }
+        Relationships: []
+      }
       projects: {
         Row: {
           ai_provider_documents: string | null

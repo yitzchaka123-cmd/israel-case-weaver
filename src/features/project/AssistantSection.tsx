@@ -204,6 +204,19 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     };
   }, [focusMessageId, messages]);
 
+  // Listen for external "send this prompt" requests (from the notification panel).
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ projectId: string; prompt: string }>).detail;
+      if (!detail || detail.projectId !== projectId) return;
+      const text = detail.prompt?.trim();
+      if (!text) return;
+      void send(text);
+    };
+    window.addEventListener("mystudio:assistant-prompt", handler as EventListener);
+    return () => window.removeEventListener("mystudio:assistant-prompt", handler as EventListener);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, messages, sending]);
   const send = async (text: string, baseMessages?: Msg[]) => {
     const content = text.trim();
     if (!content || sending) return;

@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Upload, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,8 @@ import { PromptPanel } from "@/components/PromptPanel";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
 import { ProductionDashboard } from "./ProductionDashboard";
 import { normalizePhase } from "./PhaseStatusBar";
+import { useProjectNotifications } from "./notifications/useProjectNotifications";
+import { notifyForFieldChange, type TriggerableField } from "./notifications/triggers";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -126,13 +129,41 @@ export function ProjectOverview({ project }: { project: any }) {
   const [draft, setDraft] = useState(project);
   const fileInput = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<number | undefined>(undefined);
+  const { create: createNotification } = useProjectNotifications(project.id);
 
-  useEffect(() => setDraft(project), [project.id]);
+  // Local UI state for the "extra selling point" toggle. Default derived from
+  // difficulty: Hard → on, otherwise off. Honors any pre-existing text.
+  const initialSellingOn = !!project.selling_point || normalizeDifficulty(project.difficulty) === "Hard";
+  const [sellingOn, setSellingOn] = useState<boolean>(initialSellingOn);
+
+  useEffect(() => {
+    setDraft(project);
+    setSellingOn(!!project.selling_point || normalizeDifficulty(project.difficulty) === "Hard");
+  }, [project.id]);
+
+  // Fields that may emit a "the assistant should weigh in" notification.
+  const TRIGGER_MAP: Partial<Record<keyof typeof draft, TriggerableField>> = {
+    difficulty: "difficulty",
+    mystery_type: "mystery_type",
+    genre: "genre",
+    player_role: "player_role",
+    target_doc_count: "target_doc_count",
+    case_goal: "case_goal",
+  };
 
   // Debounced autosave
   const update = (patch: Partial<typeof draft>) => {
     const next = { ...draft, ...patch };
     setDraft(next);
+
+    // Fire notifications for any tracked field that just changed.
+    for (const key of Object.keys(patch) as Array<keyof typeof draft>) {
+      const trigger = TRIGGER_MAP[key];
+      if (!trigger) continue;
+      const draftNotif = notifyForFieldChange(trigger, draft[key], next[key], next);
+      if (draftNotif) createNotification(draftNotif);
+    }
+
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(async () => {
       const { error } = await supabase
@@ -155,6 +186,24 @@ export function ProjectOverview({ project }: { project: any }) {
         .eq("id", next.id);
       if (error) toast.error(error.message);
     }, 600);
+  };
+
+  // Toggling the "Extra selling point" switch.
+  const handleSellingToggle = (on: boolean) => {
+    if (!on && draft.selling_point && String(draft.selling_point).trim().length > 0) {
+      const ok = window.confirm(
+        "Turning off the extra selling point will clear what you've written. Continue?",
+      );
+      if (!ok) return;
+    }
+    setSellingOn(on);
+    if (on) {
+      const draftNotif = notifyForFieldChange("selling_point_toggle_on", null, true, draft);
+      if (draftNotif) createNotification(draftNotif);
+    } else {
+      // Clear the value when turning off.
+      update({ selling_point: null });
+    }
   };
 
   const uploadCover = async (file: File) => {
@@ -235,7 +284,11 @@ export function ProjectOverview({ project }: { project: any }) {
               <Input value={draft.title ?? ""} onChange={(e) => update({ title: e.target.value })} />
             </Field>
             <Field label="Subtitle" originId={draft.assistant_origins?.subtitle}>
-              <Input value={draft.subtitle ?? ""} onChange={(e) => update({ subtitle: e.target.value })} />
+              <Input
+                value={draft.subtitle ?? ""}
+                onChange={(e) => update({ subtitle: e.target.value })}
+                placeholder="The assistant will fill this in during setup — or type your own."
+              />
             </Field>
             <Field label="Mystery type" originId={draft.assistant_origins?.mystery_type}>
               <TolerantSelect
@@ -279,11 +332,35 @@ export function ProjectOverview({ project }: { project: any }) {
               <Textarea value={draft.case_goal ?? ""} onChange={(e) => update({ case_goal: e.target.value })} rows={3} />
             </Field>
             <Field label="Setting / location" originId={draft.assistant_origins?.setting}>
-              <Input value={draft.setting ?? ""} onChange={(e) => update({ setting: e.target.value })} placeholder="e.g. Tel Aviv, 2019" />
+              <Input
+                value={draft.setting ?? ""}
+                onChange={(e) => update({ setting: e.target.value })}
+                placeholder="The assistant will fill this in during setup — or type your own."
+              />
             </Field>
-            <Field label="Extra selling point (hard games)" originId={draft.assistant_origins?.selling_point}>
-              <Textarea value={draft.selling_point ?? ""} onChange={(e) => update({ selling_point: e.target.value })} rows={2} />
-            </Field>
+            <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1">
+                  <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium flex items-center gap-1.5">
+                    Extra selling point
+                    <AssistantOriginBadge messageId={draft.assistant_origins?.selling_point} label="" />
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    A standout hook that elevates the case. Defaults ON for Hard, OFF for Easy/Medium — toggle anytime.
+                  </p>
+                </div>
+                <Switch checked={sellingOn} onCheckedChange={handleSellingToggle} />
+              </div>
+              {sellingOn && (
+                <Textarea
+                  value={draft.selling_point ?? ""}
+                  onChange={(e) => update({ selling_point: e.target.value })}
+                  rows={2}
+                  placeholder="e.g. a 1980s telex machine that decodes the final clue. The assistant can help you plan this — check the bell."
+                  className="bg-background"
+                />
+              )}
+            </div>
           </div>
         </Panel>
 

@@ -171,6 +171,7 @@ When the user approves a change, you MUST persist it by calling the appropriate 
 - add_canvas_node / update_canvas_node: add or edit a logic/clue/deduction/envelope/solution node.
 - add_envelope / update_envelope: manage the 5 fixed envelopes (only update_envelope exists for editing labels/tasks/notes).
 - add_hint / update_hint: manage hints.
+- notify_user: drop a "callback" notification into the case's bell panel — use ONLY when the user defers a decision ("I'll write the title later"), skips a planning step, or asks something that needs revisiting later. Never use it for in-the-moment choices (use propose_options for those).
 
 EDIT-VS-CREATE RULE (CRITICAL — prevents duplicate rows)
 When the user references an EXISTING item — by name ("change Yossi's motive"), by number ("rename document 5", "envelope 3"), by pronoun ("make it shorter", "rename it"), by role ("the murder weapon node", "the red herring suspect"), or any other reference to something already in the rosters below — you MUST call the matching \`update_*\` tool, passing the \`id\` from the roster. NEVER call the \`add_*\` variant for an item that already exists — that creates a duplicate row and confuses the user. Use \`add_*\` ONLY for items that are not present in the rosters below.
@@ -583,6 +584,25 @@ const BASE_TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "notify_user",
+      description:
+        "Drop a notification into the case's per-project Notification Panel (the bell in the workspace header). Use sparingly — only when something the user said or deferred should be revisited later. Examples: user said 'I'll write the title myself' → drop a reminder to confirm it. User skipped a planning step → flag it. Each notification optionally carries a `starter_prompt` that becomes the user's next message when they click 'Open in Assistant'. Do NOT use this for every reply — quick-reply buttons (propose_options) are still the default for in-the-moment choices.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Short headline shown in the bell panel (under ~80 chars)." },
+          body: { type: "string", description: "Optional 1–2 sentence detail." },
+          starter_prompt: { type: "string", description: "Optional message text sent to you when the user clicks 'Open in Assistant'." },
+          kind: { type: "string", description: "Short slug for grouping (e.g. 'reminder', 'follow_up', 'planning'). Defaults to 'general'." },
+        },
+        required: ["title"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 // Build the tool list with the playbook-derived `phase` enum substituted in.
@@ -918,6 +938,24 @@ async function executeTool(
         "id, title",
         (r) => String(r.title ?? "—"),
       );
+    }
+    if (name === "notify_user") {
+      const a = args as { title?: string; body?: string; starter_prompt?: string; kind?: string };
+      const title = String(a.title ?? "").trim();
+      if (!title) return { ok: false, message: "title is required" };
+      const { error } = await supa
+        .from("project_notifications")
+        .insert({
+          project_id: projectId,
+          kind: String(a.kind ?? "general").trim() || "general",
+          title,
+          body: a.body ? String(a.body).trim() : null,
+          starter_prompt: a.starter_prompt ? String(a.starter_prompt).trim() : null,
+          created_by: "assistant",
+          status: "unread",
+        });
+      if (error) throw error;
+      return { ok: true, message: `Notification dropped: ${title}` };
     }
 
     return { ok: false, message: `Unknown tool: ${name}` };
