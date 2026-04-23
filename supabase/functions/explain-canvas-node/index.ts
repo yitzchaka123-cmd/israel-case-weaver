@@ -127,14 +127,23 @@ EXPLAIN, for the author:
 3. If it's a clue or red herring: how the player is meant to encounter and interpret it (1 short paragraph).
 4. Any concrete suggestion to strengthen this node (1 short paragraph, optional).`;
 
+    const startedAt = Date.now();
+    const callerUserId = await getUserIdFromAuth(req);
     const resp = await chatCompletions({
       model,
       messages: [{ role: "system", content: sys }, { role: "user", content: userPrompt }],
     });
+    const fb = extractFallback(resp, model);
 
     if (!resp.ok) {
       const t = await resp.text().catch(() => "");
       console.error("explain-canvas-node error", resp.status, t);
+      await logAiRun({
+        userId: callerUserId, projectId: node.project_id, surface: "explain-canvas-node",
+        requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
+        status: "error", latencyMs: Date.now() - startedAt,
+        errorMessage: `${resp.status}: ${t.slice(0, 200)}`, targetId: nodeId,
+      });
       return new Response(JSON.stringify({ error: `AI error (${resp.status})` }), {
         status: resp.status, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -143,10 +152,18 @@ EXPLAIN, for the author:
     const data = await resp.json();
     const text = data.choices?.[0]?.message?.content ?? "(no response)";
 
+    await logAiRun({
+      userId: callerUserId, projectId: node.project_id, surface: "explain-canvas-node",
+      requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
+      status: "ok", latencyMs: Date.now() - startedAt, targetId: nodeId, promptExcerpt: userPrompt,
+    });
     return new Response(
       JSON.stringify({
         ok: true,
         explanation: text,
+        model,
+        effectiveModel: fb.effectiveModel,
+        fallback: fb.fallback,
         node: { id: node.id, title: node.title, node_type: node.node_type, description: node.description },
         neighbors,
         linkedDocuments: linkedDocs ?? [],

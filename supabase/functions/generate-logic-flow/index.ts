@@ -157,12 +157,15 @@ Position nodes in a left-to-right flow: clues on the left, deductions middle, so
       },
     };
 
+    const startedAt = Date.now();
+    const callerUserId = await getUserIdFromAuth(req);
     const resp = await chatCompletions({
       model,
       messages: [{ role: "system", content: sys }, { role: "user", content: userPrompt }],
       tools: [tool],
       tool_choice: { type: "function", function: { name: "emit_logic_flow" } },
     });
+    const fb = extractFallback(resp, model);
 
     if (!resp.ok) {
       const provider = model.startsWith("openai/") ? "OpenAI"
@@ -171,6 +174,12 @@ Position nodes in a left-to-right flow: clues on the left, deductions middle, so
         : "Lovable AI";
       const t = await resp.text().catch(() => "");
       console.error(`logic-flow ${provider} error`, resp.status, t);
+      await logAiRun({
+        userId: callerUserId, projectId, surface: "generate-logic-flow",
+        requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
+        status: "error", latencyMs: Date.now() - startedAt,
+        errorMessage: `${provider} ${resp.status}: ${t.slice(0, 200)}`, promptExcerpt: userPrompt,
+      });
       if (resp.status === 429) return new Response(JSON.stringify({ error: `${provider} rate limit — try again shortly.` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       if (resp.status === 402) {
         const hint = provider === "Lovable AI"
@@ -261,12 +270,20 @@ Position nodes in a left-to-right flow: clues on the left, deductions middle, so
       model,
     });
 
+    await logAiRun({
+      userId: callerUserId, projectId, surface: "generate-logic-flow",
+      requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
+      status: "ok", latencyMs: Date.now() - startedAt, promptExcerpt: userPrompt,
+    });
     return new Response(JSON.stringify({
       ok: true,
       summary: useApproved ? approvedSummary : parsed.summary,
       usedApprovedSummary: useApproved,
       nodeCount: parsed.nodes.length,
       edgeCount: edgeRows.length,
+      model,
+      effectiveModel: fb.effectiveModel,
+      fallback: fb.fallback,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
