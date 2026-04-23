@@ -1499,6 +1499,16 @@ Deno.serve(async (req) => {
     // This lets the UI jump from any field/item back to the chat turn that
     // produced it.
     const assistantMessageId = crypto.randomUUID();
+    // Placeholder INSERT: satisfies FK constraints from documents/suspects/
+    // canvas_nodes that stamp `created_by_message_id` mid-loop. Updated to
+    // final content+metadata at the end. Client hides empty in_progress bubbles.
+    await supa.from("chat_messages").insert({
+      id: assistantMessageId,
+      project_id: projectId,
+      role: "assistant",
+      content: "",
+      metadata: { in_progress: true, model },
+    });
 
     // Tool-calling loop: up to 4 rounds
     const convo: Array<Record<string, unknown>> = [
