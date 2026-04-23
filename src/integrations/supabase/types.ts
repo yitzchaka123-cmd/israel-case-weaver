@@ -62,6 +62,36 @@ export type Database = {
         }
         Relationships: []
       }
+      assistant_runs: {
+        Row: {
+          error: string | null
+          finished_at: string | null
+          id: string
+          project_id: string
+          started_at: string
+          status: string
+          user_id: string | null
+        }
+        Insert: {
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          project_id: string
+          started_at?: string
+          status?: string
+          user_id?: string | null
+        }
+        Update: {
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          project_id?: string
+          started_at?: string
+          status?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       canvas_edges: {
         Row: {
           board: string

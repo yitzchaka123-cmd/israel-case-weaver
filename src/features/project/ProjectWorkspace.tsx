@@ -17,12 +17,14 @@ import { MediaSection } from "./MediaSection";
 import { ExportMenu } from "./ExportMenu";
 import { PhaseStatusBar } from "./PhaseStatusBar";
 import { NotificationBell } from "./notifications/NotificationBell";
+import { useAssistantRunStatus } from "./assistant/useAssistantRun";
 
 export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
   const nav = useNavigate();
   const [tab, setTab] = useState("overview");
   const [focusMessageId, setFocusMessageId] = useState<string | null>(null);
+  const assistantRunning = useAssistantRunStatus(projectId);
 
   // Allow other components (e.g. assistant tool-call receipts and origin badges)
   // to switch tabs and optionally focus a specific item or chat message by
@@ -172,13 +174,22 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
                 { v: "media", l: "Media", icon: ImageIcon },
               ].map((t) => {
                 const Icon = t.icon;
+                const showPulse = t.v === "assistant" && assistantRunning;
                 return (
                   <TabsTrigger
                     key={t.v}
                     value={t.v}
                     className="data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none text-muted-foreground relative px-3 py-2.5 rounded-none data-[state=active]:after:absolute data-[state=active]:after:inset-x-3 data-[state=active]:after:bottom-0 data-[state=active]:after:h-0.5 data-[state=active]:after:bg-accent data-[state=active]:after:rounded-full inline-flex items-center gap-1.5"
                   >
-                    <Icon className="h-3.5 w-3.5" />
+                    <span className="relative inline-flex">
+                      <Icon className="h-3.5 w-3.5" />
+                      {showPulse && (
+                        <span className="absolute -top-0.5 -right-1 flex h-1.5 w-1.5">
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-75" />
+                          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-accent" />
+                        </span>
+                      )}
+                    </span>
                     {t.l}
                   </TabsTrigger>
                 );
