@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Cloud, Download, FileArchive, FileText, Image, ListOrdered } from "lucide-react";
-import { exportDocumentsOnly, exportMediaOnly, exportProjectPackage, exportProjectToDrive, exportPromptsOnly } from "@/lib/export";
+import { Download, FileArchive, FileText, Image, ListOrdered } from "lucide-react";
+import { exportDocumentsOnly, exportMediaOnly, exportProjectPackage, exportPromptsOnly } from "@/lib/export";
 
 export function ExportMenu({ projectId }: { projectId: string }) {
   return (
@@ -14,9 +14,6 @@ export function ExportMenu({ projectId }: { projectId: string }) {
       <DropdownMenuContent align="end" className="w-60">
         <DropdownMenuItem onClick={() => exportProjectPackage(projectId)} className="gap-2">
           <FileArchive className="h-4 w-4" /> Download .zip
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => exportProjectToDrive(projectId)} className="gap-2">
-          <Cloud className="h-4 w-4" /> Save case to Google Drive
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => exportDocumentsOnly(projectId)} className="gap-2">

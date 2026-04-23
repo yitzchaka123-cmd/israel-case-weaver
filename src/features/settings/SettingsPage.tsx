@@ -11,7 +11,6 @@ import { useEffect, useRef, useState } from "react";
 import { ApiKeyManager } from "./ApiKeyManager";
 import { UsageDashboard } from "./UsageDashboard";
 import { GeminiConnection } from "./GeminiConnection";
-import { GoogleDriveConnection } from "./GoogleDriveConnection";
 import { AssistantTweaksPanel } from "./AssistantTweaksPanel";
 import { AssistantPlaybookPanel } from "./AssistantPlaybookPanel";
 import { TeamAccessPanel } from "./TeamAccessPanel";
@@ -246,13 +245,6 @@ export function SettingsPage() {
           desc="Connect your Google AI Studio API key to call Nano Banana, Nano Banana 2, and Nano Banana Pro directly — bypassing the Lovable AI Gateway and billing to your Google account."
         >
           <GeminiConnection />
-        </Section>
-
-        <Section
-          title="Google Drive"
-          desc="Connect your personal Google Drive so MyStudio can save case packages, auto-backup generated assets, and let you import reference files from Drive. Per-user — each teammate connects their own account."
-        >
-          <GoogleDriveConnection />
         </Section>
 
         <Section title="Usage & credits" desc="Live spend and quick links to top up each provider. Only OpenAI publishes a usage API; the other providers open their billing dashboards in a new tab.">
