@@ -93,43 +93,6 @@ export async function exportProjectPackage(projectId: string) {
   }
 }
 
-// Builds the same zip as exportProjectPackage but uploads it to the user's
-// Google Drive (via drive-upload edge function) instead of saving locally.
-export async function exportProjectToDrive(projectId: string) {
-  toast.loading("Packaging & uploading to Drive…", { id: "export-drive" });
-  try {
-    const built = await buildProjectPackage(projectId);
-    if (!built) throw new Error("Project not found");
-    const arrayBuf = await built.blob.arrayBuffer();
-    // Convert ArrayBuffer to base64 in chunks to avoid stack overflow on large zips.
-    const bytes = new Uint8Array(arrayBuf);
-    let binary = "";
-    const chunk = 0x8000;
-    for (let i = 0; i < bytes.length; i += chunk) {
-      binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)));
-    }
-    const base64 = btoa(binary);
-    const today = new Date().toISOString().slice(0, 10);
-    const fileName = `case-export-${today}.zip`;
-    const folderPath = `MyStudio/${safeName(built.title)}`;
-    const { data, error } = await supabase.functions.invoke("drive-upload", {
-      body: {
-        folderPath,
-        fileName,
-        mimeType: "application/zip",
-        base64Body: base64,
-        assetKind: "case_export",
-        projectId,
-        assetId: `${projectId}-${today}`,
-      },
-    });
-    if (error || data?.error) throw new Error(error?.message || data?.error || "Upload failed");
-    toast.success(`Saved to Drive: MyStudio/${built.title}/${fileName}`, { id: "export-drive", duration: 6000 });
-  } catch (e) {
-    toast.error(e instanceof Error ? e.message : "Drive export failed", { id: "export-drive" });
-  }
-}
-
 export async function exportDocumentsOnly(projectId: string) {
   toast.loading("Exporting documents…", { id: "export" });
   try {

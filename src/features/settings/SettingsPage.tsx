@@ -11,7 +11,6 @@ import { useEffect, useRef, useState } from "react";
 import { ApiKeyManager } from "./ApiKeyManager";
 import { UsageDashboard } from "./UsageDashboard";
 import { GeminiConnection } from "./GeminiConnection";
-import { GoogleDriveConnection } from "./GoogleDriveConnection";
 import { AssistantTweaksPanel } from "./AssistantTweaksPanel";
 import { AssistantPlaybookPanel } from "./AssistantPlaybookPanel";
 import { TeamAccessPanel } from "./TeamAccessPanel";

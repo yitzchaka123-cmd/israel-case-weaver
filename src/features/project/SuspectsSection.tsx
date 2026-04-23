@@ -6,14 +6,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, Upload, Trash2, UserCircle2, HardDrive } from "lucide-react";
+import { Plus, Upload, Trash2, UserCircle2 } from "lucide-react";
 import { useRef, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { PromptPanel } from "@/components/PromptPanel";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
-import { DrivePicker } from "./DrivePicker";
-import { backupAsset } from "@/lib/drive-backup";
 
 interface Suspect {
   id: string;
@@ -117,7 +115,6 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
   const [draft, setDraft] = useState<Suspect | null>(suspect);
   const [generating, setGenerating] = useState(false);
   const [portraitPrompt, setPortraitPrompt] = useState<string>("");
-  const [drivePickerOpen, setDrivePickerOpen] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<number | undefined>(undefined);
 
@@ -192,19 +189,6 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
       if (!resp.ok) throw new Error(json.error ?? `Failed (${resp.status})`);
       setDraft({ ...draft, thumbnail_url: json.url });
       setPortraitPrompt(prompt);
-      // Fire-and-forget Drive backup (no-op if disabled or not connected)
-      if (json.url) {
-        const { data: proj } = await supabase.from("projects").select("title").eq("id", suspect.project_id).maybeSingle();
-        backupAsset({
-          projectId: suspect.project_id,
-          projectTitle: proj?.title,
-          kind: "suspect",
-          assetId: suspect.id,
-          url: json.url,
-          fileName: `${(draft.name || "suspect").replace(/[^\p{L}\p{N}_\- ]+/gu, "_")}.png`,
-          mimeType: "image/png",
-        });
-      }
       toast.success("Portrait ready", { id: t });
     } catch (e) {
       const msg = e instanceof Error
@@ -259,30 +243,6 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
               <Button variant="outline" size="sm" className="w-full gap-2" onClick={() => fileInput.current?.click()}>
                 <Upload className="h-3.5 w-3.5" /> Upload
               </Button>
-              <Button variant="outline" size="sm" className="w-full gap-2" onClick={() => setDrivePickerOpen(true)}>
-                <HardDrive className="h-3.5 w-3.5" /> From Drive
-              </Button>
-              <DrivePicker
-                open={drivePickerOpen}
-                onOpenChange={setDrivePickerOpen}
-                mimeTypes={["image/png", "image/jpeg", "image/webp"]}
-                title="Pick a portrait from Drive"
-                onPick={async (f) => {
-                  const ext = f.name.split(".").pop() || "png";
-                  const targetPath = `${suspect.project_id}/${suspect.id}-drive-${Date.now()}.${ext}`;
-                  const t = toast.loading("Downloading from Drive…");
-                  const { data, error } = await supabase.functions.invoke("drive-download", {
-                    body: { fileId: f.id, targetBucket: "suspects", targetPath },
-                  });
-                  if (error || data?.error) {
-                    toast.error(error?.message || data?.error || "Failed", { id: t });
-                    return;
-                  }
-                  await supabase.from("suspects").update({ thumbnail_url: data.url }).eq("id", suspect.id);
-                  setDraft({ ...draft, thumbnail_url: data.url });
-                  toast.success("Imported from Drive", { id: t });
-                }}
-              />
             </div>
           </div>
           <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
