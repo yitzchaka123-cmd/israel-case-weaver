@@ -540,7 +540,40 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
       </div>
 
       {board === "logic" && !approved && (
-        <div className="absolute top-4 right-4 z-10 max-w-sm">
+        <div className="absolute top-4 right-4 z-10 max-w-sm space-y-2">
+          {envelopeCount > 0 && !anyEnvelopeBriefed && (
+            <div className="bg-warning/10 border border-warning/40 text-foreground rounded-lg px-3 py-2.5 text-xs shadow-soft">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-3.5 w-3.5 mt-0.5 text-warning shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <strong className="font-medium">Brief the envelopes first.</strong>{" "}
+                  The flow will be more accurate if you walk through the {envelopeCount}-envelope structure
+                  with the assistant before generating — envelopes now become nodes wired into the case.
+                  <button
+                    type="button"
+                    onClick={() => {
+                      window.dispatchEvent(
+                        new CustomEvent("mystudio:navigate", { detail: { tab: "assistant" } }),
+                      );
+                      window.setTimeout(() => {
+                        window.dispatchEvent(
+                          new CustomEvent("mystudio:assistant-prompt", {
+                            detail: {
+                              projectId,
+                              prompt:
+                                "Walk me through the envelope flow from the playbook. Explain what each envelope's role is in this case, what should be inside it, and the closing-line rule. Then ask me which envelope you should help me draft first.",
+                            }),
+                        );
+                      }, 50);
+                    }}
+                    className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-warning hover:underline"
+                  >
+                    Open assistant briefing →
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           <div className="bg-warning/10 border border-warning/30 text-foreground rounded-lg px-3 py-2 text-xs shadow-soft">
             <strong className="font-medium">Pre-step:</strong> design the case logic and approve a solution summary before generating documents.
           </div>
