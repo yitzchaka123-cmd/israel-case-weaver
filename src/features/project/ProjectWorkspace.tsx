@@ -20,13 +20,21 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
   const nav = useNavigate();
   const [tab, setTab] = useState("overview");
+  const [focusMessageId, setFocusMessageId] = useState<string | null>(null);
 
-  // Allow other components (e.g. assistant tool-call receipts) to switch tabs
-  // and optionally focus a specific item by dispatching a `mystudio:navigate` event.
+  // Allow other components (e.g. assistant tool-call receipts and origin badges)
+  // to switch tabs and optionally focus a specific item or chat message by
+  // dispatching a `mystudio:navigate` event.
   useEffect(() => {
     const handler = (e: Event) => {
-      const detail = (e as CustomEvent<{ tab: string }>).detail;
-      if (detail?.tab) setTab(detail.tab);
+      const detail = (e as CustomEvent<{ tab: string; messageId?: string }>).detail;
+      if (!detail?.tab) return;
+      setTab(detail.tab);
+      if (detail.messageId) {
+        // Re-set even if same id so AssistantSection re-triggers scroll/highlight.
+        setFocusMessageId(null);
+        setTimeout(() => setFocusMessageId(detail.messageId!), 0);
+      }
     };
     window.addEventListener("mystudio:navigate", handler as EventListener);
     return () => window.removeEventListener("mystudio:navigate", handler as EventListener);
@@ -139,7 +147,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
             <ProjectOverview project={project} />
           </TabsContent>
           <TabsContent value="assistant" className="h-full m-0">
-            <AssistantSection projectId={projectId} phase={project.phase} />
+            <AssistantSection projectId={projectId} phase={project.phase} focusMessageId={focusMessageId} />
           </TabsContent>
           <TabsContent value="canvas" className="h-full m-0">
             <CanvasSection projectId={projectId} />
