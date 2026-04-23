@@ -585,6 +585,18 @@ const BASE_TOOLS = [
   },
 ];
 
+// Build the tool list with the playbook-derived `phase` enum substituted in.
+function buildTools(playbook: Playbook): typeof BASE_TOOLS {
+  const phaseEnum = getPhaseEnum(playbook);
+  return BASE_TOOLS.map((tool) => {
+    if (tool.function?.name !== "update_project") return tool;
+    const cloned = JSON.parse(JSON.stringify(tool)) as typeof tool;
+    const props = (cloned.function.parameters as { properties?: Record<string, { enum?: string[] }> }).properties;
+    if (props?.phase) props.phase.enum = phaseEnum;
+    return cloned;
+  });
+}
+
 // ---------- Tool executor ----------
 // `messageId` is the chat_messages row this tool call is being attributed to.
 // Every write stamps it so the UI can later jump back to the chat turn that
