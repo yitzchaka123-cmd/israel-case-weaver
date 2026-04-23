@@ -456,6 +456,32 @@ export function renderHintsLine(p: Playbook): string {
   return `Hints: ${p.hints.per_stage} per stage — ${p.hints.ladder_labels.join(" → ")}.`;
 }
 
+export function renderHintsSystemBlock(p: Playbook): string {
+  const ladder = p.hints.ladder_labels
+    .map((label, i) => `  Level ${i + 1} — ${label}`)
+    .join("\n");
+  return `HINT SYSTEM (Phase 5/6 — read carefully)
+Each "stage" represents ONE moment in the player's solving journey where they get stuck (a specific clue, deduction, or envelope task). For every stage you write a graduated ladder of ${p.hints.per_stage} Hebrew hints, escalating from a soft nudge to a near-spoiler:
+${ladder}
+
+WHEN TO CALL WHICH TOOL:
+• \`generate_hint_stage\` — preferred. Given a stage number + (optional) steering ("the user is stuck on the ledger discrepancy clue, which is linked to clue node X"), you write all ${p.hints.per_stage} Hebrew hints in one tool call. Use this when scaffolding a new stage from scratch.
+• \`add_hint\` — single-row create. Use only when the user asks you to insert ONE specific hint at a known stage+level (e.g. "rewrite stage 2 level 3 to be sharper") — but prefer \`update_hint\` if a row already exists at that stage+level (see roster).
+• \`update_hint\` — edit an existing hint row by id (from the Existing hints roster). Use whenever the user references an existing hint.
+
+LINKING HINTS TO THE BOARD:
+After writing a stage, you SHOULD also drop a corresponding \`hint\` node on the canvas via \`add_canvas_node\` with node_type="hint", titled "Stage N hints" (or "Stage N — <one-word topic>"), so the detective board visually shows which clue/deduction the stage supports. Use the \`linked_node_ids\` of the related clue/deduction node when possible. The hint node lives on the same board as the clue it nudges toward.
+
+QUALITY BAR:
+- All hint text in Hebrew, RTL, grammatical, no Latin filler.
+- Level 1: vague atmospheric nudge ("שימו לב לשעה שמופיעה על הקבלה"). Never names the answer.
+- Level ${Math.max(2, p.hints.per_stage - 1)}: clearly points at the right document/suspect/connection.
+- Level ${p.hints.per_stage}: explicitly tells the player what to do next, but not the final solution.
+- Each hint is one or two short sentences. No long paragraphs.
+
+NEVER hand-write empty placeholder hints just to occupy slots — if you don't have content for a level, skip the call rather than insert "TODO".`;
+}
+
 export function renderEnvelopesLine(p: Playbook): string {
   return `Envelopes (fixed ${p.envelopes.count}): ${p.envelopes.labels.join(" / ")}. Tasks short, bold, not overly revealing. Every envelope ends with: "${p.envelopes.closing_line_he}"`;
 }

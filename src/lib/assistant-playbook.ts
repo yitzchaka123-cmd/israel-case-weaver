@@ -456,6 +456,23 @@ export function renderHintsLine(p: Playbook): string {
   return `Hints: ${p.hints.per_stage} per stage — ${p.hints.ladder_labels.join(" → ")}.`;
 }
 
+export function renderHintsSystemBlock(p: Playbook): string {
+  const ladder = p.hints.ladder_labels
+    .map((label, i) => `  Level ${i + 1} — ${label}`)
+    .join("\n");
+  return `HINT SYSTEM (Phase 5/6 — read carefully)
+Each "stage" represents ONE moment in the player's solving journey where they get stuck (a specific clue, deduction, or envelope task). For every stage you write a graduated ladder of ${p.hints.per_stage} Hebrew hints, escalating from a soft nudge to a near-spoiler:
+${ladder}
+
+WHEN TO CALL WHICH TOOL:
+• \`generate_hint_stage\` — preferred. Given a stage number + (optional) steering, you write all ${p.hints.per_stage} Hebrew hints in one tool call.
+• \`add_hint\` — single-row create. Use only when the user asks for ONE hint at a specific stage+level.
+• \`update_hint\` — edit an existing hint row by id from the roster.
+
+LINKING HINTS TO THE BOARD:
+After writing a stage, drop a matching \`hint\` node on the canvas via \`add_canvas_node\` so the detective board shows which clue/deduction it supports.`;
+}
+
 export function renderEnvelopesLine(p: Playbook): string {
   return `Envelopes (fixed ${p.envelopes.count}): ${p.envelopes.labels.join(" / ")}. Tasks short, bold, not overly revealing. Every envelope ends with: "${p.envelopes.closing_line_he}"`;
 }

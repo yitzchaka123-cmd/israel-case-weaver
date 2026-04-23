@@ -7,6 +7,7 @@ import {
   resolvePlaybook,
   renderSuspectCountsLine,
   renderHintsLine,
+  renderHintsSystemBlock,
   renderEnvelopesLine,
   renderPhase1OrderSentence,
   renderCanonicalVocabBlock,
@@ -182,7 +183,7 @@ When the user approves a change, you MUST persist it by calling the appropriate 
 - add_document / update_document: create or edit a document record.
 - add_canvas_node / update_canvas_node: add or edit a logic/clue/deduction/envelope/solution node.
 - add_envelope / update_envelope: manage the 5 fixed envelopes (only update_envelope exists for editing labels/tasks/notes).
-- add_hint / update_hint: manage hints.
+- add_hint / generate_hint_stage / update_hint: manage hints (see HINT SYSTEM block below). Prefer generate_hint_stage to scaffold a whole stage; use add_hint for single rows; use update_hint to edit existing rows.
 - notify_user: drop a "callback" notification into the case's bell panel — use ONLY when the user defers a decision ("I'll write the title later"), skips a planning step, or asks something that needs revisiting later. Never use it for in-the-moment choices (use propose_options for those).
 
 EDIT-VS-CREATE RULE (CRITICAL — prevents duplicate rows)
@@ -200,6 +201,8 @@ ${renderRealismParagraphs(playbook)}
 Mixed props (e.g. a real form annotated with a hand-drawn map): use ~12 realism details + ~6 creative details.
 
 Match every detail to the era, setting, country, and document type — a 1987 Israeli memo gets PMO-style stamps and Hebrew dating; a 1950s noir telegram gets Western Union framing; a pirate map gets parchment burns and compass roses. Never copy real emblems, signatures, or names.
+
+${renderHintsSystemBlock(playbook)}
 
 CURRENT PROJECT STATE
 Title: ${project.title}
@@ -440,7 +443,7 @@ const BASE_TOOLS = [
       parameters: {
         type: "object",
         properties: {
-          node_type: { type: "string", enum: ["clue", "suspect", "deduction", "contradiction", "red_herring", "envelope", "solution", "document", "note"] },
+          node_type: { type: "string", enum: ["clue", "suspect", "deduction", "contradiction", "red_herring", "envelope", "solution", "document", "hint", "note"] },
           title: { type: "string" },
           description: { type: "string" },
           color: { type: "string" },
@@ -606,6 +609,51 @@ const BASE_TOOLS = [
   {
     type: "function",
     function: {
+      name: "add_hint",
+      description:
+        "Create ONE new hint row. Use only when the user wants a single hint at a known stage+level (e.g. 'add stage 2 level 3 hint that says X'). For scaffolding a whole stage at once, use generate_hint_stage instead. For editing an existing hint, use update_hint.",
+      parameters: {
+        type: "object",
+        properties: {
+          stage: { type: "number", description: "Stage number (1-based). Each stage represents one moment the player gets stuck." },
+          level: { type: "number", description: "Hint level within the stage (1=vague, 2=helpful, 3=reveals the task)." },
+          text: { type: "string", description: "Hebrew hint text, RTL, grammatical, one or two short sentences." },
+        },
+        required: ["stage", "level"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "generate_hint_stage",
+      description:
+        "Bulk-create an entire hint stage (vague → helpful → reveal) in one call. Provide all 3 Hebrew hints for the given stage. If hint rows already exist for that stage, this REPLACES them so the stage stays a clean 3-rung ladder. Use this as the default way to scaffold a new stage.",
+      parameters: {
+        type: "object",
+        properties: {
+          stage: { type: "number", description: "Stage number (1-based)." },
+          hints: {
+            type: "array",
+            minItems: 1,
+            maxItems: 6,
+            description: "Hint rungs for this stage, ordered from vague (level 1) to reveal (last level). Each item is the Hebrew hint text for that rung.",
+            items: { type: "string" },
+          },
+          context: {
+            type: "string",
+            description: "Optional one-line description of which clue/deduction/task this stage hints toward. Helps the user audit later.",
+          },
+        },
+        required: ["stage", "hints"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "update_canvas_node",
       description:
         "Edit an EXISTING canvas node by id (from the Existing canvas nodes roster). Pass ONLY the fields you want to change.",
@@ -615,7 +663,7 @@ const BASE_TOOLS = [
           id: { type: "string", description: "Canvas node id from the roster." },
           title: { type: "string" },
           description: { type: "string" },
-          node_type: { type: "string", enum: ["clue", "suspect", "deduction", "contradiction", "red_herring", "envelope", "solution", "document", "note"] },
+          node_type: { type: "string", enum: ["clue", "suspect", "deduction", "contradiction", "red_herring", "envelope", "solution", "document", "hint", "note"] },
           color: { type: "string" },
           position_x: { type: "number" },
           position_y: { type: "number" },
@@ -980,6 +1028,51 @@ async function executeTool(
         "id, title",
         (r) => String(r.title ?? "—"),
       );
+    }
+    if (name === "add_hint") {
+      const a = args as { stage?: number; level?: number; text?: string };
+      const stage = Number(a.stage);
+      const level = Number(a.level);
+      if (!Number.isFinite(stage) || stage < 1) return { ok: false, message: "stage must be a positive number" };
+      if (!Number.isFinite(level) || level < 1) return { ok: false, message: "level must be a positive number" };
+      const { data, error } = await supa
+        .from("hints")
+        .insert({
+          project_id: projectId,
+          stage,
+          level,
+          text: typeof a.text === "string" ? a.text : null,
+        })
+        .select("id, stage, level")
+        .single();
+      if (error) throw error;
+      return { ok: true, message: `Hint added: stage ${data.stage} · level ${data.level}`, id: data.id };
+    }
+    if (name === "generate_hint_stage") {
+      const a = args as { stage?: number; hints?: unknown[]; context?: string };
+      const stage = Number(a.stage);
+      if (!Number.isFinite(stage) || stage < 1) return { ok: false, message: "stage must be a positive number" };
+      const rawHints = Array.isArray(a.hints) ? a.hints : [];
+      const cleaned = rawHints
+        .map((h) => (typeof h === "string" ? h.trim() : ""))
+        .filter((h) => h.length > 0)
+        .slice(0, 6);
+      if (cleaned.length === 0) return { ok: false, message: "Provide at least one Hebrew hint string" };
+      // Replace any existing rows for this stage so the ladder stays clean.
+      await supa.from("hints").delete().eq("project_id", projectId).eq("stage", stage);
+      const rows = cleaned.map((text, i) => ({
+        project_id: projectId,
+        stage,
+        level: i + 1,
+        text,
+      }));
+      const { error } = await supa.from("hints").insert(rows);
+      if (error) throw error;
+      const ctx = a.context ? ` — for: ${String(a.context).trim().slice(0, 80)}` : "";
+      return {
+        ok: true,
+        message: `Hint stage ${stage} written (${cleaned.length} rungs)${ctx}`,
+      };
     }
     if (name === "notify_user") {
       const a = args as { title?: string; body?: string; starter_prompt?: string; kind?: string };

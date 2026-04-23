@@ -421,6 +421,48 @@ export type Database = {
           },
         ]
       }
+      hint_sheets: {
+        Row: {
+          created_at: string
+          effective_model: string | null
+          fallback: string | null
+          id: string
+          image_url: string | null
+          project_id: string
+          prompt: string | null
+          prompt_history: Json
+          requested_model: string | null
+          stage: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          effective_model?: string | null
+          fallback?: string | null
+          id?: string
+          image_url?: string | null
+          project_id: string
+          prompt?: string | null
+          prompt_history?: Json
+          requested_model?: string | null
+          stage: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          effective_model?: string | null
+          fallback?: string | null
+          id?: string
+          image_url?: string | null
+          project_id?: string
+          prompt?: string | null
+          prompt_history?: Json
+          requested_model?: string | null
+          stage?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       hints: {
         Row: {
           created_at: string

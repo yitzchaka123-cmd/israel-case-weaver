@@ -46,6 +46,7 @@ const NODE_COLORS: Record<string, string> = {
   deduction: "oklch(0.65 0.18 285)",
   solution: "oklch(0.45 0.15 285)",
   envelope: "oklch(0.55 0.18 220)",
+  hint: "oklch(0.78 0.16 75)",
 };
 
 Deno.serve(async (req) => {
@@ -106,11 +107,12 @@ PRODUCE a logic flow with:
 - 2-4 RED HERRINGS that look meaningful but don't lead to the truth — explain briefly why each is misleading.
 - 1-3 KEY DEDUCTIONS the player makes by combining clues.
 - 1 FINAL SOLUTION node identifying the culprit and method.
-${envelopes && envelopes.length > 0 ? `- ${envelopes.length} ENVELOPE nodes (one per envelope above), positioned in a vertical lane on the right (x ≈ 1400, y stepping down by 160 per envelope, ordered by number).\n` : ""}- EDGES connecting clues → deductions → solution, red_herring → suspect (false trail)${envelopes && envelopes.length > 0 ? `, clue/deduction → envelope (which envelope holds which evidence), and envelope_n → envelope_{n+1} (player chain).` : "."}
+${envelopes && envelopes.length > 0 ? `- ${envelopes.length} ENVELOPE nodes (one per envelope above), positioned in a vertical lane on the right (x ≈ 1400, y stepping down by 160 per envelope, ordered by number).\n` : ""}- 3-5 HINT nodes (one per clue/deduction that warrants a hint stage), titled "Hint stage N — for: <clue/deduction title>". Position them in a vertical lane to the LEFT of clues at x ≈ -200, with y matching the clue/deduction they support. These are STRUCTURAL placeholders only — the user will fill in the actual hint text later. Do NOT write Hebrew hint text into the description; a one-line English note about WHAT this stage hints toward is enough.
+- EDGES connecting clues → deductions → solution, red_herring → suspect (false trail), AND hint → clue/deduction (label "hints toward")${envelopes && envelopes.length > 0 ? `, clue/deduction → envelope (which envelope holds which evidence), and envelope_n → envelope_{n+1} (player chain).` : "."}
 - A SOLUTION SUMMARY (3-5 short paragraphs in Hebrew if the game is Hebrew, otherwise English) explaining EXACTLY how the case is solved end-to-end.
 
-Use stable string ids like "clue_1", "rh_1", "ded_1", "sus_1", "sol_1"${envelopes && envelopes.length > 0 ? `, "env_0", "env_1", … (one per envelope)` : ""}.
-Position nodes in a left-to-right flow: clues on the left, deductions middle, solution right${envelopes && envelopes.length > 0 ? ", envelopes far right" : ""}, red herrings + suspects below.`;
+Use stable string ids like "clue_1", "rh_1", "ded_1", "sus_1", "sol_1", "hint_1", "hint_2", …${envelopes && envelopes.length > 0 ? `, "env_0", "env_1", … (one per envelope)` : ""}.
+Position nodes in a left-to-right flow: hints far left (x ≈ -200), clues left (x ≈ 0-300), deductions middle, solution right${envelopes && envelopes.length > 0 ? ", envelopes far right" : ""}, red herrings + suspects below.`;
 
     const tool = {
       type: "function",
@@ -127,7 +129,7 @@ Position nodes in a left-to-right flow: clues on the left, deductions middle, so
                 type: "object",
                 properties: {
                   id: { type: "string" },
-                  type: { type: "string", enum: ["clue", "red_herring", "deduction", "suspect", "solution", "envelope"] },
+                  type: { type: "string", enum: ["clue", "red_herring", "deduction", "suspect", "solution", "envelope", "hint"] },
                   title: { type: "string" },
                   description: { type: "string" },
                   x: { type: "number" },
@@ -238,6 +240,30 @@ Position nodes in a left-to-right flow: clues on the left, deductions middle, so
         const existing = (env.linked_node_ids ?? []) as string[];
         const next = Array.from(new Set([...existing, nodeId]));
         await supa.from("envelopes").update({ linked_node_ids: next }).eq("id", env.id);
+      }
+    }
+
+    // For every emitted hint node, scaffold an empty 3-rung row set in the
+    // `hints` table so the Hints tab is pre-populated.
+    if (insertedNodes) {
+      const hintNodes = parsed.nodes.filter((n) => n.type === "hint");
+      if (hintNodes.length > 0) {
+        const { data: existingHints } = await supa
+          .from("hints").select("stage").eq("project_id", projectId);
+        const maxStage = (existingHints ?? []).reduce(
+          (acc, r) => Math.max(acc, Number((r as { stage?: number }).stage ?? 0)), 0,
+        );
+        const hintRows: { project_id: string; stage: number; level: number; text: string }[] = [];
+        hintNodes.forEach((_, i) => {
+          const stage = maxStage + i + 1;
+          for (let level = 1; level <= 3; level += 1) {
+            hintRows.push({ project_id: projectId, stage, level, text: "" });
+          }
+        });
+        if (hintRows.length > 0) {
+          const { error: hErr } = await supa.from("hints").insert(hintRows);
+          if (hErr) console.error("hint scaffold insert", hErr);
+        }
       }
     }
 
