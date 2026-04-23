@@ -790,6 +790,11 @@ const PROJECT_FIELD_LABELS: Record<string, string> = {
   setting: "Setting",
   selling_point: "Selling point",
   target_doc_count: "Target doc count",
+  packaging_notes: "Packaging notes",
+  image_prompt_instructions: "Image prompt style",
+  video_prompt_instructions: "Video prompt style",
+  hint_settings: "Hint settings",
+  envelope_settings: "Envelope settings",
 };
 
 function formatFieldValue(v: unknown): string {
@@ -800,6 +805,22 @@ function formatFieldValue(v: unknown): string {
     return trimmed.length > 80 ? `${trimmed.slice(0, 77)}…` : trimmed;
   }
   if (typeof v === "number" || typeof v === "boolean") return String(v);
+  // Plain objects (e.g. hint_settings, envelope_settings jsonb): render as
+  // "key: value, key2: value2" instead of raw JSON, capped to 80 chars.
+  if (v && typeof v === "object" && !Array.isArray(v)) {
+    const entries = Object.entries(v as Record<string, unknown>);
+    if (entries.length === 0) return "(empty)";
+    const summary = entries
+      .map(([k, val]) => {
+        let s: string;
+        if (val === null || val === undefined) s = "—";
+        else if (typeof val === "string" || typeof val === "number" || typeof val === "boolean") s = String(val);
+        else { try { s = JSON.stringify(val); } catch { s = String(val); } }
+        return `${k}: ${s}`;
+      })
+      .join(", ");
+    return summary.length > 80 ? `${summary.slice(0, 77)}…` : summary;
+  }
   try { return JSON.stringify(v); } catch { return String(v); }
 }
 
