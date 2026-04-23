@@ -165,6 +165,7 @@ ${hint ? `\nEXTRA STEERING: ${hint}` : ""}
 ${isSellingPoint
   ? `Return JSON like {"selling_point": "..."} — single key, single 1–2 sentence value.`
   : `Return JSON like {"front_subtext": "...", "back_headline": "...", "back_body": "...", "tagline": "..."} (only include the requested keys).`}
+`;
 
     const resp = await chatCompletions({
       model,
