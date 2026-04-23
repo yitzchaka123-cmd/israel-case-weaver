@@ -897,12 +897,25 @@ function ToolReceipts({ tools }: { tools: ToolCall[] }) {
               );
             }
 
-            const dest = destinationFor(t.name);
-            const clickable = t.result.ok && dest !== null;
-            const handleClick = () => {
-              if (!clickable || !dest) return;
-              window.dispatchEvent(
-                new CustomEvent("mystudio:navigate", {
+            // Special-case generate_document_assets: render an inline preview
+            // card with the Hebrew snippet (RTL) and a clickable image thumbnail.
+            if (t.name === "generate_document_assets" && t.result.ok && (t.result.hebrew_preview || t.result.image_url)) {
+              return (
+                <li key={i} className="flex items-start gap-2">
+                  <span className="mt-1 text-accent-foreground/80">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <GeneratedDocReceipt
+                      message={t.result.message}
+                      hebrewPreview={t.result.hebrew_preview}
+                      imageUrl={t.result.image_url}
+                      documentId={t.result.id}
+                    />
+                  </div>
+                </li>
+              );
+            }
                   detail: { tab: dest.tab, targetId: t.result.id },
                 }),
               );
