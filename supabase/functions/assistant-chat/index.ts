@@ -1206,7 +1206,7 @@ Deno.serve(async (req) => {
             project_id: projectId,
             role: "assistant",
             content: recoveryNote,
-            metadata: { model, tools: executedTools, partial: true, error: errMsg },
+            metadata: { model, effective_model: lastFb.effectiveModel, fallback: lastFb.fallback, tools: executedTools, partial: true, error: errMsg },
           });
           return new Response(
             JSON.stringify({
@@ -1280,6 +1280,8 @@ Deno.serve(async (req) => {
         content: finalText,
         metadata: {
           model,
+          effective_model: lastFb.effectiveModel,
+          fallback: lastFb.fallback,
           tools: executedTools,
           ...(quickOptions ? { options: quickOptions, question: quickQuestion } : {}),
         },
