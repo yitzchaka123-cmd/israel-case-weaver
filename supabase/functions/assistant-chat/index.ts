@@ -460,6 +460,116 @@ const TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "update_suspect",
+      description:
+        "Edit an EXISTING suspect row by id (from the Existing suspects roster in CURRENT PROJECT STATE). Pass ONLY the fields you want to change — undefined fields are left alone. Use this instead of add_suspect any time the user references a suspect that already exists.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Suspect id from the roster." },
+          name: { type: "string" },
+          summary: { type: "string" },
+          role_in_case: { type: "string" },
+          motives: { type: "string" },
+          secrets: { type: "string" },
+          contradictions: { type: "string" },
+          is_red_herring: { type: "boolean" },
+        },
+        required: ["id"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_document",
+      description:
+        "Edit an EXISTING document row by id (from the Existing documents roster). Pass ONLY the fields you want to change. Use this instead of add_document whenever the user references a document that already exists.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Document id from the roster." },
+          title: { type: "string" },
+          doc_type: { type: "string" },
+          doc_number: { type: "number" },
+          print_size: { type: "string" },
+          design_instructions: { type: "string" },
+          hebrew_content: { type: "string" },
+          envelope_number: { type: "number" },
+          status: { type: "string" },
+        },
+        required: ["id"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_envelope",
+      description:
+        "Edit an EXISTING envelope row by id (from the Existing envelopes roster). Pass ONLY the fields you want to change.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Envelope id from the roster." },
+          label: { type: "string" },
+          task: { type: "string" },
+          notes: { type: "string" },
+          status: { type: "string" },
+          number: { type: "number" },
+        },
+        required: ["id"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_hint",
+      description:
+        "Edit an EXISTING hint row by id (from the Existing hints roster). Pass ONLY the fields you want to change.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Hint id from the roster." },
+          stage: { type: "number" },
+          level: { type: "number" },
+          text: { type: "string" },
+        },
+        required: ["id"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_canvas_node",
+      description:
+        "Edit an EXISTING canvas node by id (from the Existing canvas nodes roster). Pass ONLY the fields you want to change.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Canvas node id from the roster." },
+          title: { type: "string" },
+          description: { type: "string" },
+          node_type: { type: "string", enum: ["clue", "suspect", "deduction", "contradiction", "red_herring", "envelope", "solution", "document", "note"] },
+          color: { type: "string" },
+          position_x: { type: "number" },
+          position_y: { type: "number" },
+          locked: { type: "boolean" },
+        },
+        required: ["id"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 // ---------- Tool executor ----------
