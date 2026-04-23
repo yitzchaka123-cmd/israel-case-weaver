@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
-import { Sparkles, Send, Loader2, Bot, User, Wand2, CheckCircle2, Cpu, Image as ImageIcon, Settings2, Video, ChevronRight, ExternalLink, AlertCircle, Mic, MicOff, Sliders } from "lucide-react";
+import { Sparkles, Send, Loader2, Bot, User, Wand2, CheckCircle2, Cpu, Image as ImageIcon, Settings2, Video, ChevronRight, ExternalLink, AlertCircle, Mic, MicOff, Sliders, Pencil, X, Check } from "lucide-react";
 import { toast } from "sonner";
 import { useVoiceInput } from "@/hooks/use-voice-input";
 
@@ -182,13 +182,14 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     return () => window.clearTimeout(t);
   }, [focusMessageId, messages]);
 
-  const send = async (text: string) => {
+  const send = async (text: string, baseMessages?: Msg[]) => {
     const content = text.trim();
     if (!content || sending) return;
     setInput("");
     setSending(true);
     try {
-      const convo = [...messages, { role: "user" as const, content }].map((m) => ({
+      const source = baseMessages ?? messages;
+      const convo = [...source, { role: "user" as const, content }].map((m) => ({
         role: m.role,
         content: m.content,
       }));
@@ -223,6 +224,43 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     } finally {
       setSending(false);
     }
+  };
+
+  // Edit a previous user message: rewrite the conversation by deleting that
+  // message and everything after it, then resend the new content. The
+  // assistant's reply will continue from the same prior context as the
+  // original turn — but with the edited prompt instead.
+  const editAndResend = async (messageId: string, newContent: string) => {
+    const trimmed = newContent.trim();
+    if (!trimmed || sending) return;
+    const idx = messages.findIndex((m) => m.id === messageId);
+    if (idx === -1) return;
+    const target = messages[idx];
+    if (target.role !== "user") return;
+
+    const priorMessages = messages.slice(0, idx);
+    const toDelete = messages.slice(idx).map((m) => m.id);
+
+    setSending(true);
+    try {
+      const { error } = await supabase.from("chat_messages").delete().in("id", toDelete);
+      if (error) {
+        toast.error(error.message);
+        setSending(false);
+        return;
+      }
+      // Optimistically clear so UI doesn't flash the deleted tail
+      qc.setQueryData<Msg[]>(["chat", projectId], priorMessages);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to edit message");
+      setSending(false);
+      return;
+    } finally {
+      setSending(false);
+    }
+
+    // Now resend with the prior context as the base
+    await send(trimmed, priorMessages);
   };
 
   return (
@@ -348,6 +386,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
                 msg={m}
                 isLast={idx === messages.length - 1}
                 onPickOption={(text) => send(text)}
+                onEdit={(newText) => editAndResend(m.id, newText)}
                 disabled={sending}
                 highlighted={m.id === highlightedId}
               />
@@ -434,12 +473,14 @@ function MessageBubble({
   msg,
   isLast,
   onPickOption,
+  onEdit,
   disabled,
   highlighted,
 }: {
   msg: Msg;
   isLast: boolean;
   onPickOption: (text: string) => void;
+  onEdit: (newText: string) => void;
   disabled: boolean;
   highlighted?: boolean;
 }) {
@@ -450,22 +491,88 @@ function MessageBubble({
   // older proposals are stale and clicking them would be confusing.
   const showOptions = msg.role === "assistant" && isLast && options.length > 0;
 
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(msg.content);
+  const isUser = msg.role === "user";
+
+  const startEdit = () => {
+    setDraft(msg.content);
+    setEditing(true);
+  };
+  const cancelEdit = () => {
+    setEditing(false);
+    setDraft(msg.content);
+  };
+  const submitEdit = () => {
+    const trimmed = draft.trim();
+    if (!trimmed || trimmed === msg.content.trim()) {
+      cancelEdit();
+      return;
+    }
+    setEditing(false);
+    onEdit(trimmed);
+  };
+
   return (
     <div
       data-msg-id={msg.id}
-      className={`flex gap-3 items-start scroll-mt-24 rounded-xl transition-colors duration-700 ${
+      className={`group flex gap-3 items-start scroll-mt-24 rounded-xl transition-colors duration-700 ${
         highlighted ? "bg-accent/15 ring-2 ring-accent/50 -mx-2 px-2 py-2" : ""
       }`}
     >
       <Avatar role={msg.role} />
       <div className="flex-1 min-w-0 pt-1">
-        <div className="text-xs font-medium mb-1 text-muted-foreground">
-          {msg.role === "assistant" ? "Assistant" : "You"}
+        <div className="text-xs font-medium mb-1 text-muted-foreground flex items-center gap-2">
+          <span>{msg.role === "assistant" ? "Assistant" : "You"}</span>
+          {isUser && !editing && (
+            <button
+              type="button"
+              onClick={startEdit}
+              disabled={disabled}
+              title="Edit this message and re-run the assistant"
+              className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10.5px] text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <Pencil className="h-3 w-3" /> Edit
+            </button>
+          )}
         </div>
-        <div className="prose prose-sm max-w-none dark:prose-invert whitespace-pre-wrap leading-relaxed text-[14.5px]">
-          {msg.content}
-        </div>
-        {showOptions && (
+        {editing ? (
+          <div className="rounded-xl border border-accent/30 bg-accent/5 p-2 space-y-2">
+            <Textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  submitEdit();
+                } else if (e.key === "Escape") {
+                  e.preventDefault();
+                  cancelEdit();
+                }
+              }}
+              autoFocus
+              className="min-h-[80px] text-[14.5px] bg-background"
+            />
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[10.5px] text-muted-foreground">
+                Editing will delete the assistant's reply and any later messages, then re-run from here.
+              </p>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <Button type="button" variant="ghost" size="sm" onClick={cancelEdit} className="h-7 px-2 text-xs">
+                  <X className="h-3.5 w-3.5 mr-1" /> Cancel
+                </Button>
+                <Button type="button" size="sm" onClick={submitEdit} disabled={!draft.trim()} className="h-7 px-2.5 text-xs">
+                  <Check className="h-3.5 w-3.5 mr-1" /> Save & re-run
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="prose prose-sm max-w-none dark:prose-invert whitespace-pre-wrap leading-relaxed text-[14.5px]">
+            {msg.content}
+          </div>
+        )}
+        {!editing && showOptions && (
           <div className="mt-3 rounded-xl border border-accent/20 bg-accent/5 p-3">
             {question && (
               <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2 font-medium">
@@ -490,7 +597,7 @@ function MessageBubble({
             </div>
           </div>
         )}
-        {tools.length > 0 && <ToolReceipts tools={tools} />}
+        {!editing && tools.length > 0 && <ToolReceipts tools={tools} />}
       </div>
     </div>
   );
