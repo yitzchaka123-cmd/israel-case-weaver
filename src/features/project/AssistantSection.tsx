@@ -758,8 +758,27 @@ function ToolReceipts({ tools }: { tools: ToolCall[] }) {
       </button>
 
       {open && (
-        <ul className="mt-2 space-y-1 border-l-2 border-border/60 pl-3">
+        <ul className="mt-2 space-y-1.5 border-l-2 border-border/60 pl-3">
           {tools.map((t, i) => {
+            // Special-case update_project: render a structured field list
+            // showing every property the assistant just changed, with values.
+            if (t.name === "update_project") {
+              return (
+                <li key={i} className="flex items-start gap-2">
+                  <span className={`mt-1 ${t.result.ok ? "text-accent-foreground/80" : "text-destructive"}`}>
+                    {t.result.ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <ProjectUpdateReceipt
+                      args={(t.args ?? {}) as Record<string, unknown>}
+                      ok={t.result.ok}
+                      message={t.result.message}
+                    />
+                  </div>
+                </li>
+              );
+            }
+
             const dest = destinationFor(t.name);
             const clickable = t.result.ok && dest !== null;
             const handleClick = () => {
