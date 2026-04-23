@@ -72,6 +72,7 @@ function buildSystemPrompt(
   project: Record<string, unknown>,
   rosters: Rosters,
   tweaks: Tweak[] = [],
+  playbook: Playbook = PLAYBOOK_DEFAULTS,
 ) {
   const suspectCount = rosters.suspects.length;
   const docCount = rosters.documents.length;
