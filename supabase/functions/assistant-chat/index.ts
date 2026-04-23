@@ -1138,6 +1138,7 @@ Deno.serve(async (req) => {
 
     const MAX_ROUNDS = 8;
     const callerUserId = await getUserIdFromAuth(req);
+    let lastFb: { effectiveModel: string; fallback: string } = { effectiveModel: model, fallback: "none" };
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const isFinalRound = round === MAX_ROUNDS - 1;
       const body: Record<string, unknown> = { model, messages: convo, stream: false };
