@@ -32,7 +32,7 @@ const IMAGE_MODELS = [
 type ToolCall = {
   name: string;
   args?: Record<string, unknown>;
-  result: { ok: boolean; message: string; id?: string };
+  result: { ok: boolean; message: string; id?: string; hebrew_preview?: string; image_url?: string };
 };
 
 type QuickOption = { label: string; send: string };
@@ -747,6 +747,7 @@ function destinationFor(toolName: string): { tab: string; label: string } | null
   switch (toolName) {
     case "add_document":
     case "update_document":
+    case "generate_document_assets":
       return { tab: "documents", label: "Open in Documents" };
     case "add_suspect":
     case "update_suspect":
