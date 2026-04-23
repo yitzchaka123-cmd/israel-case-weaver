@@ -164,8 +164,14 @@ When the user approves a change, you MUST persist it by calling the appropriate 
 - update_project: change project metadata/phase after approvals. **CALL THIS EVERY TIME** the user approves or commits ANY of these Case Identity / Case Brief fields, individually or in batches: title, subtitle, mystery_type, genre, year, difficulty, player_role, case_goal, setting, selling_point, target_doc_count, phase. Example triggers — all REQUIRE an update_project call: user picks a mystery_type ("Espionage"), user picks a genre, user picks a Hebrew title from your numbered options, user picks a difficulty, user provides/confirms a player role, user provides/confirms a case goal, user provides/confirms a setting/year, user agrees to a selling point. Do NOT wait for the end of Phase 1 — persist each field the moment it's locked in. The Case Identity and Case Brief panels on the Overview tab pull DIRECTLY from these fields, so skipping update_project means the user sees an empty Overview even after they answered all your setup questions. Always pass ONLY the fields the user just confirmed (do not re-send unchanged fields).
 - set_solution_summary: AS SOON as the user approves the Phase 2 case summary (or whenever they approve a revised end-to-end solution narrative), call this tool with the full summary text. This single source of truth feeds the Case Board's "Solution summary" button, the Logic Flow generator, and every future document. NEVER skip this step after an approval — without it, the Canvas summary button will be empty and document generation will refuse to run.
 - add_suspect / update_suspect: manage cast.
-- add_document: create a document record (Hebrew content, design notes, print size).
-- add_canvas_node: add a logic/clue/deduction/envelope/solution node.
+- add_document / update_document: create or edit a document record.
+- add_canvas_node / update_canvas_node: add or edit a logic/clue/deduction/envelope/solution node.
+- add_envelope / update_envelope: manage the 5 fixed envelopes (only update_envelope exists for editing labels/tasks/notes).
+- add_hint / update_hint: manage hints.
+
+EDIT-VS-CREATE RULE (CRITICAL — prevents duplicate rows)
+When the user references an EXISTING item — by name ("change Yossi's motive"), by number ("rename document 5", "envelope 3"), by pronoun ("make it shorter", "rename it"), by role ("the murder weapon node", "the red herring suspect"), or any other reference to something already in the rosters below — you MUST call the matching \`update_*\` tool, passing the \`id\` from the roster. NEVER call the \`add_*\` variant for an item that already exists — that creates a duplicate row and confuses the user. Use \`add_*\` ONLY for items that are not present in the rosters below.
+Pass ONLY the fields the user wants to change in the update tool — undefined keys are ignored, so partial edits won't wipe other columns. The receipt will say "Updated X: <name> (<changed-fields>)" so the user can immediately see what was touched.
 
 DESIGN INSTRUCTIONS RULES (CRITICAL — applies to EVERY add_document call)
 The \`design_instructions\` field is the visual brief for the image generator. It MUST be long, structured, and specific. Never leave it empty, never use one-line notes, never use generic placeholders. Format it with these sections, in this order:
@@ -192,8 +198,16 @@ Case goal: ${project.case_goal ?? "—"}
 Setting: ${project.setting ?? "—"}
 Extra selling point: ${project.selling_point ?? "—"}
 Target documents: ${project.target_doc_count ?? "—"}
-Existing suspects: ${suspectCount}
-Existing documents: ${docCount}
+Existing suspects (${suspectCount}):
+${suspectsList}
+Existing documents (${docCount}):
+${documentsList}
+Existing envelopes (${rosters.envelopes.length}):
+${envelopesList}
+Existing hints (${rosters.hints.length}):
+${hintsList}
+Existing canvas nodes (${rosters.canvas_nodes.length}):
+${nodesList}
 Logic flow approved: ${project.logic_approved_at ? "YES (" + project.logic_approved_at + ")" : "NO — must be approved on the Canvas before generating documents"}
 Solution summary set: ${project.solution_summary ? "YES" : "NO"}
 Doc generation mode: ${project.doc_generation_mode ? `"${project.doc_generation_mode}"` : "NOT YET CHOSEN — ask the user with propose_options before the first add_document in Phase 4 (see DOCUMENT GENERATION WORKFLOW)"}
