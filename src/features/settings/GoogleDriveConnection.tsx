@@ -215,7 +215,7 @@ export function GoogleDriveConnection() {
       )}
 
       {!s.connected && appEmail && (
-        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-xs space-y-2">
+        <div className="rounded-xl border border-accent/40 bg-accent/5 p-4 text-xs space-y-2">
           <p className="font-medium text-foreground flex items-center gap-1.5">
             <Info className="h-3.5 w-3.5" /> Before you click Connect
           </p>
