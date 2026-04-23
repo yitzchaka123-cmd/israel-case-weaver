@@ -53,6 +53,7 @@ export function SettingsPage() {
       setPlanning(profile.ai_provider_planning);
       setDocuments(profile.ai_provider_documents);
       setImages(profile.ai_provider_images);
+      setPromptWriter((profile as any).ai_provider_prompt_writer ?? "lovable");
       setImgAssistantInstructions((profile as any).image_prompt_assistant_instructions ?? "");
     }
   }, [profile]);
