@@ -1,64 +1,52 @@
 
 
-## Make the assistant's playbook visible & editable from Settings
+## Add 6 more cards to the Assistant Playbook
 
-### The problem
+The v1 playbook surfaced the *numbers and lists*. The remaining hardcoded behavior in `assistant-chat` is mostly **wording, rules, and catalogs** that you might want to retune without me re-touching the prompt. This adds 6 new cards under the existing playbook, using the same "default vs override + reset" pattern, the same `profiles.assistant_playbook` JSONB column (no migration needed), and the same `resolvePlaybook` resolver.
 
-Today the assistant's "house rules" live in three different places:
+### The 6 new cards
 
-1. **Hardcoded prompt** in `assistant-chat/index.ts` — things like *"5 numbered Hebrew titles"*, *"3 hints per stage"*, *"Envelopes fixed at 5: Open First / 1 / 2 / 3 / 4"*, *"Phase 1 setup order: mystery_type → genre → titles → difficulty → role → goal → year"*, the canonical mystery-type / genre / difficulty lists, the design-instructions realism floor (20 details), etc. **Not editable from the UI.**
-2. **Live project state** (suspects, documents, settings) — already editable inline.
-3. **USER OVERRIDES / Assistant Tweaks** — already editable in Settings, but they're free-form *additions*, not a way to see and change the defaults.
+1. **Identity & voice** — three short text fields:
+   - Planning language (default: *"English"*)
+   - Final in-game content language (default: *"Hebrew, grammatical, RTL-ready, immersive"*)
+   - Brand voice line (default: *"Premium realism, intelligence-style deduction, layered non-linear solvability. No fantasy. No external knowledge required."*)
+   - Setting flavor (default: *"Always set stories in Israeli environments with Israeli flavor."*)
 
-So when you say *"easy games should have 7–8 suspects"*, there's nowhere in the UI to set that — your only option is to add a tweak rule, and you can't even see what the current default is.
+2. **Content rules** — editable bullet list (default 3 items: no sexual content, no real politicians/army figures by name, no single document spoils the solution). You can add, remove or reword each rule. They render verbatim under the existing CONTENT RULES heading.
 
-### What we'll build
+3. **Document design-instructions skeleton** — the 10 ordered sections every `add_document` call must produce (GOAL → CRITICAL TEXT QUALITY → OUTPUT FORMAT → VISUAL STYLE → LAYOUT → TYPOGRAPHY → AUTHENTICITY RULES → EXACT HEBREW TEXT → ADDITIONAL REALISM DETAILS → FINAL INSTRUCTION). Each section is a row with a name and an optional one-line guidance note. Reorder, rename, toggle off, or add new sections — the prompt regenerates the "Format it with these sections, in this order:" line dynamically.
 
-A new **"Assistant Playbook"** section in Settings (above Assistant Tweaks) that surfaces the previously-hardcoded knobs as plain editable fields. Tweaks stay as the free-form override channel. Live project data stays where it is.
+4. **Doc-generation mode labels & gate copy** — the three button labels the assistant offers on first Phase 4 entry (defaults: *"Drafts only — I'll generate myself"* / *"Full auto — generate text + image now"* / *"Ask me each time"*) and the Logic-Flow refusal message (the 2–3 sentence "jump to Canvas → Logic Flow…" copy). Both render verbatim into the prompt.
 
-The playbook is **per user, stored on `profiles`** (same pattern as `assistant_tweaks` and `image_prompt_assistant_instructions`). It's read once per chat turn by the edge function and merged into the system prompt — the wording around each value stays intact, only the value swaps in.
+5. **Document catalogs** — two editable lists used as soft hints to the model:
+   - **Print sizes** (default: A4, A5, Letter, Half-letter, Square 15×15, Index card 4×6, Photo 10×15). Free add/remove.
+   - **Document types** (default: memo, letter, report, transcript, newspaper, photo, ID card, receipt, telegram, police form, bank statement, medical record, ticket stub, business card, map, diagram, cipher, blueprint, ransom note). Free add/remove.
+   These get injected as `Available print sizes: …` and `Common document types: …` reference lines so the model picks from your catalog instead of inventing values.
 
-### The knobs we expose (v1, intentionally bounded)
+6. **Phase definitions** — the ordered list of phases with their `key` (matches the `phase` enum), display label, and one-line description (defaults match today: setup / summary / structure / documents / envelopes / hints / packaging / done). You can rename labels, edit descriptions, reorder, or add a new phase row. The `phase` enum on `update_project` is regenerated from this list (so adding "playtest" makes it a valid phase value automatically). The Phase 3.5 Logic Flow gate stays as a separate switch — it's structural, not a phase.
 
-Grouped into 5 collapsible cards, each card showing **Current default** vs **Your override** with a "Reset to default" link per field. Empty override = use default.
-
-1. **Suspect counts by difficulty** — `easy: 5–6`, `medium: 6–7`, `hard: 8–10` (currently implicit). Editable as three integer ranges.
-2. **Hints per stage** — number (default 3) and the vague→helpful→giveaway ladder labels.
-3. **Envelopes** — count (default 5) and the fixed labels list (`Open First / 1 / 2 / 3 / 4`). Edit count and rename labels; if count changes, the labels list resizes.
-4. **Phase 1 setup order** — the ordered list of fields the assistant collects in Phase 1 (currently `mystery_type → genre → titles → difficulty → role → goal → year`). Drag to reorder, toggle each on/off. Title-options count (default 5) is a separate number.
-5. **Canonical vocab lists** — the three closed lists the model must map to: `mystery_type`, `genre`, `difficulty`. Add/remove/reorder values. Each value can carry Hebrew/English synonyms used by the mapping logic.
-6. **Realism floor** — minimum realism details for real-world docs (default 20), minimum creative details for unusual props (default 8–15, two numbers).
-7. **Document generation default mode** — `drafts | auto | ask` and whether to ask each new project. (Today the assistant always asks on first Phase 4 entry — this lets you skip.)
-
-Each card has a small "?" tooltip explaining where in the assistant's behaviour the value shows up, plus a *"Show in prompt"* toggle that opens a side panel showing the exact prompt fragment that will be injected — so you can see the change before it ships.
+Each card keeps the same UX as v1: collapsible header, **Current default** column vs **Your override** column, per-row "Reset to default" link, "?" tooltip explaining where the value shows up in the assistant's behavior, and a "Show in prompt" preview toggle.
 
 ### Files touched
 
 | File | Change |
 |---|---|
-| `supabase/migrations/<new>` | Add one column on `profiles`: `assistant_playbook jsonb not null default '{}'::jsonb`. Single column keeps the schema small; the shape is enforced in TypeScript. |
-| `src/features/settings/AssistantPlaybookPanel.tsx` *(new)* | Renders the 7 cards above. Reads from `profiles.assistant_playbook`, validates with a Zod schema, persists with the same upsert pattern `AssistantTweaksPanel` uses. Each field shows default vs override + reset link. Includes the *"Show in prompt"* preview drawer. |
-| `src/features/settings/SettingsPage.tsx` | Insert the new `<AssistantPlaybookPanel />` in a new `Section` titled "Assistant playbook — defaults" placed directly above the existing "Assistant tweaks" section. Copy explains: *"These are the assistant's built-in defaults. Edit any value to change how it builds future cases — without losing the rest of the workflow."* |
-| `src/lib/assistant-playbook.ts` *(new — shared)* | Exports `PLAYBOOK_DEFAULTS` (single source of truth for default values) and `resolvePlaybook(override)` which deep-merges override onto defaults. Used by both the Settings UI (to show defaults) AND the edge function (to compute the effective playbook). Also exports the Zod schema. |
-| `supabase/functions/_shared/assistant-playbook.ts` *(new)* | Deno-compatible mirror of `PLAYBOOK_DEFAULTS` + `resolvePlaybook`. Kept as a separate file because Deno can't import from `src/`. Both files share the SAME literal defaults — a comment in each warns to keep them in sync, and we add a tiny unit-test-style script note in the PR. |
-| `supabase/functions/assistant-chat/index.ts` | (a) Fetch `profiles.assistant_playbook` for the project owner alongside the existing tweaks fetch. (b) Pass `resolvePlaybook(playbook)` into `buildSystemPrompt`. (c) Replace the hardcoded magic numbers / lists in the prompt with template interpolations: suspect-count guidance line, hints-per-stage line, envelope count + labels in the Phase 4 paragraph, Phase 1 setup-order sentence, canonical field-value lists in the CANONICAL FIELD VALUES block, realism-floor numbers, doc-generation-mode default. Wording stays the same; only the values become dynamic. |
+| `src/lib/assistant-playbook.ts` | Extend the `Playbook` type with 6 new top-level keys: `identity`, `content_rules`, `design_skeleton`, `doc_mode_copy`, `catalogs`, `phases`. Add their literal defaults to `PLAYBOOK_DEFAULTS`. Extend `resolvePlaybook` with cleaners for each (`cleanStringArray` reused; new `cleanRuleList`, `cleanSectionList`, `cleanPhaseList` mirror the existing `cleanVocab` shape — drop unknown keys, trim strings, fall back to default if empty). Add 5 new `render*` functions (`renderIdentityBlock`, `renderContentRulesBlock`, `renderDesignSkeletonLine`, `renderDocModeButtonsBlock`, `renderCatalogsBlock`, `renderPhaseEnumComment`). |
+| `supabase/functions/_shared/assistant-playbook.ts` | Mirror the same changes line-for-line (kept in sync per the existing header comment). |
+| `supabase/functions/assistant-chat/index.ts` | (a) Replace the hardcoded IDENTITY & STYLE / CONTENT RULES / design-instructions skeleton / doc-mode button labels / Logic-Flow refusal copy / phase enum comment with calls to the new renderers. (b) Inject `Available print sizes` and `Common document types` reference lines into the design-instructions guidance block. (c) Regenerate the `phase` enum on `update_project`'s JSON schema from `playbook.phases.map(p => p.key)` so renaming/adding phases in Settings makes them valid tool arguments. (d) No new prompt sections — every renderer slots into a place the prompt already had. |
+| `src/features/settings/AssistantPlaybookPanel.tsx` | Add 6 new collapsible cards below the existing 7. Each follows the existing pattern: read field from `assistant_playbook`, show default vs override, list editor with add/remove/reorder for the lists, reset link per row, "Show in prompt" preview that calls the matching renderer. No new dependencies — keep the same drag-handle/list primitives already used by the Phase 1 setup-order card. |
 
 ### Technical notes
 
-- **No breaking change for existing projects.** If `assistant_playbook` is `{}`, every value falls back to the current hardcoded default — the prompt comes out byte-identical to today.
-- **Playbook is per-user, not per-project**, matching how Tweaks and Image-prompt-assistant-instructions already work. If we later want per-project overrides, we add a second `projects.assistant_playbook` jsonb and merge user → project → defaults; the resolver already supports a chain.
-- **Source-of-truth duplication risk** between `src/lib/assistant-playbook.ts` and `supabase/functions/_shared/assistant-playbook.ts` is real but small (≈80 lines of constants). We mitigate with a header comment in both files: *"If you change defaults here, change the other file too."* Long-term we can codegen one from the other; not worth it for v1.
-- **Validation:** the edge function calls `resolvePlaybook` which silently drops unknown keys and clamps numbers to safe ranges (e.g. suspect-count min 1, max 30). A malformed playbook never breaks the chat — worst case it falls back to defaults.
-- **Prompt budget:** the canonical-vocab / phase-order / counts substitutions don't add net characters vs today; the playbook injection is bounded.
+- **No DB migration.** Everything fits in the existing `assistant_playbook` JSONB column. Old rows whose JSON doesn't contain the new keys get the literal defaults via `resolvePlaybook` — chat output stays byte-identical until you actually edit something.
+- **Phase enum safety.** `update_project`'s `phase` enum becomes dynamic. The resolver clamps the list to a max of 16 phases and forces `key` to a `[a-z_]{1,32}` slug so the enum never accepts garbage. Existing `phase` values not in the user's list are still preserved on the row (the enum only restricts *new writes*); a tiny note in the card warns: *"Renaming a phase key won't migrate existing projects — they keep their old phase string until you edit them."*
+- **Prompt budget.** Net additions are bounded: the new render blocks replace existing literal text 1:1 except for the catalog reference lines (~150 chars total) and the design-skeleton list which can grow if you add sections. Worst case adds ≤ 1 KB of prompt.
+- **Validation.** Same defensive style as v1: malformed override silently falls back per-key. Empty list → use default list. Empty string → use default string. Reordering preserves your existing entries by `key` match (for sections / phases) so renames don't double-up.
+- **No new tools, no new edge functions, no UI changes outside `AssistantPlaybookPanel`.** The chat experience is unchanged unless you touch a value.
 
-### What stays the same
+### What stays out of scope (still good follow-ups)
 
-- Assistant Tweaks (free-form rules), Image-prompt assistant instructions, all per-project overview fields, all `update_*` tools, the EDIT-VS-CREATE rule, the `update_project` extensions we just shipped, the doc-generation-mode flow, the canvas/logic-flow gate.
-- The chat experience is unchanged unless you actually edit a playbook value.
-
-### Out of scope for v1 (good follow-ups)
-
-- A free-form **"View full system prompt"** debug panel that renders the entire resolved prompt (defaults + playbook + tweaks + project state) — useful but heavier; can land later as a read-only modal.
-- Per-project playbook overrides.
-- Localising playbook copy into Hebrew.
+- A read-only **"View full resolved system prompt"** debug modal (v1 already mentioned this; still a good next step now that more of the prompt is data-driven).
+- Per-project playbook overrides (resolver already supports a chain).
+- A real schema-driven editor for the design-skeleton sections' inner format (today the user just edits the section name + one-line note; the actual subsection rules stay implicit).
 
