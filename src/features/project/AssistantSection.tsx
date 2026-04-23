@@ -744,7 +744,8 @@ function MessageBubble({
               </div>
             </div>
           )}
-          {!editing && tools.length > 0 && <ToolReceipts tools={tools} />}
+          {!editing && tools.length > 0 && <ToolReceipts tools={tools} onOpenAsset={onOpenAsset} />}
+          {!editing && tools.length > 0 && <GeneratedAssetsStrip tools={tools} onOpenAsset={onOpenAsset} />}
         </div>
       </div>
     </div>
