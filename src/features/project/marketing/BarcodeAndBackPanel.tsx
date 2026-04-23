@@ -49,6 +49,7 @@ export function BarcodeAndBackPanel({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
   const [generatingBarcode, setGeneratingBarcode] = useState(false);
   const [generatingBack, setGeneratingBack] = useState(false);
+  const [backOrigin, setBackOrigin] = useState<{ requested: string | null; effective: string | null; fallback: string | null } | null>(null);
   const seenBarcode = useRef<string | null>(null);
   const { create: createNotif } = useProjectNotifications(projectId);
 
