@@ -269,15 +269,30 @@ const TOOLS = [
 ];
 
 // ---------- Tool executor ----------
+// `messageId` is the chat_messages row this tool call is being attributed to.
+// Every write stamps it so the UI can later jump back to the chat turn that
+// created or last edited the row.
 async function executeTool(
   supa: ReturnType<typeof createClient>,
   projectId: string,
   name: string,
   args: Record<string, unknown>,
+  messageId: string,
 ) {
   try {
     if (name === "update_project") {
-      const { error } = await supa.from("projects").update(args).eq("id", projectId);
+      // Merge per-field origins so each updated field points to this message.
+      const { data: current } = await supa
+        .from("projects")
+        .select("assistant_origins")
+        .eq("id", projectId)
+        .single();
+      const origins = { ...(current?.assistant_origins as Record<string, string> ?? {}) };
+      for (const k of Object.keys(args)) origins[k] = messageId;
+      const { error } = await supa
+        .from("projects")
+        .update({ ...args, assistant_origins: origins })
+        .eq("id", projectId);
       if (error) throw error;
       return { ok: true, message: `Project updated: ${Object.keys(args).join(", ")}` };
     }
@@ -285,7 +300,14 @@ async function executeTool(
       const summary = String((args as { summary?: string }).summary ?? "").trim();
       const markApproved = Boolean((args as { mark_approved?: boolean }).mark_approved);
       if (!summary) return { ok: false, message: "summary is required" };
-      const patch: Record<string, unknown> = { solution_summary: summary };
+      const { data: current } = await supa
+        .from("projects")
+        .select("assistant_origins")
+        .eq("id", projectId)
+        .single();
+      const origins = { ...(current?.assistant_origins as Record<string, string> ?? {}) };
+      origins.solution_summary = messageId;
+      const patch: Record<string, unknown> = { solution_summary: summary, assistant_origins: origins };
       if (markApproved) patch.logic_approved_at = new Date().toISOString();
       const { error } = await supa.from("projects").update(patch).eq("id", projectId);
       if (error) throw error;
@@ -300,7 +322,7 @@ async function executeTool(
     if (name === "add_suspect") {
       const { data, error } = await supa
         .from("suspects")
-        .insert({ ...args, project_id: projectId })
+        .insert({ ...args, project_id: projectId, created_by_message_id: messageId })
         .select("id, name")
         .single();
       if (error) throw error;
@@ -328,7 +350,7 @@ async function executeTool(
       const docNumber = args.doc_number ?? Math.floor(100 + Math.random() * 900);
       const { data, error } = await supa
         .from("documents")
-        .insert({ ...args, doc_number: docNumber, project_id: projectId })
+        .insert({ ...args, doc_number: docNumber, project_id: projectId, created_by_message_id: messageId })
         .select("id, title")
         .single();
       if (error) throw error;
@@ -342,6 +364,7 @@ async function executeTool(
           project_id: projectId,
           position_x: Math.random() * 600,
           position_y: Math.random() * 400,
+          created_by_message_id: messageId,
         })
         .select("id, title")
         .single();
@@ -424,6 +447,12 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Pre-mint the ID for the assistant message we'll insert at the end so
+    // every tool write can stamp `created_by_message_id` BEFORE the row exists.
+    // This lets the UI jump from any field/item back to the chat turn that
+    // produced it.
+    const assistantMessageId = crypto.randomUUID();
+
     // Tool-calling loop: up to 4 rounds
     const convo: Array<Record<string, unknown>> = [
       { role: "system", content: systemPrompt },
@@ -433,7 +462,6 @@ Deno.serve(async (req) => {
 
     const MAX_ROUNDS = 8;
     for (let round = 0; round < MAX_ROUNDS; round++) {
-      // On the final round, drop tools so the model MUST produce a text answer.
       const isFinalRound = round === MAX_ROUNDS - 1;
       const body: Record<string, unknown> = { model, messages: convo, stream: false };
       if (!isFinalRound) body.tools = TOOLS;
@@ -483,7 +511,7 @@ Deno.serve(async (req) => {
         for (const call of toolCalls) {
           let args: Record<string, unknown> = {};
           try { args = JSON.parse(call.function.arguments || "{}"); } catch { /* ignore */ }
-          const result = await executeTool(supa, projectId, call.function.name, args);
+          const result = await executeTool(supa, projectId, call.function.name, args, assistantMessageId);
           executedTools.push({ name: call.function.name, result });
           convo.push({
             role: "tool",
@@ -491,11 +519,9 @@ Deno.serve(async (req) => {
             content: JSON.stringify(result),
           });
         }
-        continue; // ask the model to produce final text after tool results
+        continue;
       }
 
-      // Final assistant message — pull the most recent propose_options result
-      // so the client can render quick-reply buttons under this message.
       const finalText = msg.content ?? "";
       const lastOptionsTool = [...executedTools].reverse().find(
         (t) => t.name === "propose_options" && (t.result as { ok?: boolean })?.ok,
@@ -507,6 +533,7 @@ Deno.serve(async (req) => {
       const quickQuestion = optionsResult?.question ?? null;
 
       await supa.from("chat_messages").insert({
+        id: assistantMessageId,
         project_id: projectId,
         role: "assistant",
         content: finalText,
@@ -517,7 +544,7 @@ Deno.serve(async (req) => {
         },
       });
 
-      return new Response(JSON.stringify({ content: finalText, tools: executedTools, model }), {
+      return new Response(JSON.stringify({ content: finalText, tools: executedTools, model, messageId: assistantMessageId }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

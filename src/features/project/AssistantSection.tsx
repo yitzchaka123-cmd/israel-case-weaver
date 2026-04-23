@@ -61,13 +61,14 @@ const STARTERS = [
   "Draft the suspect list and deduction structure.",
 ];
 
-export function AssistantSection({ projectId, phase }: { projectId: string; phase: string }) {
+export function AssistantSection({ projectId, phase, focusMessageId }: { projectId: string; phase: string; focusMessageId?: string | null }) {
   const qc = useQueryClient();
   const { user } = useAuth();
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const dictationBaseRef = useRef("");
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
   const { data: tweakCount = 0 } = useQuery({
     queryKey: ["assistant-tweaks-count", user?.id],
@@ -164,6 +165,22 @@ export function AssistantSection({ projectId, phase }: { projectId: string; phas
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, sending]);
+
+  // Scroll-to and briefly highlight a message when an outside component
+  // (e.g. the AssistantOriginBadge on a suspect/document) asks to focus it.
+  useEffect(() => {
+    if (!focusMessageId) return;
+    // Wait a tick for the tab switch + render
+    const t = window.setTimeout(() => {
+      const el = scrollRef.current?.querySelector<HTMLElement>(`[data-msg-id="${focusMessageId}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        setHighlightedId(focusMessageId);
+        window.setTimeout(() => setHighlightedId(null), 2400);
+      }
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [focusMessageId, messages]);
 
   const send = async (text: string) => {
     const content = text.trim();
@@ -332,6 +349,7 @@ export function AssistantSection({ projectId, phase }: { projectId: string; phas
                 isLast={idx === messages.length - 1}
                 onPickOption={(text) => send(text)}
                 disabled={sending}
+                highlighted={m.id === highlightedId}
               />
             ))}
 
@@ -417,11 +435,13 @@ function MessageBubble({
   isLast,
   onPickOption,
   disabled,
+  highlighted,
 }: {
   msg: Msg;
   isLast: boolean;
   onPickOption: (text: string) => void;
   disabled: boolean;
+  highlighted?: boolean;
 }) {
   const tools = msg.metadata?.tools ?? [];
   const options = msg.metadata?.options ?? [];
@@ -431,7 +451,12 @@ function MessageBubble({
   const showOptions = msg.role === "assistant" && isLast && options.length > 0;
 
   return (
-    <div className="flex gap-3 items-start">
+    <div
+      data-msg-id={msg.id}
+      className={`flex gap-3 items-start scroll-mt-24 rounded-xl transition-colors duration-700 ${
+        highlighted ? "bg-accent/15 ring-2 ring-accent/50 -mx-2 px-2 py-2" : ""
+      }`}
+    >
       <Avatar role={msg.role} />
       <div className="flex-1 min-w-0 pt-1">
         <div className="text-xs font-medium mb-1 text-muted-foreground">

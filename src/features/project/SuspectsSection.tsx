@@ -11,6 +11,7 @@ import { useRef, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { PromptPanel } from "@/components/PromptPanel";
+import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
 
 interface Suspect {
   id: string;
@@ -25,6 +26,7 @@ interface Suspect {
   contradictions: string | null;
   is_red_herring: boolean;
   position: number;
+  created_by_message_id: string | null;
 }
 
 export function SuspectsSection({ projectId }: { projectId: string }) {
@@ -87,7 +89,10 @@ export function SuspectsSection({ projectId }: { projectId: string }) {
                 )}
               </div>
               <div className="p-3">
-                <div className="font-medium truncate">{s.name}</div>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <div className="font-medium truncate flex-1">{s.name}</div>
+                  <AssistantOriginBadge messageId={s.created_by_message_id} label="" />
+                </div>
                 <div className="text-xs text-muted-foreground truncate">
                   {s.role_in_case || "—"}
                 </div>
@@ -206,7 +211,10 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
     <Dialog open={!!suspect} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="font-display text-2xl">Suspect file</DialogTitle>
+          <DialogTitle className="font-display text-2xl flex items-center gap-2">
+            Suspect file
+            <AssistantOriginBadge messageId={draft.created_by_message_id} />
+          </DialogTitle>
         </DialogHeader>
         <div className="grid md:grid-cols-[170px_1fr] gap-6">
           <div>
