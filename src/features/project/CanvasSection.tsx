@@ -789,11 +789,12 @@ function NodeDetailPanel({
             </div>
           </div>
 
-          {/* Quick stats row */}
-          <div className="mt-5 grid grid-cols-2 gap-2">
-            <Stat label="Documents" value={linkedDocs.length} />
-            <Stat label="Suspects" value={linkedSuspects.length} />
-          </div>
+          {board === "final" && (
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <Stat label="Documents" value={linkedDocs.length} />
+              <Stat label="Suspects" value={linkedSuspects.length} />
+            </div>
+          )}
         </div>
 
         {/* Scrollable body */}
