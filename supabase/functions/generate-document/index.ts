@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { documentId, mode, imageModelOverride } = await req.json() as { documentId: string; mode: "text" | "image"; imageModelOverride?: string };
+    const { documentId, mode, imageModelOverride, quality: qualityOverride } = await req.json() as { documentId: string; mode: "text" | "image"; imageModelOverride?: string; quality?: "low" | "medium" | "high" };
     if (!documentId || !mode) {
       return new Response(JSON.stringify({ error: "documentId and mode required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
