@@ -7,10 +7,20 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Upload, Wand2, Loader2, Trash2, Image as ImageIcon, Video, Film, Newspaper, Package, ExternalLink, Sparkles, FileText, RefreshCw } from "lucide-react";
+import { Upload, Wand2, Loader2, Trash2, Image as ImageIcon, Video, Film, Newspaper, Package, ExternalLink, Sparkles, FileText, RefreshCw, History } from "lucide-react";
 import { PromptWriterModelPicker, getStoredWriterModel } from "@/components/PromptWriterModelPicker";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
+import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { toast } from "sonner";
+
+interface PromptHistoryEntry {
+  at: string;
+  prompt: string;
+  effective_model?: string;
+  requested_model?: string;
+  fallback?: string;
+  provider?: string;
+}
 
 interface MediaAsset {
   id: string;
@@ -21,6 +31,9 @@ interface MediaAsset {
   prompt: string | null;
   provider: string | null;
   model: string | null;
+  effective_model: string | null;
+  fallback: string | null;
+  prompt_history: PromptHistoryEntry[] | null;
   mime_type: string | null;
   created_at: string;
 }
@@ -321,7 +334,7 @@ function CategoryPanel({ projectId, category, items }: { projectId: string; cate
 
 function AssetCard({ asset, onOpen, onDelete }: { asset: MediaAsset; onOpen: () => void; onDelete: () => void }) {
   return (
-    <div className="group rounded-2xl border bg-card overflow-hidden shadow-soft hover:shadow-elegant transition-shadow">
+    <div className="group rounded-2xl border bg-card overflow-hidden shadow-soft hover:shadow-elegant transition-shadow relative">
       <button onClick={onOpen} className="block w-full text-left">
         <div className="aspect-[4/3] bg-muted relative overflow-hidden">
           {asset.url && asset.mime_type?.startsWith("image") ? (
@@ -332,6 +345,16 @@ function AssetCard({ asset, onOpen, onDelete }: { asset: MediaAsset; onOpen: () 
             <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs uppercase tracking-widest">
               {asset.provider === "prompt-only" ? "Prompt only" : "File"}
             </div>
+          )}
+          {(asset.model || asset.effective_model) && asset.mime_type?.startsWith("image") && (
+            <AiOriginBadge
+              info={{
+                requested: asset.model,
+                effective: asset.effective_model ?? asset.model,
+                fallback: asset.fallback,
+                provider: asset.provider,
+              }}
+            />
           )}
         </div>
         <div className="p-3">
@@ -374,10 +397,22 @@ function AssetDialog({
   const [editPrompt, setEditPrompt] = useState("");
   const [retrying, setRetrying] = useState(false);
   const [regenPrompt, setRegenPrompt] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
     setEditPrompt(asset?.prompt ?? "");
   }, [asset?.id, asset?.prompt]);
+
+  // Debounced autosave of edited prompt back to media_assets so the user
+  // never loses an in-progress edit if the dialog closes.
+  useEffect(() => {
+    if (!asset?.id) return;
+    if (editPrompt === (asset.prompt ?? "")) return;
+    const t = setTimeout(() => {
+      supabase.from("media_assets").update({ prompt: editPrompt }).eq("id", asset.id).then(() => {});
+    }, 700);
+    return () => clearTimeout(t);
+  }, [editPrompt, asset?.id, asset?.prompt]);
 
   if (!asset) return null;
 
@@ -483,8 +518,44 @@ function AssetDialog({
             className="font-mono text-xs leading-relaxed"
             placeholder={asset.prompt ? undefined : "No prompt was saved with this asset. You can write one and retry."}
           />
-          {asset.model && (
-            <p className="text-[11px] text-muted-foreground">Originally generated with: {asset.model}</p>
+          {(asset.model || asset.effective_model) && (
+            <div className="text-[11px] text-muted-foreground space-y-1 pt-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span>Generated with</span>
+                <code className="text-[10px] bg-muted px-1.5 py-0.5 rounded">{asset.effective_model ?? asset.model}</code>
+                {asset.fallback && asset.fallback !== "none" && (
+                  <span className="text-amber-600 dark:text-amber-400">
+                    (fell back from <code className="text-[10px]">{asset.model}</code> via {asset.fallback})
+                  </span>
+                )}
+                {asset.provider && <span>· {asset.provider}</span>}
+              </div>
+              {asset.prompt_history && asset.prompt_history.length > 0 && (
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setShowHistory((s) => !s)}
+                    className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
+                  >
+                    <History className="h-3 w-3" />
+                    {showHistory ? "Hide" : "Show"} previous prompts ({asset.prompt_history.length})
+                  </button>
+                  {showHistory && (
+                    <ul className="mt-2 space-y-2 max-h-48 overflow-y-auto pr-2">
+                      {asset.prompt_history.map((h, i) => (
+                        <li key={i} className="border-l-2 border-muted pl-2">
+                          <div className="text-[10px] text-muted-foreground">
+                            {new Date(h.at).toLocaleString()} · {h.effective_model ?? h.requested_model ?? "—"}
+                            {h.fallback && h.fallback !== "none" && ` · ${h.fallback}`}
+                          </div>
+                          <div className="font-mono text-[10px] whitespace-pre-wrap">{h.prompt}</div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
 

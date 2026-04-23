@@ -14,6 +14,54 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_run_logs: {
+        Row: {
+          created_at: string
+          effective_model: string | null
+          error_message: string | null
+          fallback: string
+          id: string
+          latency_ms: number | null
+          project_id: string | null
+          prompt_excerpt: string | null
+          requested_model: string | null
+          status: string
+          surface: string
+          target_id: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          effective_model?: string | null
+          error_message?: string | null
+          fallback?: string
+          id?: string
+          latency_ms?: number | null
+          project_id?: string | null
+          prompt_excerpt?: string | null
+          requested_model?: string | null
+          status?: string
+          surface: string
+          target_id?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          effective_model?: string | null
+          error_message?: string | null
+          fallback?: string
+          id?: string
+          latency_ms?: number | null
+          project_id?: string | null
+          prompt_excerpt?: string | null
+          requested_model?: string | null
+          status?: string
+          surface?: string
+          target_id?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       canvas_edges: {
         Row: {
           board: string
@@ -304,7 +352,11 @@ export type Database = {
       }
       envelopes: {
         Row: {
+          cover_effective_model: string | null
+          cover_fallback: string | null
           cover_image_url: string | null
+          cover_prompt: string | null
+          cover_prompt_history: Json
           created_at: string
           created_by_message_id: string | null
           design_instructions: string | null
@@ -320,7 +372,11 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          cover_effective_model?: string | null
+          cover_fallback?: string | null
           cover_image_url?: string | null
+          cover_prompt?: string | null
+          cover_prompt_history?: Json
           created_at?: string
           created_by_message_id?: string | null
           design_instructions?: string | null
@@ -336,7 +392,11 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          cover_effective_model?: string | null
+          cover_fallback?: string | null
           cover_image_url?: string | null
+          cover_prompt?: string | null
+          cover_prompt_history?: Json
           created_at?: string
           created_by_message_id?: string | null
           design_instructions?: string | null
@@ -436,11 +496,14 @@ export type Database = {
         Row: {
           category: string
           created_at: string
+          effective_model: string | null
+          fallback: string | null
           id: string
           mime_type: string | null
           model: string | null
           project_id: string
           prompt: string | null
+          prompt_history: Json
           provider: string | null
           title: string | null
           url: string | null
@@ -448,11 +511,14 @@ export type Database = {
         Insert: {
           category?: string
           created_at?: string
+          effective_model?: string | null
+          fallback?: string | null
           id?: string
           mime_type?: string | null
           model?: string | null
           project_id: string
           prompt?: string | null
+          prompt_history?: Json
           provider?: string | null
           title?: string | null
           url?: string | null
@@ -460,11 +526,14 @@ export type Database = {
         Update: {
           category?: string
           created_at?: string
+          effective_model?: string | null
+          fallback?: string | null
           id?: string
           mime_type?: string | null
           model?: string | null
           project_id?: string
           prompt?: string | null
+          prompt_history?: Json
           provider?: string | null
           title?: string | null
           url?: string | null
@@ -616,6 +685,7 @@ export type Database = {
           length_seconds: number
           project_id: string
           script_instructions: string | null
+          shot_prompts: Json
           shots: Json
           sora_instructions: string | null
           status: string
@@ -628,6 +698,7 @@ export type Database = {
           length_seconds?: number
           project_id: string
           script_instructions?: string | null
+          shot_prompts?: Json
           shots?: Json
           sora_instructions?: string | null
           status?: string
@@ -640,6 +711,7 @@ export type Database = {
           length_seconds?: number
           project_id?: string
           script_instructions?: string | null
+          shot_prompts?: Json
           shots?: Json
           sora_instructions?: string | null
           status?: string
@@ -654,7 +726,11 @@ export type Database = {
           ai_provider_planning: string | null
           assistant_origins: Json
           case_goal: string | null
+          cover_effective_model: string | null
+          cover_fallback: string | null
           cover_image_url: string | null
+          cover_prompt: string | null
+          cover_prompt_history: Json
           created_at: string
           difficulty: string | null
           doc_generation_mode: string | null
@@ -685,7 +761,11 @@ export type Database = {
           ai_provider_planning?: string | null
           assistant_origins?: Json
           case_goal?: string | null
+          cover_effective_model?: string | null
+          cover_fallback?: string | null
           cover_image_url?: string | null
+          cover_prompt?: string | null
+          cover_prompt_history?: Json
           created_at?: string
           difficulty?: string | null
           doc_generation_mode?: string | null
@@ -716,7 +796,11 @@ export type Database = {
           ai_provider_planning?: string | null
           assistant_origins?: Json
           case_goal?: string | null
+          cover_effective_model?: string | null
+          cover_fallback?: string | null
           cover_image_url?: string | null
+          cover_prompt?: string | null
+          cover_prompt_history?: Json
           created_at?: string
           difficulty?: string | null
           doc_generation_mode?: string | null
@@ -792,6 +876,10 @@ export type Database = {
       }
       suspects: {
         Row: {
+          alt_thumbnail_effective_model: string | null
+          alt_thumbnail_fallback: string | null
+          alt_thumbnail_prompt: string | null
+          alt_thumbnail_prompt_history: Json
           alt_thumbnail_url: string | null
           contradictions: string | null
           created_at: string
@@ -805,10 +893,18 @@ export type Database = {
           role_in_case: string | null
           secrets: string | null
           summary: string | null
+          thumbnail_effective_model: string | null
+          thumbnail_fallback: string | null
+          thumbnail_prompt: string | null
+          thumbnail_prompt_history: Json
           thumbnail_url: string | null
           updated_at: string
         }
         Insert: {
+          alt_thumbnail_effective_model?: string | null
+          alt_thumbnail_fallback?: string | null
+          alt_thumbnail_prompt?: string | null
+          alt_thumbnail_prompt_history?: Json
           alt_thumbnail_url?: string | null
           contradictions?: string | null
           created_at?: string
@@ -822,10 +918,18 @@ export type Database = {
           role_in_case?: string | null
           secrets?: string | null
           summary?: string | null
+          thumbnail_effective_model?: string | null
+          thumbnail_fallback?: string | null
+          thumbnail_prompt?: string | null
+          thumbnail_prompt_history?: Json
           thumbnail_url?: string | null
           updated_at?: string
         }
         Update: {
+          alt_thumbnail_effective_model?: string | null
+          alt_thumbnail_fallback?: string | null
+          alt_thumbnail_prompt?: string | null
+          alt_thumbnail_prompt_history?: Json
           alt_thumbnail_url?: string | null
           contradictions?: string | null
           created_at?: string
@@ -839,6 +943,10 @@ export type Database = {
           role_in_case?: string | null
           secrets?: string | null
           summary?: string | null
+          thumbnail_effective_model?: string | null
+          thumbnail_fallback?: string | null
+          thumbnail_prompt?: string | null
+          thumbnail_prompt_history?: Json
           thumbnail_url?: string | null
           updated_at?: string
         }

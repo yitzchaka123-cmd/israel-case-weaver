@@ -19,6 +19,73 @@ const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY") ?? "";
 const OPENAI_API_KEY = Deno.env.get("OpenAi") ?? Deno.env.get("OPENAI_API_KEY") ?? "";
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
+const SUPABASE_URL_INTERNAL = Deno.env.get("SUPABASE_URL") ?? "";
+const SERVICE_ROLE_INTERNAL = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+
+// ---------- Run log helper ----------
+
+/**
+ * Read the x-ai-fallback header set by chatCompletions and compute the model
+ * that actually served the response. Returns null fallback when no fallback fired.
+ */
+export function extractFallback(
+  resp: Response,
+  requestedModel: string,
+): { fallback: "none" | "openai-direct" | "lovable-ai"; effectiveModel: string } {
+  const f = resp.headers.get("x-ai-fallback");
+  if (f === "openai-direct") return { fallback: "openai-direct", effectiveModel: "openai/gpt-5.2" };
+  if (f === "lovable-ai") {
+    const eff = isGeminiDirectModel(requestedModel) ? toGatewayModel(requestedModel) : requestedModel;
+    return { fallback: "lovable-ai", effectiveModel: eff };
+  }
+  return { fallback: "none", effectiveModel: requestedModel };
+}
+
+/**
+ * Insert a row into ai_run_logs. Best-effort — never throws.
+ */
+export async function logAiRun(opts: {
+  userId?: string | null;
+  projectId?: string | null;
+  surface: string;
+  requestedModel?: string | null;
+  effectiveModel?: string | null;
+  fallback?: "none" | "openai-direct" | "lovable-ai";
+  status?: "ok" | "error";
+  latencyMs?: number;
+  errorMessage?: string;
+  targetId?: string | null;
+  promptExcerpt?: string | null;
+}): Promise<void> {
+  try {
+    if (!SUPABASE_URL_INTERNAL || !SERVICE_ROLE_INTERNAL) return;
+    const body = {
+      user_id: opts.userId ?? null,
+      project_id: opts.projectId ?? null,
+      surface: opts.surface,
+      requested_model: opts.requestedModel ?? null,
+      effective_model: opts.effectiveModel ?? null,
+      fallback: opts.fallback ?? "none",
+      status: opts.status ?? "ok",
+      latency_ms: opts.latencyMs ?? null,
+      error_message: opts.errorMessage ?? null,
+      target_id: opts.targetId ?? null,
+      prompt_excerpt: opts.promptExcerpt ? String(opts.promptExcerpt).slice(0, 500) : null,
+    };
+    await fetch(`${SUPABASE_URL_INTERNAL}/rest/v1/ai_run_logs`, {
+      method: "POST",
+      headers: {
+        apikey: SERVICE_ROLE_INTERNAL,
+        Authorization: `Bearer ${SERVICE_ROLE_INTERNAL}`,
+        "Content-Type": "application/json",
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    console.warn("logAiRun failed", e);
+  }
+}
 
 export function isOpenAIModel(model: string): boolean {
   return typeof model === "string" && model.startsWith("openai/");

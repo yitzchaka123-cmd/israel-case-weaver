@@ -14,6 +14,7 @@ import { GeminiConnection } from "./GeminiConnection";
 import { AssistantTweaksPanel } from "./AssistantTweaksPanel";
 import { AssistantPlaybookPanel } from "./AssistantPlaybookPanel";
 import { TeamAccessPanel } from "./TeamAccessPanel";
+import { AiRunLog } from "./AiRunLog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LOGIC_FLOW_MODELS, LOGIC_FLOW_MODEL_KEY, LOGIC_FLOW_MODEL_DEFAULT } from "@/features/project/CanvasSection";
 import { Textarea } from "@/components/ui/textarea";
@@ -267,6 +268,13 @@ export function SettingsPage() {
 
         <Section title="Usage & credits" desc="Live spend and quick links to top up each provider. Only OpenAI publishes a usage API; the other providers open their billing dashboards in a new tab.">
           <UsageDashboard />
+        </Section>
+
+        <Section
+          title="AI activity log"
+          desc="Every AI call your workspace makes — chat, image, marketing, storyboard, etc. Color dot: green = ran on requested model, amber = a fallback fired, red = error. Click a row for details."
+        >
+          <AiRunLog />
         </Section>
 
         <Section title="API keys" desc="Manage and test all API keys this workspace uses to call AI providers.">
