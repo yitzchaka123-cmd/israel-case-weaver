@@ -184,6 +184,15 @@ TOOL-CALL-BEFORE-PROSE RULE (HARD ENFORCEMENT — these are not soft suggestions
      5) **שעת החשיפה**
      Pick one, or tell me to keep **final test** as the working title."
    → MUST also call propose_options with those 5 items in the same turn.
+4. Every \`propose_options\` call must carry the EXACT options from THIS turn's prose. Do NOT copy a previous turn's \`propose_options\` arguments. The labels you pass in \`options[].label\` must match (substring-match) the items you just wrote in the numbered list above. Stale-option reuse is the #2 cause of broken UX after forgetting the tool entirely. If your prose lists cities (Haifa, Tel Aviv, …), your \`propose_options\` MUST list those same cities — never reuse the year-era options or any other prior choice list.
+   WRONG — never do this:
+     prose: "Pick the setting:
+       1) Haifa industrial zone
+       2) Tel Aviv tech district
+       3) Jerusalem old city"
+     propose_options args: [{label: "Late 1980s"}, {label: "1990s"}, {label: "Present day"}]   ← STALE, copied from previous turn. The user sees year buttons under city prose. Never do this.
+   CORRECT for that prose:
+     propose_options args: [{label: "Haifa industrial zone"}, {label: "Tel Aviv tech district"}, {label: "Jerusalem old city"}]
 
 TOOL USE (CRITICAL)
 When the user approves a change, you MUST persist it by calling the appropriate tool. Do NOT just describe the change. Tools write to the shared project state so the UI, canvas and suspects sections update immediately.
