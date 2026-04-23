@@ -1150,6 +1150,155 @@ async function executeTool(
   }
 }
 
+// Run the full assistant turn (load context, build prompt, run model+tool
+// loop, persist the assistant message). Used by background mode. Throws on
+// error so the caller can flip the assistant_runs row to status='error'.
+async function processConversation(
+  supa: ReturnType<typeof createClient>,
+  projectId: string,
+  messages: Array<Record<string, unknown>>,
+  callerUserId: string | null,
+): Promise<void> {
+  const [
+    { data: project },
+    { data: suspectsRoster },
+    { data: documentsRoster },
+    { data: envelopesRoster },
+    { data: hintsRoster },
+    { data: nodesRoster },
+  ] = await Promise.all([
+    supa.from("projects").select("*").eq("id", projectId).single(),
+    supa.from("suspects").select("id, name, role_in_case").eq("project_id", projectId).order("position", { ascending: true }).limit(50),
+    supa.from("documents").select("id, doc_number, title, doc_type, status").eq("project_id", projectId).order("doc_number", { ascending: true, nullsFirst: false }).limit(100),
+    supa.from("envelopes").select("id, number, label").eq("project_id", projectId).order("number", { ascending: true }).limit(50),
+    supa.from("hints").select("id, stage, level").eq("project_id", projectId).order("stage", { ascending: true }).order("level", { ascending: true }).limit(50),
+    supa.from("canvas_nodes").select("id, title, node_type, board").eq("project_id", projectId).order("created_at", { ascending: true }).limit(100),
+  ]);
+  if (!project) throw new Error("Project not found");
+
+  let tweaks: Tweak[] = [];
+  let playbook: Playbook = PLAYBOOK_DEFAULTS;
+  if (project.owner_id) {
+    const { data: ownerProfile } = await supa
+      .from("profiles")
+      .select("assistant_tweaks, assistant_playbook")
+      .eq("id", project.owner_id)
+      .maybeSingle();
+    const raw = (ownerProfile as { assistant_tweaks?: unknown; assistant_playbook?: unknown } | null);
+    if (raw && Array.isArray(raw.assistant_tweaks)) tweaks = raw.assistant_tweaks as Tweak[];
+    if (raw) playbook = resolvePlaybook(raw.assistant_playbook);
+  }
+
+  const model = PROVIDER_MODEL[project.ai_provider_planning ?? "lovable"] ?? PROVIDER_MODEL.lovable;
+  const rosters: Rosters = {
+    suspects: (suspectsRoster ?? []) as RosterRow[],
+    documents: (documentsRoster ?? []) as RosterRow[],
+    envelopes: (envelopesRoster ?? []) as RosterRow[],
+    hints: (hintsRoster ?? []) as RosterRow[],
+    canvas_nodes: (nodesRoster ?? []) as RosterRow[],
+  };
+  const systemPrompt = buildSystemPrompt(project, rosters, tweaks, playbook);
+
+  const lastUser = [...messages].reverse().find((m) => (m as { role: string }).role === "user") as { content: string } | undefined;
+  if (lastUser) {
+    await supa.from("chat_messages").insert({
+      project_id: projectId, role: "user", content: lastUser.content,
+    });
+  }
+
+  const assistantMessageId = crypto.randomUUID();
+  const convo: Array<Record<string, unknown>> = [{ role: "system", content: systemPrompt }, ...messages];
+  const executedTools: Array<{ name: string; args?: Record<string, unknown>; result: unknown }> = [];
+  const TOOLS = buildTools(playbook);
+  const MAX_ROUNDS = 8;
+  let lastFb: { effectiveModel: string; fallback: string } = { effectiveModel: model, fallback: "none" };
+
+  for (let round = 0; round < MAX_ROUNDS; round++) {
+    const isFinalRound = round === MAX_ROUNDS - 1;
+    const body: Record<string, unknown> = { model, messages: convo, stream: false };
+    if (!isFinalRound) body.tools = TOOLS;
+
+    const roundStartedAt = Date.now();
+    const resp = await chatCompletions(body);
+    const fb = extractFallback(resp, model);
+    lastFb = fb;
+    logAiRun({
+      userId: callerUserId, projectId, surface: "assistant-chat",
+      requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
+      status: resp.ok ? "ok" : "error", latencyMs: Date.now() - roundStartedAt,
+      errorMessage: resp.ok ? undefined : `status ${resp.status}`,
+      targetId: assistantMessageId,
+      promptExcerpt: lastUser?.content ? String(lastUser.content) : undefined,
+    });
+
+    if (!resp.ok) {
+      const provider = model.startsWith("openai/") ? "OpenAI"
+        : model.startsWith("anthropic/") ? "Anthropic"
+        : model.startsWith("gemini-direct/") ? "Google Gemini"
+        : "Lovable AI";
+      const t = await resp.text();
+      console.error(`${provider} error`, resp.status, t);
+      let errMsg: string;
+      if (resp.status === 429) errMsg = `${provider} rate limit — try again in a moment.`;
+      else if (resp.status === 402) errMsg = `${provider} credits/key issue (status 402).`;
+      else if (resp.status === 401) errMsg = `${provider} authentication failed — check the API key in Settings → API keys.`;
+      else errMsg = `${provider} error (status ${resp.status})`;
+
+      if (executedTools.length > 0) {
+        const okCount = executedTools.filter((t) => (t.result as { ok?: boolean })?.ok).length;
+        const totalCount = executedTools.length;
+        const recoveryNote = `⚠️ ${errMsg}\n\nBefore this happened I successfully executed ${okCount} of ${totalCount} actions (see receipts below). They are already saved — you don't need to redo them. Reply "continue" once the issue is resolved and I'll pick up where I left off.`;
+        await supa.from("chat_messages").insert({
+          id: assistantMessageId, project_id: projectId, role: "assistant", content: recoveryNote,
+          metadata: { model, effective_model: lastFb.effectiveModel, fallback: lastFb.fallback, tools: executedTools, partial: true, error: errMsg },
+        });
+        return;
+      }
+      throw new Error(errMsg);
+    }
+
+    const data = await resp.json();
+    const choice = data.choices?.[0];
+    const msg = choice?.message ?? {};
+    const toolCalls = msg.tool_calls as Array<{ id: string; function: { name: string; arguments: string } }> | undefined;
+
+    if (toolCalls && toolCalls.length > 0) {
+      convo.push({ role: "assistant", content: msg.content ?? "", tool_calls: toolCalls });
+      for (const call of toolCalls) {
+        let args: Record<string, unknown> = {};
+        try { args = JSON.parse(call.function.arguments || "{}"); } catch { /* ignore */ }
+        const result = await executeTool(supa, projectId, call.function.name, args, assistantMessageId);
+        const argsForUi = call.function.name === "propose_options" ? undefined : args;
+        executedTools.push({ name: call.function.name, args: argsForUi, result });
+        convo.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
+      }
+      continue;
+    }
+
+    const finalText = msg.content ?? "";
+    const lastOptionsTool = [...executedTools].reverse().find(
+      (t) => t.name === "propose_options" && (t.result as { ok?: boolean })?.ok,
+    );
+    const optionsResult = lastOptionsTool?.result as { options?: Array<{ label: string; send: string }>; question?: string } | undefined;
+    let quickOptions = optionsResult?.options ?? null;
+    let quickQuestion = optionsResult?.question ?? null;
+    if (!quickOptions || quickOptions.length === 0) {
+      const synth = synthesizeOptionsFromProse(finalText);
+      if (synth) { quickOptions = synth.options; quickQuestion = synth.question; }
+    }
+
+    await supa.from("chat_messages").insert({
+      id: assistantMessageId, project_id: projectId, role: "assistant", content: finalText,
+      metadata: {
+        model, effective_model: lastFb.effectiveModel, fallback: lastFb.fallback, tools: executedTools,
+        ...(quickOptions ? { options: quickOptions, question: quickQuestion } : {}),
+      },
+    });
+    return;
+  }
+  throw new Error("Too many tool-call rounds");
+}
+
 // ---------- Main handler ----------
 // The conversation runs as either:
 //   - "sync"        (legacy): client awaits the full reply over HTTP
