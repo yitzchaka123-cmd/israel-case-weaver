@@ -8,9 +8,11 @@ export const Route = createFileRoute("/projects/$projectId")({
 });
 
 function ProjectRoute() {
-  const { session, loading } = useAuth();
+  const { session, loading, accessStatus } = useAuth();
   const { projectId } = Route.useParams();
   if (loading) return null;
   if (!session) return <Navigate to="/login" />;
+  if (accessStatus !== "approved" && accessStatus !== "unknown") return <Navigate to="/pending" />;
+  if (accessStatus === "unknown") return null;
   return <AppShell><ProjectWorkspace projectId={projectId} /></AppShell>;
 }

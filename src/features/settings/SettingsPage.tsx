@@ -13,12 +13,13 @@ import { UsageDashboard } from "./UsageDashboard";
 import { GeminiConnection } from "./GeminiConnection";
 import { AssistantTweaksPanel } from "./AssistantTweaksPanel";
 import { AssistantPlaybookPanel } from "./AssistantPlaybookPanel";
+import { TeamAccessPanel } from "./TeamAccessPanel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LOGIC_FLOW_MODELS, LOGIC_FLOW_MODEL_KEY, LOGIC_FLOW_MODEL_DEFAULT } from "@/features/project/CanvasSection";
 import { Textarea } from "@/components/ui/textarea";
 
 export function SettingsPage() {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const { theme, setTheme } = useTheme();
   const fileInput = useRef<HTMLInputElement>(null);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
@@ -253,6 +254,15 @@ export function SettingsPage() {
         <Section title="API keys" desc="Manage and test all API keys this workspace uses to call AI providers.">
           <ApiKeyManager />
         </Section>
+
+        {isAdmin && (
+          <Section
+            title="Team access"
+            desc="Control who can sign in. Create invite codes for new users, then approve them once they sign in with Google."
+          >
+            <TeamAccessPanel />
+          </Section>
+        )}
 
         <div className="flex justify-end pt-2">
           <Button onClick={save} className="shadow-glow">Save settings</Button>
