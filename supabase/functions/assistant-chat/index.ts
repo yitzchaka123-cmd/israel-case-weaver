@@ -11,6 +11,14 @@ import {
   renderPhase1OrderSentence,
   renderCanonicalVocabBlock,
   renderRealismParagraphs,
+  renderIdentityBlock,
+  renderContentRulesBlock,
+  renderDesignSkeletonLine,
+  renderDocModeButtonsBlock,
+  renderLogicGateRefusal,
+  renderCatalogsBlock,
+  renderPhaseEnumComment,
+  getPhaseEnum,
   type Playbook,
 } from "../_shared/assistant-playbook.ts";
 
