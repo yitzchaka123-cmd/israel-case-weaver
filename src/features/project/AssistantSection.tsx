@@ -1132,7 +1132,7 @@ function GeneratedAssetsStrip({ tools, onOpenAsset }: { tools: ToolCall[]; onOpe
 
 
 
-function ToolReceipts({ tools }: { tools: ToolCall[] }) {
+function ToolReceipts({ tools, onOpenAsset }: { tools: ToolCall[]; onOpenAsset?: (asset: LightboxAsset) => void }) {
   const [open, setOpen] = useState(false);
   const okCount = tools.filter((t) => t.result.ok).length;
   const failCount = tools.length - okCount;
@@ -1197,6 +1197,48 @@ function ToolReceipts({ tools }: { tools: ToolCall[] }) {
                       hebrewPreview={t.result.hebrew_preview}
                       imageUrl={t.result.image_url}
                       documentId={t.result.id}
+                      onOpenAsset={onOpenAsset}
+                    />
+                  </div>
+                </li>
+              );
+            }
+
+            // Inline image receipts for suspect / envelope when their tool
+            // call returned a thumbnail/cover URL — saves the user a tab hop
+            // and links straight to the prompt textarea.
+            if ((t.name === "add_suspect" || t.name === "update_suspect") && t.result.ok && (t.result.thumbnail_url || t.result.alt_thumbnail_url)) {
+              const url = t.result.thumbnail_url ?? t.result.alt_thumbnail_url!;
+              return (
+                <li key={i} className="flex items-start gap-2">
+                  <span className="mt-1 text-accent-foreground/80"><CheckCircle2 className="h-3.5 w-3.5" /></span>
+                  <div className="flex-1 min-w-0">
+                    <ImageReceipt
+                      imageUrl={url}
+                      title={t.result.message}
+                      subtitle="Suspect thumbnail"
+                      destTab="suspects"
+                      destLabel="Open in Suspects"
+                      targetId={t.result.id}
+                      onOpenAsset={onOpenAsset}
+                    />
+                  </div>
+                </li>
+              );
+            }
+            if ((t.name === "add_envelope" || t.name === "update_envelope") && t.result.ok && t.result.cover_image_url) {
+              return (
+                <li key={i} className="flex items-start gap-2">
+                  <span className="mt-1 text-accent-foreground/80"><CheckCircle2 className="h-3.5 w-3.5" /></span>
+                  <div className="flex-1 min-w-0">
+                    <ImageReceipt
+                      imageUrl={t.result.cover_image_url}
+                      title={t.result.message}
+                      subtitle="Envelope cover"
+                      destTab="envelopes"
+                      destLabel="Open in Envelopes"
+                      targetId={t.result.id}
+                      onOpenAsset={onOpenAsset}
                     />
                   </div>
                 </li>
