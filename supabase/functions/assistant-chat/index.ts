@@ -156,6 +156,13 @@ When you offer the user a choice between 2–6 short, distinct, mutually-exclusi
 Do NOT call \`propose_options\` for open-ended questions ("describe the setting", "write the summary"), free-text answers, or when you're listing >6 items.
 Each option's \`label\` is the button text the user sees (keep it short — under ~60 chars). \`send\` is the message that gets sent on their behalf when they click — usually identical to the label, or a more explicit version like "Option 2: 1980s Tel Aviv noir".
 
+ONE-QUESTION-PER-TURN RULE (HARD ENFORCEMENT)
+Each assistant turn may ask AT MOST ONE pick-from-buttons question. NEVER bundle multiple choice questions into a single message (e.g. "Pick a mystery type… and also pick a genre… and also pick a difficulty"). The UI can only render quick-reply buttons for ONE \`propose_options\` call per message — every additional question you tack on becomes a numbered list with NO buttons, which silently breaks the flow and forces the user to type. Even if the next 2–3 setup steps feel obvious, ask them STRICTLY one at a time:
+  • Turn N: ask only about mystery_type → wait for the user's pick → call update_project.
+  • Turn N+1: ask only about genre → wait → update_project.
+  • Turn N+2: ask only about difficulty → wait → update_project.
+You may still mention upcoming questions in passing ("After this we'll pick the genre."), but you must not present them as numbered options or call \`propose_options\` for them in the same turn. Treat this as inviolable for setup fields (title, subtitle, mystery_type, genre, year, difficulty, player_role, case_goal, setting, selling_point, target_doc_count) and for any other situation where you would otherwise stack two button-style questions.
+
 ${renderCanonicalVocabBlock(playbook)}
 
 TOOL-CALL-BEFORE-PROSE RULE (HARD ENFORCEMENT — these are not soft suggestions)
@@ -255,6 +262,7 @@ REMINDER (read this before every reply):
 • Any numbered 2–6 mutually-exclusive choice list in your prose → ALSO call \`propose_options\` in the same turn.
 • Any confirmed Case Identity field (title, subtitle, mystery_type, genre, year, difficulty, player_role, case_goal, setting, selling_point, target_doc_count, phase) → ALSO call \`update_project\` in the same turn, BEFORE the prose.
 • USER-ENTERED FIELDS RULE: For every field listed under USER-EDITED FIELDS above, your first action is to acknowledge it out loud (e.g. "I see you already wrote the subtitle as '<value>' — keeping it.") and then either ask if the user wants you to refine it or skip past it to the next unfilled field. Do NOT silently overwrite a user-entered field with \`update_project\`, and do NOT propose options/numbered alternatives for a field the user already filled. The only exception is if the user explicitly asks you to rewrite or replace it.
+• ONE-QUESTION-PER-TURN: ask AT MOST one pick-from-buttons question per turn. If you find yourself writing two questions ("now pick mystery_type… then pick genre…"), STOP, delete the second one, ask only the first, and ask the next one in your following turn after the user answers.
 Skipping either tool means the UI silently breaks for the user.`;
 }
 
@@ -442,7 +450,7 @@ const BASE_TOOLS = [
     function: {
       name: "propose_options",
       description:
-        "Render quick-reply buttons under your message so the user can pick an answer with one click instead of typing. Use ONLY for 2–6 short, distinct, mutually-exclusive choices (picking a title from a list, picking difficulty, approve/revise/restart, yes/no/skip, picking which suspect to flesh out next, etc.). Do NOT use for open-ended prompts. The buttons appear in addition to your text — still write the prose explanation.",
+        "Render quick-reply buttons under your message so the user can pick an answer with one click instead of typing. Use ONLY for 2–6 short, distinct, mutually-exclusive choices (picking a title from a list, picking difficulty, approve/revise/restart, yes/no/skip, picking which suspect to flesh out next, etc.). Do NOT use for open-ended prompts. The buttons appear in addition to your text — still write the prose explanation. CRITICAL: only ONE propose_options call per assistant turn — do NOT bundle a mystery-type question and a genre question in the same message. Ask one, wait for the answer, then ask the next.",
       parameters: {
         type: "object",
         properties: {
