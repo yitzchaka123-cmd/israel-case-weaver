@@ -145,12 +145,20 @@ Deno.serve(async (req) => {
         if (!OPENAI_API_KEY) {
           return new Response(JSON.stringify({ error: "OpenAI API key not configured" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
-        // Map print size → closest gpt-image-1 supported size
+        // Map print size → model-appropriate dimensions.
+        // gpt-image-2 accepts arbitrary sizes (edges multiples of 16, ratio ≤ 3:1,
+        // total pixels 0.6M–8.3M) so we use a truer A4 (1:√2) ratio at 1448x2048.
+        // gpt-image-1 only accepts a fixed set, so it keeps 1024x1536 / 1536x1024.
         const ps = (doc.print_size ?? "A4").toLowerCase();
         const portraitSizes = ["a3", "a4", "a5", "a6"];
-        const size = portraitSizes.includes(ps) ? "1024x1536"
-          : ps === "business card" ? "1536x1024"
-          : "1024x1536";
+        const isGptImage2 = model === "gpt-image-2";
+        const size = isGptImage2
+          ? (portraitSizes.includes(ps) ? "1448x2048"
+            : ps === "business card" ? "2048x1448"
+            : "1448x2048")
+          : (portraitSizes.includes(ps) ? "1024x1536"
+            : ps === "business card" ? "1536x1024"
+            : "1024x1536");
 
         // Default to "medium" — gpt-image-2 at "high" can take ~2 min and exceed
         // the edge runtime budget. User can still opt into "high" explicitly.
@@ -162,20 +170,30 @@ Deno.serve(async (req) => {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 110_000);
 
+        // NOTE: do NOT add `background` or `input_fidelity` to this body —
+        // gpt-image-2 returns a 400 for either of those parameters. Defensive
+        // guard: build the body explicitly and only add `moderation` for gpt-image-2.
+        const openaiBody: Record<string, unknown> = {
+          model,
+          prompt: imgPrompt,
+          size,
+          quality,
+          n: 1,
+          output_format: "jpeg",
+          output_compression: 90,
+        };
+        if (isGptImage2) {
+          // Mystery / detective prompts (ransom notes, crime-scene props, autopsy
+          // reports) often trip default moderation. gpt-image-2 supports "low".
+          openaiBody.moderation = "low";
+        }
+
         let oResp: Response;
         try {
           oResp = await fetch("https://api.openai.com/v1/images/generations", {
             method: "POST",
             headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
-            body: JSON.stringify({
-              model,
-              prompt: imgPrompt,
-              size,
-              quality,
-              n: 1,
-              output_format: "jpeg",
-              output_compression: 90,
-            }),
+            body: JSON.stringify(openaiBody),
             signal: controller.signal,
           });
         } catch (e) {
@@ -200,7 +218,10 @@ Deno.serve(async (req) => {
           const reqIdSuffix = reqId ? ` (request id: ${reqId})` : "";
 
           if (oResp.status === 429) {
-            return new Response(JSON.stringify({ error: `OpenAI rate limit. ${realMessage}${reqIdSuffix}` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            const tierHint = isGptImage2
+              ? ` Tier 1 OpenAI accounts are limited to 5 images/min on gpt-image-2. Wait ~60s and retry, or upgrade your OpenAI tier.`
+              : "";
+            return new Response(JSON.stringify({ error: `OpenAI rate limit. ${realMessage}${tierHint}${reqIdSuffix}` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
           }
           if (oResp.status === 403 && /verif/i.test(realMessage)) {
             return new Response(JSON.stringify({
