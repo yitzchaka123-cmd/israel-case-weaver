@@ -521,7 +521,7 @@ function ShotPromptCard({ shot, busy, onChange, onGenerate, onPush }: { shot: Sh
 function ShotBoardCard({ shot, busy, onGenerate }: { shot: Shot; busy: boolean; onGenerate: () => void }) {
   return (
     <div className="rounded-lg border bg-card overflow-hidden">
-      <div className="aspect-video bg-muted relative">
+      <div className="group aspect-video bg-muted relative">
         {shot.image_url ? (
           <img src={shot.image_url} alt={`Shot ${shot.n}`} className="w-full h-full object-cover" />
         ) : (
@@ -533,6 +533,19 @@ function ShotBoardCard({ shot, busy, onGenerate }: { shot: Shot; busy: boolean; 
         <div className={`absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded text-[10px] font-medium ${shot.engine === "sora" ? "bg-purple-500/90 text-white" : "bg-teal-500/90 text-white"}`}>
           {shot.engine.toUpperCase()}
         </div>
+        {shot.image_url && (shot.image_effective_model || shot.image_requested_model) && (
+          <div className="absolute bottom-1.5 right-1.5">
+            <AiOriginBadge
+              position="inline"
+              hoverOnly
+              info={{
+                requested: shot.image_requested_model ?? null,
+                effective: shot.image_effective_model ?? null,
+                fallback: shot.image_fallback ?? "none",
+              }}
+            />
+          </div>
+        )}
       </div>
       <div className="p-2 space-y-1.5">
         <div className="text-[10px] text-muted-foreground line-clamp-3 font-mono leading-relaxed">{shot.prompt || "—"}</div>
