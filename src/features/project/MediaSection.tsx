@@ -9,7 +9,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Upload, Wand2, Loader2, Trash2, Image as ImageIcon, Video, Film, Newspaper, Package, ExternalLink, Sparkles, FileText, RefreshCw } from "lucide-react";
 import { PromptWriterModelPicker, getStoredWriterModel } from "@/components/PromptWriterModelPicker";
-import { getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
+import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { toast } from "sonner";
 
 interface MediaAsset {
@@ -168,7 +168,7 @@ function CategoryPanel({ projectId, category, items }: { projectId: string; cate
     if (!prompt.trim()) return toast.error("Add a prompt first (or click Generate Prompt)");
     setGenerating(true);
     try {
-      const modelOverride = getStoredImageModel("media", "chatgpt-image");
+      const modelOverride = getStoredImageModel("media", "chatgpt-image-2");
       const quality = getStoredImageQuality("media", "medium");
       const resp = await callEdge("generate-image", { projectId, category, prompt, title, modelOverride, quality });
       if (!resp.ok) {
@@ -264,10 +264,15 @@ function CategoryPanel({ projectId, category, items }: { projectId: string; cate
             <Upload className="h-4 w-4" /> Upload {isVideo ? "video" : "file"}
           </Button>
           {isImage && (
-            <Button className="gap-2" onClick={handleGenerateImage} disabled={generating || !prompt.trim()}>
-              {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-              Generate image
-            </Button>
+            <>
+              <div className="w-56">
+                <ImageModelPicker surface="media" defaultModel="chatgpt-image-2" />
+              </div>
+              <Button className="gap-2" onClick={handleGenerateImage} disabled={generating || !prompt.trim()}>
+                {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+                Generate image
+              </Button>
+            </>
           )}
           {!isImage && prompt.trim() && (
             <Button
@@ -406,7 +411,7 @@ function AssetDialog({
     if (!editPrompt.trim()) return toast.error("Prompt is empty");
     setRetrying(true);
     try {
-      const modelOverride = getStoredImageModel("media", "chatgpt-image");
+      const modelOverride = getStoredImageModel("media", "chatgpt-image-2");
       const quality = getStoredImageQuality("media", "medium");
       const resp = await callEdge("generate-image", {
         projectId,

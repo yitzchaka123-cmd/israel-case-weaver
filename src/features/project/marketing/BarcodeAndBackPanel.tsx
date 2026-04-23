@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2, Barcode as BarcodeIcon, Image as ImageIcon, RefreshCw, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { ean13ToPngBlob, ean13ToSvg, generateEan13 } from "./ean13";
-import { getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
+import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { useProjectNotifications } from "@/features/project/notifications/useProjectNotifications";
 
 interface Marketing {
@@ -141,8 +141,8 @@ LAYOUT REQUIREMENTS:
 - Reserve clean negative space across the central body region for paragraph copy.
 - No text rendered into the artwork itself — typography will be added later.`;
 
-      const modelOverride = getStoredImageModel("media", "chatgpt-image");
-      const quality = getStoredImageQuality("media", "medium");
+      const modelOverride = getStoredImageModel("marketing-back", "chatgpt-image-2");
+      const quality = getStoredImageQuality("marketing-back", "medium");
       const resp = await callEdge("generate-image", {
         projectId,
         category: "marketing-back",
@@ -261,6 +261,7 @@ LAYOUT REQUIREMENTS:
               </span>
             )}
           </div>
+          <ImageModelPicker surface="marketing-back" defaultModel="chatgpt-image-2" />
           <Button
             onClick={handleGenerateBack}
             disabled={generatingBack || !barcodeReady || !copyReady}
