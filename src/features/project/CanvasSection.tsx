@@ -689,11 +689,7 @@ function NodeDetailPanel({
     },
   });
 
-  useEffect(() => {
-    setExplanation(null);
-  }, [nodeId]);
-
-  const explain = async () => {
+  const explain = useCallback(async () => {
     if (!nodeId) return;
     setExplaining(true);
     try {
@@ -716,7 +712,15 @@ function NodeDetailPanel({
     } finally {
       setExplaining(false);
     }
-  };
+  }, [nodeId, modelOverride]);
+
+  useEffect(() => {
+    setExplanation(null);
+    if (nodeId && !autoExplained.current.has(nodeId)) {
+      autoExplained.current.add(nodeId);
+      explain();
+    }
+  }, [nodeId, explain]);
 
   const jumpToDocuments = (docId?: string) => {
     window.dispatchEvent(
