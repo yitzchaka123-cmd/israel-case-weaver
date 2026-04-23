@@ -22,9 +22,20 @@ Deno.serve(async (req) => {
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state") ?? "";
   const error = url.searchParams.get("error");
+  const errorDescription = url.searchParams.get("error_description");
   const [userId, returnToEnc] = state.split("|");
   const returnTo = returnToEnc ? decodeURIComponent(returnToEnc) : "/settings";
   const origin = pickOrigin(req);
+
+  console.log("[drive-oauth-callback] received", {
+    hasCode: !!code,
+    hasState: !!state,
+    userId: userId || null,
+    googleError: error,
+    googleErrorDescription: errorDescription,
+    origin,
+  });
+
   const back = (status: "connected" | "error", detail?: string) => {
     if (!origin) {
       return new Response(JSON.stringify({ status, detail }), {
@@ -36,7 +47,7 @@ Deno.serve(async (req) => {
     return Response.redirect(target, 302);
   };
 
-  if (error) return back("error", error);
+  if (error) return back("error", errorDescription ? `${error}: ${errorDescription}` : error);
   if (!code || !userId) return back("error", "missing_code_or_state");
 
   try {
@@ -57,7 +68,13 @@ Deno.serve(async (req) => {
       body,
     });
     if (!tokenR.ok) {
-      return back("error", `token_exchange:${tokenR.status}`);
+      const errBody = await tokenR.text();
+      console.error("[drive-oauth-callback] token exchange failed", {
+        status: tokenR.status,
+        body: errBody,
+        redirectUri,
+      });
+      return back("error", `token_exchange:${tokenR.status}:${errBody.slice(0, 200)}`);
     }
     const tok = await tokenR.json();
     const accessToken = tok.access_token as string;
