@@ -820,10 +820,13 @@ async function executeTool(
       const { data, error } = await supa
         .from("suspects")
         .insert({ ...args, project_id: projectId, created_by_message_id: messageId })
-        .select("id, name")
+        .select("id, name, thumbnail_url, alt_thumbnail_url")
         .single();
       if (error) throw error;
-      return { ok: true, message: `Suspect created: ${data.name}`, id: data.id };
+      const extras: Record<string, unknown> = {};
+      if (data.thumbnail_url) extras.thumbnail_url = data.thumbnail_url;
+      if (data.alt_thumbnail_url) extras.alt_thumbnail_url = data.alt_thumbnail_url;
+      return { ok: true, message: `Suspect created: ${data.name}`, id: data.id, ...extras };
     }
     if (name === "add_document") {
       // Server-side gate: refuse to create documents until the Logic Flow has
