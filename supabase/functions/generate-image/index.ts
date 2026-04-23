@@ -78,11 +78,13 @@ function handleImageGenError(e: unknown, headers: Record<string, string>): Respo
 // target = "media" (default, inserts media_assets row)
 //        | "suspect-thumbnail" | "suspect-alt-thumbnail"  (updates suspects row)
 //        | "project-cover" (updates projects.cover_image_url)
+//        | "envelope" (updates envelopes.cover_image_url for the given targetId)
 type Target =
   | "media"
   | "suspect-thumbnail"
   | "suspect-alt-thumbnail"
-  | "project-cover";
+  | "project-cover"
+  | "envelope";
 
 type Quality = "low" | "medium" | "high";
 
@@ -93,7 +95,7 @@ interface Body {
   category?: string;
   modelOverride?: string;
   target?: Target;
-  targetId?: string; // suspect id when target is suspect-*
+  targetId?: string; // suspect id when target is suspect-*; envelope id when target is envelope
   aspect?: "portrait" | "landscape" | "square";
   quality?: Quality;
 }
@@ -138,8 +140,9 @@ Deno.serve(async (req) => {
           status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      // Suspect thumbnails are 3:4 portrait; covers are 3:4 portrait too; media defaults landscape.
-      const ar = aspect ?? (target.startsWith("suspect") || target === "project-cover" ? "portrait" : "landscape");
+      // Suspect thumbnails are 3:4 portrait; covers are 3:4 portrait too;
+      // envelopes are 3:4 portrait (front of envelope); media defaults landscape.
+      const ar = aspect ?? (target.startsWith("suspect") || target === "project-cover" || target === "envelope" ? "portrait" : "landscape");
       const size = ar === "portrait" ? "1024x1536" : ar === "landscape" ? "1536x1024" : "1024x1024";
       // Default to "medium" — per OpenAI docs this is the latency/quality sweet spot.
       // "high" can take up to 2 min and risks exceeding the edge function timeout.
@@ -252,6 +255,9 @@ Deno.serve(async (req) => {
     } else if (target === "project-cover") {
       bucket = "covers";
       path = `${projectId}/${Date.now()}.${ext}`;
+    } else if (target === "envelope") {
+      bucket = "media";
+      path = `${projectId}/envelopes/${targetId ?? "x"}-${Date.now()}.${ext}`;
     }
 
     const { error: upErr } = await supa.storage.from(bucket).upload(path, bytes, { contentType: mime, upsert: true });
@@ -284,6 +290,8 @@ Deno.serve(async (req) => {
       await supa.from("suspects").update({ alt_thumbnail_url: pub.publicUrl }).eq("id", targetId);
     } else if (target === "project-cover") {
       await supa.from("projects").update({ cover_image_url: pub.publicUrl }).eq("id", projectId);
+    } else if (target === "envelope" && targetId) {
+      await supa.from("envelopes").update({ cover_image_url: pub.publicUrl, status: "review" }).eq("id", targetId);
     }
 
     await supa.from("prompts").insert({

@@ -239,6 +239,24 @@ export function AssistantPlaybookPanel({}: Props = {}) {
               className="text-sm"
             />
           </div>
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">
+              Envelope design brief template
+            </Label>
+            <p className="text-[11px] text-muted-foreground -mt-1">
+              Used as the seed when "Draft prompt" is clicked on an envelope row. The model
+              customises it per envelope (label, task, era, genre) before generating the mock-up.
+            </p>
+            <Textarea
+              rows={10}
+              value={playbook.envelopes.design_brief_template}
+              onChange={(e) =>
+                update("envelopes", { ...playbook.envelopes, design_brief_template: e.target.value })
+              }
+              className="text-xs font-mono leading-relaxed"
+              placeholder="GOAL · OUTPUT FORMAT · VISUAL STYLE · LAYOUT · TYPOGRAPHY · AUTHENTICITY"
+            />
+          </div>
         </div>
       </Card>
 
