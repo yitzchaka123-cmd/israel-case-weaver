@@ -6,11 +6,12 @@ import ReactFlow, {
   MarkerType,
 } from "reactflow";
 import "reactflow/dist/style.css";
+import dagre from "dagre";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Plus, Wand2, CheckCircle2, Loader2, ScrollText, Sparkles, FileText, ExternalLink, ChevronDown, AlertTriangle, X } from "lucide-react";
+import { Plus, Wand2, CheckCircle2, Loader2, ScrollText, Sparkles, FileText, ExternalLink, ChevronDown, AlertTriangle, X, LayoutGrid } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -204,6 +205,107 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
     if (error) toast.error(error.message);
   };
 
+  const [arranging, setArranging] = useState(false);
+
+  // Auto-arrange the current board.
+  // - If there are edges, run a directed dagre layout (left→right) so
+  //   connected nodes flow naturally and parents sit before children.
+  // - If there are no edges (e.g. final board before documents are linked,
+  //   or a fresh logic board), tile the nodes into a clean grid grouped
+  //   loosely by node_type so similar nodes cluster together.
+  const arrangeNodes = useCallback(async () => {
+    if (arranging) return;
+    if (nodes.length === 0) {
+      toast.info("No nodes to arrange yet.");
+      return;
+    }
+    setArranging(true);
+    try {
+      const NODE_W = 200;
+      const NODE_H = 90;
+      const positions = new Map<string, { x: number; y: number }>();
+
+      if (edges.length > 0) {
+        const g = new dagre.graphlib.Graph();
+        g.setGraph({
+          rankdir: "LR",
+          nodesep: 60,
+          ranksep: 120,
+          marginx: 40,
+          marginy: 40,
+        });
+        g.setDefaultEdgeLabel(() => ({}));
+
+        for (const n of nodes) {
+          g.setNode(n.id, { width: NODE_W, height: NODE_H });
+        }
+        for (const e of edges) {
+          if (e.source && e.target) g.setEdge(e.source, e.target);
+        }
+        dagre.layout(g);
+
+        for (const n of nodes) {
+          const p = g.node(n.id);
+          if (p) {
+            // dagre returns center coords; React Flow expects top-left.
+            positions.set(n.id, { x: p.x - NODE_W / 2, y: p.y - NODE_H / 2 });
+          }
+        }
+      } else {
+        // Grid layout grouped by node type for a clean default look.
+        const groups = new Map<string, string[]>();
+        for (const n of nodes) {
+          const t = (n.data as { type?: string } | undefined)?.type ?? "note";
+          if (!groups.has(t)) groups.set(t, []);
+          groups.get(t)!.push(n.id);
+        }
+        const COLS = Math.min(5, Math.max(3, Math.ceil(Math.sqrt(nodes.length))));
+        const STEP_X = NODE_W + 60;
+        const STEP_Y = NODE_H + 70;
+        let row = 0;
+        for (const [, ids] of groups) {
+          let col = 0;
+          for (const id of ids) {
+            positions.set(id, { x: 60 + col * STEP_X, y: 60 + row * STEP_Y });
+            col += 1;
+            if (col >= COLS) {
+              col = 0;
+              row += 1;
+            }
+          }
+          // Move to next row when finishing a group, so groups don't bleed together.
+          if (col !== 0) row += 1;
+        }
+      }
+
+      // Optimistic local update so the layout snaps immediately.
+      setNodes((ns) =>
+        ns.map((n) => {
+          const p = positions.get(n.id);
+          return p ? { ...n, position: p } : n;
+        }),
+      );
+
+      // Persist in parallel.
+      const updates = Array.from(positions.entries()).map(([id, p]) =>
+        supabase.from("canvas_nodes").update({ position_x: p.x, position_y: p.y }).eq("id", id),
+      );
+      const results = await Promise.all(updates);
+      const failed = results.filter((r) => r.error).length;
+      if (failed > 0) {
+        toast.error(`Arranged, but ${failed} node${failed === 1 ? "" : "s"} failed to save position.`);
+      } else {
+        toast.success(
+          edges.length > 0
+            ? `Arranged ${nodes.length} nodes by flow.`
+            : `Arranged ${nodes.length} nodes in a grid.`,
+        );
+      }
+    } finally {
+      setArranging(false);
+    }
+  }, [nodes, edges, arranging, setNodes]);
+
   const generateLogicFlow = async (opts?: { useExistingSummary?: boolean }) => {
     if (board !== "logic") {
       toast.error("Switch to the Logic Flow board first");
@@ -311,6 +413,26 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
             ))}
           </DropdownMenuContent>
         </DropdownMenu>
+
+        <Button
+          variant="outline"
+          className="gap-2 h-9"
+          onClick={arrangeNodes}
+          disabled={arranging || nodes.length === 0}
+          title={
+            edges.length > 0
+              ? "Auto-arrange nodes by their connections (left → right)"
+              : "Auto-arrange nodes into a clean grid (no connections yet)"
+          }
+        >
+          {arranging ? <Loader2 className="h-4 w-4 animate-spin" /> : <LayoutGrid className="h-4 w-4" />}
+          Arrange
+          {nodes.length > 0 && (
+            <span className="ml-0.5 text-[10px] text-muted-foreground font-normal">
+              · {edges.length > 0 ? "by flow" : "grid"}
+            </span>
+          )}
+        </Button>
 
         {board === "logic" && (
           <>
