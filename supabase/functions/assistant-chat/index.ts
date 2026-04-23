@@ -369,6 +369,7 @@ const TOOLS = [
         additionalProperties: false,
       },
     },
+  },
   {
     type: "function",
     function: {
