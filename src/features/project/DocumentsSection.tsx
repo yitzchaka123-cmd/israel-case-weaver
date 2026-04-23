@@ -458,17 +458,32 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
                   {genText ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
                   Generate Hebrew content
                 </Button>
-                <div className="flex items-center gap-1.5 ml-auto">
+                <div className="flex items-center gap-1.5 ml-auto flex-wrap justify-end">
                   <ImageModelPicker
                     surface="document"
                     defaultModel="chatgpt-image-2"
                   />
+                  <Select value={imageQuality} onValueChange={(v) => setImageQuality(v as "low" | "medium" | "high")}>
+                    <SelectTrigger className="h-8 w-[110px] text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="low">Low (fastest)</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="high">High (slow)</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <Button size="sm" variant="outline" className="gap-2" onClick={() => generate("image")} disabled={genImage}>
                     {genImage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
                     Generate document image
                   </Button>
                 </div>
               </div>
+              {selectedImageModel === "chatgpt-image-2" && (
+                <div className="mb-2 text-[11px] text-muted-foreground rounded-md border border-warning/30 bg-warning/5 px-2.5 py-1.5" dir="ltr">
+                  <strong className="text-warning">Heads up:</strong> <code>chatgpt-image-2</code> requires a <em>verified OpenAI organization</em> and is slower at High quality. If generation fails or times out, switch the model to <strong>ChatGPT Image 1</strong> or <strong>Nano Banana</strong>, or drop quality to Medium.
+                </div>
+              )}
               <Textarea rows={6} value={draft.hebrew_content ?? ""} onChange={(e) => update({ hebrew_content: e.target.value })} dir="rtl" className="text-right" />
             </FieldBlock>
           </div>
