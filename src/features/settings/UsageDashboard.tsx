@@ -119,7 +119,7 @@ function OpenAiCard({ usage, loading }: { usage?: OpenAiUsage; loading: boolean 
           </Button>
         </div>
         <div className="flex items-start gap-2 rounded-lg bg-muted/60 p-3 text-xs text-muted-foreground">
-          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-500" />
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-destructive" />
           <div>
             <div className="font-medium text-foreground mb-1">
               {usage.needsScope ? "Admin key required" : "Couldn't load OpenAI usage"}
