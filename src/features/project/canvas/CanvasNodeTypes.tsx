@@ -9,6 +9,7 @@ import {
   FileText,
   Trophy,
   StickyNote,
+  Lightbulb,
   type LucideIcon,
 } from "lucide-react";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
@@ -22,6 +23,7 @@ export type CanvasNodeType =
   | "envelope"
   | "document"
   | "solution"
+  | "hint"
   | "note";
 
 type Meta = {
