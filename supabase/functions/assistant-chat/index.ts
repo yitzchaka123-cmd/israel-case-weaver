@@ -2,6 +2,17 @@
 // Uses Lovable AI Gateway (Gemini + GPT-5). Tools mutate project state server-side.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { chatCompletions } from "../_shared/ai-router.ts";
+import {
+  PLAYBOOK_DEFAULTS,
+  resolvePlaybook,
+  renderSuspectCountsLine,
+  renderHintsLine,
+  renderEnvelopesLine,
+  renderPhase1OrderSentence,
+  renderCanonicalVocabBlock,
+  renderRealismParagraphs,
+  type Playbook,
+} from "../_shared/assistant-playbook.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
