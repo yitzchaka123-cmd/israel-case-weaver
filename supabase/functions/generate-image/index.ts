@@ -158,8 +158,10 @@ Deno.serve(async (req) => {
       const ar = aspect ?? (target.startsWith("suspect") || target === "project-cover" || target === "envelope" ? "portrait" : "landscape");
       const size = ar === "portrait" ? "1024x1536" : ar === "landscape" ? "1536x1024" : "1024x1024";
       // Default to "medium" — per OpenAI docs this is the latency/quality sweet spot.
-      // "high" can take up to 2 min and risks exceeding the edge function timeout.
-      const q: Quality = quality ?? "medium";
+      // "high" reliably exceeds our 110s edge timeout for gpt-image-2, so we
+      // downgrade it to "medium" server-side rather than letting the request 504.
+      const requested: Quality = quality ?? "medium";
+      const q: Quality = requested === "high" ? "medium" : requested;
 
       // 110 s abort: edge function platform timeout is ~150s — give us headroom
       // to translate the abort into a clean 504 instead of being killed.
