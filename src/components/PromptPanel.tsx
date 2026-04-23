@@ -51,6 +51,10 @@ export function PromptPanel({
   useEffect(() => { setPrompt(initialPrompt ?? ""); }, [initialPrompt]);
 
   const writePrompt = async () => {
+    if (!projectId) {
+      toast.error("Project not loaded yet — try again in a moment");
+      return;
+    }
     setDrafting(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
