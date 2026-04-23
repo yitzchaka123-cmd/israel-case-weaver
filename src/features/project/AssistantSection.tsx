@@ -61,13 +61,14 @@ const STARTERS = [
   "Draft the suspect list and deduction structure.",
 ];
 
-export function AssistantSection({ projectId, phase }: { projectId: string; phase: string }) {
+export function AssistantSection({ projectId, phase, focusMessageId }: { projectId: string; phase: string; focusMessageId?: string | null }) {
   const qc = useQueryClient();
   const { user } = useAuth();
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const dictationBaseRef = useRef("");
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
   const { data: tweakCount = 0 } = useQuery({
     queryKey: ["assistant-tweaks-count", user?.id],
