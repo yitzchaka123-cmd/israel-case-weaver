@@ -1235,6 +1235,19 @@ async function processConversation(
   }
 
   const assistantMessageId = crypto.randomUUID();
+  // Placeholder INSERT so any tool call that stamps `created_by_message_id`
+  // (documents, suspects, canvas_nodes) satisfies its FK to chat_messages
+  // BEFORE the row exists in its final form. We update content+metadata at
+  // the end. Client hides bubbles where in_progress=true && content===""
+  // until the realtime UPDATE arrives.
+  await supa.from("chat_messages").insert({
+    id: assistantMessageId,
+    project_id: projectId,
+    role: "assistant",
+    content: "",
+    metadata: { in_progress: true, model },
+  });
+
   const convo: Array<Record<string, unknown>> = [{ role: "system", content: systemPrompt }, ...messages];
   const executedTools: Array<{ name: string; args?: Record<string, unknown>; result: unknown }> = [];
   const TOOLS = buildTools(playbook);
