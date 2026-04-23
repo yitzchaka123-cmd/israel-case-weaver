@@ -53,6 +53,7 @@ export type CaseNodeData = {
   type?: string;
   color?: string | null;
   description?: string | null;
+  createdByMessageId?: string | null;
 };
 
 /**
@@ -107,11 +108,14 @@ export function CaseNode({ data, selected }: NodeProps<CaseNodeData>) {
           <Icon className="h-3 w-3" strokeWidth={2.5} />
         </span>
         <span
-          className="text-[10px] font-semibold uppercase tracking-wider truncate"
+          className="text-[10px] font-semibold uppercase tracking-wider truncate flex-1"
           style={{ color: `color-mix(in oklab, ${accent} 75%, var(--color-foreground))` }}
         >
           {meta.label}
         </span>
+        {data.createdByMessageId && (
+          <AssistantOriginBadge messageId={data.createdByMessageId} label="" />
+        )}
       </div>
 
       {/* Body */}
