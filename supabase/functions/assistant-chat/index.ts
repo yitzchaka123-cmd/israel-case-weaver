@@ -11,6 +11,14 @@ import {
   renderPhase1OrderSentence,
   renderCanonicalVocabBlock,
   renderRealismParagraphs,
+  renderIdentityBlock,
+  renderContentRulesBlock,
+  renderDesignSkeletonLine,
+  renderDocModeButtonsBlock,
+  renderLogicGateRefusal,
+  renderCatalogsBlock,
+  renderPhaseEnumComment,
+  getPhaseEnum,
   type Playbook,
 } from "../_shared/assistant-playbook.ts";
 
@@ -106,26 +114,22 @@ function buildSystemPrompt(
     : "";
   return `You are the Mystery Studio Assistant — a professional creator of premium, printable Israeli detective / mystery games sold to Israeli audiences.
 
-IDENTITY & STYLE
-- Planning/editing conversation: English.
-- Final in-game content (titles, documents, hints, envelope text): Hebrew, grammatical, RTL-ready, immersive.
-- Premium realism, intelligence-style deduction, layered non-linear solvability. No fantasy. No external knowledge required.
-- Always set stories in Israeli environments with Israeli flavor.
+${renderIdentityBlock(playbook)}
 
-CONTENT RULES (strict)
-- No sexual content, no sex scandals.
-- No real politicians or army figures by name. Institutions like Mossad / Shabak are OK.
-- No single document may spoil the solution. Evidence must cross-reference.
+${renderContentRulesBlock(playbook)}
+
+${renderPhaseEnumComment(playbook)}
 
 WORKFLOW — proceed ONE STEP AT A TIME, WAIT FOR APPROVAL before advancing phases.
 ${renderPhase1OrderSentence(playbook)}
+${renderSuspectCountsLine(playbook)}
 Phase 2 Summary: English news-style summary of how the case is solved, layered evidence, balanced red herrings, fictional quoted evidence.
 Phase 3 Structure: suspects, clue sequence, red herrings, deduction logic, envelope flow. Output fits the node canvas.
 Phase 3.5 LOGIC FLOW (MANDATORY GATE before Phase 4):
 - Before producing ANY documents, the user MUST generate and approve a Logic Flow on the Canvas.
 - The Logic Flow board (clues → deductions → solution + red herrings) is what guarantees the case is solvable, layered, and consistent.
 - If \`solution_summary\` is empty OR \`logic_approved_at\` is null, you MUST refuse to call \`add_document\`. Instead, instruct the user (in 2–3 sentences):
-    "Before we generate documents, jump to the Canvas → Logic Flow board and click 'Generate logic flow'. Review the clues, red herrings and final solution it proposes, edit anything you want, then click 'Approve logic'. Once that solution summary is locked in, every document I write will be consistent with it."
+    ${renderLogicGateRefusal(playbook)}
 - After approval is in place, you may proceed to Phase 4.
 Phase 4 Documents: Doc 0 = contents; then randomized doc numbers, varied types & print sizes, Hebrew bodies. Interrogations must be long, realistic, with pauses & body language.
 
@@ -136,9 +140,7 @@ Each project remembers a \`doc_generation_mode\` choice that controls how aggres
   • "ask"     — after each add_document, ask the user "Generate this one now or save as draft?" with propose_options (two buttons: "Generate now" / "Save as draft, keep going"). On "Generate now", call generate_document_assets with mode "both".
 RULES:
 1. The FIRST time you enter Phase 4 in a project where \`doc_generation_mode\` is empty, BEFORE calling add_document, ask the user (with propose_options, 3 buttons) which mode they want — using these labels exactly:
-   1) "Drafts only — I'll generate myself"
-   2) "Full auto — generate text + image now"
-   3) "Ask me each time"
+${renderDocModeButtonsBlock(playbook)}
    Then call set_doc_generation_mode with the chosen mode ("drafts" / "auto" / "ask"). After that, follow the rules above without re-asking.
 2. If the user already told you in their brief which mode they want (e.g. "just write the prompts, I'll click generate", "go full auto", "do everything yourself"), SKIP the question and call set_doc_generation_mode directly with the inferred mode + a one-line confirmation.
 3. The user can switch modes any time. If they say "switch to drafts only" / "go full auto" / "ask me each time", call set_doc_generation_mode and acknowledge.
@@ -175,8 +177,10 @@ When the user references an EXISTING item — by name ("change Yossi's motive"),
 Pass ONLY the fields the user wants to change in the update tool — undefined keys are ignored, so partial edits won't wipe other columns. The receipt will say "Updated X: <name> (<changed-fields>)" so the user can immediately see what was touched.
 
 DESIGN INSTRUCTIONS RULES (CRITICAL — applies to EVERY add_document call)
-The \`design_instructions\` field is the visual brief for the image generator. It MUST be long, structured, and specific. Never leave it empty, never use one-line notes, never use generic placeholders. Format it with these sections, in this order:
-  GOAL · CRITICAL TEXT QUALITY RULES · OUTPUT FORMAT (size + DPI matching print_size) · VISUAL STYLE · LAYOUT (numbered, document-type specific) · TYPOGRAPHY · AUTHENTICITY RULES · EXACT HEBREW TEXT TO PLACE (mirror the Hebrew body verbatim — no paraphrasing) · ADDITIONAL REALISM DETAILS · FINAL INSTRUCTION
+The \`design_instructions\` field is the visual brief for the image generator. It MUST be long, structured, and specific. Never leave it empty, never use one-line notes, never use generic placeholders.
+${renderDesignSkeletonLine(playbook)}
+
+${renderCatalogsBlock(playbook)}
 
 ${renderRealismParagraphs(playbook)}
 
@@ -289,7 +293,7 @@ function synthesizeOptionsFromProse(text: string): { options: Array<{ label: str
 }
 
 // ---------- Tool definitions ----------
-const TOOLS = [
+const BASE_TOOLS = [
   {
     type: "function",
     function: {
@@ -580,6 +584,18 @@ const TOOLS = [
     },
   },
 ];
+
+// Build the tool list with the playbook-derived `phase` enum substituted in.
+function buildTools(playbook: Playbook): typeof BASE_TOOLS {
+  const phaseEnum = getPhaseEnum(playbook);
+  return BASE_TOOLS.map((tool) => {
+    if (tool.function?.name !== "update_project") return tool;
+    const cloned = JSON.parse(JSON.stringify(tool)) as typeof tool;
+    const props = (cloned.function.parameters as { properties?: Record<string, { enum?: string[] }> }).properties;
+    if (props?.phase) props.phase.enum = phaseEnum;
+    return cloned;
+  });
+}
 
 // ---------- Tool executor ----------
 // `messageId` is the chat_messages row this tool call is being attributed to.
@@ -1017,6 +1033,7 @@ Deno.serve(async (req) => {
       ...messages,
     ];
     const executedTools: Array<{ name: string; args?: Record<string, unknown>; result: unknown }> = [];
+    const TOOLS = buildTools(playbook);
 
     const MAX_ROUNDS = 8;
     for (let round = 0; round < MAX_ROUNDS; round++) {

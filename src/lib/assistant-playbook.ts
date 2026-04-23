@@ -7,14 +7,27 @@
 export type CountRange = { min: number; max: number };
 
 export type CanonicalValue = {
-  value: string; // canonical English string the assistant must write
-  synonyms: string[]; // free-text user inputs that should map to this value
+  value: string;
+  synonyms: string[];
 };
 
 export type PhaseSetupStep = {
-  key: string; // stable id (mystery_type, genre, titles, difficulty, role, goal, year)
-  label: string; // short human label shown in Settings
+  key: string;
+  label: string;
   enabled: boolean;
+};
+
+export type DesignSkeletonSection = {
+  key: string; // stable slug
+  name: string; // section header (e.g. GOAL)
+  note: string; // optional one-line guidance
+  enabled: boolean;
+};
+
+export type PhaseDefinition = {
+  key: string; // slug, [a-z_]{1,32}, used as `phase` value
+  label: string; // human label
+  description: string; // short one-liner
 };
 
 export type Playbook = {
@@ -25,12 +38,12 @@ export type Playbook = {
   };
   hints: {
     per_stage: number;
-    ladder_labels: string[]; // length should match per_stage
+    ladder_labels: string[];
   };
   envelopes: {
     count: number;
-    labels: string[]; // length === count
-    closing_line_he: string; // the fixed Hebrew closing line on every envelope
+    labels: string[];
+    closing_line_he: string;
   };
   phase1_setup: {
     order: PhaseSetupStep[];
@@ -50,6 +63,26 @@ export type Playbook = {
     default_mode: "drafts" | "auto" | "ask" | "unset";
     ask_each_new_project: boolean;
   };
+  // ---- v2 additions ----
+  identity: {
+    planning_language: string;
+    final_content_language: string;
+    brand_voice: string;
+    setting_flavor: string;
+  };
+  content_rules: string[];
+  design_skeleton: DesignSkeletonSection[];
+  doc_mode_copy: {
+    drafts_label: string;
+    auto_label: string;
+    ask_label: string;
+    logic_gate_refusal: string;
+  };
+  catalogs: {
+    print_sizes: string[];
+    document_types: string[];
+  };
+  phases: PhaseDefinition[];
 };
 
 export const PLAYBOOK_DEFAULTS: Playbook = {
@@ -112,6 +145,56 @@ export const PLAYBOOK_DEFAULTS: Playbook = {
     default_mode: "unset",
     ask_each_new_project: true,
   },
+  identity: {
+    planning_language: "English",
+    final_content_language: "Hebrew, grammatical, RTL-ready, immersive",
+    brand_voice:
+      "Premium realism, intelligence-style deduction, layered non-linear solvability. No fantasy. No external knowledge required.",
+    setting_flavor: "Always set stories in Israeli environments with Israeli flavor.",
+  },
+  content_rules: [
+    "No sexual content, no sex scandals.",
+    "No real politicians or army figures by name. Institutions like Mossad / Shabak are OK.",
+    "No single document may spoil the solution. Evidence must cross-reference.",
+  ],
+  design_skeleton: [
+    { key: "goal", name: "GOAL", note: "What the document is and what the player should feel.", enabled: true },
+    { key: "text_quality", name: "CRITICAL TEXT QUALITY RULES", note: "Hebrew must be perfect, no gibberish, no Latin filler.", enabled: true },
+    { key: "output_format", name: "OUTPUT FORMAT", note: "Size + DPI matching print_size.", enabled: true },
+    { key: "visual_style", name: "VISUAL STYLE", note: "Era, palette, paper feel.", enabled: true },
+    { key: "layout", name: "LAYOUT", note: "Numbered, document-type specific.", enabled: true },
+    { key: "typography", name: "TYPOGRAPHY", note: "Fonts, weights, alignment, RTL.", enabled: true },
+    { key: "authenticity", name: "AUTHENTICITY RULES", note: "Period-correct details, no anachronisms.", enabled: true },
+    { key: "exact_hebrew", name: "EXACT HEBREW TEXT TO PLACE", note: "Mirror the Hebrew body verbatim — no paraphrasing.", enabled: true },
+    { key: "realism_details", name: "ADDITIONAL REALISM DETAILS", note: "Concrete stains, stamps, marginalia, etc.", enabled: true },
+    { key: "final_instruction", name: "FINAL INSTRUCTION", note: "One-line directive to the image model.", enabled: true },
+  ],
+  doc_mode_copy: {
+    drafts_label: "Drafts only — I'll generate myself",
+    auto_label: "Full auto — generate text + image now",
+    ask_label: "Ask me each time",
+    logic_gate_refusal:
+      "Before we generate documents, jump to the Canvas → Logic Flow board and click 'Generate logic flow'. Review the clues, red herrings and final solution it proposes, edit anything you want, then click 'Approve logic'. Once that solution summary is locked in, every document I write will be consistent with it.",
+  },
+  catalogs: {
+    print_sizes: ["A4", "A5", "Letter", "Half-letter", "Square 15×15", "Index card 4×6", "Photo 10×15"],
+    document_types: [
+      "memo", "letter", "report", "transcript", "newspaper", "photo",
+      "ID card", "receipt", "telegram", "police form", "bank statement",
+      "medical record", "ticket stub", "business card", "map", "diagram",
+      "cipher", "blueprint", "ransom note",
+    ],
+  },
+  phases: [
+    { key: "setup", label: "Setup", description: "Phase 1 — gather case identity & brief." },
+    { key: "summary", label: "Summary", description: "Phase 2 — write the news-style solution summary." },
+    { key: "structure", label: "Structure", description: "Phase 3 — suspects, clues, red herrings, envelope flow." },
+    { key: "documents", label: "Documents", description: "Phase 4 — generate the printable documents." },
+    { key: "envelopes", label: "Envelopes", description: "Phase 5 — finalise envelope tasks & order." },
+    { key: "hints", label: "Hints", description: "Phase 6 — write the graduated hint ladder per stage." },
+    { key: "packaging", label: "Packaging", description: "Phase 7 — physical box / print / fulfilment notes." },
+    { key: "done", label: "Done", description: "Project complete and ready to ship." },
+  ],
 };
 
 const clamp = (n: number, lo: number, hi: number) =>
@@ -131,6 +214,12 @@ const cleanStringArray = (a: unknown, fallback: string[]): string[] => {
   return out.length > 0 ? out : fallback;
 };
 
+const cleanString = (s: unknown, fallback: string): string => {
+  if (typeof s !== "string") return fallback;
+  const trimmed = s.trim();
+  return trimmed || fallback;
+};
+
 const cleanVocab = (a: unknown, fallback: CanonicalValue[]): CanonicalValue[] => {
   if (!Array.isArray(a)) return fallback;
   const out = a
@@ -145,6 +234,53 @@ const cleanVocab = (a: unknown, fallback: CanonicalValue[]): CanonicalValue[] =>
       return { value, synonyms };
     })
     .filter((x): x is CanonicalValue => !!x);
+  return out.length > 0 ? out : fallback;
+};
+
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 32);
+
+const cleanSectionList = (
+  a: unknown,
+  fallback: DesignSkeletonSection[],
+): DesignSkeletonSection[] => {
+  if (!Array.isArray(a)) return fallback;
+  const out = a
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const e = entry as Partial<DesignSkeletonSection>;
+      const name = String(e.name ?? "").trim();
+      if (!name) return null;
+      const key = String(e.key ?? slug(name) ?? "").trim() || slug(name);
+      if (!key) return null;
+      return {
+        key,
+        name,
+        note: String(e.note ?? "").trim(),
+        enabled: e.enabled !== false,
+      };
+    })
+    .filter((x): x is DesignSkeletonSection => !!x)
+    .slice(0, 24);
+  return out.length > 0 ? out : fallback;
+};
+
+const cleanPhaseList = (a: unknown, fallback: PhaseDefinition[]): PhaseDefinition[] => {
+  if (!Array.isArray(a)) return fallback;
+  const seen = new Set<string>();
+  const out = a
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const e = entry as Partial<PhaseDefinition>;
+      let key = String(e.key ?? "").toLowerCase().replace(/[^a-z_]/g, "").slice(0, 32);
+      if (!key) key = slug(String(e.label ?? ""));
+      if (!key || seen.has(key)) return null;
+      seen.add(key);
+      const label = String(e.label ?? key).trim() || key;
+      const description = String(e.description ?? "").trim();
+      return { key, label, description };
+    })
+    .filter((x): x is PhaseDefinition => !!x)
+    .slice(0, 16);
   return out.length > 0 ? out : fallback;
 };
 
@@ -174,10 +310,7 @@ export function resolvePlaybook(override: unknown): Playbook {
       : envLabels.length > envCount
         ? envLabels.slice(0, envCount)
         : [...envLabels, ...Array.from({ length: envCount - envLabels.length }, (_, i) => String(envLabels.length + i))];
-  const closing_line_he =
-    typeof o.envelopes?.closing_line_he === "string" && o.envelopes.closing_line_he.trim()
-      ? o.envelopes.closing_line_he.trim()
-      : d.envelopes.closing_line_he;
+  const closing_line_he = cleanString(o.envelopes?.closing_line_he, d.envelopes.closing_line_he);
 
   const orderRaw = Array.isArray(o.phase1_setup?.order) ? o.phase1_setup!.order : null;
   const order = orderRaw
@@ -223,6 +356,30 @@ export function resolvePlaybook(override: unknown): Playbook {
     ask_each_new_project: o.doc_generation?.ask_each_new_project !== false,
   };
 
+  const identity = {
+    planning_language: cleanString(o.identity?.planning_language, d.identity.planning_language),
+    final_content_language: cleanString(o.identity?.final_content_language, d.identity.final_content_language),
+    brand_voice: cleanString(o.identity?.brand_voice, d.identity.brand_voice),
+    setting_flavor: cleanString(o.identity?.setting_flavor, d.identity.setting_flavor),
+  };
+
+  const content_rules = cleanStringArray(o.content_rules, d.content_rules).slice(0, 24);
+  const design_skeleton = cleanSectionList(o.design_skeleton, d.design_skeleton);
+
+  const doc_mode_copy = {
+    drafts_label: cleanString(o.doc_mode_copy?.drafts_label, d.doc_mode_copy.drafts_label),
+    auto_label: cleanString(o.doc_mode_copy?.auto_label, d.doc_mode_copy.auto_label),
+    ask_label: cleanString(o.doc_mode_copy?.ask_label, d.doc_mode_copy.ask_label),
+    logic_gate_refusal: cleanString(o.doc_mode_copy?.logic_gate_refusal, d.doc_mode_copy.logic_gate_refusal),
+  };
+
+  const catalogs = {
+    print_sizes: cleanStringArray(o.catalogs?.print_sizes, d.catalogs.print_sizes).slice(0, 24),
+    document_types: cleanStringArray(o.catalogs?.document_types, d.catalogs.document_types).slice(0, 60),
+  };
+
+  const phases = cleanPhaseList(o.phases, d.phases);
+
   return {
     suspect_counts,
     hints: { per_stage, ladder_labels },
@@ -231,6 +388,12 @@ export function resolvePlaybook(override: unknown): Playbook {
     vocab,
     realism,
     doc_generation,
+    identity,
+    content_rules,
+    design_skeleton,
+    doc_mode_copy,
+    catalogs,
+    phases,
   };
 }
 
@@ -280,4 +443,49 @@ export function renderRealismParagraphs(p: Playbook): string {
   return `Realism floor — MANDATORY MINIMUM ${p.realism.realworld_min_details} concrete realism details under "ADDITIONAL REALISM DETAILS" for any document type that exists in the real world (memos, letters, reports, transcripts, newspapers, photos, ID cards, receipts, telegrams, police forms, bank statements, medical records, ticket stubs, business cards, etc.). Examples of valid realism details: paper aging tone, fold lines, punch holes, staples/paperclips, coffee/water stains, smudged ink, typewriter offset, photocopy shadowing, intake/filing stamps with date format of the era, handwritten marginalia, signature scribbles, classification banners, reference codes, distribution lists, period-correct phone/address formats, ribbon impressions, carbon-copy bleed-through, edge wear, dog-eared corners, perforation marks, redaction bars, tape residue, fingerprint smudges, etc. Each item must be concrete (not "looks aged").
 
 Creative / unusual props (maps, hand-drawn diagrams, ciphers, blueprints, matchbook covers, napkin sketches, ransom notes, tarot/playing cards, photo collages, surveillance polaroids, evidence bag tags, ship/building maps, treasure-style charts, anything non-standard): the realism floor does NOT apply. Instead, add ${p.realism.creative_min_details}–${p.realism.creative_max_details} CREATIVE / UNUSUAL DETAILS that make the prop feel hand-made, in-world, and surprising — e.g. a smudged compass rose with a personal initial, a coded margin doodle, a torn corner taped back on, a coffee-ring obscuring one room on the map, a crayon arrow added by a child, a misspelling crossed out by hand, a hidden symbol only visible at an angle, a fictitious printer mark, an unusual aspect ratio, an inserted Polaroid, etc. State clearly that this prop trades photorealistic bureaucracy for tactile, creative, prop-style authenticity.`;
+}
+
+// ---------- v2 renderers ----------
+
+export function renderIdentityBlock(p: Playbook): string {
+  return `IDENTITY & STYLE
+- Planning/editing conversation: ${p.identity.planning_language}.
+- Final in-game content (titles, documents, hints, envelope text): ${p.identity.final_content_language}.
+- ${p.identity.brand_voice}
+- ${p.identity.setting_flavor}`;
+}
+
+export function renderContentRulesBlock(p: Playbook): string {
+  const lines = p.content_rules.map((r) => `- ${r}`).join("\n");
+  return `CONTENT RULES (strict)\n${lines}`;
+}
+
+export function renderDesignSkeletonLine(p: Playbook): string {
+  const enabled = p.design_skeleton.filter((s) => s.enabled);
+  const ordered = enabled.map((s) => s.name).join(" · ");
+  return `Format it with these sections, in this order:\n  ${ordered}`;
+}
+
+export function renderDocModeButtonsBlock(p: Playbook): string {
+  return `   1) "${p.doc_mode_copy.drafts_label}"
+   2) "${p.doc_mode_copy.auto_label}"
+   3) "${p.doc_mode_copy.ask_label}"`;
+}
+
+export function renderLogicGateRefusal(p: Playbook): string {
+  return `"${p.doc_mode_copy.logic_gate_refusal}"`;
+}
+
+export function renderCatalogsBlock(p: Playbook): string {
+  return `Available print sizes (pick from this list when proposing print_size): ${p.catalogs.print_sizes.join(", ")}.
+Common document types (pick from this list when proposing doc_type, but invent variants when needed): ${p.catalogs.document_types.join(", ")}.`;
+}
+
+export function renderPhaseEnumComment(p: Playbook): string {
+  const lines = p.phases.map((ph) => `  • ${ph.key} — ${ph.label}${ph.description ? `: ${ph.description}` : ""}`).join("\n");
+  return `PHASES (the \`phase\` field on update_project must be one of these keys):\n${lines}`;
+}
+
+export function getPhaseEnum(p: Playbook): string[] {
+  return p.phases.map((ph) => ph.key);
 }

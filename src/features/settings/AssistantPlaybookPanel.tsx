@@ -16,9 +16,17 @@ import {
   renderPhase1OrderSentence,
   renderCanonicalVocabBlock,
   renderRealismParagraphs,
+  renderIdentityBlock,
+  renderContentRulesBlock,
+  renderDesignSkeletonLine,
+  renderDocModeButtonsBlock,
+  renderLogicGateRefusal,
+  renderCatalogsBlock,
+  renderPhaseEnumComment,
   type Playbook,
   type CanonicalValue,
-  type PhaseSetupStep,
+  type DesignSkeletonSection,
+  type PhaseDefinition,
 } from "@/lib/assistant-playbook";
 import { toast } from "sonner";
 import {
@@ -408,6 +416,170 @@ export function AssistantPlaybookPanel({}: Props = {}) {
         </div>
       </Card>
 
+      {/* 8. Identity & voice */}
+      <Card
+        id="identity"
+        title="Identity & voice"
+        hint="The high-level voice/style header injected at the top of every system prompt."
+        open={open.identity}
+        onToggle={() => toggle("identity")}
+        onReset={() => reset("identity")}
+        showPrompt={showPrompt.identity}
+        onTogglePrompt={() => togglePrompt("identity")}
+        promptText={renderIdentityBlock(playbook)}
+      >
+        <div className="space-y-3">
+          {([
+            ["planning_language", "Planning language"],
+            ["final_content_language", "Final in-game content language"],
+            ["brand_voice", "Brand voice"],
+            ["setting_flavor", "Setting flavor"],
+          ] as const).map(([k, label]) => (
+            <div key={k} className="space-y-1">
+              <Label className="text-xs">{label}</Label>
+              <Textarea
+                rows={k === "brand_voice" || k === "setting_flavor" ? 2 : 1}
+                value={playbook.identity[k]}
+                onChange={(e) => update("identity", { ...playbook.identity, [k]: e.target.value })}
+                className="text-sm"
+              />
+              <div className="text-[10px] text-muted-foreground truncate">
+                default: {PLAYBOOK_DEFAULTS.identity[k]}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* 9. Content rules */}
+      <Card
+        id="contentrules"
+        title="Content rules"
+        hint="Strict do-not-do bullets the assistant must obey. Rendered verbatim under CONTENT RULES."
+        open={open.contentrules}
+        onToggle={() => toggle("contentrules")}
+        onReset={() => reset("content_rules")}
+        showPrompt={showPrompt.contentrules}
+        onTogglePrompt={() => togglePrompt("contentrules")}
+        promptText={renderContentRulesBlock(playbook)}
+      >
+        <StringListEditor
+          values={playbook.content_rules}
+          onChange={(next) => update("content_rules", next)}
+          placeholder="One rule per line, e.g. No real politicians by name."
+          multiline
+        />
+      </Card>
+
+      {/* 10. Design skeleton */}
+      <Card
+        id="skeleton"
+        title="Document design-instructions skeleton"
+        hint="The ordered sections every add_document call must produce. Toggle, rename, reorder, or add new ones."
+        open={open.skeleton}
+        onToggle={() => toggle("skeleton")}
+        onReset={() => reset("design_skeleton")}
+        showPrompt={showPrompt.skeleton}
+        onTogglePrompt={() => togglePrompt("skeleton")}
+        promptText={renderDesignSkeletonLine(playbook)}
+      >
+        <SectionListEditor
+          values={playbook.design_skeleton}
+          onChange={(next) => update("design_skeleton", next)}
+        />
+      </Card>
+
+      {/* 11. Doc-mode copy */}
+      <Card
+        id="docmodecopy"
+        title="Doc-generation mode labels & gate copy"
+        hint="The 3 button labels shown on first Phase 4 entry, plus the refusal text the assistant says when the Logic Flow isn't approved."
+        open={open.docmodecopy}
+        onToggle={() => toggle("docmodecopy")}
+        onReset={() => reset("doc_mode_copy")}
+        showPrompt={showPrompt.docmodecopy}
+        onTogglePrompt={() => togglePrompt("docmodecopy")}
+        promptText={`${renderDocModeButtonsBlock(playbook)}\n\nLogic-flow refusal:\n${renderLogicGateRefusal(playbook)}`}
+      >
+        <div className="space-y-3">
+          {([
+            ["drafts_label", "Drafts button"],
+            ["auto_label", "Full-auto button"],
+            ["ask_label", "Ask-each-time button"],
+          ] as const).map(([k, label]) => (
+            <div key={k} className="space-y-1">
+              <Label className="text-xs">{label}</Label>
+              <Input
+                value={playbook.doc_mode_copy[k]}
+                onChange={(e) => update("doc_mode_copy", { ...playbook.doc_mode_copy, [k]: e.target.value })}
+                className="h-8 text-sm"
+              />
+            </div>
+          ))}
+          <div className="space-y-1">
+            <Label className="text-xs">Logic-flow gate refusal message</Label>
+            <Textarea
+              rows={3}
+              value={playbook.doc_mode_copy.logic_gate_refusal}
+              onChange={(e) =>
+                update("doc_mode_copy", { ...playbook.doc_mode_copy, logic_gate_refusal: e.target.value })
+              }
+              className="text-sm"
+            />
+          </div>
+        </div>
+      </Card>
+
+      {/* 12. Catalogs */}
+      <Card
+        id="catalogs"
+        title="Document catalogs"
+        hint="Reference lists of print sizes and document types the assistant picks from when proposing documents."
+        open={open.catalogs}
+        onToggle={() => toggle("catalogs")}
+        onReset={() => reset("catalogs")}
+        showPrompt={showPrompt.catalogs}
+        onTogglePrompt={() => togglePrompt("catalogs")}
+        promptText={renderCatalogsBlock(playbook)}
+      >
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label className="text-xs font-medium">Print sizes</Label>
+            <StringListEditor
+              values={playbook.catalogs.print_sizes}
+              onChange={(next) => update("catalogs", { ...playbook.catalogs, print_sizes: next })}
+              placeholder="e.g. A4"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-xs font-medium">Document types</Label>
+            <StringListEditor
+              values={playbook.catalogs.document_types}
+              onChange={(next) => update("catalogs", { ...playbook.catalogs, document_types: next })}
+              placeholder="e.g. memo"
+            />
+          </div>
+        </div>
+      </Card>
+
+      {/* 13. Phase definitions */}
+      <Card
+        id="phases"
+        title="Phase definitions"
+        hint="The ordered phases the project moves through. Renaming a key won't migrate existing projects — they keep their old phase string until you edit them."
+        open={open.phases}
+        onToggle={() => toggle("phases")}
+        onReset={() => reset("phases")}
+        showPrompt={showPrompt.phases}
+        onTogglePrompt={() => togglePrompt("phases")}
+        promptText={renderPhaseEnumComment(playbook)}
+      >
+        <PhaseListEditor
+          values={playbook.phases}
+          onChange={(next) => update("phases", next)}
+        />
+      </Card>
+
       <div className="flex justify-end pt-2 sticky bottom-0 bg-card -mx-6 px-6 py-3 border-t">
         <Button onClick={() => persist(playbook)} disabled={saving}>
           <Save className="h-4 w-4 mr-1.5" /> {saving ? "Saving..." : "Save playbook"}
@@ -554,3 +726,272 @@ function VocabEditor({
     </div>
   );
 }
+
+function StringListEditor({
+  values,
+  onChange,
+  placeholder,
+  multiline,
+}: {
+  values: string[];
+  onChange: (next: string[]) => void;
+  placeholder?: string;
+  multiline?: boolean;
+}) {
+  return (
+    <div className="space-y-1.5">
+      {values.map((v, i) => (
+        <div key={i} className="flex items-start gap-2">
+          <div className="flex flex-col">
+            <button
+              className="h-4 w-5 inline-flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30"
+              disabled={i === 0}
+              onClick={() => {
+                const next = [...values];
+                [next[i - 1], next[i]] = [next[i], next[i - 1]];
+                onChange(next);
+              }}
+            >
+              <ArrowUp className="h-3 w-3" />
+            </button>
+            <button
+              className="h-4 w-5 inline-flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30"
+              disabled={i === values.length - 1}
+              onClick={() => {
+                const next = [...values];
+                [next[i + 1], next[i]] = [next[i], next[i + 1]];
+                onChange(next);
+              }}
+            >
+              <ArrowDown className="h-3 w-3" />
+            </button>
+          </div>
+          {multiline ? (
+            <Textarea
+              rows={2}
+              value={v}
+              onChange={(e) => {
+                const next = [...values];
+                next[i] = e.target.value;
+                onChange(next);
+              }}
+              placeholder={placeholder}
+              className="text-sm flex-1"
+            />
+          ) : (
+            <Input
+              value={v}
+              onChange={(e) => {
+                const next = [...values];
+                next[i] = e.target.value;
+                onChange(next);
+              }}
+              placeholder={placeholder}
+              className="h-8 text-sm flex-1"
+            />
+          )}
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7 shrink-0"
+            onClick={() => onChange(values.filter((_, idx) => idx !== i))}
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      ))}
+      <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => onChange([...values, ""])}>
+        <Plus className="h-3 w-3 mr-1" /> Add
+      </Button>
+    </div>
+  );
+}
+
+function SectionListEditor({
+  values,
+  onChange,
+}: {
+  values: DesignSkeletonSection[];
+  onChange: (next: DesignSkeletonSection[]) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      {values.map((s, i) => (
+        <div key={s.key + i} className="flex items-start gap-2 rounded-md border bg-surface p-2">
+          <div className="flex flex-col">
+            <button
+              className="h-4 w-5 inline-flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30"
+              disabled={i === 0}
+              onClick={() => {
+                const next = [...values];
+                [next[i - 1], next[i]] = [next[i], next[i - 1]];
+                onChange(next);
+              }}
+            >
+              <ArrowUp className="h-3 w-3" />
+            </button>
+            <button
+              className="h-4 w-5 inline-flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30"
+              disabled={i === values.length - 1}
+              onClick={() => {
+                const next = [...values];
+                [next[i + 1], next[i]] = [next[i], next[i + 1]];
+                onChange(next);
+              }}
+            >
+              <ArrowDown className="h-3 w-3" />
+            </button>
+          </div>
+          <div className="flex-1 space-y-1 min-w-0">
+            <Input
+              value={s.name}
+              onChange={(e) => {
+                const next = [...values];
+                next[i] = { ...s, name: e.target.value };
+                onChange(next);
+              }}
+              placeholder="SECTION NAME"
+              className="h-7 text-sm font-medium"
+            />
+            <Input
+              value={s.note}
+              onChange={(e) => {
+                const next = [...values];
+                next[i] = { ...s, note: e.target.value };
+                onChange(next);
+              }}
+              placeholder="One-line guidance (optional)"
+              className="h-7 text-xs"
+            />
+          </div>
+          <Switch
+            checked={s.enabled}
+            onCheckedChange={(checked) => {
+              const next = [...values];
+              next[i] = { ...s, enabled: checked };
+              onChange(next);
+            }}
+          />
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7 shrink-0"
+            onClick={() => onChange(values.filter((_, idx) => idx !== i))}
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      ))}
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 text-xs"
+        onClick={() =>
+          onChange([
+            ...values,
+            { key: `section_${values.length + 1}`, name: "NEW SECTION", note: "", enabled: true },
+          ])
+        }
+      >
+        <Plus className="h-3 w-3 mr-1" /> Add section
+      </Button>
+    </div>
+  );
+}
+
+function PhaseListEditor({
+  values,
+  onChange,
+}: {
+  values: PhaseDefinition[];
+  onChange: (next: PhaseDefinition[]) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      {values.map((p, i) => (
+        <div key={p.key + i} className="flex items-start gap-2 rounded-md border bg-surface p-2">
+          <div className="flex flex-col">
+            <button
+              className="h-4 w-5 inline-flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30"
+              disabled={i === 0}
+              onClick={() => {
+                const next = [...values];
+                [next[i - 1], next[i]] = [next[i], next[i - 1]];
+                onChange(next);
+              }}
+            >
+              <ArrowUp className="h-3 w-3" />
+            </button>
+            <button
+              className="h-4 w-5 inline-flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30"
+              disabled={i === values.length - 1}
+              onClick={() => {
+                const next = [...values];
+                [next[i + 1], next[i]] = [next[i], next[i + 1]];
+                onChange(next);
+              }}
+            >
+              <ArrowDown className="h-3 w-3" />
+            </button>
+          </div>
+          <div className="flex-1 space-y-1 min-w-0">
+            <div className="flex gap-2">
+              <Input
+                value={p.key}
+                onChange={(e) => {
+                  const next = [...values];
+                  next[i] = { ...p, key: e.target.value.toLowerCase().replace(/[^a-z_]/g, "").slice(0, 32) };
+                  onChange(next);
+                }}
+                placeholder="key"
+                className="h-7 text-xs font-mono w-32"
+              />
+              <Input
+                value={p.label}
+                onChange={(e) => {
+                  const next = [...values];
+                  next[i] = { ...p, label: e.target.value };
+                  onChange(next);
+                }}
+                placeholder="Label"
+                className="h-7 text-sm font-medium flex-1"
+              />
+            </div>
+            <Input
+              value={p.description}
+              onChange={(e) => {
+                const next = [...values];
+                next[i] = { ...p, description: e.target.value };
+                onChange(next);
+              }}
+              placeholder="One-line description"
+              className="h-7 text-xs"
+            />
+          </div>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7 shrink-0"
+            onClick={() => onChange(values.filter((_, idx) => idx !== i))}
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      ))}
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 text-xs"
+        onClick={() =>
+          onChange([
+            ...values,
+            { key: `phase_${values.length + 1}`, label: "New phase", description: "" },
+          ])
+        }
+      >
+        <Plus className="h-3 w-3 mr-1" /> Add phase
+      </Button>
+    </div>
+  );
+}
+
