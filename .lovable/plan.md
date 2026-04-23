@@ -1,79 +1,83 @@
 
 
-## Hints workflow + structural hint nodes on the Logic Flow
+## Why the assistant isn't always showing quick-reply buttons
 
-Three pieces, all centered on the existing `hints` table:
+I traced your screenshot (5 Hebrew title options, no buttons under them) end-to-end. There are **three independent reasons** buttons go missing, and your Hebrew-titles message hits all of them. Here's the fix.
 
-### 1. Wire hints into the Assistant + Canvas
+### Root causes
 
-Today the assistant only has `update_hint` — no way to **create** hints, no way to bulk-generate a stage, and no way to render them on the detective board. Fixes:
+**1. Model forgot to call `propose_options`.**
+The system prompt tells the model that whenever it writes a numbered 2–6-item choice list, it MUST also call the `propose_options` tool so the UI can render buttons. Some models (especially Claude variants and the Gemini 3 previews you've been testing) skip the tool call about half the time and just write the prose.
 
-- **New tool `add_hint`** in `assistant-chat` — creates one row (`stage`, `level`, `text`).
-- **New tool `generate_hint_stage`** — given a `stage` number + optional steering ("user is stuck on the alibi clue"), writes all 3 Hebrew hints for that stage in one call (vague → helpful → reveal), inserting all 3 rows.
-- **Extend `add_canvas_node` enum** with `"hint"` so the assistant can place hint nodes on either board.
-- **Playbook addition** to the system prompt (`renderHintsSystemBlock`): a new "HINT SYSTEM (Phase 5/6)" block explaining the 3-rung ladder, when to call `generate_hint_stage` vs `add_hint`, and that each stage should be tied to the clue/deduction it nudges toward.
-- **New `hint` node type** added to `CanvasNodeType` + `NODE_META` in `CanvasNodeTypes.tsx` (icon: Lightbulb, accent amber `oklch(0.78 0.16 75)`).
-- **Hints tab** gets a "Place on canvas" button per stage that creates a `hint` node on the **final** board pre-titled "Stage N hints".
+**2. The server-side prose synthesizer (safety net #1) only scans the LAST paragraph.**
+We have a fallback in `assistant-chat/index.ts → synthesizeOptionsFromProse` that parses prose and creates buttons when the model forgot the tool. But the gate is too narrow — it splits the message on blank lines and only looks at the **last block**. Your titles message structure is:
 
-### 2. Hint nodes on the auto-generated Logic Flow (NEW)
+```
+Phase 1 step is: Hebrew title options based on this setup.
 
-Extend `generate-logic-flow` so hint stages become **structural nodes** on the logic board, showing how each clue/deduction is supported by a hint ladder. Just the structure — text stays empty until the user (or assistant) writes it later.
+Here are 5 premium title options in Hebrew:
 
-- Add `"hint"` to the tool's `node.type` enum.
-- Update the system prompt: after producing clues + deductions, instruct the model to emit **one `hint` node per clue/deduction that warrants a hint stage** (typically 3–5 hint nodes per case), titled `"Hint stage N — for: <clue/deduction title>"`, positioned in a vertical lane to the **left of clues** (x ≈ -200, y matching the clue it supports).
-- Add **edges `hint_stage → clue/deduction`** with label `"hints toward"` so the board reads as: *hints → clue → deduction → solution*.
-- Add `hint` to the `NODE_COLORS` map (amber) so the canvas renders them with the right tint.
-- After insert, for each emitted hint node: create the matching empty 3-row scaffold in the `hints` table (`stage` = sequential, `level` 1/2/3, `text = ""`) so the Hints tab is pre-populated and the printed-card workflow has somewhere to go.
+1) **מבחן סופי**
+2) **אב‑טיפוס**
+3) **דליפה בהרצליה**
+4) **קו הגנה שבור**
+5) **שעת החשיפה**
 
-### 3. "Create hint sheet" image generator on each stage
+Pick one, or tell me to keep **final test** as the working title.
+```
 
-Per stage, a new **"Create hint sheet"** button next to Remove. Clicking expands an inline `PromptPanel` block (the same component used for cover/suspect/media — gives the writer-model picker, "Generate prompt", editable Textarea, and "Generate image" with the image-model picker).
+The numbered list sits in the **middle**; the last block is the "Pick one…" line. The synthesizer scans only that last block, finds zero numbered items, returns null → no buttons.
 
-- "Generate prompt" passes `category: "hint-sheet"` to `suggest-image-prompt`, which we extend with hint-sheet guidance: *"Printable A6/A7 single-side hint card, large RTL Hebrew stage label, era-appropriate texture, room for 3 scratch-off panels, no spoilers visible."*
-- "Generate image" posts to `generate-image` with `target: "hint-sheet"` and `targetId: <stage>`. The function persists URL + prompt + provenance onto the new `hint_sheets` row.
-- Generated card appears inline above the 3 hint textareas, with the same hover **AiOriginBadge** + collapsible prompt history used elsewhere.
+**3. The client-side synthesizer (safety net #2) has the SAME bug.**
+`AssistantSection.tsx → synthesizeOptionsFromProse` is a mirror of the server function with the same "last block only" limitation, so it can't recover either.
 
-### 4. Schema + storage
+### The fix
 
-**Migration:**
-- New table `hint_sheets` (one row per stage):
-  - `id`, `project_id`, `stage int`, `image_url text`, `prompt text`, `prompt_history jsonb default '[]'`
-  - `effective_model text`, `fallback text`, `requested_model text`
-  - Unique on (`project_id`, `stage`); RLS = same `Auth all` policies as `hints`.
-- `canvas_nodes.node_type` is free text — only the UI/tool enum needs `"hint"` added.
-- Storage: reuse `media` bucket under a `hint-sheets/` prefix.
+**A. Make both synthesizers smarter (catches ~all current misses)**
 
-### Behavior summary
+Replace the "scan last block only" rule with: scan the **entire message** for a contiguous run of numbered items (1, 2, 3, …) that:
+- starts with `1.` or `1)`,
+- has 2–6 sequential items,
+- each item ≤ 120 chars,
+- is preceded by a question-y line (or the whole message has a question marker / Hebrew "בחר/איזה/לאשר" verb).
 
-| Surface | Before | After |
-|---|---|---|
-| Assistant tools | `update_hint` only | `add_hint`, `generate_hint_stage`, `hint` allowed in `add_canvas_node` |
-| Assistant playbook | No hint guidance | New "HINT SYSTEM" block: when/how to write each rung, link to clue node |
-| Logic Flow generator | clues / red_herrings / deductions / solution / envelopes | + `hint` nodes (structure only), edges `hint → clue/deduction`, auto-scaffolds matching `hints` rows |
-| Canvas | No hint nodes | New `hint` node type (Lightbulb / amber) on both boards |
-| Hints tab | 3 textareas per stage | Same + "Create hint sheet" image generator + "Place on canvas" button |
-| `generate-image` | Targets media/suspect/cover/envelope | Adds `hint-sheet` target → persists to new `hint_sheets` row |
-| `suggest-image-prompt` | 6 categories | Adds `hint-sheet` category with print-card guidance |
+Pull the question line from the line directly **above** the first numbered item (currently it's pulled from before the list inside the same block — same logic, just relative to the list's actual location).
+
+This recovers your titles message, the "approve/revise/restart" prompts, the doc-mode question, and any other "intro paragraph + numbered list + closing nudge" pattern.
+
+**B. Tighten the system prompt**
+
+In `assistant-chat/index.ts` (and the `_shared/assistant-playbook.ts` mirror), add ONE more hard-rule line right next to the existing "TOOL-CALL-BEFORE-PROSE RULE 2":
+
+> *Whenever your message includes any numbered list of 2–6 short choices — anywhere in the message, not just the last paragraph — you MUST also call `propose_options` in the same turn. The "I forgot" failure mode is the #1 cause of broken UX. If in doubt, call it.*
+
+And add an explicit examples block right under the rule showing the title-options pattern as a positive example.
+
+**C. Diagnostic surface (optional but worth it)**
+
+Add a tiny dev-only console hint in `MessageBubble`: when an assistant message is the latest, has no `metadata.options`, and the synthesizer also returns null even though it contains a numbered list, log `"[assistant] missed quick-reply: <model> – <reason>"`. This makes it obvious in console which model (Claude vs Gemini vs OpenAI) is the worst offender so we can iterate on the prompt for that family specifically.
+
+### Why the buttons sometimes work and sometimes don't (the pattern you're seeing)
+
+| Message shape | Tool called? | Synth catches? | Buttons? |
+|---|:-:|:-:|:-:|
+| List in last paragraph, no closing line | Often | ✅ | ✅ |
+| List in middle + closing line ("Pick one…") | Often skipped | ❌ (today) → ✅ (after fix) | ❌ today |
+| Long list (>6) | Skipped (correct) | ❌ (correct) | ❌ (intentional) |
+| Open-ended question | Skipped (correct) | ❌ (correct) | ❌ (intentional) |
+| Yes/no after "approve / revise / restart" prose | Sometimes skipped | ✅ if last block, else ❌ | Inconsistent today |
+
+After the fix, only rows 3 and 4 stay button-less, which is the correct behavior.
 
 ### Files touched
 
-**Edge functions**
-- `supabase/functions/assistant-chat/index.ts` — add `add_hint` and `generate_hint_stage` tools + executors; extend `add_canvas_node` and `update_canvas_node` enums with `"hint"`.
-- `supabase/functions/_shared/assistant-playbook.ts` (and the `_shared` mirror) — add `renderHintsSystemBlock`.
-- `supabase/functions/generate-logic-flow/index.ts` — add `"hint"` to tool enum + prompt + `NODE_COLORS`; post-insert, scaffold matching `hints` rows.
-- `supabase/functions/generate-image/index.ts` — add `hint-sheet` target → persist to `hint_sheets`.
-- `supabase/functions/suggest-image-prompt/index.ts` — add `hint-sheet` to `CATEGORY_GUIDANCE`.
-
-**Frontend**
-- `src/features/project/canvas/CanvasNodeTypes.tsx` — add `hint` (Lightbulb, amber) to `CanvasNodeType` and `NODE_META`.
-- `src/features/project/HintsSection.tsx` — per-stage `HintSheetGenerator` (PromptPanel + AiOriginBadge + history); "Place on canvas" button.
-- `src/components/PromptWriterModelPicker.tsx` and `src/components/ImageModelPicker.tsx` — extend surface union with `"hint"` so per-surface defaults are remembered separately.
-
-**Migration** — create `hint_sheets` table with RLS matching `hints`.
+- `supabase/functions/assistant-chat/index.ts` — rewrite `synthesizeOptionsFromProse` to scan the whole message (not last block); add the new hard-rule line + positive example to the system prompt.
+- `src/features/project/AssistantSection.tsx` — mirror the same scanning rewrite in the client-side `synthesizeOptionsFromProse`; add the dev-only diagnostic log.
+- `src/lib/assistant-playbook.ts` and `supabase/functions/_shared/assistant-playbook.ts` — if the rule lives in a shared playbook fragment, mirror the wording change there too.
 
 ### Out of scope
 
-- Actual QR scratch-off PDF assembly — printer's job; we generate the source card image only.
-- Two-way sync between a `hint` canvas node and the hint rows — "Place on canvas" is one-way.
-- Diagnosing the earlier "21 nodes failed" assistant tool-call error — separate investigation, can do next.
+- Forcing buttons for >6-item lists (intentionally excluded — too cramped).
+- Per-model prompt-tuning beyond the one new hard-rule line — happy to do per-model overrides if the diagnostic logging shows one provider is still missing after this fix.
+- The earlier "21 nodes failed" canvas tool-call investigation — still open, separate work.
 
