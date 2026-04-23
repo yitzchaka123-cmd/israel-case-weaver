@@ -851,36 +851,38 @@ function NodeDetailPanel({
             )}
           </PanelSection>
 
-          <PanelSection title={`Linked documents · ${linkedDocs.length}`}>
-            {linkedDocs.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                No documents are linked to this node yet. Link them from the Documents tab.
-              </p>
-            ) : (
-              <ul className="space-y-1.5">
-                {linkedDocs.map((d) => (
-                  <li key={d.id}>
-                    <button
-                      type="button"
-                      onClick={() => jumpToDocuments(d.id)}
-                      className="group w-full text-left flex items-center gap-2.5 rounded-lg border bg-card hover:bg-muted/60 hover:border-foreground/20 transition-colors px-3 py-2.5 text-sm"
-                    >
-                      <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-muted shrink-0">
-                        <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                      </span>
-                      <span className="truncate flex-1 font-medium">
-                        {d.doc_number != null ? (
-                          <span className="text-muted-foreground mr-1.5 font-normal">#{d.doc_number}</span>
-                        ) : null}
-                        {d.title}
-                      </span>
-                      <ExternalLink className="h-3.5 w-3.5 opacity-40 group-hover:opacity-100 transition-opacity shrink-0" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </PanelSection>
+          {board === "final" && (
+            <PanelSection title={`Linked documents · ${linkedDocs.length}`}>
+              {linkedDocs.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No documents are linked to this node yet. Link them from the Documents tab.
+                </p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {linkedDocs.map((d) => (
+                    <li key={d.id}>
+                      <button
+                        type="button"
+                        onClick={() => jumpToDocuments(d.id)}
+                        className="group w-full text-left flex items-center gap-2.5 rounded-lg border bg-card hover:bg-muted/60 hover:border-foreground/20 transition-colors px-3 py-2.5 text-sm"
+                      >
+                        <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-muted shrink-0">
+                          <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                        </span>
+                        <span className="truncate flex-1 font-medium">
+                          {d.doc_number != null ? (
+                            <span className="text-muted-foreground mr-1.5 font-normal">#{d.doc_number}</span>
+                          ) : null}
+                          {d.title}
+                        </span>
+                        <ExternalLink className="h-3.5 w-3.5 opacity-40 group-hover:opacity-100 transition-opacity shrink-0" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </PanelSection>
+          )}
 
           {linkedSuspects.length > 0 && (
             <PanelSection title="Suspects in linked documents">
