@@ -34,11 +34,13 @@ type ToolCall = {
   result: { ok: boolean; message: string; id?: string };
 };
 
+type QuickOption = { label: string; send: string };
+
 type Msg = {
   id: string;
   role: "user" | "assistant";
   content: string;
-  metadata?: { tools?: ToolCall[] } | null;
+  metadata?: { tools?: ToolCall[]; options?: QuickOption[]; question?: string | null } | null;
   created_at?: string;
 };
 
@@ -323,8 +325,14 @@ export function AssistantSection({ projectId, phase }: { projectId: string; phas
               </div>
             )}
 
-            {messages.map((m) => (
-              <MessageBubble key={m.id} msg={m} />
+            {messages.map((m, idx) => (
+              <MessageBubble
+                key={m.id}
+                msg={m}
+                isLast={idx === messages.length - 1}
+                onPickOption={(text) => send(text)}
+                disabled={sending}
+              />
             ))}
 
             {sending && (
@@ -404,8 +412,24 @@ function Avatar({ role }: { role: "user" | "assistant" }) {
   );
 }
 
-function MessageBubble({ msg }: { msg: Msg }) {
+function MessageBubble({
+  msg,
+  isLast,
+  onPickOption,
+  disabled,
+}: {
+  msg: Msg;
+  isLast: boolean;
+  onPickOption: (text: string) => void;
+  disabled: boolean;
+}) {
   const tools = msg.metadata?.tools ?? [];
+  const options = msg.metadata?.options ?? [];
+  const question = msg.metadata?.question ?? null;
+  // Only render quick-reply buttons on the most recent assistant message —
+  // older proposals are stale and clicking them would be confusing.
+  const showOptions = msg.role === "assistant" && isLast && options.length > 0;
+
   return (
     <div className="flex gap-3 items-start">
       <Avatar role={msg.role} />
@@ -416,6 +440,31 @@ function MessageBubble({ msg }: { msg: Msg }) {
         <div className="prose prose-sm max-w-none dark:prose-invert whitespace-pre-wrap leading-relaxed text-[14.5px]">
           {msg.content}
         </div>
+        {showOptions && (
+          <div className="mt-3 rounded-xl border border-accent/20 bg-accent/5 p-3">
+            {question && (
+              <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2 font-medium">
+                {question}
+              </div>
+            )}
+            <div className="flex flex-wrap gap-2">
+              {options.map((opt, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => onPickOption(opt.send || opt.label)}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-background hover:bg-accent hover:text-accent-foreground hover:border-accent transition-colors px-3.5 py-1.5 text-[13px] font-medium disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                >
+                  <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-accent/15 text-accent text-[10px] font-bold">
+                    {i + 1}
+                  </span>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {tools.length > 0 && <ToolReceipts tools={tools} />}
       </div>
     </div>

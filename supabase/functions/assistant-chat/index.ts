@@ -75,8 +75,12 @@ Phase 4 Documents: Doc 0 = contents; then randomized doc numbers, varied types &
 Envelopes (fixed 5): Open First / 1 / 2 / 3 / 4. Tasks short, bold, not overly revealing. Every envelope ends with: "פתחו את המעטפה הבאה רק אם אתם בטוחים שביצעתם את המשימה הקודמת כראוי."
 Hints: 3 per stage — vague → helpful → gives away task.
 
-NUMBERED OPTIONS
-When offering choices, ALWAYS use a numbered list.
+NUMBERED OPTIONS & QUICK-REPLY BUTTONS
+When you offer the user a choice between 2–6 short, distinct, mutually-exclusive answers (e.g. picking a mystery type, picking a difficulty, choosing one of N proposed Hebrew titles, yes/no/skip, picking which suspect to flesh out next, "approve / revise / start over"), you MUST:
+  1. Present them as a numbered list in your prose, AND
+  2. Call the \`propose_options\` tool with the SAME options so the UI can render clickable quick-reply buttons.
+Do NOT call \`propose_options\` for open-ended questions ("describe the setting", "write the summary"), free-text answers, or when you're listing >6 items.
+Each option's \`label\` is the button text the user sees (keep it short — under ~60 chars). \`send\` is the message that gets sent on their behalf when they click — usually identical to the label, or a more explicit version like "Option 2: 1980s Tel Aviv noir".
 
 TOOL USE (CRITICAL)
 When the user approves a change, you MUST persist it by calling the appropriate tool. Do NOT just describe the change. Tools write to the shared project state so the UI, canvas and suspects sections update immediately.
@@ -229,6 +233,39 @@ const TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "propose_options",
+      description:
+        "Render quick-reply buttons under your message so the user can pick an answer with one click instead of typing. Use ONLY for 2–6 short, distinct, mutually-exclusive choices (picking a title from a list, picking difficulty, approve/revise/restart, yes/no/skip, picking which suspect to flesh out next, etc.). Do NOT use for open-ended prompts. The buttons appear in addition to your text — still write the prose explanation.",
+      parameters: {
+        type: "object",
+        properties: {
+          question: {
+            type: "string",
+            description: "Optional one-line restatement of the question being asked (shown above the buttons).",
+          },
+          options: {
+            type: "array",
+            minItems: 2,
+            maxItems: 6,
+            items: {
+              type: "object",
+              properties: {
+                label: { type: "string", description: "Short button text the user sees (under ~60 chars)." },
+                send: { type: "string", description: "The message text sent when clicked. Defaults to label if omitted." },
+              },
+              required: ["label"],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["options"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 // ---------- Tool executor ----------
@@ -310,6 +347,23 @@ async function executeTool(
         .single();
       if (error) throw error;
       return { ok: true, message: `Canvas node added: ${data.title}`, id: data.id };
+    }
+    if (name === "propose_options") {
+      // No state mutation — this tool exists purely so the model can attach
+      // quick-reply button data to its reply. The args are surfaced verbatim
+      // to the client through the tool result.
+      const opts = (args as { options?: Array<{ label: string; send?: string }>; question?: string });
+      const cleaned = (opts.options ?? [])
+        .filter((o) => o && typeof o.label === "string" && o.label.trim().length > 0)
+        .slice(0, 6)
+        .map((o) => ({ label: o.label.trim(), send: (o.send ?? o.label).trim() }));
+      if (cleaned.length < 2) return { ok: false, message: "propose_options needs at least 2 valid options" };
+      return {
+        ok: true,
+        message: `Quick-reply buttons proposed (${cleaned.length})`,
+        options: cleaned,
+        question: typeof opts.question === "string" ? opts.question.trim() : undefined,
+      };
     }
     return { ok: false, message: `Unknown tool: ${name}` };
   } catch (e) {
@@ -440,13 +494,27 @@ Deno.serve(async (req) => {
         continue; // ask the model to produce final text after tool results
       }
 
-      // Final assistant message
+      // Final assistant message — pull the most recent propose_options result
+      // so the client can render quick-reply buttons under this message.
       const finalText = msg.content ?? "";
+      const lastOptionsTool = [...executedTools].reverse().find(
+        (t) => t.name === "propose_options" && (t.result as { ok?: boolean })?.ok,
+      );
+      const optionsResult = lastOptionsTool?.result as
+        | { options?: Array<{ label: string; send: string }>; question?: string }
+        | undefined;
+      const quickOptions = optionsResult?.options ?? null;
+      const quickQuestion = optionsResult?.question ?? null;
+
       await supa.from("chat_messages").insert({
         project_id: projectId,
         role: "assistant",
         content: finalText,
-        metadata: { model, tools: executedTools },
+        metadata: {
+          model,
+          tools: executedTools,
+          ...(quickOptions ? { options: quickOptions, question: quickQuestion } : {}),
+        },
       });
 
       return new Response(JSON.stringify({ content: finalText, tools: executedTools, model }), {
