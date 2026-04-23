@@ -369,10 +369,40 @@ const TOOLS = [
         additionalProperties: false,
       },
     },
+  {
+    type: "function",
+    function: {
+      name: "set_doc_generation_mode",
+      description:
+        "Persist the user's preferred document-generation strategy on the project. Call once at the start of Phase 4 (or whenever the user changes their mind). 'drafts' = you only write rows, user clicks generate. 'auto' = you call generate_document_assets after every add_document. 'ask' = ask the user per-document.",
+      parameters: {
+        type: "object",
+        properties: {
+          mode: { type: "string", enum: ["drafts", "auto", "ask"] },
+        },
+        required: ["mode"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "generate_document_assets",
+      description:
+        "Actually trigger generation of the Hebrew body and/or image for an existing document row (the same pipeline as the Documents tab's Generate buttons). Use ONLY in 'auto' mode after add_document, or in 'ask' mode after the user confirms 'Generate now'. The receipt returns a Hebrew preview snippet and the image URL so the user can review the result inline in chat.",
+      parameters: {
+        type: "object",
+        properties: {
+          document_id: { type: "string", description: "ID returned by the most recent add_document call." },
+          mode: { type: "string", enum: ["text", "image", "both"], description: "Which assets to generate. Default 'both'." },
+        },
+        required: ["document_id"],
+        additionalProperties: false,
+      },
+    },
   },
 ];
-
-// ---------- Tool executor ----------
 // `messageId` is the chat_messages row this tool call is being attributed to.
 // Every write stamps it so the UI can later jump back to the chat turn that
 // created or last edited the row.
