@@ -44,6 +44,7 @@ export type Playbook = {
     count: number;
     labels: string[];
     closing_line_he: string;
+    design_brief_template: string;
   };
   phase1_setup: {
     order: PhaseSetupStep[];
@@ -101,6 +102,33 @@ export const PLAYBOOK_DEFAULTS: Playbook = {
     labels: ["Open First", "1", "2", "3", "4"],
     closing_line_he:
       "פתחו את המעטפה הבאה רק אם אתם בטוחים שביצעתם את המשימה הקודמת כראוי.",
+    design_brief_template:
+      `GOAL
+A single sealed kraft-paper envelope, photographed flat on a neutral background. In-world prop, premium tactile feel — heavy paper stock, slight tooth, faintly aged. The envelope is closed with a wax seal and stamped with the case file's classification.
+
+OUTPUT FORMAT
+Single image, portrait orientation, ~2480×3508 px (A4 at 300 DPI). Flat archival-style scan: no hands, no desk, no shadows from a photographer. The envelope fills ~70% of the frame, centered, with a small gutter of clean off-white margin around it.
+
+VISUAL STYLE
+- Era-appropriate kraft / manila stock, mild edge wear, faint horizontal fold line.
+- One dark red wax seal centered on the flap; subtle cracks along the wax edges.
+- A diagonal classification stamp in muted red ink (era-appropriate) — e.g. "סודי" / "Top Secret" / case-specific category.
+- A typewritten or rubber-stamped label in the upper-left or center showing the envelope number and short Hebrew label (RTL).
+- Optional smaller marks: routing initials in pencil, a small punched hole, a string-and-button closure, an ink fingerprint smudge.
+
+LAYOUT
+1. Center: large Hebrew label (RTL) — the envelope's name.
+2. Below or beside it: envelope number, framed.
+3. Diagonal classification stamp across the upper-third.
+4. Bottom-right: small reference code (case id + envelope #).
+5. Wax seal centered over the flap line.
+
+TYPOGRAPHY
+- Bold formal Hebrew label, era-correct (typewriter, rubber-stamp, or hand-lettered depending on the case).
+- All Hebrew text grammatically correct, RTL, no gibberish, no Latin filler.
+
+AUTHENTICITY
+Looks like an actual archival envelope from the case era — NOT a modern Canva mock-up. Period-correct paper, ink, and stamp shapes. Never invent real institutional emblems or signatures.`,
   },
   phase1_setup: {
     order: [
@@ -323,6 +351,10 @@ export function resolvePlaybook(override: unknown): Playbook {
         ? envLabels.slice(0, envCount)
         : [...envLabels, ...Array.from({ length: envCount - envLabels.length }, (_, i) => String(envLabels.length + i))];
   const closing_line_he = cleanString(o.envelopes?.closing_line_he, d.envelopes.closing_line_he);
+  const design_brief_template = cleanString(
+    o.envelopes?.design_brief_template,
+    d.envelopes.design_brief_template,
+  );
 
   const orderRaw = Array.isArray(o.phase1_setup?.order) ? o.phase1_setup!.order : null;
   const order = orderRaw
@@ -399,7 +431,7 @@ export function resolvePlaybook(override: unknown): Playbook {
   return {
     suspect_counts,
     hints: { per_stage, ladder_labels },
-    envelopes: { count: envCount, labels: labelsResized, closing_line_he },
+    envelopes: { count: envCount, labels: labelsResized, closing_line_he, design_brief_template },
     phase1_setup: { order, title_options_count },
     vocab,
     realism,
@@ -426,6 +458,11 @@ export function renderHintsLine(p: Playbook): string {
 
 export function renderEnvelopesLine(p: Playbook): string {
   return `Envelopes (fixed ${p.envelopes.count}): ${p.envelopes.labels.join(" / ")}. Tasks short, bold, not overly revealing. Every envelope ends with: "${p.envelopes.closing_line_he}"`;
+}
+
+export function renderEnvelopeDesignTemplate(p: Playbook): string {
+  return `ENVELOPE DESIGN BRIEF TEMPLATE (workspace default — use as the seed when drafting an image prompt for any envelope row, then customise per envelope's label/task and the case era/genre):
+${p.envelopes.design_brief_template}`;
 }
 
 export function renderPhase1OrderSentence(p: Playbook): string {
