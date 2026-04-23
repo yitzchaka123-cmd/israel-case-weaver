@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactFlow, {
-  Background, Controls, MiniMap, addEdge, useEdgesState, useNodesState,
+  Background, BackgroundVariant, Controls, MiniMap, addEdge, useEdgesState, useNodesState,
   type Connection, type Edge, type NodeChange, type EdgeChange, type Node as RFNode,
   applyNodeChanges, applyEdgeChanges, ReactFlowProvider,
   MarkerType,
