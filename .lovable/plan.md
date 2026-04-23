@@ -1,54 +1,65 @@
 
 
-## Fix the "Lovable AI credits" error on Nano Banana
+## Production status bar + locked Production fields + production dashboard
 
-### What's happening
+### 1. Sleek "Connected dots" status bar in the project header
 
-When you pick a Nano Banana model and generate an image, the request goes through the Lovable AI Gateway (because `GEMINI_API_KEY` isn't set as a secret — only `LOVABLE_API_KEY` and `OpenAi` are). The gateway then returns **402 Payment Required** because your workspace's monthly Lovable AI credits are exhausted, and the edge function surfaces that as the generic "credits/key issue" toast you're seeing.
+A new horizontal phase tracker lives directly under the case title in `ProjectWorkspace.tsx`'s header — visible from every tab.
 
-So this isn't a bug in the call — it's a real "out of credits" signal. What's broken is:
+- Phases shown in order: **Setup → Summary → Structure → Documents → Envelopes → Hints → Packaging → Done**.
+- Past phases: small filled emerald dot + faint emerald connector line.
+- Current phase: slightly larger violet (accent) dot with a soft ring and bold label.
+- Future phases: muted gray dots and gray connector lines.
+- Whole bar sits in a subtle pill (`bg-muted/40`, rounded-full, border) so it reads as one cohesive widget.
+- Each dot is a clickable button — click it to jump straight to that section's tab (e.g. Documents dot → Documents tab).
+- Hovering a dot shows a tooltip with phase name + a one-line summary ("12 / 40 documents").
+- Replaces the current `Phase · {project.phase}` chip, which becomes redundant.
+- The existing `production` legacy phase value gets normalized to **Documents** (closest meaning) so existing projects display correctly.
 
-1. The error message is vague — it doesn't tell you *which* credits ran out or what to do.
-2. There's no path to use Google's API directly to bypass the gateway entirely (which would solve it permanently).
-3. There's no automatic fallback when one Nano Banana variant 402s.
+```text
+●━━━●━━━●━━━◉━━━○━━━○━━━○━━━○
+Setup Sum Struct Docs* Env Hints Pack Done
+```
 
-### The plan
+### 2. Lock Production fields once set
 
-**1. Make the error message actionable** (`supabase/functions/generate-image/index.ts`)
+In `ProjectOverview.tsx`'s **Production** panel:
 
-Replace the current 402 branch with a clear, specific message:
-> *"Your Lovable AI workspace is out of credits for this month. Top up at Settings → Workspace → Usage in Lovable, switch to ChatGPT Image (uses your OpenAI key directly), or add a Google `GEMINI_API_KEY` in backend secrets to call Nano Banana directly and bypass the gateway."*
+- **Target document count**: editable only while it's null/empty. Once a number is saved it becomes read-only with a small lock icon and a one-line caption: *"Locked. Changing this would derail document numbering and envelope flow."* A tiny "Unlock" button next to the lock opens a confirm dialog (*"Are you sure? This can desync your production"*) for the rare override case.
+- **Current phase**: select becomes a read-only display showing the current phase + a hint *"Phase advances automatically as the assistant moves you through Setup → Summary → Structure → … "*. No manual select.
+- **Packaging notes**: hidden by default with a muted placeholder card: *"Packaging notes appear here when the assistant reaches the Packaging phase."* Reveals as a normal textarea once `phase === 'packaging' || phase === 'done'`.
 
-Surface the gateway's raw error body too so you can see exactly which limit hit.
+### 3. Production dashboard inside the Production panel
 
-**2. Add a "Google Gemini API key" field in Settings → API keys** (`src/features/settings/ApiKeyManager.tsx` + `supabase/functions/api-key-manager/index.ts`)
+Replace the current sparse Production grid with a real at-a-glance dashboard. Live counts come from a single small query using the existing realtime subscriptions (so it auto-refreshes when the assistant adds things).
 
-You already have a manager for OpenAI keys. Add a parallel field for `GEMINI_API_KEY`. Once you paste a Google AI Studio key, every Nano Banana call automatically routes direct to Google (the router code in `_shared/ai-router.ts` already prefers `GEMINI_API_KEY` when present — no router changes needed). This is the real fix: it permanently removes the dependency on Lovable AI credits for image generation.
+Layout — 4 compact KPI tiles in a 2×2 grid on mobile / 4-up on desktop:
 
-**3. Auto-fallback inside `generate-image`** when the gateway returns 402
+1. **Documents**: `12 / 40` with a thin progress bar underneath + tiny breakdown *"3 final · 9 draft"*.
+2. **Suspects**: `5` with caption *"1 red herring"*.
+3. **Canvas nodes**: `28` with caption *"Logic flow approved"* (green) or *"Logic flow pending"* (amber).
+4. **Envelopes / Hints**: combined tile — `4 envelopes · 9 hints` with phase-colored dot.
 
-If a Nano Banana request hits 402 on the Lovable gateway and `GEMINI_API_KEY` isn't set, automatically try **`google/gemini-2.5-flash-image`** (the cheapest variant) once before failing — sometimes only the Pro/preview models are gated. If that also 402s, return the actionable message above.
+Below the KPIs, a one-line **next-action hint** driven by phase:
+- Setup → *"Open Assistant to confirm title and mystery type."*
+- Structure → *"Jump to Case Board to approve the logic flow."*
+- Documents → *"28 documents to go — open Assistant to keep generating."*
+- etc.
 
-**4. Frontend: show the actionable message verbatim**
+Each KPI tile is clickable and routes to the relevant tab (Documents tile → Documents, Suspects → Suspects, etc.).
 
-`MediaSection.tsx`, `SuspectsSection.tsx`, and `ProjectOverview.tsx` already toast the server's `error` field — once step 1 is done these will read correctly with no UI changes needed. Just verify the toasts have enough room (use `toast.error(..., { duration: 10000 })` so you can read the link).
+### 4. Files to change
 
-**5. Tiny model-picker hint** (`src/components/ImageModelPicker.tsx`)
-
-Under the Nano Banana options, add a one-line muted helper: *"Uses Lovable AI credits unless a Google API key is set in Settings."* So the credit dependency is visible **before** you hit Generate.
-
-### Files to change
-
-- `supabase/functions/generate-image/index.ts` — better 402 message + auto-fallback to cheapest Nano Banana
-- `supabase/functions/api-key-manager/index.ts` — accept/store `GEMINI_API_KEY`
-- `src/features/settings/ApiKeyManager.tsx` — UI field for the Google key
-- `src/components/ImageModelPicker.tsx` — credit-source hint under Nano Banana
-- `src/features/project/MediaSection.tsx`, `SuspectsSection.tsx`, `ProjectOverview.tsx` — bump toast duration to 10 s so the actionable message is readable
+- `src/features/project/ProjectWorkspace.tsx` — add `<PhaseStatusBar>` to the header, remove old Phase pill, normalize legacy `production` → `documents` for display.
+- `src/features/project/PhaseStatusBar.tsx` (new) — the connected-dots component, clickable, with tooltips.
+- `src/features/project/ProductionDashboard.tsx` (new) — KPI tiles + next-action hint, fetches counts via `useQuery` and listens for the same realtime invalidations already wired in.
+- `src/features/project/ProjectOverview.tsx` — swap the old Production grid for `<ProductionDashboard>`, lock target doc count + phase, conditionally hide Packaging notes.
 
 ### Acceptance check
 
-1. Without a Google key set: Nano Banana → clear toast naming Lovable AI credits + 3 concrete fixes.
-2. Add Google key in Settings → re-run Nano Banana → image generates with no Lovable AI involvement.
-3. Remove the key + try Pro variant → auto-falls back to Flash variant once before erroring.
-4. Picker shows the credit-source hint under Nano Banana options.
+1. Header shows the connected-dots bar on every tab; current phase is highlighted in accent color.
+2. Clicking the *Documents* dot jumps you to the Documents tab.
+3. In Overview → Production, the target doc count field is read-only with a lock icon (because it's already 45 on your active project); same for the phase select.
+4. Packaging notes section is hidden until phase reaches Packaging.
+5. Production dashboard shows live `38 / 45` documents, `15` suspects, `92` canvas nodes, `0` envelopes / `3` hints — and they update without a refresh as the assistant adds more.
 
