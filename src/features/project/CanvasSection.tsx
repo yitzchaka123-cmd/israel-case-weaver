@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactFlow, {
-  Background, Controls, MiniMap, addEdge, useEdgesState, useNodesState,
+  Background, BackgroundVariant, Controls, MiniMap, addEdge, useEdgesState, useNodesState,
   type Connection, type Edge, type NodeChange, type EdgeChange, type Node as RFNode,
   applyNodeChanges, applyEdgeChanges, ReactFlowProvider,
   MarkerType,
@@ -553,7 +553,12 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
             markerEnd: { type: MarkerType.ArrowClosed, color: "var(--color-accent, #6366f1)", width: 18, height: 18 },
           }}
         >
-          <Background gap={24} size={1} color="var(--color-border)" />
+          <Background
+            variant={BackgroundVariant.Dots}
+            gap={20}
+            size={1.4}
+            color="color-mix(in oklab, var(--color-muted-foreground) 35%, transparent)"
+          />
           <MiniMap
             pannable
             zoomable
@@ -573,6 +578,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
         nodeId={selectedNodeId}
         projectId={projectId}
         modelOverride={logicModel}
+        board={board}
         onClose={() => setSelectedNodeId(null)}
       />
 
@@ -620,16 +626,19 @@ function NodeDetailPanel({
   nodeId,
   projectId,
   modelOverride,
+  board,
   onClose,
 }: {
   nodeId: string | null;
   projectId: string;
   modelOverride: string;
+  board: Board;
   onClose: () => void;
 }) {
   const open = nodeId !== null;
   const [explaining, setExplaining] = useState(false);
   const [explanation, setExplanation] = useState<string | null>(null);
+  const autoExplained = useRef<Set<string>>(new Set());
 
   const { data: node } = useQuery({
     queryKey: ["canvas-node", nodeId],
@@ -647,7 +656,7 @@ function NodeDetailPanel({
 
   const { data: linkedDocs = [] } = useQuery({
     queryKey: ["canvas-node-docs", nodeId],
-    enabled: !!nodeId,
+    enabled: !!nodeId && board === "final",
     queryFn: async () => {
       const { data, error } = await supabase
         .from("documents")
@@ -680,11 +689,7 @@ function NodeDetailPanel({
     },
   });
 
-  useEffect(() => {
-    setExplanation(null);
-  }, [nodeId]);
-
-  const explain = async () => {
+  const explain = useCallback(async () => {
     if (!nodeId) return;
     setExplaining(true);
     try {
@@ -707,7 +712,15 @@ function NodeDetailPanel({
     } finally {
       setExplaining(false);
     }
-  };
+  }, [nodeId, modelOverride]);
+
+  useEffect(() => {
+    setExplanation(null);
+    if (nodeId && !autoExplained.current.has(nodeId)) {
+      autoExplained.current.add(nodeId);
+      explain();
+    }
+  }, [nodeId, explain]);
 
   const jumpToDocuments = (docId?: string) => {
     window.dispatchEvent(
@@ -776,11 +789,12 @@ function NodeDetailPanel({
             </div>
           </div>
 
-          {/* Quick stats row */}
-          <div className="mt-5 grid grid-cols-2 gap-2">
-            <Stat label="Documents" value={linkedDocs.length} />
-            <Stat label="Suspects" value={linkedSuspects.length} />
-          </div>
+          {board === "final" && (
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <Stat label="Documents" value={linkedDocs.length} />
+              <Stat label="Suspects" value={linkedSuspects.length} />
+            </div>
+          )}
         </div>
 
         {/* Scrollable body */}
@@ -818,6 +832,17 @@ function NodeDetailPanel({
               >
                 {explanation}
               </div>
+            ) : explaining ? (
+              <div
+                className="text-xs text-muted-foreground leading-relaxed rounded-lg p-3.5 flex items-center gap-2"
+                style={{
+                  background: `color-mix(in oklab, ${accent} 6%, var(--color-muted))`,
+                  border: `1px solid color-mix(in oklab, ${accent} 18%, var(--color-border))`,
+                }}
+              >
+                <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                Generating explanation…
+              </div>
             ) : (
               <p className="text-xs text-muted-foreground leading-relaxed">
                 Click <em>Explain</em> for an AI breakdown of what this node does and how it fits into the
@@ -826,36 +851,38 @@ function NodeDetailPanel({
             )}
           </PanelSection>
 
-          <PanelSection title={`Linked documents · ${linkedDocs.length}`}>
-            {linkedDocs.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                No documents are linked to this node yet. Link them from the Documents tab.
-              </p>
-            ) : (
-              <ul className="space-y-1.5">
-                {linkedDocs.map((d) => (
-                  <li key={d.id}>
-                    <button
-                      type="button"
-                      onClick={() => jumpToDocuments(d.id)}
-                      className="group w-full text-left flex items-center gap-2.5 rounded-lg border bg-card hover:bg-muted/60 hover:border-foreground/20 transition-colors px-3 py-2.5 text-sm"
-                    >
-                      <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-muted shrink-0">
-                        <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                      </span>
-                      <span className="truncate flex-1 font-medium">
-                        {d.doc_number != null ? (
-                          <span className="text-muted-foreground mr-1.5 font-normal">#{d.doc_number}</span>
-                        ) : null}
-                        {d.title}
-                      </span>
-                      <ExternalLink className="h-3.5 w-3.5 opacity-40 group-hover:opacity-100 transition-opacity shrink-0" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </PanelSection>
+          {board === "final" && (
+            <PanelSection title={`Linked documents · ${linkedDocs.length}`}>
+              {linkedDocs.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No documents are linked to this node yet. Link them from the Documents tab.
+                </p>
+              ) : (
+                <ul className="space-y-1.5">
+                  {linkedDocs.map((d) => (
+                    <li key={d.id}>
+                      <button
+                        type="button"
+                        onClick={() => jumpToDocuments(d.id)}
+                        className="group w-full text-left flex items-center gap-2.5 rounded-lg border bg-card hover:bg-muted/60 hover:border-foreground/20 transition-colors px-3 py-2.5 text-sm"
+                      >
+                        <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-muted shrink-0">
+                          <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                        </span>
+                        <span className="truncate flex-1 font-medium">
+                          {d.doc_number != null ? (
+                            <span className="text-muted-foreground mr-1.5 font-normal">#{d.doc_number}</span>
+                          ) : null}
+                          {d.title}
+                        </span>
+                        <ExternalLink className="h-3.5 w-3.5 opacity-40 group-hover:opacity-100 transition-opacity shrink-0" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </PanelSection>
+          )}
 
           {linkedSuspects.length > 0 && (
             <PanelSection title="Suspects in linked documents">
