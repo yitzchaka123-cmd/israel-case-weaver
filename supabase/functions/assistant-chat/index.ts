@@ -1583,13 +1583,10 @@ Deno.serve(async (req) => {
             `Before this happened I successfully executed ${okCount} of ${totalCount} actions ` +
             `(see receipts below). They are already saved — you don't need to redo them. ` +
             `Reply "continue" once the issue is resolved and I'll pick up where I left off.`;
-          await supa.from("chat_messages").insert({
-            id: assistantMessageId,
-            project_id: projectId,
-            role: "assistant",
+          await supa.from("chat_messages").update({
             content: recoveryNote,
-            metadata: { model, effective_model: lastFb.effectiveModel, fallback: lastFb.fallback, tools: executedTools, partial: true, error: errMsg },
-          });
+            metadata: { model, effective_model: lastFb.effectiveModel, fallback: lastFb.fallback, tools: executedTools, partial: true, error: errMsg, in_progress: false },
+          }).eq("id", assistantMessageId);
           return new Response(
             JSON.stringify({
               content: recoveryNote,
@@ -1664,19 +1661,17 @@ Deno.serve(async (req) => {
         }
       }
 
-      await supa.from("chat_messages").insert({
-        id: assistantMessageId,
-        project_id: projectId,
-        role: "assistant",
+      await supa.from("chat_messages").update({
         content: finalText,
         metadata: {
           model,
           effective_model: lastFb.effectiveModel,
           fallback: lastFb.fallback,
           tools: executedTools,
+          in_progress: false,
           ...(quickOptions ? { options: quickOptions, question: quickQuestion } : {}),
         },
-      });
+      }).eq("id", assistantMessageId);
 
       return new Response(JSON.stringify({ content: finalText, tools: executedTools, model, messageId: assistantMessageId }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
