@@ -502,6 +502,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
           </div>
         </div>
       </div>
+      <AssetLightbox asset={lightbox} onClose={() => setLightbox(null)} />
     </div>
   );
 }
