@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { PromptPanel } from "@/components/PromptPanel";
+import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
 
 const MYSTERY_TYPES = [
   "Espionage / Intelligence",
@@ -132,13 +133,13 @@ export function ProjectOverview({ project }: { project: any }) {
         <Panel>
           <SectionTitle>Case Identity</SectionTitle>
           <div className="grid md:grid-cols-2 gap-4">
-            <Field label="Title">
+            <Field label="Title" originId={draft.assistant_origins?.title}>
               <Input value={draft.title ?? ""} onChange={(e) => update({ title: e.target.value })} />
             </Field>
-            <Field label="Subtitle">
+            <Field label="Subtitle" originId={draft.assistant_origins?.subtitle}>
               <Input value={draft.subtitle ?? ""} onChange={(e) => update({ subtitle: e.target.value })} />
             </Field>
-            <Field label="Mystery type">
+            <Field label="Mystery type" originId={draft.assistant_origins?.mystery_type}>
               <Select value={draft.mystery_type ?? ""} onValueChange={(v) => update({ mystery_type: v })}>
                 <SelectTrigger><SelectValue placeholder="Choose…" /></SelectTrigger>
                 <SelectContent>
@@ -146,7 +147,7 @@ export function ProjectOverview({ project }: { project: any }) {
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="Genre">
+            <Field label="Genre" originId={draft.assistant_origins?.genre}>
               <Select value={draft.genre ?? ""} onValueChange={(v) => update({ genre: v })}>
                 <SelectTrigger><SelectValue placeholder="Choose…" /></SelectTrigger>
                 <SelectContent>
@@ -154,7 +155,7 @@ export function ProjectOverview({ project }: { project: any }) {
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="Difficulty">
+            <Field label="Difficulty" originId={draft.assistant_origins?.difficulty}>
               <Select value={draft.difficulty ?? ""} onValueChange={(v) => update({ difficulty: v })}>
                 <SelectTrigger><SelectValue placeholder="Choose…" /></SelectTrigger>
                 <SelectContent>
@@ -162,7 +163,7 @@ export function ProjectOverview({ project }: { project: any }) {
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="Year">
+            <Field label="Year" originId={draft.assistant_origins?.year}>
               <Input
                 type="number"
                 value={draft.year ?? ""}
@@ -175,16 +176,16 @@ export function ProjectOverview({ project }: { project: any }) {
         <Panel>
           <SectionTitle>Case brief</SectionTitle>
           <div className="space-y-4">
-            <Field label="Player role">
+            <Field label="Player role" originId={draft.assistant_origins?.player_role}>
               <Input value={draft.player_role ?? ""} onChange={(e) => update({ player_role: e.target.value })} placeholder="e.g. Mossad junior analyst" />
             </Field>
-            <Field label="Case goal">
+            <Field label="Case goal" originId={draft.assistant_origins?.case_goal}>
               <Textarea value={draft.case_goal ?? ""} onChange={(e) => update({ case_goal: e.target.value })} rows={3} />
             </Field>
-            <Field label="Setting / location">
+            <Field label="Setting / location" originId={draft.assistant_origins?.setting}>
               <Input value={draft.setting ?? ""} onChange={(e) => update({ setting: e.target.value })} placeholder="e.g. Tel Aviv, 2019" />
             </Field>
-            <Field label="Extra selling point (hard games)">
+            <Field label="Extra selling point (hard games)" originId={draft.assistant_origins?.selling_point}>
               <Textarea value={draft.selling_point ?? ""} onChange={(e) => update({ selling_point: e.target.value })} rows={2} />
             </Field>
           </div>
@@ -268,10 +269,13 @@ function Panel({ children }: { children: React.ReactNode }) {
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <h2 className="font-display text-xl mb-4">{children}</h2>;
 }
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children, originId }: { label: string; children: React.ReactNode; originId?: string | null }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">{label}</Label>
+      <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium flex items-center gap-1.5">
+        {label}
+        <AssistantOriginBadge messageId={originId} label="" />
+      </Label>
       {children}
     </div>
   );
