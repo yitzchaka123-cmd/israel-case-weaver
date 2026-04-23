@@ -1151,11 +1151,19 @@ async function executeTool(
 }
 
 // ---------- Main handler ----------
+// The conversation runs as either:
+//   - "sync"        (legacy): client awaits the full reply over HTTP
+//   - "background"  (default for new client): we write an `assistant_runs`
+//     row, fire-and-forget the work via EdgeRuntime.waitUntil, and return
+//     immediately. The model + tools loop continues even if the user closes
+//     their browser tab — the assistant message lands via realtime when done.
+declare const EdgeRuntime: { waitUntil: (p: Promise<unknown>) => void } | undefined;
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { projectId, messages } = await req.json();
+    const { projectId, messages, mode } = await req.json();
     if (!projectId || !Array.isArray(messages)) {
       return new Response(JSON.stringify({ error: "projectId and messages required" }), {
         status: 400,
@@ -1164,6 +1172,49 @@ Deno.serve(async (req) => {
     }
 
     const supa = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    // BACKGROUND MODE — record a run row, kick off the work, return runId.
+    if (mode === "background") {
+      const callerUserId = await getUserIdFromAuth(req);
+      const { data: runRow, error: runErr } = await supa
+        .from("assistant_runs")
+        .insert({ project_id: projectId, user_id: callerUserId, status: "running" })
+        .select("id")
+        .single();
+      if (runErr) {
+        console.error("assistant_runs insert failed", runErr);
+        return new Response(JSON.stringify({ error: "Failed to start run" }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const runId = runRow.id as string;
+
+      const work = (async () => {
+        try {
+          await processConversation(supa, projectId, messages, callerUserId);
+          await supa.from("assistant_runs").update({
+            status: "done", finished_at: new Date().toISOString(),
+          }).eq("id", runId);
+        } catch (err) {
+          console.error("background assistant-chat failed", err);
+          const msg = err instanceof Error ? err.message : "Unknown error";
+          await supa.from("assistant_runs").update({
+            status: "error", error: msg, finished_at: new Date().toISOString(),
+          }).eq("id", runId);
+        }
+      })();
+
+      if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
+        EdgeRuntime.waitUntil(work);
+      } else {
+        // Local dev fallback — just don't await, but the request will end.
+        void work;
+      }
+
+      return new Response(JSON.stringify({ runId, ok: true, background: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     // Load project context + rosters of existing items so the model can target
     // the right id when the user says "edit suspect 2" / "rename document 5"
