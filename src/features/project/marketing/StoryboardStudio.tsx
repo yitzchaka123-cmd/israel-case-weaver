@@ -114,6 +114,9 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
       image_url: s.image_url ?? null,
       in_prompts: s.in_prompts ?? !!s.prompt,
       in_storyboard: s.in_storyboard ?? !!s.image_url,
+      image_requested_model: s.image_requested_model ?? null,
+      image_effective_model: s.image_effective_model ?? null,
+      image_fallback: s.image_fallback ?? null,
     })) : []);
   }, [data]);
 
