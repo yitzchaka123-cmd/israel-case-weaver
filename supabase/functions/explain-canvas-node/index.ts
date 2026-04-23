@@ -18,6 +18,8 @@ const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const PROVIDER_MODEL: Record<string, string> = {
   lovable: "google/gemini-3.1-pro-preview",
   gemini: "google/gemini-2.5-pro",
+  "gemini-3-pro": "google/gemini-3.1-pro-preview",
+  "gemini-3-flash": "google/gemini-3-flash-preview",
   "gemini-flash": "google/gemini-2.5-flash",
   "gemini-flash-lite": "google/gemini-2.5-flash-lite",
   openai: "openai/gpt-5",
@@ -28,6 +30,10 @@ const PROVIDER_MODEL: Record<string, string> = {
   claude: "anthropic/claude-sonnet-4-5",
   "claude-opus": "anthropic/claude-opus-4-5",
   "gemini-direct-pro": "gemini-direct/gemini-2.5-pro",
+  "gemini-direct-flash": "gemini-direct/gemini-2.5-flash",
+  "gemini-direct-flash-lite": "gemini-direct/gemini-2.5-flash-lite",
+  "gemini-direct-3-pro": "gemini-direct/gemini-3.1-pro-preview",
+  "gemini-direct-3-flash": "gemini-direct/gemini-3-flash-preview",
 };
 
 Deno.serve(async (req) => {

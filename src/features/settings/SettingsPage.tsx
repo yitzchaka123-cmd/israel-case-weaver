@@ -183,17 +183,17 @@ export function SettingsPage() {
 
         <Section title="AI provider routing" desc="Choose which provider handles each task. Each prefix routes to its own billing account — see API keys below.">
           <div className="space-y-3 max-w-xl">
-            <ProviderRow
+            <ProviderSelectRow
               label="Planning / Game design"
               value={planning}
               onChange={setPlanning}
-              providers={["lovable", "openai", "claude", "gemini-direct-pro"]}
+              options={TEXT_PROVIDER_OPTIONS}
             />
-            <ProviderRow
+            <ProviderSelectRow
               label="Document generation"
               value={documents}
               onChange={setDocuments}
-              providers={["lovable", "openai", "claude", "gemini-direct-pro"]}
+              options={TEXT_PROVIDER_OPTIONS}
             />
             <ProviderRow
               label="Image generation"
@@ -203,10 +203,8 @@ export function SettingsPage() {
             />
           </div>
           <div className="text-xs text-muted-foreground mt-4 space-y-1">
-            <p><strong>lovable</strong> uses the Lovable AI Gateway (workspace credits).</p>
-            <p><strong>openai</strong> uses your OpenAi key directly (billed to your OpenAI account).</p>
-            <p><strong>claude</strong> uses your ANTHROPIC_API_KEY directly (billed to your Anthropic account).</p>
-            <p><strong>gemini-direct-pro</strong> uses your GEMINI_API_KEY directly (billed to your Google AI account).</p>
+            <p><strong>Lovable AI</strong> entries use the Lovable AI Gateway (workspace credits).</p>
+            <p><strong>Direct</strong> entries (Google, OpenAI, Anthropic) bill straight to your own provider account — make sure the matching API key is set in API keys below.</p>
             <p>Image generation: Nano Banana models automatically prefer your GEMINI_API_KEY when present, otherwise fall back to the Lovable AI Gateway. ChatGPT Image always uses your OpenAi key.</p>
           </div>
 
@@ -288,6 +286,69 @@ const PROVIDER_LABEL: Record<string, string> = {
   claude: "Claude",
   "gemini-direct-pro": "Gemini",
 };
+
+type ProviderOption = { value: string; label: string; header?: boolean };
+
+// Used by Planning / Document rows. Grouped headers (header:true) render as
+// non-selectable separators. Every entry maps to a key in the edge functions'
+// PROVIDER_MODEL / PLANNING_MODEL maps.
+const TEXT_PROVIDER_OPTIONS: ProviderOption[] = [
+  { value: "__hdr-lovable", label: "Lovable AI (workspace credits)", header: true },
+  { value: "lovable", label: "Lovable default" },
+  { value: "gemini-3-pro", label: "Gemini 3.1 Pro (preview)" },
+  { value: "gemini-3-flash", label: "Gemini 3 Flash (preview)" },
+  { value: "gemini", label: "Gemini 2.5 Pro" },
+  { value: "gemini-flash", label: "Gemini 2.5 Flash" },
+  { value: "gemini-flash-lite", label: "Gemini 2.5 Flash Lite" },
+  { value: "__hdr-direct", label: "Your Google AI key (direct)", header: true },
+  { value: "gemini-direct-3-pro", label: "Gemini 3.1 Pro preview (direct)" },
+  { value: "gemini-direct-3-flash", label: "Gemini 3 Flash preview (direct)" },
+  { value: "gemini-direct-pro", label: "Gemini 2.5 Pro (direct)" },
+  { value: "gemini-direct-flash", label: "Gemini 2.5 Flash (direct)" },
+  { value: "gemini-direct-flash-lite", label: "Gemini 2.5 Flash Lite (direct)" },
+  { value: "__hdr-openai", label: "OpenAI (your OpenAi key)", header: true },
+  { value: "openai", label: "GPT-5" },
+  { value: "openai-5.4", label: "GPT-5.4" },
+  { value: "openai-5.2", label: "GPT-5.2" },
+  { value: "openai-mini", label: "GPT-5 mini" },
+  { value: "__hdr-claude", label: "Anthropic (your Claude key)", header: true },
+  { value: "claude", label: "Claude Sonnet 4.5" },
+  { value: "claude-opus", label: "Claude Opus 4.5" },
+  { value: "claude-haiku", label: "Claude Haiku 4.5" },
+];
+
+function ProviderSelectRow({
+  label, value, onChange, options,
+}: { label: string; value: string; onChange: (v: string) => void; options: ProviderOption[] }) {
+  // If an unknown legacy value is stored, surface a friendly fallback label.
+  const known = options.find((o) => !o.header && o.value === value);
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+      <div className="text-sm">{label}</div>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger className="h-9 text-xs w-[280px] shrink-0">
+          <SelectValue placeholder={known?.label ?? value} />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((o) =>
+            o.header ? (
+              <div
+                key={o.value}
+                className="px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+              >
+                {o.label}
+              </div>
+            ) : (
+              <SelectItem key={o.value} value={o.value} className="text-xs">
+                {o.label}
+              </SelectItem>
+            ),
+          )}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
 
 function ProviderRow({ label, value, onChange, providers }: { label: string; value: string; onChange: (v: string) => void; providers: string[] }) {
   return (

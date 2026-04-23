@@ -30,8 +30,13 @@ export const LOGIC_FLOW_MODELS = [
   { value: "openai-nano", label: "ChatGPT 5 nano (your OpenAI key)" },
   { value: "claude", label: "Claude Sonnet 4.5 (your Anthropic key)" },
   { value: "claude-opus", label: "Claude Opus 4.5 (your Anthropic key)" },
+  { value: "gemini-direct-3-pro", label: "Gemini 3.1 Pro preview (your Gemini key)" },
+  { value: "gemini-direct-3-flash", label: "Gemini 3 Flash preview (your Gemini key)" },
   { value: "gemini-direct-pro", label: "Gemini 2.5 Pro (your Gemini key)" },
+  { value: "gemini-direct-flash", label: "Gemini 2.5 Flash (your Gemini key)" },
+  { value: "gemini-direct-flash-lite", label: "Gemini 2.5 Flash Lite (your Gemini key)" },
   { value: "lovable", label: "Gemini 3.1 Pro (Lovable AI credits)" },
+  { value: "gemini-3-flash", label: "Gemini 3 Flash preview (Lovable AI credits)" },
   { value: "gemini-flash", label: "Gemini 2.5 Flash (Lovable AI credits)" },
   { value: "gemini-flash-lite", label: "Gemini 2.5 Flash Lite (Lovable AI credits)" },
 ];
