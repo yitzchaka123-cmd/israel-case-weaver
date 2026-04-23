@@ -1,59 +1,42 @@
 
 
-## Add Claude models to the Assistant chat picker
+## Add your Google Gemini direct API key
 
-The Assistant chat header has a "Chat" dropdown with only Gemini + ChatGPT options. The backend (`assistant-chat/index.ts`) already routes `claude`, `claude-opus`, and `claude-haiku` to the user's Anthropic account via `ANTHROPIC_API_KEY` — it's purely a UI gap.
+Everything is already wired in the backend — adding the secret is the only remaining step.
 
-### Heads-up: the Anthropic key isn't actually configured
+### What's already in place (no code changes needed)
 
-Checked the project secrets — there's `OpenAi`, `LOVABLE_API_KEY`, `GEMINI_API_KEY`-related, but **no `ANTHROPIC_API_KEY`**. The dropdown will work (no errors at render), but picking Claude will fail at send time with "Anthropic API key (ANTHROPIC_API_KEY) is not configured".
+- **`supabase/functions/_shared/ai-router.ts`** reads `GEMINI_API_KEY` and routes any `gemini-direct/*` model straight to `generativelanguage.googleapis.com`.
+- **`generate-image`** prefers your direct key for all three Nano Banana models (`gemini-2.5-flash-image`, `gemini-3.1-flash-image-preview`, `gemini-3-pro-image-preview`) and falls back to the Lovable AI Gateway only if the key is missing.
+- **`suggest-image-prompt`, `generate-marketing-copy`, `explain-canvas-node`, `generate-logic-flow`, `assistant-chat`** all already accept the `gemini-direct-*` model aliases that show up in your Settings dropdowns and the per-image `PromptWriterModelPicker`.
+- **Settings → API keys** (`GeminiConnection.tsx`) already lists the key, shows connected/not-connected status, and has a Test button.
 
-After approving the plan I'll:
-1. Make the UI change.
-2. Prompt you to paste your Claude key into the secure form (you grab it from console.anthropic.com → Settings → API Keys).
+### The single action
 
-### The UI change (single file)
+Once we leave plan mode I will call the **add-secret** tool to securely request `GEMINI_API_KEY`. You'll get a one-time secure paste form in chat — the key is stored as a Supabase secret and never appears in the codebase or logs.
 
-**`src/features/project/AssistantSection.tsx`** — replace the flat `PLANNING_MODELS` array (lines 16–24) with a grouped list that mirrors the convention already used in `PromptWriterModelPicker` and `SettingsPage` (Lovable / Direct / OpenAI / Anthropic headers). Render headers as non-selectable separators in the `<Select>` body (same pattern as `PromptWriterModelPicker`).
+**Where to get it:** [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey) → "Create API key" → copy the `AIza…` string and paste it into the form.
 
-New entries:
+### What flips on the moment you save the key
 
-```text
-— Lovable AI (workspace credits) —
-  Gemini 3.1 Pro (default)             [lovable]
-  Gemini 3 Flash (preview)             [gemini-3-flash]
-  Gemini 2.5 Pro                       [gemini]
-  Gemini 2.5 Flash                     [gemini-flash]
-  Gemini 2.5 Flash Lite                [gemini-flash-lite]
+| Surface | Before | After |
+|---|---|---|
+| Nano Banana, Nano Banana 2, Nano Banana Pro (cover, suspects, documents, media) | Lovable AI Gateway (workspace credits) | Google direct, billed to your AI Studio account |
+| Assistant chat — Gemini 2.5 Pro/Flash/Flash-Lite, Gemini 3.1 Pro preview, Gemini 3 Flash preview | Gateway | Your key |
+| Per-image prompt writer dropdown — all `(direct)` Gemini options | Returned the "not configured" error | Live |
+| Settings → Gemini panel status pill | "Not connected" | "Connected" + Test button works |
 
-— Your Google AI key (direct) —
-  Gemini 3.1 Pro preview (direct)      [gemini-direct-3-pro]
-  Gemini 3 Flash preview (direct)      [gemini-direct-3-flash]
-  Gemini 2.5 Pro (direct)              [gemini-direct-pro]
-  Gemini 2.5 Flash (direct)            [gemini-direct-flash]
-  Gemini 2.5 Flash Lite (direct)       [gemini-direct-flash-lite]
+### Small UX polish (optional, included in the same change)
 
-— OpenAI —
-  ChatGPT 5.4 (newest)                 [openai-5.4]
-  ChatGPT 5.2                          [openai-5.2]
-  ChatGPT 5                            [openai]
-  ChatGPT 5 mini                       [openai-mini]
+The "Connect Gemini" button in `GeminiConnection.tsx` currently just shows a toast telling you to ask Lovable. Since this flow is now fully self-serve via the add-secret form, no UI change is required — but if you'd like, I can also remove the now-redundant toast wording so it just says "Click to add key." Tell me yes/no when you approve and I'll include it.
 
-— Anthropic (your Claude key) —          ← NEW
-  Claude Sonnet 4.5                    [claude]
-  Claude Opus 4.5 (highest quality)    [claude-opus]
-  Claude Haiku 4.5 (fast)              [claude-haiku]
-```
+### No screenshot needed
 
-All values already resolve in `assistant-chat/index.ts`'s `PROVIDER_MODEL` map — no backend edit needed.
-
-### After the UI lands
-
-I'll request the `ANTHROPIC_API_KEY` secret via the secure add-secret form. Once you paste it, the three Claude entries become live for the Assistant chat (and the Settings dropdowns that already list them).
+I have everything I need. The next step is purely the secret hand-off.
 
 ### Out of scope
 
-- No changes to image models, prompt-writer picker, or other generation surfaces.
-- No DB / migration / edge function edits.
-- No changes to Settings page (already exposes Claude correctly).
+- No DB / migration / edge function code edits.
+- No changes to `OpenAi` or `ANTHROPIC_API_KEY` handling.
+- No changes to which models appear in pickers (already complete).
 
