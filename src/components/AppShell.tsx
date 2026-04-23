@@ -5,6 +5,8 @@ import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 
 const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -17,12 +19,26 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { user, signOut } = useAuth();
   const { theme, toggle } = useTheme();
 
+  const { data: appLogoUrl } = useQuery({
+    queryKey: ["app-logo", user?.id],
+    queryFn: async () => {
+      if (!user) return null;
+      const { data } = await supabase.from("profiles").select("app_logo_url").eq("id", user.id).maybeSingle();
+      return (data as { app_logo_url?: string | null } | null)?.app_logo_url ?? null;
+    },
+    enabled: !!user,
+  });
+
   return (
     <div className="flex min-h-screen">
       <aside className="hidden md:flex w-60 flex-col border-r border-white/40 dark:border-border bg-sidebar/70 dark:bg-sidebar text-sidebar-foreground backdrop-blur-2xl">
         <div className="px-5 py-6 flex items-center gap-2.5">
-          <div className="h-9 w-9 rounded-xl bg-gradient-brand flex items-center justify-center shadow-glow">
-            <Sparkles className="h-4 w-4 text-white" />
+          <div className="h-9 w-9 rounded-xl bg-gradient-brand flex items-center justify-center shadow-glow overflow-hidden">
+            {appLogoUrl ? (
+              <img src={appLogoUrl} alt="Logo" className="h-full w-full object-cover" />
+            ) : (
+              <Sparkles className="h-4 w-4 text-white" />
+            )}
           </div>
           <div>
             <div className="font-display text-lg leading-none">Mystery Studio</div>
