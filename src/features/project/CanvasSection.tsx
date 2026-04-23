@@ -89,6 +89,25 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
     },
   });
 
+  // Envelopes briefing pre-flight: if no envelope has design_instructions yet,
+  // we surface a banner above the Generate logic flow controls so the user is
+  // nudged to brief the assistant first (envelopes now become nodes in the flow).
+  const { data: envelopes } = useQuery({
+    queryKey: ["envelopes-brief-status", projectId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("envelopes")
+        .select("id, design_instructions")
+        .eq("project_id", projectId);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+  const anyEnvelopeBriefed = (envelopes ?? []).some(
+    (e) => (e.design_instructions ?? "").trim().length > 0,
+  );
+  const envelopeCount = envelopes?.length ?? 0;
+
   const [nodes, setNodes] = useNodesState([]);
   const [edges, setEdges] = useEdgesState([]);
   const [generatingFlow, setGeneratingFlow] = useState(false);
@@ -521,7 +540,41 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
       </div>
 
       {board === "logic" && !approved && (
-        <div className="absolute top-4 right-4 z-10 max-w-sm">
+        <div className="absolute top-4 right-4 z-10 max-w-sm space-y-2">
+          {envelopeCount > 0 && !anyEnvelopeBriefed && (
+            <div className="bg-warning/10 border border-warning/40 text-foreground rounded-lg px-3 py-2.5 text-xs shadow-soft">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-3.5 w-3.5 mt-0.5 text-warning shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <strong className="font-medium">Brief the envelopes first.</strong>{" "}
+                  The flow will be more accurate if you walk through the {envelopeCount}-envelope structure
+                  with the assistant before generating — envelopes now become nodes wired into the case.
+                  <button
+                    type="button"
+                    onClick={() => {
+                      window.dispatchEvent(
+                        new CustomEvent("mystudio:navigate", { detail: { tab: "assistant" } }),
+                      );
+                      window.setTimeout(() => {
+                        window.dispatchEvent(
+                          new CustomEvent("mystudio:assistant-prompt", {
+                            detail: {
+                              projectId,
+                              prompt:
+                                "Walk me through the envelope flow from the playbook. Explain what each envelope's role is in this case, what should be inside it, and the closing-line rule. Then ask me which envelope you should help me draft first.",
+                            },
+                          }),
+                        );
+                      }, 50);
+                    }}
+                    className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-warning hover:underline"
+                  >
+                    Open assistant briefing →
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           <div className="bg-warning/10 border border-warning/30 text-foreground rounded-lg px-3 py-2 text-xs shadow-soft">
             <strong className="font-medium">Pre-step:</strong> design the case logic and approve a solution summary before generating documents.
           </div>

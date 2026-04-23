@@ -1,11 +1,58 @@
-import { useEffect, useState } from "react";
+// Envelopes — full design/generation surface (mirrors Documents and Suspects).
+// Each envelope row carries label/task (player-facing Hebrew copy), linked
+// documents, internal notes, and a separate design brief that drives the
+// envelope cover mock-up via generate-image. The "Brief me" / "Generate all"
+// global actions tie the assistant + bulk-AI generation together.
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Mail } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Mail,
+  Sparkles,
+  Wand2,
+  Loader2,
+  HelpCircle,
+  ExternalLink,
+  ImagePlus,
+  FileText,
+  ChevronDown,
+} from "lucide-react";
+import { toast } from "sonner";
+import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
+import {
+  ImageModelPicker,
+  getStoredImageModel,
+  getStoredImageQuality,
+} from "@/components/ImageModelPicker";
+import { PromptWriterModelPicker, getStoredWriterModel } from "@/components/PromptWriterModelPicker";
+import { useProjectNotifications } from "./notifications/useProjectNotifications";
+import { notifyEnvelopesDrafted } from "./notifications/triggers";
+import { resolvePlaybook } from "@/lib/assistant-playbook";
 
 interface Envelope {
   id: string;
@@ -15,23 +62,61 @@ interface Envelope {
   task: string | null;
   notes: string | null;
   status: string;
+  design_instructions: string | null;
+  cover_image_url: string | null;
+  linked_document_ids: string[] | null;
+  linked_node_ids: string[] | null;
+  created_by_message_id: string | null;
 }
 
-const SLOTS: Array<{ n: number; title: string; hint: string }> = [
-  { n: 0, title: "Open First", hint: "Mission briefing + first task" },
-  { n: 1, title: "Envelope 1", hint: "Confirm task 1, hand off to task 2" },
-  { n: 2, title: "Envelope 2", hint: "Confirm task 2, hand off to task 3" },
-  { n: 3, title: "Envelope 3", hint: "Confirm task 3, hand off to final" },
-  { n: 4, title: "Envelope 4", hint: "Confirm final assessment + QR to news report" },
-];
+interface DocOption {
+  id: string;
+  doc_number: number | null;
+  title: string;
+  envelope_number: number | null;
+}
 
-const STATUSES = ["draft", "in_progress", "review", "final"];
+const STATUSES = ["draft", "in_progress", "review", "final"] as const;
+const FOOTNOTE_HE =
+  "פתחו את המעטפה הבאה רק אם אתם בטוחים שביצעתם את המשימה הקודמת כראוי.";
 
-const FOOTNOTE_HE = "פתחו את המעטפה הבאה רק אם אתם בטוחים שביצעתם את המשימה הקודמת כראוי.";
+const STATUS_TIP =
+  "Production status — used by the Production Dashboard to count progress, NOT by the player.\n" +
+  "• Draft = not started\n" +
+  "• In progress = being written\n" +
+  "• Review = AI just produced something, check it\n" +
+  "• Final = locked in for print";
 
 export function EnvelopesSection({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
   const [draft, setDraft] = useState<Record<number, Partial<Envelope>>>({});
+  const [generatingAll, setGeneratingAll] = useState(false);
+  const { create: createNotification } = useProjectNotifications(projectId);
+
+  // Owner playbook → drives envelope count + briefing prompt (count, labels,
+  // closing-line rule). Falls back to defaults if not set.
+  const { data: playbookRaw } = useQuery({
+    queryKey: ["owner-playbook"],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return {};
+      const { data } = await supabase
+        .from("profiles")
+        .select("assistant_playbook")
+        .eq("id", user.id)
+        .maybeSingle();
+      return ((data as { assistant_playbook?: unknown } | null)?.assistant_playbook ?? {}) as unknown;
+    },
+  });
+  const playbook = useMemo(() => resolvePlaybook(playbookRaw), [playbookRaw]);
+  const slots = useMemo(
+    () =>
+      Array.from({ length: playbook.envelopes.count }, (_, i) => ({
+        n: i,
+        label: playbook.envelopes.labels[i] ?? `Envelope ${i}`,
+      })),
+    [playbook],
+  );
 
   const { data } = useQuery({
     queryKey: ["envelopes", projectId],
@@ -46,15 +131,51 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
     },
   });
 
+  const { data: docs = [] } = useQuery({
+    queryKey: ["envelope-doc-options", projectId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("documents")
+        .select("id, doc_number, title, envelope_number")
+        .eq("project_id", projectId)
+        .order("doc_number", { ascending: true, nullsFirst: false });
+      if (error) throw error;
+      return (data ?? []) as DocOption[];
+    },
+  });
+
   useEffect(() => {
     const ch = supabase
       .channel(`envelopes-${projectId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "envelopes", filter: `project_id=eq.${projectId}` }, () =>
-        qc.invalidateQueries({ queryKey: ["envelopes", projectId] }),
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "envelopes", filter: `project_id=eq.${projectId}` },
+        () => qc.invalidateQueries({ queryKey: ["envelopes", projectId] }),
       )
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
+    return () => {
+      supabase.removeChannel(ch);
+    };
   }, [projectId, qc]);
+
+  // Fire the "envelopes_drafted" notification ONCE when every slot has both a
+  // task and a design brief (transition false → true).
+  const allDraftedPrev = useRef<boolean>(false);
+  useEffect(() => {
+    if (!data || data.length < slots.length) return;
+    const allDrafted = slots.every((s) => {
+      const env = data.find((e) => e.number === s.n);
+      return (
+        env &&
+        (env.task ?? "").trim().length > 0 &&
+        (env.design_instructions ?? "").trim().length > 0
+      );
+    });
+    if (allDrafted && !allDraftedPrev.current) {
+      createNotification(notifyEnvelopesDrafted());
+    }
+    allDraftedPrev.current = allDrafted;
+  }, [data, slots, createNotification]);
 
   const getEnvelope = (n: number): Envelope | undefined =>
     data?.find((e) => e.number === n);
@@ -72,85 +193,476 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
         ...patch,
       });
     }
+    qc.invalidateQueries({ queryKey: ["envelopes", projectId] });
+  };
+
+  const briefMe = () => {
+    const labels = playbook.envelopes.labels.slice(0, playbook.envelopes.count).join(", ");
+    const prompt =
+      `Walk me through the ${playbook.envelopes.count}-envelope flow from the playbook (${labels}). ` +
+      `Explain what each envelope's role is in THIS case, what should be inside it, and the ` +
+      `closing-line rule ("${playbook.envelopes.closing_line_he}"). Then ask me which envelope ` +
+      `you should help me draft first.`;
+    window.dispatchEvent(new CustomEvent("mystudio:navigate", { detail: { tab: "assistant" } }));
+    window.setTimeout(() => {
+      window.dispatchEvent(
+        new CustomEvent("mystudio:assistant-prompt", { detail: { projectId, prompt } }),
+      );
+    }, 50);
+  };
+
+  const generateAll = async () => {
+    if (generatingAll) return;
+    if (data && data.some((e) => (e.label ?? "").trim() || (e.task ?? "").trim())) {
+      if (!confirm("Replace all envelope drafts with AI-generated content?")) return;
+    }
+    setGeneratingAll(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const resp = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-envelopes`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${
+              session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
+            }`,
+          },
+          body: JSON.stringify({ projectId }),
+        },
+      );
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        toast.error(json.error ?? "Couldn't generate envelopes");
+        return;
+      }
+      toast.success(`Generated ${json.count ?? slots.length} envelopes`);
+      qc.invalidateQueries({ queryKey: ["envelopes", projectId] });
+    } finally {
+      setGeneratingAll(false);
+    }
   };
 
   return (
-    <div className="max-w-5xl mx-auto px-6 md:px-10 py-8 space-y-6">
-      <div>
-        <h2 className="font-display text-3xl">Envelopes</h2>
-        <p className="text-sm text-muted-foreground mt-1">
-          Five sealed envelopes drive the flow. Keep tasks short, bold, and never spoiler-heavy.
-        </p>
+    <TooltipProvider>
+      <div className="max-w-5xl mx-auto px-6 md:px-10 py-8 space-y-6">
+        <div className="flex flex-wrap items-start gap-4 justify-between">
+          <div>
+            <h2 className="font-display text-3xl">Envelopes</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              {playbook.envelopes.count} sealed envelopes drive the flow. Each one has a
+              player-facing Hebrew brief and a separate design instruction for the printed cover.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" className="gap-2" onClick={briefMe}>
+              <Sparkles className="h-4 w-4" /> Brief me on envelopes
+            </Button>
+            <Button className="gap-2" onClick={generateAll} disabled={generatingAll}>
+              {generatingAll ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Wand2 className="h-4 w-4" />
+              )}
+              Generate all envelopes with AI
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid gap-4">
+          {slots.map((slot) => {
+            const env = getEnvelope(slot.n);
+            const local = draft[slot.n] ?? {};
+            const value = <K extends keyof Envelope>(k: K) =>
+              (local[k] as Envelope[K] | undefined) ?? env?.[k] ?? ("" as unknown as Envelope[K]);
+
+            return (
+              <EnvelopeCard
+                key={slot.n}
+                slot={slot}
+                env={env}
+                value={value}
+                onUpdate={(patch) => upsert(slot.n, patch)}
+                docs={docs}
+                projectId={projectId}
+                playbookCount={playbook.envelopes.count}
+              />
+            );
+          })}
+        </div>
+      </div>
+    </TooltipProvider>
+  );
+}
+
+function EnvelopeCard({
+  slot,
+  env,
+  value,
+  onUpdate,
+  docs,
+  projectId,
+  playbookCount,
+}: {
+  slot: { n: number; label: string };
+  env: Envelope | undefined;
+  value: <K extends keyof Envelope>(k: K) => Envelope[K];
+  onUpdate: (patch: Partial<Envelope>) => Promise<void>;
+  docs: DocOption[];
+  projectId: string;
+  playbookCount: number;
+}) {
+  const [draftingPrompt, setDraftingPrompt] = useState(false);
+  const [generatingImage, setGeneratingImage] = useState(false);
+
+  const linkedIds = (value("linked_document_ids") as string[] | null) ?? [];
+  const linkedSet = new Set(linkedIds);
+  const linkedDocs = docs.filter((d) => linkedSet.has(d.id));
+
+  const toggleDoc = async (docId: string, on: boolean) => {
+    if (!env) {
+      // Create the envelope row first so we have an id to link to.
+      await onUpdate({ linked_document_ids: on ? [docId] : [] });
+    } else {
+      const next = on
+        ? Array.from(new Set([...linkedIds, docId]))
+        : linkedIds.filter((id) => id !== docId);
+      await onUpdate({ linked_document_ids: next });
+    }
+    // Mirror onto documents.envelope_number so the existing Documents UI stays in sync.
+    await supabase
+      .from("documents")
+      .update({ envelope_number: on ? slot.n : null })
+      .eq("id", docId);
+  };
+
+  const draftPrompt = async () => {
+    setDraftingPrompt(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const writerModel = getStoredWriterModel("envelope");
+      const hint = [
+        `Envelope #${slot.n} — ${slot.label}`,
+        value("label") && `Hebrew label: ${value("label") as string}`,
+        value("task") && `Hebrew task: ${value("task") as string}`,
+      ]
+        .filter(Boolean)
+        .join(". ");
+      const resp = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/suggest-image-prompt`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${
+              session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
+            }`,
+          },
+          body: JSON.stringify({
+            projectId,
+            category: "envelope",
+            hint: hint || undefined,
+            currentPrompt: (value("design_instructions") as string) || undefined,
+            writerModel: writerModel === "__project" ? undefined : writerModel,
+            userId: session?.user?.id,
+          }),
+        },
+      );
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        toast.error(json.error ?? "Couldn't draft a prompt");
+        return;
+      }
+      await onUpdate({ design_instructions: json.prompt });
+      toast.success("Prompt drafted — review before generating");
+    } finally {
+      setDraftingPrompt(false);
+    }
+  };
+
+  const generateImage = async () => {
+    const prompt = (value("design_instructions") as string)?.trim();
+    if (!prompt) {
+      toast.error("Add design instructions first (or click ✨ Draft prompt)");
+      return;
+    }
+    setGeneratingImage(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const modelOverride = getStoredImageModel("envelope", "chatgpt-image");
+      const quality = getStoredImageQuality("envelope", "medium");
+      const resp = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-image`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${
+              session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
+            }`,
+          },
+          body: JSON.stringify({
+            projectId,
+            category: "envelope",
+            envelopeId: env?.id,
+            envelopeNumber: slot.n,
+            prompt,
+            title: `Envelope #${slot.n} — ${slot.label}`,
+            modelOverride,
+            quality,
+          }),
+        },
+      );
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        toast.error(json.error ?? "Image generation failed");
+        return;
+      }
+      // generate-image stores the URL into envelopes.cover_image_url server-side
+      // when category=envelope; we still bump status locally so the UI reflects review.
+      await onUpdate({
+        status: "review",
+        ...(json.url ? { cover_image_url: json.url as string } : {}),
+      });
+      toast.success("Envelope mock-up generated");
+    } finally {
+      setGeneratingImage(false);
+    }
+  };
+
+  const openInAssistant = () => {
+    const prompt =
+      `Help me write envelope #${slot.n} (${slot.label}). ` +
+      `Current Hebrew label: "${(value("label") as string) || "(empty)"}". ` +
+      `Current Hebrew task: "${(value("task") as string) || "(empty)"}". ` +
+      `Brief me on the playbook rules for THIS envelope, then propose a Hebrew label, ` +
+      `task, and design direction.`;
+    window.dispatchEvent(new CustomEvent("mystudio:navigate", { detail: { tab: "assistant" } }));
+    window.setTimeout(() => {
+      window.dispatchEvent(
+        new CustomEvent("mystudio:assistant-prompt", { detail: { projectId, prompt } }),
+      );
+    }, 50);
+  };
+
+  const cover = value("cover_image_url") as string;
+  const status = (value("status") as string) || "draft";
+  const createdByMsg = value("created_by_message_id") as string | null;
+
+  return (
+    <div className="rounded-2xl border bg-card shadow-soft overflow-hidden">
+      <div className="flex items-center gap-3 px-5 py-4 border-b bg-surface/40">
+        <div className="h-10 w-10 rounded-xl bg-gradient-brand text-white flex items-center justify-center shadow-glow">
+          <Mail className="h-4 w-4" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-display text-lg leading-tight flex items-center gap-2">
+            #{slot.n} — {slot.label}
+            {createdByMsg && <AssistantOriginBadge messageId={createdByMsg} />}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            Envelope {slot.n + 1} of {playbookCount}
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-foreground"
+                aria-label="Status help"
+              >
+                <HelpCircle className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs whitespace-pre-line">
+              {STATUS_TIP}
+            </TooltipContent>
+          </Tooltip>
+          <Select value={status} onValueChange={(v) => onUpdate({ status: v })}>
+            <SelectTrigger className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STATUSES.map((s) => (
+                <SelectItem key={s} value={s} className="capitalize">
+                  {s.replace("_", " ")}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
-      <div className="grid gap-4">
-        {SLOTS.map((slot) => {
-          const env = getEnvelope(slot.n);
-          const local = draft[slot.n] ?? {};
-          const value = <K extends keyof Envelope>(k: K) =>
-            (local[k] as Envelope[K] | undefined) ?? env?.[k] ?? ("" as unknown as Envelope[K]);
+      <div className="grid lg:grid-cols-2 gap-5 p-5">
+        {/* LEFT — player-facing content */}
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+              Label (Hebrew)
+            </Label>
+            <Input
+              dir="rtl"
+              className="text-right"
+              value={value("label") as string}
+              onChange={(e) => onUpdate({ label: e.target.value })}
+              placeholder="למשל: מעטפה ראשונה"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+              Task (Hebrew, short & bold)
+            </Label>
+            <Input
+              dir="rtl"
+              className="text-right font-semibold text-destructive"
+              value={value("task") as string}
+              onChange={(e) => onUpdate({ task: e.target.value })}
+              placeholder="המשימה — קצרה, ברורה, לא חושפת"
+            />
+          </div>
 
-          return (
-            <div key={slot.n} className="rounded-2xl border bg-card shadow-soft overflow-hidden">
-              <div className="flex items-center gap-3 px-5 py-4 border-b bg-surface/40">
-                <div className="h-10 w-10 rounded-xl bg-gradient-brand text-white flex items-center justify-center shadow-glow">
-                  <Mail className="h-4 w-4" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-display text-lg leading-tight">{slot.title}</div>
-                  <div className="text-xs text-muted-foreground">{slot.hint}</div>
-                </div>
-                <Select
-                  value={(value("status") as string) || "draft"}
-                  onValueChange={(v) => upsert(slot.n, { status: v })}
-                >
-                  <SelectTrigger className="w-36">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {STATUSES.map((s) => (
-                      <SelectItem key={s} value={s} className="capitalize">{s}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid md:grid-cols-2 gap-4 p-5">
-                <div className="space-y-1.5">
-                  <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Label (Hebrew)</Label>
-                  <Input
-                    dir="rtl"
-                    className="text-right"
-                    value={value("label") as string}
-                    onChange={(e) => upsert(slot.n, { label: e.target.value })}
-                    placeholder="למשל: מעטפה ראשונה"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Task (Hebrew, short & bold)</Label>
-                  <Input
-                    dir="rtl"
-                    className="text-right font-semibold text-red-600"
-                    value={value("task") as string}
-                    onChange={(e) => upsert(slot.n, { task: e.target.value })}
-                    placeholder="המשימה — קצרה, ברורה, לא חושפת"
-                  />
-                </div>
-                <div className="md:col-span-2 space-y-1.5">
-                  <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Internal notes</Label>
-                  <Textarea
-                    rows={2}
-                    value={value("notes") as string}
-                    onChange={(e) => upsert(slot.n, { notes: e.target.value })}
-                    placeholder="What is revealed, what is withheld, which documents belong here…"
-                  />
-                </div>
-                <div className="md:col-span-2 rounded-lg bg-muted/50 border border-dashed px-3 py-2 text-[11px] text-muted-foreground" dir="rtl">
-                  {FOOTNOTE_HE}
-                </div>
-              </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+              Linked documents · {linkedDocs.length}
+            </Label>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="w-full justify-between font-normal">
+                  <span className="truncate text-sm">
+                    {linkedDocs.length === 0
+                      ? "Pick documents that go inside this envelope"
+                      : linkedDocs
+                          .map((d) => `#${d.doc_number ?? "?"} ${d.title}`)
+                          .join(", ")}
+                  </span>
+                  <ChevronDown className="h-4 w-4 opacity-60 shrink-0" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-[320px] max-h-72 overflow-y-auto" align="start">
+                <DropdownMenuLabel className="text-xs">Project documents</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {docs.length === 0 && (
+                  <div className="px-2 py-3 text-xs text-muted-foreground">
+                    No documents in this project yet.
+                  </div>
+                )}
+                {docs.map((d) => {
+                  const checked = linkedSet.has(d.id);
+                  const otherEnv =
+                    !checked && d.envelope_number != null && d.envelope_number !== slot.n
+                      ? d.envelope_number
+                      : null;
+                  return (
+                    <DropdownMenuCheckboxItem
+                      key={d.id}
+                      checked={checked}
+                      onCheckedChange={(v) => toggleDoc(d.id, !!v)}
+                      className="text-xs gap-2"
+                    >
+                      <FileText className="h-3 w-3 text-muted-foreground" />
+                      <span className="flex-1 truncate">
+                        <span className="text-muted-foreground mr-1">
+                          #{d.doc_number ?? "?"}
+                        </span>
+                        {d.title}
+                      </span>
+                      {otherEnv != null && (
+                        <span className="text-[10px] text-warning ml-1">→ env #{otherEnv}</span>
+                      )}
+                    </DropdownMenuCheckboxItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+              Internal notes
+            </Label>
+            <Textarea
+              rows={2}
+              value={value("notes") as string}
+              onChange={(e) => onUpdate({ notes: e.target.value })}
+              placeholder="What is revealed, what is withheld…"
+            />
+          </div>
+
+          <div
+            className="rounded-lg bg-muted/50 border border-dashed px-3 py-2 text-[11px] text-muted-foreground"
+            dir="rtl"
+          >
+            {FOOTNOTE_HE}
+          </div>
+        </div>
+
+        {/* RIGHT — design & generation */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-2">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+              Design instructions
+            </Label>
+            <div className="flex items-center gap-2">
+              <PromptWriterModelPicker surface="envelope" />
+              <ImageModelPicker surface="envelope" defaultModel="chatgpt-image" />
             </div>
-          );
-        })}
+          </div>
+          <Textarea
+            rows={10}
+            value={(value("design_instructions") as string) ?? ""}
+            onChange={(e) => onUpdate({ design_instructions: e.target.value })}
+            placeholder={`Paper stock, wax seal, classification stamp, Hebrew label placement, era-correct typography…\n\nClick ✨ Draft prompt to start from the workspace template.`}
+            className="font-mono text-xs leading-relaxed"
+          />
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={draftPrompt}
+              disabled={draftingPrompt}
+            >
+              {draftingPrompt ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+              Draft prompt
+            </Button>
+            <Button className="gap-2" onClick={generateImage} disabled={generatingImage}>
+              {generatingImage ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <ImagePlus className="h-4 w-4" />
+              )}
+              Generate envelope mock-up
+            </Button>
+            <Button variant="ghost" className="gap-2" onClick={openInAssistant}>
+              <ExternalLink className="h-4 w-4" /> Open in Assistant
+            </Button>
+          </div>
+
+          {cover ? (
+            <a
+              href={cover}
+              target="_blank"
+              rel="noreferrer"
+              className="block rounded-lg overflow-hidden border bg-muted/30 hover:border-foreground/30 transition-colors"
+            >
+              <img
+                src={cover}
+                alt={`Envelope ${slot.n} cover`}
+                className="w-full h-auto max-h-72 object-contain"
+              />
+            </a>
+          ) : (
+            <div className="rounded-lg border border-dashed bg-muted/20 px-3 py-6 text-center text-xs text-muted-foreground">
+              No mock-up yet. Generate one to preview the printed envelope.
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
