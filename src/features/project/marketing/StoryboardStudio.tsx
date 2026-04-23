@@ -252,7 +252,13 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
         toast.error(json.error ?? "Keyframe generation failed", { duration: 10000 });
         return;
       }
-      updateShot(shot.id, { image_url: json.url as string, in_storyboard: true });
+      updateShot(shot.id, {
+        image_url: json.url as string,
+        in_storyboard: true,
+        image_requested_model: (json.requestedModel as string) ?? modelOverride ?? null,
+        image_effective_model: (json.effectiveModel as string) ?? null,
+        image_fallback: (json.fallback as string) ?? "none",
+      });
       toast.success(`Shot ${shot.n} keyframe ready`);
     } finally {
       setBusyShot((b) => ({ ...b, [shot.id]: undefined }));
