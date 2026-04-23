@@ -202,7 +202,7 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
   const [draftingPrompt, setDraftingPrompt] = useState(false);
   const [imageQuality, setImageQuality] = useState<"low" | "medium" | "high">("medium");
   const [selectedImageModel, setSelectedImageModel] = useState<string>(
-    () => getStoredImageModel("document", "chatgpt-image-2"),
+    () => getStoredImageModel("document", "chatgpt-image"),
   );
   const saveTimer = useRef<number | undefined>(undefined);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -212,7 +212,7 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
   // Refresh selected image model whenever the picker writes back to localStorage
   useEffect(() => {
     if (!doc) return;
-    const tick = () => setSelectedImageModel(getStoredImageModel("document", "chatgpt-image-2"));
+    const tick = () => setSelectedImageModel(getStoredImageModel("document", "chatgpt-image"));
     const i = window.setInterval(tick, 800);
     return () => window.clearInterval(i);
   }, [doc?.id]);
@@ -256,7 +256,7 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
         body: JSON.stringify({
           documentId: doc.id,
           mode,
-          imageModelOverride: mode === "image" ? getStoredImageModel("document", "chatgpt-image-2") : undefined,
+          imageModelOverride: mode === "image" ? getStoredImageModel("document", "chatgpt-image") : undefined,
           quality: mode === "image" ? imageQuality : undefined,
         }),
       });

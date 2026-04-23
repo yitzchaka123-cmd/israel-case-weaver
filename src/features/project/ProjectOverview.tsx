@@ -116,7 +116,7 @@ export function ProjectOverview({ project }: { project: any }) {
     const timer = window.setTimeout(() => ctrl.abort(), 120_000);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const modelOverride = getStoredImageModel("cover", "chatgpt-image-2");
+      const modelOverride = getStoredImageModel("cover", "chatgpt-image");
       const quality = getStoredImageQuality("cover", "medium");
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-image`, {
         method: "POST",
