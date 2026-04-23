@@ -269,15 +269,30 @@ const TOOLS = [
 ];
 
 // ---------- Tool executor ----------
+// `messageId` is the chat_messages row this tool call is being attributed to.
+// Every write stamps it so the UI can later jump back to the chat turn that
+// created or last edited the row.
 async function executeTool(
   supa: ReturnType<typeof createClient>,
   projectId: string,
   name: string,
   args: Record<string, unknown>,
+  messageId: string,
 ) {
   try {
     if (name === "update_project") {
-      const { error } = await supa.from("projects").update(args).eq("id", projectId);
+      // Merge per-field origins so each updated field points to this message.
+      const { data: current } = await supa
+        .from("projects")
+        .select("assistant_origins")
+        .eq("id", projectId)
+        .single();
+      const origins = { ...(current?.assistant_origins as Record<string, string> ?? {}) };
+      for (const k of Object.keys(args)) origins[k] = messageId;
+      const { error } = await supa
+        .from("projects")
+        .update({ ...args, assistant_origins: origins })
+        .eq("id", projectId);
       if (error) throw error;
       return { ok: true, message: `Project updated: ${Object.keys(args).join(", ")}` };
     }
@@ -285,7 +300,14 @@ async function executeTool(
       const summary = String((args as { summary?: string }).summary ?? "").trim();
       const markApproved = Boolean((args as { mark_approved?: boolean }).mark_approved);
       if (!summary) return { ok: false, message: "summary is required" };
-      const patch: Record<string, unknown> = { solution_summary: summary };
+      const { data: current } = await supa
+        .from("projects")
+        .select("assistant_origins")
+        .eq("id", projectId)
+        .single();
+      const origins = { ...(current?.assistant_origins as Record<string, string> ?? {}) };
+      origins.solution_summary = messageId;
+      const patch: Record<string, unknown> = { solution_summary: summary, assistant_origins: origins };
       if (markApproved) patch.logic_approved_at = new Date().toISOString();
       const { error } = await supa.from("projects").update(patch).eq("id", projectId);
       if (error) throw error;
@@ -300,7 +322,7 @@ async function executeTool(
     if (name === "add_suspect") {
       const { data, error } = await supa
         .from("suspects")
-        .insert({ ...args, project_id: projectId })
+        .insert({ ...args, project_id: projectId, created_by_message_id: messageId })
         .select("id, name")
         .single();
       if (error) throw error;
@@ -328,7 +350,7 @@ async function executeTool(
       const docNumber = args.doc_number ?? Math.floor(100 + Math.random() * 900);
       const { data, error } = await supa
         .from("documents")
-        .insert({ ...args, doc_number: docNumber, project_id: projectId })
+        .insert({ ...args, doc_number: docNumber, project_id: projectId, created_by_message_id: messageId })
         .select("id, title")
         .single();
       if (error) throw error;
@@ -342,6 +364,7 @@ async function executeTool(
           project_id: projectId,
           position_x: Math.random() * 600,
           position_y: Math.random() * 400,
+          created_by_message_id: messageId,
         })
         .select("id, title")
         .single();
