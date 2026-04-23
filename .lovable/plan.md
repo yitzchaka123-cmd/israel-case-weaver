@@ -1,62 +1,21 @@
 
 
-## Finish the Envelopes upgrade (UI + canvas wiring + notifications)
+## Swap the Overview panel title font to Space Grotesk
 
-Backend, schema, edge functions, and playbook are done. This wraps up the remaining frontend pieces so you can actually use everything.
+Scope is tight: only the five panel titles on the Project Overview tab — **Case Identity, Case brief, Production, Cover, Autosave** — switch from Instrument Serif to Space Grotesk. Every other heading in the app (Documents, Suspects, Hints, Marketing, Assistant, Canvas, etc.) keeps the existing Instrument Serif.
 
-### 1. `EnvelopesSection.tsx` — full redesign
+### Changes
 
-Replace the current bare-bones section with a two-column card per envelope:
+**1. `src/styles.css`**
+- Add Space Grotesk to the Google Fonts `@import` line at the top of the file.
+- Add a new utility class `.font-overview-title { font-family: "Space Grotesk", system-ui, sans-serif; letter-spacing: -0.01em; font-weight: 600; }` next to the existing `.font-display` rule.
 
-**Above the grid (global actions row)**
-- **Brief me on envelopes** button → fires `mystudio:assistant-prompt` with the playbook briefing prompt (lists count + labels + closing-line rule, asks which envelope to draft first).
-- **✨ Generate all envelopes with AI** button → calls the new `generate-envelopes` edge function, shows spinner, toasts on success.
+**2. `src/features/project/ProjectOverview.tsx`**
+- Update the `SectionTitle` helper (line 548–550) to use the new class:
+  ```tsx
+  <h2 className="font-overview-title text-xl mb-4">{children}</h2>
+  ```
+- All five Overview panel titles (`<SectionTitle>`) automatically pick this up — no other call sites exist for `SectionTitle`.
 
-**Per envelope card — left column (content)**
-- Label (Hebrew, RTL) — kept
-- Task (Hebrew, RTL, bold red) — kept
-- **Linked documents** multi-select — writes both `envelopes.linked_document_ids` and `documents.envelope_number`
-- Internal notes — kept
-- Status pill + tooltip explaining `draft / in_progress / review / final` (production status used by the Production Dashboard, NOT envelope state)
-- `AssistantOriginBadge` for `created_by_message_id`
-
-**Per envelope card — right column (design & generation, NEW)**
-- **Design instructions** textarea (large, monospace) — placeholder explains paper stock / wax seal / Hebrew label placement / classification look
-- **✨ Draft prompt** button → `suggest-image-prompt` with `category: "envelope"`, fills the textarea
-- **Generate envelope mock-up** button → `generate-image` with `category: "envelope"` + `envelope_id`, stores URL into `envelopes.cover_image_url`, auto-bumps status to `review`, shows thumbnail
-- **Open in Assistant ↗** button → fires `mystudio:assistant-prompt` with a per-envelope starter prompt (label + task + asks assistant to brief playbook rules for this envelope)
-
-### 2. `CanvasSection.tsx` — pre-flight banner
-
-Above the "Generate logic flow" button, show an amber banner when **no envelope has `design_instructions` filled** yet:
-
-> ⚠ You haven't briefed the envelopes yet. The flow will be more accurate if you walk through the {N}-envelope structure with the assistant first. **[Open assistant briefing]**
-
-Banner button fires the same "Brief me on envelopes" prompt. Banner hides once any envelope has design instructions.
-
-### 3. `notifications/triggers.ts` — `envelopes_drafted` trigger
-
-Add a new trigger that fires when all envelopes have non-empty `task` AND `design_instructions`:
-> "Envelopes are drafted — generate the logic flow next so they get wired into the board."
-
-Wired into the existing `useProjectNotifications` polling loop next to `documents_drafted`.
-
-### 4. `CanvasNodeTypes.tsx` — render envelope nodes
-
-Add an `envelope` node renderer (purple/wax-seal styled, mail icon, shows envelope number + label) so the new envelope nodes the logic-flow generator now produces actually display correctly on the canvas.
-
-### Files touched
-
-| File | Change |
-|---|---|
-| `src/features/project/EnvelopesSection.tsx` | Full redesign (above) |
-| `src/features/project/CanvasSection.tsx` | Pre-flight banner |
-| `src/features/project/canvas/CanvasNodeTypes.tsx` | Envelope node renderer |
-| `src/features/project/notifications/triggers.ts` | `envelopes_drafted` trigger |
-
-### Out of scope
-
-- Standalone envelope asset gallery (cover lives on the row).
-- Print sheet PDF for envelopes (later).
-- Per-project override of envelope count (workspace playbook still wins).
+That's the entire change. Two files, surgical.
 
