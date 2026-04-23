@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Sparkles, ArrowRight, Wand2, Image as ImageIcon, Save, FileText, Copy, Trash2, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
-import { getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
+import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { useProjectNotifications } from "@/features/project/notifications/useProjectNotifications";
 
 type Engine = "sora" | "kling";
@@ -229,8 +229,8 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
     }
     setBusyShot((b) => ({ ...b, [shot.id]: "image" }));
     try {
-      const modelOverride = getStoredImageModel("media", "nano-banana-2");
-      const quality = getStoredImageQuality("media", "medium");
+      const modelOverride = getStoredImageModel("storyboard", "nano-banana-2");
+      const quality = getStoredImageQuality("storyboard", "medium");
       const resp = await callEdge("generate-image", {
         projectId,
         category: "marketing-storyboard",
@@ -384,13 +384,21 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
 
         {/* Column 3 — Storyboard */}
         <ColumnFrame title="3 · Visual storyboard" accent="from-teal-500/15 to-transparent">
-          <div className="flex items-center gap-2">
-            <Button onClick={handleGenerateAllKeyframes} size="sm" variant="outline" className="flex-1 gap-1.5 text-xs" disabled={boardShots.length === 0}>
-              <Wand2 className="h-3 w-3" /> Generate all keyframes
-            </Button>
-            <Button onClick={handleCopyAllPrompts} size="sm" variant="ghost" className="gap-1.5 text-xs" disabled={boardShots.length === 0}>
-              <Copy className="h-3 w-3" /> Copy prompts
-            </Button>
+          <div className="space-y-2">
+            <div>
+              <Label className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Keyframe image model</Label>
+              <div className="mt-1.5">
+                <ImageModelPicker surface="storyboard" defaultModel="nano-banana-2" />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button onClick={handleGenerateAllKeyframes} size="sm" variant="outline" className="flex-1 gap-1.5 text-xs" disabled={boardShots.length === 0}>
+                <Wand2 className="h-3 w-3" /> Generate all keyframes
+              </Button>
+              <Button onClick={handleCopyAllPrompts} size="sm" variant="ghost" className="gap-1.5 text-xs" disabled={boardShots.length === 0}>
+                <Copy className="h-3 w-3" /> Copy prompts
+              </Button>
+            </div>
           </div>
 
           <div className="space-y-3 mt-4 max-h-[600px] overflow-y-auto pr-1">

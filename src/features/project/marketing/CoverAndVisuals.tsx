@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PromptPanel } from "@/components/PromptPanel";
-import { getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
+import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -84,8 +84,8 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const handleGenerate = async (prompt: string) => {
     setGenerating(true);
     try {
-      const modelOverride = getStoredImageModel("media", "chatgpt-image");
-      const quality = getStoredImageQuality("media", "medium");
+      const modelOverride = getStoredImageModel("marketing-cover", "chatgpt-image-2");
+      const quality = getStoredImageQuality("marketing-cover", "medium");
       const resp = await callEdge("generate-image", {
         projectId,
         category: "marketing-extra",
@@ -190,6 +190,12 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
             <div className="space-y-1.5">
               <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Steering hint</Label>
               <Input value={newHint} onChange={(e) => setNewHint(e.target.value)} placeholder="e.g. moody close-up of the locket" />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Image model</Label>
+            <div className="max-w-xs">
+              <ImageModelPicker surface="marketing-cover" defaultModel="chatgpt-image-2" />
             </div>
           </div>
           <PromptPanel
