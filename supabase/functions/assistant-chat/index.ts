@@ -1047,7 +1047,7 @@ async function executeTool(
         "suspects",
         "suspect",
         true,
-        "id, name",
+        "id, name, thumbnail_url, alt_thumbnail_url, thumbnail_prompt, alt_thumbnail_prompt",
         (r) => String(r.name ?? "—"),
       );
     }
@@ -1056,7 +1056,7 @@ async function executeTool(
         "documents",
         "document",
         true,
-        "id, title, doc_number",
+        "id, title, doc_number, generated_asset_url",
         (r) => `#${r.doc_number ?? "?"} ${r.title ?? "—"}`,
       );
     }
@@ -1065,7 +1065,7 @@ async function executeTool(
         "envelopes",
         "envelope",
         false,
-        "id, number, label",
+        "id, number, label, cover_image_url, cover_prompt",
         (r) => `#${r.number ?? "?"} ${r.label ?? ""}`.trim(),
       );
     }
@@ -1083,7 +1083,7 @@ async function executeTool(
         "canvas_nodes",
         "node",
         true,
-        "id, title",
+        "id, title, data",
         (r) => String(r.title ?? "—"),
       );
     }
