@@ -177,8 +177,10 @@ When the user references an EXISTING item — by name ("change Yossi's motive"),
 Pass ONLY the fields the user wants to change in the update tool — undefined keys are ignored, so partial edits won't wipe other columns. The receipt will say "Updated X: <name> (<changed-fields>)" so the user can immediately see what was touched.
 
 DESIGN INSTRUCTIONS RULES (CRITICAL — applies to EVERY add_document call)
-The \`design_instructions\` field is the visual brief for the image generator. It MUST be long, structured, and specific. Never leave it empty, never use one-line notes, never use generic placeholders. Format it with these sections, in this order:
-  GOAL · CRITICAL TEXT QUALITY RULES · OUTPUT FORMAT (size + DPI matching print_size) · VISUAL STYLE · LAYOUT (numbered, document-type specific) · TYPOGRAPHY · AUTHENTICITY RULES · EXACT HEBREW TEXT TO PLACE (mirror the Hebrew body verbatim — no paraphrasing) · ADDITIONAL REALISM DETAILS · FINAL INSTRUCTION
+The \`design_instructions\` field is the visual brief for the image generator. It MUST be long, structured, and specific. Never leave it empty, never use one-line notes, never use generic placeholders.
+${renderDesignSkeletonLine(playbook)}
+
+${renderCatalogsBlock(playbook)}
 
 ${renderRealismParagraphs(playbook)}
 
