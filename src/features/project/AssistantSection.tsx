@@ -437,19 +437,17 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
-                    send(input);
+                    if (!sending) send(input);
                   }
                 }}
-                placeholder={voice.listening ? "Listening… speak now" : "Describe what you want to build, approve a proposal, or ask for the next step…"}
+                placeholder={voice.listening ? "Listening… speak now" : sending ? "Assistant is thinking — keep typing your next message…" : "Describe what you want to build, approve a proposal, or ask for the next step…"}
                 className="min-h-[80px] resize-none border-0 focus-visible:ring-0 bg-transparent pr-24"
-                disabled={sending}
               />
               <Button
                 type="button"
                 size="icon"
                 variant={voice.listening ? "destructive" : "ghost"}
                 onClick={toggleVoice}
-                disabled={sending}
                 title={voice.supported ? (voice.listening ? "Stop recording" : "Dictate with voice") : "Voice not supported in this browser"}
                 aria-label={voice.listening ? "Stop voice input" : "Start voice input"}
                 className={`absolute bottom-2.5 right-14 h-9 w-9 rounded-lg ${voice.listening ? "animate-pulse" : ""}`}
