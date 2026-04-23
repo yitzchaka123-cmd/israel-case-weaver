@@ -702,7 +702,7 @@ Deno.serve(async (req) => {
       { role: "system", content: systemPrompt },
       ...messages,
     ];
-    const executedTools: Array<{ name: string; result: unknown }> = [];
+    const executedTools: Array<{ name: string; args?: Record<string, unknown>; result: unknown }> = [];
 
     const MAX_ROUNDS = 8;
     for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -722,26 +722,62 @@ Deno.serve(async (req) => {
               : "Lovable AI";
         const t = await resp.text();
         console.error(`${provider} error`, resp.status, t);
+
+        // Build a user-facing error string.
+        let errMsg: string;
+        let errStatus = 500;
         if (resp.status === 429) {
-          return new Response(JSON.stringify({ error: `${provider} rate limit — try again in a moment.` }), {
-            status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-        if (resp.status === 402) {
+          errMsg = `${provider} rate limit — try again in a moment.`;
+          errStatus = 429;
+        } else if (resp.status === 402) {
           const hint = provider === "Lovable AI"
             ? "Add credits in Settings → Workspace → Usage, or switch this project's planning provider."
             : `Check your ${provider} account billing or switch this project's planning provider.`;
-          return new Response(JSON.stringify({ error: `${provider} credits/key issue (status 402). ${hint}` }), {
-            status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
+          errMsg = `${provider} credits/key issue (status 402). ${hint}`;
+          errStatus = 402;
+        } else if (resp.status === 401) {
+          errMsg = `${provider} authentication failed — check the API key in Settings → API keys.`;
+          errStatus = 401;
+        } else {
+          errMsg = `${provider} error (status ${resp.status})`;
+          errStatus = 500;
         }
-        if (resp.status === 401) {
-          return new Response(JSON.stringify({ error: `${provider} authentication failed — check the API key in Settings → API keys.` }), {
-            status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+
+        // CRITICAL: if we already executed tools this turn (e.g. saved 3 of 6
+        // documents before the LLM aborted), persist them as an assistant
+        // message so the user sees what made it to the DB and can resume
+        // cleanly instead of thinking the whole batch was lost.
+        if (executedTools.length > 0) {
+          const okCount = executedTools.filter((t) => (t.result as { ok?: boolean })?.ok).length;
+          const totalCount = executedTools.length;
+          const recoveryNote =
+            `⚠️ ${errMsg}\n\n` +
+            `Before this happened I successfully executed ${okCount} of ${totalCount} actions ` +
+            `(see receipts below). They are already saved — you don't need to redo them. ` +
+            `Reply "continue" once the issue is resolved and I'll pick up where I left off.`;
+          await supa.from("chat_messages").insert({
+            id: assistantMessageId,
+            project_id: projectId,
+            role: "assistant",
+            content: recoveryNote,
+            metadata: { model, tools: executedTools, partial: true, error: errMsg },
           });
+          return new Response(
+            JSON.stringify({
+              content: recoveryNote,
+              tools: executedTools,
+              model,
+              messageId: assistantMessageId,
+              partial: true,
+              error: errMsg,
+            }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
         }
-        return new Response(JSON.stringify({ error: `${provider} error (status ${resp.status})` }), {
-          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+
+        return new Response(JSON.stringify({ error: errMsg }), {
+          status: errStatus,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
