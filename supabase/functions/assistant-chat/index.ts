@@ -1310,6 +1310,14 @@ async function processConversation(
     const optionsResult = lastOptionsTool?.result as { options?: Array<{ label: string; send: string }>; question?: string } | undefined;
     let quickOptions = optionsResult?.options ?? null;
     let quickQuestion = optionsResult?.question ?? null;
+    // Stale-args guard: model sometimes copies the previous turn's
+    // propose_options arguments verbatim. Reject if labels don't appear in
+    // this turn's prose, then fall through to the prose synthesizer.
+    if (quickOptions && quickOptions.length > 0 && !optionsMatchProse(quickOptions, finalText)) {
+      console.warn("[assistant-chat] propose_options stale — labels don't match prose, falling back to synth", { labels: quickOptions.map((o) => o.label) });
+      quickOptions = null;
+      quickQuestion = null;
+    }
     if (!quickOptions || quickOptions.length === 0) {
       const synth = synthesizeOptionsFromProse(finalText);
       if (synth) { quickOptions = synth.options; quickQuestion = synth.question; }
@@ -1612,6 +1620,15 @@ Deno.serve(async (req) => {
         | undefined;
       let quickOptions = optionsResult?.options ?? null;
       let quickQuestion = optionsResult?.question ?? null;
+
+      // Stale-args guard (mirror of background branch): if the model copied
+      // a previous turn's propose_options arguments, none of the labels will
+      // appear in this turn's numbered list. Reject and fall through to synth.
+      if (quickOptions && quickOptions.length > 0 && !optionsMatchProse(quickOptions, finalText)) {
+        console.warn("[assistant-chat] propose_options stale — labels don't match prose, falling back to synth", { labels: quickOptions.map((o) => o.label) });
+        quickOptions = null;
+        quickQuestion = null;
+      }
 
       // Fallback: model wrote a numbered list in prose but forgot to call
       // propose_options. Synthesize buttons from the prose so the UI still
