@@ -397,10 +397,22 @@ function AssetDialog({
   const [editPrompt, setEditPrompt] = useState("");
   const [retrying, setRetrying] = useState(false);
   const [regenPrompt, setRegenPrompt] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
     setEditPrompt(asset?.prompt ?? "");
   }, [asset?.id, asset?.prompt]);
+
+  // Debounced autosave of edited prompt back to media_assets so the user
+  // never loses an in-progress edit if the dialog closes.
+  useEffect(() => {
+    if (!asset?.id) return;
+    if (editPrompt === (asset.prompt ?? "")) return;
+    const t = setTimeout(() => {
+      supabase.from("media_assets").update({ prompt: editPrompt }).eq("id", asset.id).then(() => {});
+    }, 700);
+    return () => clearTimeout(t);
+  }, [editPrompt, asset?.id, asset?.prompt]);
 
   if (!asset) return null;
 
