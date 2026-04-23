@@ -1,52 +1,56 @@
 
 
-## Remove Google Drive integration; keep zip export
+## Goal
 
-Drive is wired into Settings, the Export menu, and the Suspects "From Drive" / auto-backup hooks. Export already supports a local zip download — that path stays and becomes the only export option.
+Make the OpenAI image models (ChatGPT Image 2 + ChatGPT Image 1) selectable everywhere in the app where images are generated. The picker already supports both — they're just missing from four panels. Also expose the optional second OpenAI account so you can route `gpt-image-2` to a separate billing key.
 
-### Frontend changes
+## What's already done (no change needed)
 
-- **`src/features/project/ExportMenu.tsx`** — remove the "Save case to Google Drive" item, the `Cloud` icon import, and the `exportProjectToDrive` import.
-- **`src/lib/export.ts`** — delete `exportProjectToDrive`. Keep `exportProjectPackage` (the zip), `exportDocumentsOnly`, `exportPromptsOnly`, `exportMediaOnly`, and the shared `buildProjectPackage` helper.
-- **`src/features/project/SuspectsSection.tsx`** — remove:
-  - `DrivePicker` import + usage
-  - `backupAsset` import + the fire-and-forget call after portrait generation
-  - `HardDrive` icon, "From Drive" button, `drivePickerOpen` state
-- **`src/features/settings/SettingsPage.tsx`** — remove the `GoogleDriveConnection` import and its entire "Google Drive" `Section` block.
-- **Delete files**:
-  - `src/features/settings/GoogleDriveConnection.tsx`
-  - `src/features/project/DrivePicker.tsx`
-  - `src/lib/drive-backup.ts`
+- The `ImageModelPicker` already lists **ChatGPT Image 2 (gpt-image-2) — latest** and **ChatGPT Image 1 (gpt-image-1)** at the top of the dropdown.
+- The picker is already rendered on: **Suspects**, **Project cover (overview)**, **Envelopes**, **Documents**.
+- Backend `generate-image` already routes both OpenAI models, including the optional dedicated key path (`OPENAI_IMAGE2_API_KEY`) for `gpt-image-2`.
 
-### Backend changes
+## What's missing (the actual work)
 
-- **Delete edge functions** (code + deployment):
-  - `drive-oauth-start`
-  - `drive-oauth-callback`
-  - `drive-status`
-  - `drive-list`
-  - `drive-upload`
-  - `drive-download`
-  - `drive-disconnect`
-  - `drive-toggle-backup`
-- **Delete shared helper**: `supabase/functions/_shared/google-drive.ts`.
+The picker is NOT shown in these four image-generating panels — they silently use whatever was last picked under the `"media"` storage key:
 
-### Database
+1. **Media tab** (`src/features/project/MediaSection.tsx`) — main media generator
+2. **Marketing → Cover & Visuals** (`src/features/project/marketing/CoverAndVisuals.tsx`) — back-of-box + extras
+3. **Marketing → Storyboard Studio** (`src/features/project/marketing/StoryboardStudio.tsx`) — keyframe per shot
+4. **Marketing → Barcode & Back Panel** (`src/features/project/marketing/BarcodeAndBackPanel.tsx`) — back-of-box render
 
-- Migration to drop the now-unused tables:
-  - `drop table if exists public.drive_backup_log;`
-  - `drop table if exists public.user_google_drive_connections;`
+### Changes per file
 
-### Out of scope / unchanged
+For each of the four files above:
+- Import `ImageModelPicker` from `@/components/ImageModelPicker`.
+- Render `<ImageModelPicker surface="..." defaultModel="..." />` next to the existing "Generate" button (matching the pattern already used in `EnvelopesSection` / `DocumentsSection`).
+- Use a **dedicated surface key per panel** so each remembers its own model independently (today they all share `"media"`, which causes one panel's choice to silently affect another):
+  - `MediaSection` → surface `"media"`, default `chatgpt-image-2`
+  - `CoverAndVisuals` → surface `"marketing-cover"`, default `chatgpt-image-2`
+  - `StoryboardStudio` → surface `"storyboard"`, default `nano-banana-2` (storyboards are many shots → speed matters)
+  - `BarcodeAndBackPanel` → surface `"marketing-back"`, default `chatgpt-image-2`
+- Update the matching `getStoredImageModel(...)` / `getStoredImageQuality(...)` calls in those files to use the new surface key.
 
-- Local zip download (`Download .zip`), Documents-only, Media-only, Prompts JSON exports — all kept as-is.
-- No changes to authentication, storage buckets, or other edge functions.
-- The `GOOGLE_DRIVE_CLIENT_ID` / `GOOGLE_DRIVE_CLIENT_SECRET` secrets in Lovable Cloud become unused; you can clear them later from Cloud settings if you want — not required for the code to work.
+### Default model bump
 
-### Validation
+Currently most surfaces default to `chatgpt-image` (the legacy gpt-image-1). New default for cover, suspect, envelope, document, media, marketing surfaces becomes **`chatgpt-image-2`** (latest). Storyboard keeps `nano-banana-2` for speed. Existing user choices in localStorage are preserved.
 
-- Settings page renders without the Google Drive section.
-- Export menu shows only: Download .zip, Documents only, Media only, Prompts (JSON).
-- Opening a suspect shows Generate / Upload only (no "From Drive" button) and generating a portrait no longer triggers a backup call.
-- No console errors referencing `drive-*` functions or missing imports.
+### Optional second OpenAI key (already wired)
+
+The picker already shows a small hint under "ChatGPT Image 2": *"Uses a dedicated OpenAI account if `OPENAI_IMAGE2_API_KEY` is set, otherwise the main OpenAI key."*
+
+No code change needed — but the secret isn't currently configured. After the UI changes are in, if you want to route `gpt-image-2` traffic to a separate OpenAI billing account, add the secret `OPENAI_IMAGE2_API_KEY` in Lovable Cloud settings. (I'll prompt for it after the plan is approved if you want it.)
+
+## Validation
+
+- Open Media, Marketing → Cover & Visuals, Marketing → Storyboard, Marketing → Barcode/Back: each shows a model dropdown with **ChatGPT Image 2 (latest)** at the top.
+- Selecting ChatGPT Image 2 in one panel does NOT change the model in another panel (per-surface persistence).
+- Generating an image from any panel routes through OpenAI when an OpenAI model is picked, and through Gemini/Lovable AI when a Nano Banana model is picked.
+- No console errors, no missing imports.
+
+## Out of scope
+
+- No backend / edge function changes.
+- No DB migrations.
+- No changes to non-image generators (text, copy, storyboard script, etc.).
 
