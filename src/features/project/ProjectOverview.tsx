@@ -387,13 +387,34 @@ export function ProjectOverview({ project }: { project: any }) {
                 <Switch checked={sellingOn} onCheckedChange={handleSellingToggle} />
               </div>
               {sellingOn && (
-                <Textarea
-                  value={draft.selling_point ?? ""}
-                  onChange={(e) => update({ selling_point: e.target.value })}
-                  rows={2}
-                  placeholder="e.g. a 1980s telex machine that decodes the final clue. The assistant can help you plan this — check the bell."
-                  className="bg-background"
-                />
+                <div className="space-y-2">
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleGenerateSellingPoint}
+                      disabled={genSelling}
+                      className="h-7 px-2 text-xs gap-1.5"
+                    >
+                      {genSelling ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-3 w-3" />
+                      )}
+                      {draft.selling_point && String(draft.selling_point).trim().length > 0
+                        ? "Regenerate idea"
+                        : "Generate idea"}
+                    </Button>
+                  </div>
+                  <Textarea
+                    value={draft.selling_point ?? ""}
+                    onChange={(e) => update({ selling_point: e.target.value })}
+                    rows={2}
+                    placeholder="e.g. a 1980s telex machine that decodes the final clue. Click ✨ Generate idea to let the assistant draft one."
+                    className="bg-background"
+                  />
+                </div>
               )}
             </div>
           </div>
