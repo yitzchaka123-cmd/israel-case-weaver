@@ -219,17 +219,24 @@ export function SettingsPage() {
               onChange={setDocuments}
               options={TEXT_PROVIDER_OPTIONS}
             />
-            <ProviderRow
+            <ProviderSelectRow
+              label="Prompt generation"
+              value={promptWriter}
+              onChange={setPromptWriter}
+              options={TEXT_PROVIDER_OPTIONS}
+            />
+            <ProviderSelectRow
               label="Image generation"
               value={images}
               onChange={setImages}
-              providers={["lovable", "openai"]}
+              options={IMAGE_PROVIDER_OPTIONS}
             />
           </div>
           <div className="text-xs text-muted-foreground mt-4 space-y-1">
             <p><strong>Lovable AI</strong> entries use the Lovable AI Gateway (workspace credits).</p>
             <p><strong>Direct</strong> entries (Google, OpenAI, Anthropic) bill straight to your own provider account — make sure the matching API key is set in API keys below.</p>
             <p>Image generation: Nano Banana models automatically prefer your GEMINI_API_KEY when present, otherwise fall back to the Lovable AI Gateway. ChatGPT Image always uses your OpenAi key.</p>
+            <p><strong>Prompt generation</strong> drives the "✨ Generate prompt" buttons next to each image (cover, suspects, media, envelopes…). Per-image overrides via the writer-model picker still take precedence.</p>
           </div>
 
           <div className="border-t mt-5 pt-5 max-w-xl">
