@@ -166,6 +166,22 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, sending]);
 
+  // Scroll-to and briefly highlight a message when an outside component
+  // (e.g. the AssistantOriginBadge on a suspect/document) asks to focus it.
+  useEffect(() => {
+    if (!focusMessageId) return;
+    // Wait a tick for the tab switch + render
+    const t = window.setTimeout(() => {
+      const el = scrollRef.current?.querySelector<HTMLElement>(`[data-msg-id="${focusMessageId}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        setHighlightedId(focusMessageId);
+        window.setTimeout(() => setHighlightedId(null), 2400);
+      }
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [focusMessageId, messages]);
+
   const send = async (text: string) => {
     const content = text.trim();
     if (!content || sending) return;
@@ -333,6 +349,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
                 isLast={idx === messages.length - 1}
                 onPickOption={(text) => send(text)}
                 disabled={sending}
+                highlighted={m.id === highlightedId}
               />
             ))}
 
