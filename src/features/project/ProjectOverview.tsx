@@ -207,6 +207,40 @@ export function ProjectOverview({ project }: { project: any }) {
     }
   };
 
+  // Ask the assistant for a single concrete selling-point idea, drop it
+  // straight into the field, and stamp the assistant origin so the badge shows.
+  const handleGenerateSellingPoint = async () => {
+    setGenSelling(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-marketing-copy", {
+        body: { projectId: project.id, field: "selling_point" },
+      });
+      if (error) throw error;
+      const value = (data as { value?: string } | null)?.value?.trim();
+      if (!value) {
+        toast.error("The assistant didn't return an idea — try again.");
+        return;
+      }
+      // Write into the field (autosaves via the existing debounced update)
+      update({ selling_point: value });
+      // Stamp origin so the "by assistant" chip lights up
+      const nextOrigins = {
+        ...(draft.assistant_origins as Record<string, string> ?? {}),
+        selling_point: "manual-generate",
+      };
+      setDraft((d) => ({ ...d, assistant_origins: nextOrigins }));
+      await supabase
+        .from("projects")
+        .update({ assistant_origins: nextOrigins })
+        .eq("id", project.id);
+      toast.success("New selling point generated");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to generate selling point");
+    } finally {
+      setGenSelling(false);
+    }
+  };
+
   const uploadCover = async (file: File) => {
     const path = `${project.id}/${Date.now()}-${file.name}`;
     const { error } = await supabase.storage.from("covers").upload(path, file, { upsert: true });
