@@ -432,6 +432,7 @@ export type Database = {
           cover_image_url: string | null
           created_at: string
           difficulty: string | null
+          doc_generation_mode: string | null
           envelope_settings: Json
           genre: string | null
           hint_settings: Json
@@ -462,6 +463,7 @@ export type Database = {
           cover_image_url?: string | null
           created_at?: string
           difficulty?: string | null
+          doc_generation_mode?: string | null
           envelope_settings?: Json
           genre?: string | null
           hint_settings?: Json
@@ -492,6 +494,7 @@ export type Database = {
           cover_image_url?: string | null
           created_at?: string
           difficulty?: string | null
+          doc_generation_mode?: string | null
           envelope_settings?: Json
           genre?: string | null
           hint_settings?: Json

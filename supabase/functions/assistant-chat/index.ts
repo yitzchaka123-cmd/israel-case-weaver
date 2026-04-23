@@ -73,6 +73,22 @@ Phase 3.5 LOGIC FLOW (MANDATORY GATE before Phase 4):
     "Before we generate documents, jump to the Canvas → Logic Flow board and click 'Generate logic flow'. Review the clues, red herrings and final solution it proposes, edit anything you want, then click 'Approve logic'. Once that solution summary is locked in, every document I write will be consistent with it."
 - After approval is in place, you may proceed to Phase 4.
 Phase 4 Documents: Doc 0 = contents; then randomized doc numbers, varied types & print sizes, Hebrew bodies. Interrogations must be long, realistic, with pauses & body language.
+
+DOCUMENT GENERATION WORKFLOW (Phase 4 — read carefully)
+Each project remembers a \`doc_generation_mode\` choice that controls how aggressive you are when producing documents:
+  • "drafts"  — write the row only (title + design_instructions + hebrew_content). Do NOT call generate_document_assets. The user clicks Generate themselves.
+  • "auto"    — write the row, THEN immediately call generate_document_assets({document_id, mode: "both"}) to actually produce the Hebrew body + image. Wait for the receipt before moving on. Show one finished doc at a time so the user can react.
+  • "ask"     — after each add_document, ask the user "Generate this one now or save as draft?" with propose_options (two buttons: "Generate now" / "Save as draft, keep going"). On "Generate now", call generate_document_assets with mode "both".
+RULES:
+1. The FIRST time you enter Phase 4 in a project where \`doc_generation_mode\` is empty, BEFORE calling add_document, ask the user (with propose_options, 3 buttons) which mode they want — using these labels exactly:
+   1) "Drafts only — I'll generate myself"
+   2) "Full auto — generate text + image now"
+   3) "Ask me each time"
+   Then call set_doc_generation_mode with the chosen mode ("drafts" / "auto" / "ask"). After that, follow the rules above without re-asking.
+2. If the user already told you in their brief which mode they want (e.g. "just write the prompts, I'll click generate", "go full auto", "do everything yourself"), SKIP the question and call set_doc_generation_mode directly with the inferred mode + a one-line confirmation.
+3. The user can switch modes any time. If they say "switch to drafts only" / "go full auto" / "ask me each time", call set_doc_generation_mode and acknowledge.
+4. generate_document_assets is gated server-side: it will refuse if the Logic Flow is not approved, or if the document_id doesn't belong to this project. Trust the receipt.
+5. The Hebrew body produced by generate_document_assets MAY differ slightly from the hebrew_content you wrote in add_document — that's expected. The receipt shows the final stored version.
 Envelopes (fixed 5): Open First / 1 / 2 / 3 / 4. Tasks short, bold, not overly revealing. Every envelope ends with: "פתחו את המעטפה הבאה רק אם אתם בטוחים שביצעתם את המשימה הקודמת כראוי."
 Hints: 3 per stage — vague → helpful → gives away task.
 
@@ -137,6 +153,7 @@ Existing suspects: ${suspectCount}
 Existing documents: ${docCount}
 Logic flow approved: ${project.logic_approved_at ? "YES (" + project.logic_approved_at + ")" : "NO — must be approved on the Canvas before generating documents"}
 Solution summary set: ${project.solution_summary ? "YES" : "NO"}
+Doc generation mode: ${project.doc_generation_mode ? `"${project.doc_generation_mode}"` : "NOT YET CHOSEN — ask the user with propose_options before the first add_document in Phase 4 (see DOCUMENT GENERATION WORKFLOW)"}
 
 Respond in English for planning. Write Hebrew for any final in-game text. Keep outputs concise unless the user requests depth.${overrides}
 
@@ -353,6 +370,39 @@ const TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "set_doc_generation_mode",
+      description:
+        "Persist the user's preferred document-generation strategy on the project. Call once at the start of Phase 4 (or whenever the user changes their mind). 'drafts' = you only write rows, user clicks generate. 'auto' = you call generate_document_assets after every add_document. 'ask' = ask the user per-document.",
+      parameters: {
+        type: "object",
+        properties: {
+          mode: { type: "string", enum: ["drafts", "auto", "ask"] },
+        },
+        required: ["mode"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "generate_document_assets",
+      description:
+        "Actually trigger generation of the Hebrew body and/or image for an existing document row (the same pipeline as the Documents tab's Generate buttons). Use ONLY in 'auto' mode after add_document, or in 'ask' mode after the user confirms 'Generate now'. The receipt returns a Hebrew preview snippet and the image URL so the user can review the result inline in chat.",
+      parameters: {
+        type: "object",
+        properties: {
+          document_id: { type: "string", description: "ID returned by the most recent add_document call." },
+          mode: { type: "string", enum: ["text", "image", "both"], description: "Which assets to generate. Default 'both'." },
+        },
+        required: ["document_id"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 // ---------- Tool executor ----------
@@ -473,6 +523,113 @@ async function executeTool(
         message: `Quick-reply buttons proposed (${cleaned.length})`,
         options: cleaned,
         question: typeof opts.question === "string" ? opts.question.trim() : undefined,
+      };
+    }
+    if (name === "set_doc_generation_mode") {
+      const mode = String((args as { mode?: string }).mode ?? "").trim();
+      if (!["drafts", "auto", "ask"].includes(mode)) {
+        return { ok: false, message: "mode must be 'drafts', 'auto', or 'ask'" };
+      }
+      const { data: current } = await supa
+        .from("projects")
+        .select("assistant_origins")
+        .eq("id", projectId)
+        .single();
+      const origins = { ...(current?.assistant_origins as Record<string, string> ?? {}) };
+      origins.doc_generation_mode = messageId;
+      const { error } = await supa
+        .from("projects")
+        .update({ doc_generation_mode: mode, assistant_origins: origins })
+        .eq("id", projectId);
+      if (error) throw error;
+      const friendly = mode === "drafts"
+        ? "Drafts only — I'll write the rows, you press Generate"
+        : mode === "auto"
+          ? "Full auto — I'll generate text + image after every doc"
+          : "Ask each time — I'll check before generating";
+      return { ok: true, message: `Document workflow set: ${friendly}` };
+    }
+    if (name === "generate_document_assets") {
+      const documentId = String((args as { document_id?: string }).document_id ?? "").trim();
+      const requestedMode = String((args as { mode?: string }).mode ?? "both").trim();
+      if (!documentId) return { ok: false, message: "document_id is required" };
+      if (!["text", "image", "both"].includes(requestedMode)) {
+        return { ok: false, message: "mode must be 'text', 'image', or 'both'" };
+      }
+      // Gate: logic flow must be approved + document must belong to project.
+      const { data: proj } = await supa
+        .from("projects")
+        .select("solution_summary, logic_approved_at")
+        .eq("id", projectId)
+        .single();
+      if (!proj?.solution_summary || !proj?.logic_approved_at) {
+        return {
+          ok: false,
+          message: "Cannot generate — Logic Flow not approved yet. Tell the user to approve it on the Canvas first.",
+        };
+      }
+      const { data: docRow } = await supa
+        .from("documents")
+        .select("id, project_id, title")
+        .eq("id", documentId)
+        .single();
+      if (!docRow || docRow.project_id !== projectId) {
+        return { ok: false, message: "Document not found in this project." };
+      }
+
+      const callGenerate = async (m: "text" | "image") => {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 120_000);
+        try {
+          const r = await fetch(`${SUPABASE_URL}/functions/v1/generate-document`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ documentId, mode: m }),
+            signal: ctrl.signal,
+          });
+          const body = await r.json().catch(() => ({}));
+          return { ok: r.ok, status: r.status, body };
+        } catch (e) {
+          const aborted = (e as Error)?.name === "AbortError";
+          return { ok: false, status: aborted ? 504 : 500, body: { error: aborted ? "timeout after 120s — generation continues server-side, check Documents tab" : (e as Error)?.message ?? "fetch failed" } };
+        } finally {
+          clearTimeout(timer);
+        }
+      };
+
+      const errors: string[] = [];
+      if (requestedMode === "text" || requestedMode === "both") {
+        const r = await callGenerate("text");
+        if (!r.ok) errors.push(`text: ${r.body?.error ?? r.status}`);
+      }
+      if (requestedMode === "image" || requestedMode === "both") {
+        const r = await callGenerate("image");
+        if (!r.ok) errors.push(`image: ${r.body?.error ?? r.status}`);
+      }
+
+      // Re-read row to grab whatever made it through.
+      const { data: finalDoc } = await supa
+        .from("documents")
+        .select("hebrew_content, generated_asset_url, title")
+        .eq("id", documentId)
+        .single();
+      const hebrew = (finalDoc?.hebrew_content ?? "").toString();
+      const preview = hebrew.length > 240 ? `${hebrew.slice(0, 240)}…` : hebrew;
+      const imageUrl = finalDoc?.generated_asset_url ?? null;
+
+      if (errors.length > 0 && !imageUrl && !hebrew) {
+        return { ok: false, message: `Generation failed — ${errors.join("; ")}`, id: documentId };
+      }
+      const partial = errors.length > 0 ? ` (partial: ${errors.join("; ")})` : "";
+      return {
+        ok: true,
+        message: `Generated assets for "${finalDoc?.title ?? "document"}"${partial}`,
+        id: documentId,
+        hebrew_preview: preview || undefined,
+        image_url: imageUrl || undefined,
       };
     }
     return { ok: false, message: `Unknown tool: ${name}` };

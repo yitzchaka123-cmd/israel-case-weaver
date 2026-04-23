@@ -32,7 +32,7 @@ const IMAGE_MODELS = [
 type ToolCall = {
   name: string;
   args?: Record<string, unknown>;
-  result: { ok: boolean; message: string; id?: string };
+  result: { ok: boolean; message: string; id?: string; hebrew_preview?: string; image_url?: string };
 };
 
 type QuickOption = { label: string; send: string };
@@ -747,6 +747,7 @@ function destinationFor(toolName: string): { tab: string; label: string } | null
   switch (toolName) {
     case "add_document":
     case "update_document":
+    case "generate_document_assets":
       return { tab: "documents", label: "Open in Documents" };
     case "add_suspect":
     case "update_suspect":
@@ -845,6 +846,69 @@ function ProjectUpdateReceipt({ args, ok, message }: { args: Record<string, unkn
   );
 }
 
+function GeneratedDocReceipt({
+  message,
+  hebrewPreview,
+  imageUrl,
+  documentId,
+}: {
+  message: string;
+  hebrewPreview?: string;
+  imageUrl?: string;
+  documentId?: string;
+}) {
+  const handleJump = () => {
+    window.dispatchEvent(
+      new CustomEvent("mystudio:navigate", {
+        detail: { tab: "documents", targetId: documentId },
+      }),
+    );
+  };
+  return (
+    <div className="rounded-lg border border-border/60 bg-muted/30 p-2.5 space-y-2">
+      <button
+        type="button"
+        onClick={handleJump}
+        title="Open in Documents"
+        className="flex w-full items-center justify-between gap-2 text-left text-foreground/90 font-medium hover:text-accent-foreground"
+      >
+        <span className="inline-flex items-center gap-1.5">
+          <ImageIcon className="h-3.5 w-3.5 opacity-70" />
+          {message}
+        </span>
+        <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
+      </button>
+      <div className="flex gap-3">
+        {imageUrl && (
+          <a
+            href={imageUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="shrink-0 block rounded-md overflow-hidden border border-border/60 bg-background hover:ring-2 hover:ring-accent/40 transition"
+            title="Open full-size image in a new tab"
+          >
+            <img
+              src={imageUrl}
+              alt="Generated document preview"
+              className="h-32 w-auto object-cover"
+              loading="lazy"
+            />
+          </a>
+        )}
+        {hebrewPreview && (
+          <div
+            dir="rtl"
+            lang="he"
+            className="flex-1 min-w-0 text-[12.5px] leading-relaxed text-foreground/85 whitespace-pre-wrap font-sans bg-background/60 rounded-md border border-border/40 px-2.5 py-2 max-h-32 overflow-auto"
+          >
+            {hebrewPreview}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ToolReceipts({ tools }: { tools: ToolCall[] }) {
   const [open, setOpen] = useState(false);
   const okCount = tools.filter((t) => t.result.ok).length;
@@ -890,6 +954,26 @@ function ToolReceipts({ tools }: { tools: ToolCall[] }) {
                       args={(t.args ?? {}) as Record<string, unknown>}
                       ok={t.result.ok}
                       message={t.result.message}
+                    />
+                  </div>
+                </li>
+              );
+            }
+
+            // Special-case generate_document_assets: render an inline preview
+            // card with the Hebrew snippet (RTL) and a clickable image thumbnail.
+            if (t.name === "generate_document_assets" && t.result.ok && (t.result.hebrew_preview || t.result.image_url)) {
+              return (
+                <li key={i} className="flex items-start gap-2">
+                  <span className="mt-1 text-accent-foreground/80">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <GeneratedDocReceipt
+                      message={t.result.message}
+                      hebrewPreview={t.result.hebrew_preview}
+                      imageUrl={t.result.image_url}
+                      documentId={t.result.id}
                     />
                   </div>
                 </li>
