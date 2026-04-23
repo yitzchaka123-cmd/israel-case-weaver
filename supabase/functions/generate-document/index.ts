@@ -73,10 +73,13 @@ Deno.serve(async (req) => {
       const sys = `You write in-game evidence documents for premium printable Israeli mystery games. Output ONLY the document body in Hebrew, RTL-ready, realistic and immersive, tailored to the document type. No English. No meta-commentary. No disclaimers. For interrogation transcripts include pauses, body language and back-and-forth. Do not reveal the full solution.`;
       const userPrompt = `Case: ${project?.title ?? ""}\nPlayer role: ${project?.player_role ?? ""}\nCase goal: ${project?.case_goal ?? ""}\nYear: ${project?.year ?? ""}\nSetting: ${project?.setting ?? ""}\n\nDocument to produce:\nTitle: ${doc.title}\nType: ${doc.doc_type ?? "generic"}\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\n\nWrite the full Hebrew body now.`;
 
+      const startedAt = Date.now();
+      const callerUserId = await getUserIdFromAuth(req);
       const resp = await chatCompletions({
         model,
         messages: [{ role: "system", content: sys }, { role: "user", content: userPrompt }],
       });
+      const fb = extractFallback(resp, model);
 
       if (!resp.ok) {
         const provider = model.startsWith("openai/") ? "OpenAI"
@@ -85,6 +88,13 @@ Deno.serve(async (req) => {
           : "Lovable AI";
         const t = await resp.text().catch(() => "");
         console.error(`${provider} text error`, resp.status, t);
+        await logAiRun({
+          userId: callerUserId, projectId: doc.project_id, surface: "generate-document",
+          requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
+          status: "error", latencyMs: Date.now() - startedAt,
+          errorMessage: `${provider} ${resp.status}: ${t.slice(0, 200)}`,
+          targetId: documentId, promptExcerpt: userPrompt,
+        });
         if (resp.status === 429) return new Response(JSON.stringify({ error: `${provider} rate limit` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         if (resp.status === 402) return new Response(JSON.stringify({ error: `${provider} credits/key issue` }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         if (resp.status === 401) return new Response(JSON.stringify({ error: `${provider} auth failed — check Settings → API keys` }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -104,7 +114,13 @@ Deno.serve(async (req) => {
         model,
       });
 
-      return new Response(JSON.stringify({ ok: true, hebrew_content: hebrew }), {
+      await logAiRun({
+        userId: callerUserId, projectId: doc.project_id, surface: "generate-document",
+        requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
+        status: "ok", latencyMs: Date.now() - startedAt,
+        targetId: documentId, promptExcerpt: userPrompt,
+      });
+      return new Response(JSON.stringify({ ok: true, hebrew_content: hebrew, model, effectiveModel: fb.effectiveModel, fallback: fb.fallback }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
