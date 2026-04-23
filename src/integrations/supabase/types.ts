@@ -304,9 +304,14 @@ export type Database = {
       }
       envelopes: {
         Row: {
+          cover_image_url: string | null
           created_at: string
+          created_by_message_id: string | null
+          design_instructions: string | null
           id: string
           label: string | null
+          linked_document_ids: string[] | null
+          linked_node_ids: string[] | null
           notes: string | null
           number: number
           project_id: string
@@ -315,9 +320,14 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          cover_image_url?: string | null
           created_at?: string
+          created_by_message_id?: string | null
+          design_instructions?: string | null
           id?: string
           label?: string | null
+          linked_document_ids?: string[] | null
+          linked_node_ids?: string[] | null
           notes?: string | null
           number: number
           project_id: string
@@ -326,9 +336,14 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          cover_image_url?: string | null
           created_at?: string
+          created_by_message_id?: string | null
+          design_instructions?: string | null
           id?: string
           label?: string | null
+          linked_document_ids?: string[] | null
+          linked_node_ids?: string[] | null
           notes?: string | null
           number?: number
           project_id?: string
