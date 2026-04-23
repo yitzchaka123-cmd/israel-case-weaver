@@ -63,15 +63,31 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "suspects", filter: `project_id=eq.${projectId}` }, () => {
         qc.invalidateQueries({ queryKey: ["suspects", projectId] });
+        qc.invalidateQueries({ queryKey: ["production-dashboard", projectId] });
+        qc.invalidateQueries({ queryKey: ["phase-bar-counts", projectId] });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "documents", filter: `project_id=eq.${projectId}` }, () => {
         qc.invalidateQueries({ queryKey: ["documents", projectId] });
+        qc.invalidateQueries({ queryKey: ["production-dashboard", projectId] });
+        qc.invalidateQueries({ queryKey: ["phase-bar-counts", projectId] });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "canvas_nodes", filter: `project_id=eq.${projectId}` }, () => {
         qc.invalidateQueries({ queryKey: ["nodes", projectId] });
+        qc.invalidateQueries({ queryKey: ["production-dashboard", projectId] });
+        qc.invalidateQueries({ queryKey: ["phase-bar-counts", projectId] });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "canvas_edges", filter: `project_id=eq.${projectId}` }, () => {
         qc.invalidateQueries({ queryKey: ["edges", projectId] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "envelopes", filter: `project_id=eq.${projectId}` }, () => {
+        qc.invalidateQueries({ queryKey: ["envelopes", projectId] });
+        qc.invalidateQueries({ queryKey: ["production-dashboard", projectId] });
+        qc.invalidateQueries({ queryKey: ["phase-bar-counts", projectId] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "hints", filter: `project_id=eq.${projectId}` }, () => {
+        qc.invalidateQueries({ queryKey: ["hints", projectId] });
+        qc.invalidateQueries({ queryKey: ["production-dashboard", projectId] });
+        qc.invalidateQueries({ queryKey: ["phase-bar-counts", projectId] });
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
