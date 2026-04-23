@@ -221,6 +221,34 @@ Logic flow approved: ${project.logic_approved_at ? "YES (" + project.logic_appro
 Solution summary set: ${project.solution_summary ? "YES" : "NO"}
 Doc generation mode: ${project.doc_generation_mode ? `"${project.doc_generation_mode}"` : "NOT YET CHOSEN — ask the user with propose_options before the first add_document in Phase 4 (see DOCUMENT GENERATION WORKFLOW)"}
 
+${(() => {
+  // Derive USER-EDITED FIELDS: any tracked field that has a non-empty value
+  // AND no entry in assistant_origins (= the user typed it themselves).
+  const tracked: Array<[string, unknown]> = [
+    ["title", project.title],
+    ["subtitle", project.subtitle],
+    ["mystery_type", project.mystery_type],
+    ["genre", project.genre],
+    ["year", project.year],
+    ["difficulty", project.difficulty],
+    ["player_role", project.player_role],
+    ["case_goal", project.case_goal],
+    ["setting", project.setting],
+    ["selling_point", project.selling_point],
+    ["target_doc_count", project.target_doc_count],
+  ];
+  const origins = (project.assistant_origins ?? {}) as Record<string, string>;
+  const userEdited = tracked.filter(([k, v]) => {
+    if (v === null || v === undefined) return false;
+    const s = String(v).trim();
+    if (s === "" || s === "—") return false;
+    return !origins[k]; // no assistant stamp = user-entered
+  });
+  if (userEdited.length === 0) return "USER-EDITED FIELDS: (none — every populated field was set by the assistant)";
+  const lines = userEdited.map(([k, v]) => `- ${k}: "${truncate(v, 120)}"`).join("\n");
+  return `USER-EDITED FIELDS (the user typed these themselves — do NOT propose to fill them; instead acknowledge in your next reply, e.g. "I see you already filled in <field> as '<value>' — want me to refine it or move on?"):\n${lines}`;
+})()}
+
 Respond in English for planning. Write Hebrew for any final in-game text. Keep outputs concise unless the user requests depth.${overrides}
 
 REMINDER (read this before every reply):
