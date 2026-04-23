@@ -15,6 +15,7 @@ import { EnvelopesSection } from "./EnvelopesSection";
 import { HintsSection } from "./HintsSection";
 import { MediaSection } from "./MediaSection";
 import { ExportMenu } from "./ExportMenu";
+import { PhaseStatusBar } from "./PhaseStatusBar";
 
 export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
@@ -101,10 +102,15 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
             </div>
             <h1 className="font-display text-2xl leading-tight truncate">{project.title}</h1>
           </div>
+          <div className="hidden md:block">
+            <PhaseStatusBar
+              projectId={projectId}
+              phase={project.phase}
+              targetDocCount={project.target_doc_count ?? null}
+              onJump={setTab}
+            />
+          </div>
           <div className="flex items-center gap-2">
-            <span className="hidden md:inline text-xs text-muted-foreground capitalize px-2.5 py-1 rounded-md bg-muted">
-              Phase · {project.phase}
-            </span>
             <ExportMenu projectId={projectId} />
             <Button size="icon" variant="ghost" onClick={deleteProject} className="text-muted-foreground hover:text-destructive">
               <Trash2 className="h-4 w-4" />
