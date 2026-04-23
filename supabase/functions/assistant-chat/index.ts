@@ -174,6 +174,16 @@ ${renderCanonicalVocabBlock(playbook)}
 TOOL-CALL-BEFORE-PROSE RULE (HARD ENFORCEMENT — these are not soft suggestions)
 1. After the user picks or confirms title, subtitle, mystery_type, genre, year, difficulty, player_role, case_goal, setting, selling_point, or target_doc_count, your VERY NEXT assistant turn MUST begin with the corresponding update_project tool call BEFORE any prose, narration, or follow-up question. If you produce prose first and the tool call later (or not at all), the Overview panel stays empty and the user sees a broken app — that is a failure. Batch multiple confirmed fields into a single update_project call when the user confirmed several at once.
 2. If your message contains a numbered list of 2–6 short, mutually-exclusive choices and you do NOT also call \`propose_options\` in the same turn, the user sees no buttons under the message and the app feels broken — that is a failure. Always pair "1) … 2) … 3) …" prose with a \`propose_options\` tool call carrying the same items.
+3. The numbered list can be ANYWHERE in the message — opening, middle, or end — not just the last paragraph. A common failure mode is writing intro prose, then the numbered list, then a closing line like "Pick one." and forgetting the tool call because the list isn't at the very bottom. Whenever you produce ANY numbered list of 2–6 short choices anywhere in the message, you MUST call \`propose_options\` in the same turn. The "I forgot because the list wasn't at the end" failure is the #1 cause of broken UX. If in doubt, call it.
+   POSITIVE EXAMPLE — list-in-the-middle pattern:
+     "Here are 5 premium title options in Hebrew:
+     1) **מבחן סופי**
+     2) **אב‑טיפוס**
+     3) **דליפה בהרצליה**
+     4) **קו הגנה שבור**
+     5) **שעת החשיפה**
+     Pick one, or tell me to keep **final test** as the working title."
+   → MUST also call propose_options with those 5 items in the same turn.
 
 TOOL USE (CRITICAL)
 When the user approves a change, you MUST persist it by calling the appropriate tool. Do NOT just describe the change. Tools write to the shared project state so the UI, canvas and suspects sections update immediately.
@@ -292,27 +302,43 @@ function synthesizeOptionsFromProse(text: string): { options: Array<{ label: str
     /(בחר|בחרי|בחרו|איזה|איזו|תבחר|מעדיף|מעדיפה|לאשר)/.test(trimmed);
   if (!looksLikeQuestion) return null;
 
-  // Heuristic gate 2: the LAST paragraph should contain the numbered list.
-  // Split on blank lines; consider the last non-empty block.
-  const blocks = trimmed.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
-  if (blocks.length === 0) return null;
-  const lastBlock = blocks[blocks.length - 1];
-
-  const lineRegex = /^\s*(\d+)[\.\)]\s+(.+?)\s*$/gm;
-  const matches: Array<{ n: number; text: string }> = [];
-  let m: RegExpExecArray | null;
-  while ((m = lineRegex.exec(lastBlock)) !== null) {
-    const n = Number(m[1]);
-    const itemText = m[2].trim();
-    if (!itemText || itemText.length > 120) return null; // too long → not a button
-    matches.push({ n, text: itemText });
+  // Heuristic gate 2: scan the WHOLE message line-by-line for a contiguous
+  // run of numbered items (1, 2, 3, …). The list may sit anywhere — top,
+  // middle (followed by a "Pick one." closer), or bottom.
+  const lines = trimmed.split("\n");
+  const itemLineRegex = /^\s*(\d+)[\.\)]\s+(.+?)\s*$/;
+  let bestRun: { startIdx: number; items: Array<{ n: number; text: string }> } | null = null;
+  let i = 0;
+  while (i < lines.length) {
+    const first = itemLineRegex.exec(lines[i]);
+    if (first && Number(first[1]) === 1) {
+      const run: Array<{ n: number; text: string }> = [{ n: 1, text: first[2].trim() }];
+      const startIdx = i;
+      let j = i + 1;
+      while (j < lines.length) {
+        const next = itemLineRegex.exec(lines[j]);
+        if (!next) break;
+        const n = Number(next[1]);
+        if (n !== run.length + 1) break;
+        run.push({ n, text: next[2].trim() });
+        j++;
+      }
+      if (run.length >= 2 && run.length <= 6) {
+        // Prefer the longest valid run if multiple exist.
+        if (!bestRun || run.length > bestRun.items.length) {
+          bestRun = { startIdx, items: run };
+        }
+      }
+      i = j;
+      continue;
+    }
+    i++;
   }
-  if (matches.length < 2 || matches.length > 6) return null;
+  if (!bestRun) return null;
 
-  // Numbers should be sequential starting at 1 (1,2,3…) — guard against numbered
-  // step-by-step instructions being misread as choices.
-  for (let i = 0; i < matches.length; i++) {
-    if (matches[i].n !== i + 1) return null;
+  // Validate item lengths.
+  for (const it of bestRun.items) {
+    if (!it.text || it.text.length > 120) return null;
   }
 
   // Strip trailing parenthetical/em-dash explanation for cleaner button text,
@@ -323,14 +349,18 @@ function synthesizeOptionsFromProse(text: string): { options: Array<{ label: str
     return base.length > 60 ? `${base.slice(0, 57)}…` : base;
   };
 
-  // Try to lift the question line: the line right above the numbered block, if any.
-  const beforeNumbers = lastBlock.split(lineRegex)[0]?.trim() ?? "";
-  const questionLine = beforeNumbers
-    ? beforeNumbers.split("\n").map((l) => l.trim()).filter(Boolean).pop() ?? null
-    : null;
+  // Lift the question line from the line directly above the first numbered item.
+  let questionLine: string | null = null;
+  for (let k = bestRun.startIdx - 1; k >= 0; k--) {
+    const candidate = lines[k].trim();
+    if (candidate) {
+      questionLine = candidate;
+      break;
+    }
+  }
 
   return {
-    options: matches.map((mm) => {
+    options: bestRun.items.map((mm) => {
       const label = toLabel(mm.text);
       return { label, send: mm.text };
     }),
