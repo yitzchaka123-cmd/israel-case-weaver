@@ -116,6 +116,15 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
           <Link to="/" className="text-muted-foreground hover:text-foreground">
             <ArrowLeft className="h-4 w-4" />
           </Link>
+          {project.cover_image_url && (
+            <div className="h-10 w-10 rounded-full overflow-hidden border border-border shrink-0 bg-muted">
+              <img
+                src={project.cover_image_url}
+                alt={project.title}
+                className="h-full w-full object-cover"
+              />
+            </div>
+          )}
           <div className="flex-1 min-w-0">
             <div className="text-[10px] font-medium tracking-widest uppercase text-muted-foreground">
               Case File
