@@ -200,10 +200,22 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
   const [genText, setGenText] = useState(false);
   const [genImage, setGenImage] = useState(false);
   const [draftingPrompt, setDraftingPrompt] = useState(false);
+  const [imageQuality, setImageQuality] = useState<"low" | "medium" | "high">("medium");
+  const [selectedImageModel, setSelectedImageModel] = useState<string>(
+    () => getStoredImageModel("document", "chatgpt-image-2"),
+  );
   const saveTimer = useRef<number | undefined>(undefined);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => setDraft(doc), [doc?.id]);
+
+  // Refresh selected image model whenever the picker writes back to localStorage
+  useEffect(() => {
+    if (!doc) return;
+    const tick = () => setSelectedImageModel(getStoredImageModel("document", "chatgpt-image-2"));
+    const i = window.setInterval(tick, 800);
+    return () => window.clearInterval(i);
+  }, [doc?.id]);
 
   if (!doc || !draft) return null;
 
