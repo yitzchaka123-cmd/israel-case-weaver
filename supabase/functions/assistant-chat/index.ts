@@ -298,6 +298,25 @@ Skipping either tool means the UI silently breaks for the user.`;
 // in prose but forget to call `propose_options`. When that happens, parse the prose
 // and synthesize options so the UI still renders buttons. Conservative on purpose:
 // only fires when the message looks like a question with 2–6 short numbered choices.
+
+// Used to validate that the model's `propose_options` arguments match THIS turn's
+// prose (and aren't a stale copy of a previous turn's options).
+function optionsMatchProse(
+  options: Array<{ label: string }> | null | undefined,
+  prose: string,
+): boolean {
+  if (!options || options.length === 0 || !prose) return true; // nothing to check
+  const itemRe = /^\s*\d+[\.\)]\s+(.+?)\s*$/;
+  const items: string[] = [];
+  for (const line of prose.split("\n")) {
+    const m = itemRe.exec(line);
+    if (m) items.push(m[1].trim().toLowerCase());
+  }
+  if (items.length === 0) return true; // no numbered list in prose → can't check
+  const haystack = items.join(" \n ");
+  return options.some((o) => o?.label && haystack.includes(o.label.trim().toLowerCase()));
+}
+
 function synthesizeOptionsFromProse(text: string): { options: Array<{ label: string; send: string }>; question: string | null } | null {
   if (!text) return null;
   const trimmed = text.trim();
