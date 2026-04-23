@@ -7,10 +7,20 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Upload, Wand2, Loader2, Trash2, Image as ImageIcon, Video, Film, Newspaper, Package, ExternalLink, Sparkles, FileText, RefreshCw } from "lucide-react";
+import { Upload, Wand2, Loader2, Trash2, Image as ImageIcon, Video, Film, Newspaper, Package, ExternalLink, Sparkles, FileText, RefreshCw, History } from "lucide-react";
 import { PromptWriterModelPicker, getStoredWriterModel } from "@/components/PromptWriterModelPicker";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
+import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { toast } from "sonner";
+
+interface PromptHistoryEntry {
+  at: string;
+  prompt: string;
+  effective_model?: string;
+  requested_model?: string;
+  fallback?: string;
+  provider?: string;
+}
 
 interface MediaAsset {
   id: string;
@@ -21,6 +31,9 @@ interface MediaAsset {
   prompt: string | null;
   provider: string | null;
   model: string | null;
+  effective_model: string | null;
+  fallback: string | null;
+  prompt_history: PromptHistoryEntry[] | null;
   mime_type: string | null;
   created_at: string;
 }
