@@ -1,46 +1,55 @@
 
 
-## Apply gpt-image-2 community findings to document image generation
+## Make user vs assistant messages visually distinct
 
-Four small, independent improvements to `supabase/functions/generate-document/index.ts` based on what the OpenAI community thread + official `gpt-image-2` docs revealed.
+Right now both your messages and the assistant's replies render the same way: small left-aligned avatar, same text width, no background, only a tiny "You" / "Assistant" label above. That's why it feels flat. Here are **three options** — pick one (or mix) and I'll wire it up.
 
-### 1. Truer A4 aspect ratio (better fidelity)
+### Option A — Classic chat bubbles (recommended, most familiar)
 
-Current portrait sizes hard-code `1024x1536` (a 2:3 ratio). True A4 is 1:√2 ≈ `1448x2048` — and `gpt-image-2` accepts arbitrary sizes as long as edges are multiples of 16, ratio ≤ 3:1, and total pixels are between 0.6M and 8.3M.
+What it looks like:
+- **Your messages**: right-aligned, sit in a soft accent-colored bubble (`bg-accent/10`, rounded-2xl, max-width ~80%), avatar on the right.
+- **Assistant messages**: left-aligned, sit in a neutral surface bubble (`bg-surface` with subtle border), full width for long-form content, avatar on the left.
+- Tool receipts and quick-reply chips stay below the assistant bubble exactly like today.
+- Works great on mobile.
 
-Change the size mapping for `gpt-image-2` only:
+```text
+                                    ┌──────────────────┐
+                                    │ Your prompt here │ 👤
+                                    └──────────────────┘
+🤖 ┌────────────────────────────────────────────────┐
+   │ Assistant reply, longer-form, full width       │
+   │ ✓ 2 actions performed                          │
+   └────────────────────────────────────────────────┘
+```
 
-| Print size | Old | New (gpt-image-2) |
-|---|---|---|
-| A3 / A4 / A5 / A6 portrait | `1024x1536` | `1448x2048` |
-| Business card landscape | `1536x1024` | `2048x1448` |
+### Option B — Side-band markers (minimal, doc-like)
 
-`gpt-image-1` keeps the old fixed sizes (it doesn't accept arbitrary dimensions).
+What it looks like:
+- Both messages stay left-aligned and full-width (good for reading long replies).
+- **Your messages** get a thick **accent-colored left border** (4px) + slightly indented + lighter background tint.
+- **Assistant messages** get no border, plain background, the existing avatar.
+- The "You" / "Assistant" label is upgraded to a bolder pill: **`YOU`** in accent, **`ASSISTANT`** in muted.
+- Closest to today's layout — least visual disruption, just clearer separation.
 
-### 2. Strip parameters that crash gpt-image-2
+### Option C — Two-column transcript (power-user)
 
-`background` and `input_fidelity` are unsupported on `gpt-image-2` and return a 400. We don't currently send them, but I'll add an explicit comment and a guard so a future edit doesn't accidentally reintroduce them. No runtime change today — defensive only.
+What it looks like:
+- Your message and the assistant's reply that *immediately follows it* render as a **paired card**: thin "Q:" header at the top with your prompt, then a divider, then "A:" with the assistant's response and tool receipts.
+- Each turn is one self-contained card with a subtle border.
+- Best when you want to scan "what did I ask → what did it do" at a glance and review long sessions. Slightly more work than A/B and changes the mental model.
 
-### 3. Add `moderation: "low"` for gpt-image-2
+### Other touches included in any option
 
-Detective / mystery prompts (blood-stained letters, ransom notes, weapon photos, autopsy reports) often trigger false-positive content blocks. `gpt-image-2` supports `moderation: "low"` to relax this. Send it only for `gpt-image-2` (not `gpt-image-1`).
-
-### 4. Better error message for the 5 IPM tier-1 rate limit
-
-When OpenAI returns 429 with "rate_limit_exceeded" specifically due to the **5 images/minute** tier-1 cap, append: *"Tier 1 OpenAI accounts are limited to 5 images/min on gpt-image-2. Wait ~60s and retry, or upgrade your OpenAI tier."*
+- **Timestamp on hover** at the right edge of each message (relative: "2m ago", absolute on hover).
+- **Copy-to-clipboard** button that appears on hover for assistant replies.
+- **Better empty-state contrast** — keep the existing welcome card.
+- Highlight ring (when you click an origin badge) keeps working in all three.
 
 ### Files touched
 
 | File | Change |
 |---|---|
-| `supabase/functions/generate-document/index.ts` | Items 1–4 above (size map, defensive guard, `moderation`, refined 429 message) |
+| `src/features/project/AssistantSection.tsx` | Rework `MessageBubble` layout for the chosen option, add hover timestamp + copy button. No edge-function changes. |
 
-### What you'll see after
-
-- Document images render at higher resolution and proper A4 proportions when using `gpt-image-2`.
-- Mystery/crime-scene prompts get blocked far less often.
-- 429s tell you exactly *why* (tier cap) and *what to do*.
-- `gpt-image-1` behaviour is unchanged.
-
-No frontend changes needed — only the edge function.
+**Pick A, B, or C** (and say if you want the timestamp + copy additions or not), and I'll implement it.
 
