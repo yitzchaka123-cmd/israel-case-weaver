@@ -93,13 +93,18 @@ Deno.serve(async (req) => {
     // Pull global "image prompt assistant instructions" from the user's profile
     const profileOwnerId = userId ?? project.owner_id;
     let globalAssistantInstructions = "";
+    let envelopeTemplateBlock = "";
     if (profileOwnerId) {
       const { data: profile } = await supa
         .from("profiles")
-        .select("image_prompt_assistant_instructions")
+        .select("image_prompt_assistant_instructions, assistant_playbook")
         .eq("id", profileOwnerId)
         .maybeSingle();
-      globalAssistantInstructions = ((profile as any)?.image_prompt_assistant_instructions ?? "").trim();
+      globalAssistantInstructions = ((profile as { image_prompt_assistant_instructions?: string } | null)?.image_prompt_assistant_instructions ?? "").trim();
+      if (category === "envelope") {
+        const playbook = resolvePlaybook((profile as { assistant_playbook?: unknown } | null)?.assistant_playbook);
+        envelopeTemplateBlock = `\n\n${renderEnvelopeDesignTemplate(playbook)}`;
+      }
     }
 
     const ctx = [
@@ -118,10 +123,10 @@ Deno.serve(async (req) => {
 
     const guidance = CATEGORY_GUIDANCE[category] ?? CATEGORY_GUIDANCE.external;
 
-    const baseSystem = `You are an expert art director for boxed murder-mystery games. You write concise, vivid image-generation prompts (3–6 sentences) that an image model like Gemini Nano Banana or OpenAI gpt-image will turn into a single still image. Focus on subject, composition, lighting, mood, color palette, medium/style, and lens. No camera-shake instructions, no text overlays unless requested. Never output anything except the prompt itself.`;
+    const baseSystem = `You are an expert art director for boxed murder-mystery games. You write concise, vivid image-generation prompts (3–6 sentences for most categories; for "envelope" produce a long structured brief with sections GOAL / OUTPUT FORMAT / VISUAL STYLE / LAYOUT / TYPOGRAPHY / AUTHENTICITY) that an image model like Gemini Nano Banana or OpenAI gpt-image will turn into a single still image. Focus on subject, composition, lighting, mood, color palette, medium/style, and lens. No camera-shake instructions, no text overlays unless requested. Never output anything except the prompt itself.`;
     const system = globalAssistantInstructions
-      ? `${baseSystem}\n\nUSER GLOBAL STYLE GUIDE (highest priority — apply to every prompt you write):\n${globalAssistantInstructions}`
-      : baseSystem;
+      ? `${baseSystem}\n\nUSER GLOBAL STYLE GUIDE (highest priority — apply to every prompt you write):\n${globalAssistantInstructions}${envelopeTemplateBlock}`
+      : `${baseSystem}${envelopeTemplateBlock}`;
 
     const userMsg = `PROJECT CONTEXT:\n${ctx || "(no context yet)"}\n\nIMAGE PURPOSE: ${category.toUpperCase()} — ${guidance}${
       hint ? `\n\nUSER STEERING: ${hint}` : ""
