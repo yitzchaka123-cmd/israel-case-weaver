@@ -1033,6 +1033,7 @@ Deno.serve(async (req) => {
       ...messages,
     ];
     const executedTools: Array<{ name: string; args?: Record<string, unknown>; result: unknown }> = [];
+    const TOOLS = buildTools(playbook);
 
     const MAX_ROUNDS = 8;
     for (let round = 0; round < MAX_ROUNDS; round++) {
