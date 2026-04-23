@@ -184,6 +184,15 @@ TOOL-CALL-BEFORE-PROSE RULE (HARD ENFORCEMENT — these are not soft suggestions
      5) **שעת החשיפה**
      Pick one, or tell me to keep **final test** as the working title."
    → MUST also call propose_options with those 5 items in the same turn.
+4. Every \`propose_options\` call must carry the EXACT options from THIS turn's prose. Do NOT copy a previous turn's \`propose_options\` arguments. The labels you pass in \`options[].label\` must match (substring-match) the items you just wrote in the numbered list above. Stale-option reuse is the #2 cause of broken UX after forgetting the tool entirely. If your prose lists cities (Haifa, Tel Aviv, …), your \`propose_options\` MUST list those same cities — never reuse the year-era options or any other prior choice list.
+   WRONG — never do this:
+     prose: "Pick the setting:
+       1) Haifa industrial zone
+       2) Tel Aviv tech district
+       3) Jerusalem old city"
+     propose_options args: [{label: "Late 1980s"}, {label: "1990s"}, {label: "Present day"}]   ← STALE, copied from previous turn. The user sees year buttons under city prose. Never do this.
+   CORRECT for that prose:
+     propose_options args: [{label: "Haifa industrial zone"}, {label: "Tel Aviv tech district"}, {label: "Jerusalem old city"}]
 
 TOOL USE (CRITICAL)
 When the user approves a change, you MUST persist it by calling the appropriate tool. Do NOT just describe the change. Tools write to the shared project state so the UI, canvas and suspects sections update immediately.
@@ -289,6 +298,25 @@ Skipping either tool means the UI silently breaks for the user.`;
 // in prose but forget to call `propose_options`. When that happens, parse the prose
 // and synthesize options so the UI still renders buttons. Conservative on purpose:
 // only fires when the message looks like a question with 2–6 short numbered choices.
+
+// Used to validate that the model's `propose_options` arguments match THIS turn's
+// prose (and aren't a stale copy of a previous turn's options).
+function optionsMatchProse(
+  options: Array<{ label: string }> | null | undefined,
+  prose: string,
+): boolean {
+  if (!options || options.length === 0 || !prose) return true; // nothing to check
+  const itemRe = /^\s*\d+[\.\)]\s+(.+?)\s*$/;
+  const items: string[] = [];
+  for (const line of prose.split("\n")) {
+    const m = itemRe.exec(line);
+    if (m) items.push(m[1].trim().toLowerCase());
+  }
+  if (items.length === 0) return true; // no numbered list in prose → can't check
+  const haystack = items.join(" \n ");
+  return options.some((o) => o?.label && haystack.includes(o.label.trim().toLowerCase()));
+}
+
 function synthesizeOptionsFromProse(text: string): { options: Array<{ label: string; send: string }>; question: string | null } | null {
   if (!text) return null;
   const trimmed = text.trim();
@@ -1282,6 +1310,14 @@ async function processConversation(
     const optionsResult = lastOptionsTool?.result as { options?: Array<{ label: string; send: string }>; question?: string } | undefined;
     let quickOptions = optionsResult?.options ?? null;
     let quickQuestion = optionsResult?.question ?? null;
+    // Stale-args guard: model sometimes copies the previous turn's
+    // propose_options arguments verbatim. Reject if labels don't appear in
+    // this turn's prose, then fall through to the prose synthesizer.
+    if (quickOptions && quickOptions.length > 0 && !optionsMatchProse(quickOptions, finalText)) {
+      console.warn("[assistant-chat] propose_options stale — labels don't match prose, falling back to synth", { labels: quickOptions.map((o) => o.label) });
+      quickOptions = null;
+      quickQuestion = null;
+    }
     if (!quickOptions || quickOptions.length === 0) {
       const synth = synthesizeOptionsFromProse(finalText);
       if (synth) { quickOptions = synth.options; quickQuestion = synth.question; }
@@ -1584,6 +1620,15 @@ Deno.serve(async (req) => {
         | undefined;
       let quickOptions = optionsResult?.options ?? null;
       let quickQuestion = optionsResult?.question ?? null;
+
+      // Stale-args guard (mirror of background branch): if the model copied
+      // a previous turn's propose_options arguments, none of the labels will
+      // appear in this turn's numbered list. Reject and fall through to synth.
+      if (quickOptions && quickOptions.length > 0 && !optionsMatchProse(quickOptions, finalText)) {
+        console.warn("[assistant-chat] propose_options stale — labels don't match prose, falling back to synth", { labels: quickOptions.map((o) => o.label) });
+        quickOptions = null;
+        quickQuestion = null;
+      }
 
       // Fallback: model wrote a numbered list in prose but forgot to call
       // propose_options. Synthesize buttons from the prose so the UI still

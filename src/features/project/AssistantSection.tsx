@@ -82,7 +82,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
   const qc = useQueryClient();
   const { user } = useAuth();
   const [input, setInput] = useState("");
-  const { isRunning: sending, send: hookSend } = useAssistantRun(projectId);
+  const { isRunning: sending, send: hookSend, cancel: cancelRun } = useAssistantRun(projectId);
   const scrollRef = useRef<HTMLDivElement>(null);
   const dictationBaseRef = useRef("");
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
@@ -249,11 +249,17 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
   // original turn — but with the edited prompt instead.
   const editAndResend = async (messageId: string, newContent: string) => {
     const trimmed = newContent.trim();
-    if (!trimmed || sending) return;
+    if (!trimmed) return;
     const idx = messages.findIndex((m) => m.id === messageId);
     if (idx === -1) return;
     const target = messages[idx];
     if (target.role !== "user") return;
+
+    // If the assistant is mid-reply, cancel it first. The orphaned background
+    // task may still finish and write its assistant message, but the
+    // delete-tail logic below clears the entire tail (including any later
+    // arrival) so the user only sees the new turn.
+    if (sending) cancelRun();
 
     const priorMessages = messages.slice(0, idx);
     const toDelete = messages.slice(idx).map((m) => m.id);
@@ -504,8 +510,26 @@ function MessageBubble({
   highlighted?: boolean;
 }) {
   const tools = msg.metadata?.tools ?? [];
-  const metaOptions = msg.metadata?.options ?? [];
+  const rawMetaOptions = msg.metadata?.options ?? [];
   const metaQuestion = msg.metadata?.question ?? null;
+
+  // Self-heal stale metadata.options: a previous bug had the model copying
+  // the previous turn's `propose_options` arguments verbatim, so the buttons
+  // shown didn't match the prose. Detect that mismatch on render and discard
+  // the stale options — the synth fallback will derive the correct ones from
+  // the actual prose.
+  const metaOptions: QuickOption[] = (() => {
+    if (rawMetaOptions.length === 0) return [];
+    if (msg.role !== "assistant") return rawMetaOptions;
+    const numberedItems = extractNumberedListItems(msg.content);
+    if (numberedItems.length === 0) return rawMetaOptions;
+    const haystack = numberedItems.join(" \n ").toLowerCase();
+    const anyMatches = rawMetaOptions.some((o) =>
+      o.label && haystack.includes(o.label.trim().toLowerCase()),
+    );
+    return anyMatches ? rawMetaOptions : [];
+  })();
+
   // Client-side fallback: if the assistant wrote a numbered choice list in
   // prose but the server didn't attach any options (older messages, or model
   // forgot the tool call AND server fallback didn't catch it), synthesize
@@ -594,9 +618,8 @@ function MessageBubble({
           <button
             type="button"
             onClick={startEdit}
-            disabled={disabled}
-            title="Edit and re-run"
-            className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+            title={disabled ? "Cancel current reply and edit this message" : "Edit and re-run"}
+            className="opacity-40 group-hover:opacity-100 focus:opacity-100 transition-opacity inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:text-foreground hover:bg-muted"
           >
             <Pencil className="h-3 w-3" /> Edit
           </button>
@@ -616,7 +639,7 @@ function MessageBubble({
             type="button"
             onClick={copyContent}
             title="Copy reply"
-            className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:text-foreground hover:bg-muted"
+            className="opacity-40 group-hover:opacity-100 focus:opacity-100 transition-opacity inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:text-foreground hover:bg-muted"
           >
             <Copy className="h-3 w-3" /> Copy
           </button>
@@ -714,6 +737,20 @@ function formatRelativeTime(iso: string): string {
   const diffDay = Math.round(diffHr / 24);
   if (diffDay < 7) return `${diffDay}d ago`;
   return new Date(iso).toLocaleDateString();
+}
+
+// Pull all "1. foo / 2. bar / …" items from prose. Used to validate that
+// metadata.options labels actually appear in this turn's prose — guards
+// against the model copying a previous turn's propose_options arguments.
+function extractNumberedListItems(text: string): string[] {
+  if (!text) return [];
+  const itemLineRegex = /^\s*\d+[\.\)]\s+(.+?)\s*$/;
+  const out: string[] = [];
+  for (const line of text.split("\n")) {
+    const m = itemLineRegex.exec(line);
+    if (m) out.push(m[1].trim());
+  }
+  return out;
 }
 
 // Mirror of the server-side fallback in supabase/functions/assistant-chat/index.ts.
