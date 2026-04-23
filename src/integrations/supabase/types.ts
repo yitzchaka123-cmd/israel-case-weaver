@@ -71,6 +71,7 @@ export type Database = {
           board: string
           color: string | null
           created_at: string
+          created_by_message_id: string | null
           data: Json
           description: string | null
           height: number | null
@@ -88,6 +89,7 @@ export type Database = {
           board?: string
           color?: string | null
           created_at?: string
+          created_by_message_id?: string | null
           data?: Json
           description?: string | null
           height?: number | null
@@ -105,6 +107,7 @@ export type Database = {
           board?: string
           color?: string | null
           created_at?: string
+          created_by_message_id?: string | null
           data?: Json
           description?: string | null
           height?: number | null
@@ -119,6 +122,13 @@ export type Database = {
           width?: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "canvas_nodes_created_by_message_id_fkey"
+            columns: ["created_by_message_id"]
+            isOneToOne: false
+            referencedRelation: "chat_messages"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "canvas_nodes_project_id_fkey"
             columns: ["project_id"]
@@ -167,6 +177,7 @@ export type Database = {
         Row: {
           active_version: string
           created_at: string
+          created_by_message_id: string | null
           design_instructions: string | null
           doc_number: number | null
           doc_type: string | null
@@ -186,6 +197,7 @@ export type Database = {
         Insert: {
           active_version?: string
           created_at?: string
+          created_by_message_id?: string | null
           design_instructions?: string | null
           doc_number?: number | null
           doc_type?: string | null
@@ -205,6 +217,7 @@ export type Database = {
         Update: {
           active_version?: string
           created_at?: string
+          created_by_message_id?: string | null
           design_instructions?: string | null
           doc_number?: number | null
           doc_type?: string | null
@@ -222,6 +235,13 @@ export type Database = {
           uploaded_asset_url?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "documents_created_by_message_id_fkey"
+            columns: ["created_by_message_id"]
+            isOneToOne: false
+            referencedRelation: "chat_messages"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "documents_project_id_fkey"
             columns: ["project_id"]
@@ -407,6 +427,7 @@ export type Database = {
           ai_provider_documents: string | null
           ai_provider_images: string | null
           ai_provider_planning: string | null
+          assistant_origins: Json
           case_goal: string | null
           cover_image_url: string | null
           created_at: string
@@ -436,6 +457,7 @@ export type Database = {
           ai_provider_documents?: string | null
           ai_provider_images?: string | null
           ai_provider_planning?: string | null
+          assistant_origins?: Json
           case_goal?: string | null
           cover_image_url?: string | null
           created_at?: string
@@ -465,6 +487,7 @@ export type Database = {
           ai_provider_documents?: string | null
           ai_provider_images?: string | null
           ai_provider_planning?: string | null
+          assistant_origins?: Json
           case_goal?: string | null
           cover_image_url?: string | null
           created_at?: string
@@ -544,6 +567,7 @@ export type Database = {
           alt_thumbnail_url: string | null
           contradictions: string | null
           created_at: string
+          created_by_message_id: string | null
           id: string
           is_red_herring: boolean
           motives: string | null
@@ -560,6 +584,7 @@ export type Database = {
           alt_thumbnail_url?: string | null
           contradictions?: string | null
           created_at?: string
+          created_by_message_id?: string | null
           id?: string
           is_red_herring?: boolean
           motives?: string | null
@@ -576,6 +601,7 @@ export type Database = {
           alt_thumbnail_url?: string | null
           contradictions?: string | null
           created_at?: string
+          created_by_message_id?: string | null
           id?: string
           is_red_herring?: boolean
           motives?: string | null
@@ -589,6 +615,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "suspects_created_by_message_id_fkey"
+            columns: ["created_by_message_id"]
+            isOneToOne: false
+            referencedRelation: "chat_messages"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "suspects_project_id_fkey"
             columns: ["project_id"]
