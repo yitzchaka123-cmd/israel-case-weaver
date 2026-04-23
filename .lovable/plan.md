@@ -1,52 +1,105 @@
 
 
-## "Generate idea" button + assistant awareness of user-entered fields
+## Envelopes upgrade: design instructions, generation, assistant link, logic-flow integration
 
-Two small but high-leverage additions to the Extra selling point flow.
+Right now the Envelopes tab is the bare minimum: a label, a one-line task, free-text notes, and a status dropdown that does nothing useful. We'll bring it up to the same level as Documents and Suspects — full design control, AI generation per envelope, an assistant briefing step, and proper canvas integration.
 
-### 1. "Generate idea" button on the Extra selling point
+### What "draft / in_progress / review / final" actually is (and why it feels broken)
 
-When the toggle is **on** (in `ProjectOverview.tsx`'s selling-point block), show a small **✨ Generate idea** button next to the textarea. Clicking it asks the assistant for a single, concrete selling-point idea tailored to the case (difficulty, mystery type, genre, year, setting, player role) and writes it straight into the field — so the user can either keep it, edit it, or click again for another shot.
+It's a **production status** that the **Production Dashboard** and **phase status bar** read to count how much of Phase 5 (Envelopes) is done. It does NOT change anything inside the envelope itself. It's just a kanban-style flag so you can see at a glance which envelopes are still being worked on. We'll keep it but add a tiny tooltip explaining it, plus auto-bump it from "draft" → "review" when AI generates content (matching how Documents already works).
 
-**Where it lives**: Inside the `sellingOn && (...)` block in `src/features/project/ProjectOverview.tsx` (around line 354), above the existing Textarea. A small flex row with the button on the right.
+### 1. Schema additions
 
-**How it generates**: Reuses the existing `generate-marketing-copy` edge function with a new `field: "selling_point"` mode. The function already has access to project context — we just add a branch that returns a single 1–2 sentence punchy idea (e.g. *"A 1980s telex machine bundled in the box that decodes the final clue when the player feeds it the right paper tape."*).
+One migration extends `envelopes` so each row carries the same prompt-control surface as `documents`:
 
-- On click: spinner on the button, call the function, write result into `selling_point` via the existing `update({ selling_point })` (autosaves), and stamp `assistant_origins.selling_point = "manual-generate"` so the **by assistant** badge shows up.
-- "Regenerate" label after first use, same button.
-- No new tables, no new function — just a small extension of `generate-marketing-copy`.
-
-### 2. Assistant awareness when the user pre-fills fields
-
-Right now the assistant happily restates fields the user already typed (e.g. it'll "draft a subtitle" even though the user wrote one). Fix it by telling the model exactly which fields the **user** entered vs which it (the assistant) entered.
-
-**How**: In `supabase/functions/assistant-chat/index.ts`, the system prompt already has a "CURRENT PROJECT STATE" block (lines 192–222). Add a derived `USER-EDITED FIELDS` line right after it:
-
-```
-USER-EDITED FIELDS (the user typed these themselves — do NOT propose to fill them; instead acknowledge in your next reply, e.g. "I see you already filled in <field> as '<value>' — want me to refine it or move on?"):
-- subtitle: "<value>"
-- setting: "<value>"
-- selling_point: "<value>"
+```text
+envelopes
+  + design_instructions text          -- visual / physical brief for the printed envelope (the "design instructions" you asked for)
+  + cover_image_url      text         -- AI-generated mock-up of the sealed envelope front
+  + linked_node_ids      uuid[]       -- envelopes referenced by which logic-flow nodes
+  + linked_document_ids  uuid[]       -- which document rows belong inside this envelope (mirrors documents.envelope_number for free)
+  + created_by_message_id uuid        -- so the AssistantOriginBadge "by assistant" pill works
 ```
 
-The list is built by walking every tracked field (`title`, `subtitle`, `mystery_type`, `genre`, `year`, `difficulty`, `player_role`, `case_goal`, `setting`, `selling_point`, `target_doc_count`) and including any field that has a non-empty value AND whose `assistant_origins[field]` is missing (= user-entered, not assistant-stamped).
+No RLS change — table already has `Auth all *` policies. Realtime is already wired in `ProjectWorkspace`.
 
-A short, explicit rule paragraph is added to the playbook section near line 228:
+### 2. Envelopes tab — full redesign (`EnvelopesSection.tsx`)
 
-> **USER-ENTERED FIELDS RULE**: For every field listed under USER-EDITED FIELDS, your first action is to acknowledge it out loud ("I see you already wrote the subtitle — keeping it.") and then either ask if the user wants you to refine it or skip past it. Do NOT silently overwrite it with `update_project`, and do NOT propose options for a field the user already filled.
+Each envelope card becomes a two-column layout (mirrors `DocumentsSection` DocDialog patterns):
 
-This makes the assistant stop "stepping on" the user's input across the whole setup form, not just selling point.
+**Left column — content**
+- Label (Hebrew, RTL) — unchanged
+- Task (Hebrew, RTL, bold red) — unchanged
+- **Linked documents** — multi-select of project docs that belong inside this envelope (writes both sides: `envelopes.linked_document_ids` and the existing `documents.envelope_number`)
+- Internal notes — unchanged
+- Status pill with a small "?" tooltip:
+  > Draft = not started · In progress = being written · Review = AI just produced something, check it · Final = locked in for print.
 
-### Files touched
+**Right column — design & generation (NEW)**
+- **Design instructions** textarea (large, monospace, like document design instructions). Pre-filled placeholder explains: paper stock, color, wax seal, stamp art, Hebrew label placement, classification look, etc. This is what the image generator reads.
+- **✨ Draft prompt** button → calls existing `suggest-image-prompt` edge function with `category: "envelope"` and a hint built from the envelope's label + task + project context. Replaces the textarea content with a structured brief (re-using the same writer-model picker as Documents).
+- **Generate envelope mock-up** button → calls existing `generate-image` edge function with the design instructions + envelope number, stores the URL in `envelopes.cover_image_url`, shows a thumbnail. Status auto-bumps to "review".
+- **Open in Assistant ↗** button — fires the existing `mystudio:assistant-prompt` event with a starter prompt:
+  > "Help me write envelope #N. Current label: '...'. Current task: '...'. Brief me on the playbook rules for this envelope, then propose a Hebrew label, task, and design direction."
+  
+  This is the "link to the AI chat where it would create these envelopes" you asked for.
+
+**Above the grid — global actions**
+- **Brief me on envelopes** button (left) — opens Assistant with this prompt:
+  > "Walk me through the {N}-envelope flow from the playbook ({labels}). Explain what each envelope's role is in this case, what should be inside it, and the closing line rule. Then ask me which envelope you should help me draft first."
+  
+  This is the "assistant should brief me on the five envelopes from the playbook before creating the logic flow" requirement.
+- **Generate all envelopes with AI** button (right) — calls a new `generate-envelopes` edge function that produces label + task + design_instructions for every envelope in one shot, using the playbook envelope rules, the case context, and the existing logic-flow / suspects / documents. Stamps `assistant_origins.envelopes` and writes one row per envelope (or updates if rows exist).
+
+### 3. Logic-flow integration
+
+Two changes so envelopes flow into the Case Board exactly like the user asked:
+
+**A. Pre-flight briefing in the Logic Flow generator UI** — `CanvasSection`'s "Generate logic flow" button gets an info banner when envelopes haven't been drafted yet:
+> ⚠ You haven't briefed the envelopes yet. The flow will be more accurate if you ask the assistant to walk you through the {N}-envelope structure first. **[Open assistant briefing]**
+
+The button fires the same "Brief me on envelopes" prompt. This makes the assistant brief you on the envelopes **before** the logic flow gets generated.
+
+**B. Envelopes become real nodes in the logic flow** — `supabase/functions/generate-logic-flow/index.ts`:
+- Loads the project's `envelopes` rows alongside suspects.
+- The system prompt gets a new "ENVELOPES (player-facing flow gates)" section listing each envelope's number / label / task / linked documents.
+- The tool schema grows a required envelope row column on the right side of the canvas: each envelope becomes one `node_type: "envelope"` node, positioned in a vertical lane right of the solution, in numerical order.
+- Edges: the model is instructed to draw `clue → envelope` and `deduction → envelope` edges showing which evidence belongs in which envelope, plus `envelope_n → envelope_n+1` chain edges so the player flow is visible.
+- After insert, we write the new envelope-node ids back into `envelopes.linked_node_ids` so jumping from a node to its envelope row (and vice versa) works in a follow-up.
+
+Net effect: every envelope you've drafted shows up as a colored node in the Logic Flow board, wired into the case, and reachable from the Final Flow as well (the same logic board powers it).
+
+### 4. Assistant playbook — already covers this, plus one addition
+
+The playbook already has an `envelopes` section (count, labels, closing line). We add ONE field so design briefs can be templated workspace-wide:
+
+```ts
+envelopes: {
+  count, labels, closing_line_he,
+  + design_brief_template: string   // default: a 4-paragraph stock brief describing kraft envelopes, wax-seal styling, Hebrew label placement, etc.
+}
+```
+
+Surfaced in `AssistantPlaybookPanel.tsx` under the existing "Envelopes" section as a textarea. The Envelopes tab's "Draft prompt" button uses it as the seed when no per-envelope design exists yet.
+
+### 5. New / changed files
 
 | File | Change |
 |---|---|
-| `src/features/project/ProjectOverview.tsx` | Add **✨ Generate idea** button inside the sellingOn block; small handler that calls `generate-marketing-copy` with `field: "selling_point"` and writes the result via `update()`. |
-| `supabase/functions/generate-marketing-copy/index.ts` | Add a `field === "selling_point"` branch that returns a single 1–2 sentence creative hook (uses existing project context + playbook). Returns `{ value: string }`. |
-| `supabase/functions/assistant-chat/index.ts` | Append the derived `USER-EDITED FIELDS` block to the system prompt, plus the short USER-ENTERED FIELDS RULE paragraph in the reminder section. |
+| `supabase/migrations/<new>.sql` | Add `design_instructions`, `cover_image_url`, `linked_node_ids`, `linked_document_ids`, `created_by_message_id` to `envelopes`. |
+| `src/features/project/EnvelopesSection.tsx` | Full redesign: design instructions, draft-prompt + generate-image buttons, linked docs picker, status tooltip, "Brief me" + "Generate all envelopes" + per-envelope "Open in Assistant" buttons, origin badge. |
+| `supabase/functions/generate-envelopes/index.ts` *(new)* | AI generator: produces all `count` envelopes' label + task + design_instructions in one structured tool call, using the playbook + project context + suspects + logic flow + documents. |
+| `supabase/functions/suggest-image-prompt/index.ts` | Add `category: "envelope"` branch — uses the playbook envelope design template + envelope label + task as the seed. |
+| `supabase/functions/generate-image/index.ts` | Accept `category: "envelope"` and store the image URL into `envelopes.cover_image_url` for that envelope row (mirrors how it currently stores into `documents`). |
+| `supabase/functions/generate-logic-flow/index.ts` | Load envelopes; inject ENVELOPES block into the prompt; require envelope nodes + envelope chain edges; write back `envelopes.linked_node_ids`. |
+| `supabase/functions/_shared/assistant-playbook.ts` & `src/lib/assistant-playbook.ts` | Add `envelopes.design_brief_template` field with a sensible default + a renderer for the prompt. |
+| `src/features/settings/AssistantPlaybookPanel.tsx` | New textarea for the envelope design brief template. |
+| `src/features/project/CanvasSection.tsx` | Pre-flight banner on "Generate logic flow" when no envelope has design_instructions yet, with "Open assistant briefing" button. |
+| `src/features/project/notifications/triggers.ts` | New trigger `envelopes_drafted` → notification "Envelopes are drafted — generate the logic flow next so they get wired into the board." |
 
 ### Out of scope
 
-- A separate "history of generated ideas" — each click just replaces the field; the user can copy/paste if they want to keep options.
-- A full-blown "diff" between user text and assistant suggestion. The acknowledgement text in chat is enough.
+- A standalone "envelope assets" gallery (the cover image lives on the envelope row itself).
+- Auto-printing envelope sheets (Documents already has the PDF flow; envelopes can re-use it later).
+- Variable envelope counts inside one project (the playbook controls count workspace-wide; per-project override is a follow-up).
 
