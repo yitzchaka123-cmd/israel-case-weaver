@@ -182,13 +182,14 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     return () => window.clearTimeout(t);
   }, [focusMessageId, messages]);
 
-  const send = async (text: string) => {
+  const send = async (text: string, baseMessages?: Msg[]) => {
     const content = text.trim();
     if (!content || sending) return;
     setInput("");
     setSending(true);
     try {
-      const convo = [...messages, { role: "user" as const, content }].map((m) => ({
+      const source = baseMessages ?? messages;
+      const convo = [...source, { role: "user" as const, content }].map((m) => ({
         role: m.role,
         content: m.content,
       }));
@@ -223,6 +224,43 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     } finally {
       setSending(false);
     }
+  };
+
+  // Edit a previous user message: rewrite the conversation by deleting that
+  // message and everything after it, then resend the new content. The
+  // assistant's reply will continue from the same prior context as the
+  // original turn — but with the edited prompt instead.
+  const editAndResend = async (messageId: string, newContent: string) => {
+    const trimmed = newContent.trim();
+    if (!trimmed || sending) return;
+    const idx = messages.findIndex((m) => m.id === messageId);
+    if (idx === -1) return;
+    const target = messages[idx];
+    if (target.role !== "user") return;
+
+    const priorMessages = messages.slice(0, idx);
+    const toDelete = messages.slice(idx).map((m) => m.id);
+
+    setSending(true);
+    try {
+      const { error } = await supabase.from("chat_messages").delete().in("id", toDelete);
+      if (error) {
+        toast.error(error.message);
+        setSending(false);
+        return;
+      }
+      // Optimistically clear so UI doesn't flash the deleted tail
+      qc.setQueryData<Msg[]>(["chat", projectId], priorMessages);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to edit message");
+      setSending(false);
+      return;
+    } finally {
+      setSending(false);
+    }
+
+    // Now resend with the prior context as the base
+    await send(trimmed, priorMessages);
   };
 
   return (
