@@ -290,7 +290,7 @@ const TOOLS = [
     type: "function",
     function: {
       name: "update_project",
-      description: "Update project metadata (title, subtitle, phase, mystery_type, genre, year, difficulty, player_role, case_goal, setting, selling_point, target_doc_count).",
+      description: "Update project metadata. Covers Case Identity (title, subtitle, phase, mystery_type, genre, year, difficulty, player_role, case_goal, setting, selling_point, target_doc_count) AND case-level briefs (packaging_notes, image_prompt_instructions, video_prompt_instructions, hint_settings, envelope_settings). Pass ONLY the fields that changed — undefined keys are ignored. For hint_settings/envelope_settings, pass the FULL object you want stored (it overwrites, no shallow merge).",
       parameters: {
         type: "object",
         properties: {
@@ -306,6 +306,11 @@ const TOOLS = [
           setting: { type: "string" },
           selling_point: { type: "string" },
           target_doc_count: { type: "number" },
+          packaging_notes: { type: "string", description: "Phase 7 packaging brief — physical box / print / fulfilment notes." },
+          image_prompt_instructions: { type: "string", description: "Per-project visual style guide injected into every image-prompt call." },
+          video_prompt_instructions: { type: "string", description: "Per-project style guide for video prompts." },
+          hint_settings: { type: "object", description: "Stage/level hint configuration object. Replaces the existing value (no shallow merge)." },
+          envelope_settings: { type: "object", description: "Envelope numbering & defaults object. Replaces the existing value (no shallow merge)." },
         },
         additionalProperties: false,
       },
