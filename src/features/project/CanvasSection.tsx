@@ -578,6 +578,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
         nodeId={selectedNodeId}
         projectId={projectId}
         modelOverride={logicModel}
+        board={board}
         onClose={() => setSelectedNodeId(null)}
       />
 
