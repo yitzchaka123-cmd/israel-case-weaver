@@ -25,6 +25,30 @@ const SERVICE_ROLE_INTERNAL = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 // ---------- Run log helper ----------
 
 /**
+ * Resolve the calling user's id from the request's Authorization header.
+ * Used by every edge function so ai_run_logs rows are attributed correctly.
+ */
+export async function getUserIdFromAuth(req: Request): Promise<string | null> {
+  try {
+    const authH = req.headers.get("Authorization") ?? "";
+    const token = authH.replace(/^Bearer\s+/i, "");
+    if (!token || !SUPABASE_URL_INTERNAL || !SERVICE_ROLE_INTERNAL) return null;
+    const r = await fetch(`${SUPABASE_URL_INTERNAL}/auth/v1/user`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        apikey: SERVICE_ROLE_INTERNAL,
+      },
+    });
+    if (!r.ok) return null;
+    const data = await r.json();
+    return (data?.id as string | undefined) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+
+/**
  * Read the x-ai-fallback header set by chatCompletions and compute the model
  * that actually served the response. Returns null fallback when no fallback fired.
  */
