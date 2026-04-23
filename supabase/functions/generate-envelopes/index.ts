@@ -156,17 +156,26 @@ Produce all ${count} envelopes now in numerical order. Reuse the labels above as
       },
     };
 
+    const startedAt = Date.now();
+    const callerUserId = await getUserIdFromAuth(req);
     const resp = await chatCompletions({
       model,
       messages: [{ role: "system", content: sys }, { role: "user", content: userPrompt }],
       tools: [tool],
       tool_choice: { type: "function", function: { name: "emit_envelopes" } },
     });
+    const fb = extractFallback(resp, model);
 
     if (!resp.ok) {
       const provider = providerLabel(model);
       const t = await resp.text().catch(() => "");
       console.error(`generate-envelopes ${provider} error`, resp.status, t);
+      await logAiRun({
+        userId: callerUserId, projectId, surface: "generate-envelopes",
+        requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
+        status: "error", latencyMs: Date.now() - startedAt,
+        errorMessage: `${provider} ${resp.status}: ${t.slice(0, 200)}`, promptExcerpt: userPrompt,
+      });
       if (resp.status === 429) return new Response(JSON.stringify({ error: `${provider} rate limit — try again shortly.` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       if (resp.status === 402) return new Response(JSON.stringify({ error: `${provider} credits/key issue. Check Settings → AI provider routing.` }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       if (resp.status === 401) return new Response(JSON.stringify({ error: `${provider} auth failed — check the API key in Settings → API keys.` }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -221,7 +230,12 @@ Produce all ${count} envelopes now in numerical order. Reuse the labels above as
       model,
     });
 
-    return new Response(JSON.stringify({ ok: true, count: written }), {
+    await logAiRun({
+      userId: callerUserId, projectId, surface: "generate-envelopes",
+      requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
+      status: "ok", latencyMs: Date.now() - startedAt, promptExcerpt: userPrompt,
+    });
+    return new Response(JSON.stringify({ ok: true, count: written, model, effectiveModel: fb.effectiveModel, fallback: fb.fallback }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
