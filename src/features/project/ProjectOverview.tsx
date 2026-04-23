@@ -36,6 +36,91 @@ const MYSTERY_TYPES = [
 const GENRES = ["Technological", "Mathematical", "Historical", "Forensics", "Psychological"];
 const DIFFICULTIES = ["Easy", "Medium", "Hard"];
 
+// Map Hebrew / common synonyms for difficulty back to canonical English
+// so a value like "בינוני" still highlights "Medium" in the picker.
+const DIFFICULTY_SYNONYMS: Record<string, string> = {
+  easy: "Easy", medium: "Medium", hard: "Hard",
+  "קל": "Easy", "בינוני": "Medium", "קשה": "Hard",
+};
+function normalizeDifficulty(v: string | null | undefined): string {
+  if (!v) return "";
+  const trimmed = String(v).trim();
+  const lower = trimmed.toLowerCase();
+  if (DIFFICULTY_SYNONYMS[lower]) return DIFFICULTY_SYNONYMS[lower];
+  if (DIFFICULTY_SYNONYMS[trimmed]) return DIFFICULTY_SYNONYMS[trimmed];
+  return trimmed;
+}
+
+const CUSTOM_SENTINEL = "__custom__";
+
+/**
+ * A Select that tolerates any value — including ones outside the curated list
+ * (e.g. assistant-written values like "Police procedural / realistic"). If the
+ * value isn't canonical, it's prepended as a "· custom" item so the trigger
+ * displays it instead of falling back to the placeholder. A "Custom…" option
+ * at the bottom flips the control into a free-text Input.
+ */
+function TolerantSelect({
+  value,
+  options,
+  onChange,
+  placeholder = "Choose…",
+  normalize,
+}: {
+  value: string;
+  options: string[];
+  onChange: (v: string) => void;
+  placeholder?: string;
+  normalize?: (v: string) => string;
+}) {
+  const displayValue = normalize ? normalize(value) : value;
+  const [freeText, setFreeText] = useState(false);
+
+  if (freeText) {
+    return (
+      <div className="space-y-1">
+        <Input
+          autoFocus
+          value={value ?? ""}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Type a custom value…"
+        />
+        <button
+          type="button"
+          className="text-[11px] text-muted-foreground hover:text-foreground underline"
+          onClick={() => setFreeText(false)}
+        >
+          Back to presets
+        </button>
+      </div>
+    );
+  }
+
+  const isCustom = displayValue && !options.includes(displayValue);
+
+  return (
+    <Select
+      value={displayValue || ""}
+      onValueChange={(v) => {
+        if (v === CUSTOM_SENTINEL) {
+          setFreeText(true);
+          return;
+        }
+        onChange(v);
+      }}
+    >
+      <SelectTrigger><SelectValue placeholder={placeholder} /></SelectTrigger>
+      <SelectContent>
+        {isCustom ? (
+          <SelectItem value={displayValue}>{displayValue} · custom</SelectItem>
+        ) : null}
+        {options.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+        <SelectItem value={CUSTOM_SENTINEL}>Custom…</SelectItem>
+      </SelectContent>
+    </Select>
+  );
+}
+
 
 export function ProjectOverview({ project }: { project: any }) {
   const [draft, setDraft] = useState(project);
@@ -153,28 +238,26 @@ export function ProjectOverview({ project }: { project: any }) {
               <Input value={draft.subtitle ?? ""} onChange={(e) => update({ subtitle: e.target.value })} />
             </Field>
             <Field label="Mystery type" originId={draft.assistant_origins?.mystery_type}>
-              <Select value={draft.mystery_type ?? ""} onValueChange={(v) => update({ mystery_type: v })}>
-                <SelectTrigger><SelectValue placeholder="Choose…" /></SelectTrigger>
-                <SelectContent>
-                  {MYSTERY_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <TolerantSelect
+                value={draft.mystery_type ?? ""}
+                options={MYSTERY_TYPES}
+                onChange={(v) => update({ mystery_type: v })}
+              />
             </Field>
             <Field label="Genre" originId={draft.assistant_origins?.genre}>
-              <Select value={draft.genre ?? ""} onValueChange={(v) => update({ genre: v })}>
-                <SelectTrigger><SelectValue placeholder="Choose…" /></SelectTrigger>
-                <SelectContent>
-                  {GENRES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <TolerantSelect
+                value={draft.genre ?? ""}
+                options={GENRES}
+                onChange={(v) => update({ genre: v })}
+              />
             </Field>
             <Field label="Difficulty" originId={draft.assistant_origins?.difficulty}>
-              <Select value={draft.difficulty ?? ""} onValueChange={(v) => update({ difficulty: v })}>
-                <SelectTrigger><SelectValue placeholder="Choose…" /></SelectTrigger>
-                <SelectContent>
-                  {DIFFICULTIES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <TolerantSelect
+                value={draft.difficulty ?? ""}
+                options={DIFFICULTIES}
+                onChange={(v) => update({ difficulty: v })}
+                normalize={normalizeDifficulty}
+              />
             </Field>
             <Field label="Year" originId={draft.assistant_origins?.year}>
               <Input
