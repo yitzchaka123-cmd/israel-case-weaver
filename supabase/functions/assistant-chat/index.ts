@@ -198,6 +198,11 @@ Case goal: ${project.case_goal ?? "—"}
 Setting: ${project.setting ?? "—"}
 Extra selling point: ${project.selling_point ?? "—"}
 Target documents: ${project.target_doc_count ?? "—"}
+Packaging notes: ${truncate(project.packaging_notes, 120)}
+Image prompt style: ${truncate(project.image_prompt_instructions, 120)}
+Video prompt style: ${truncate(project.video_prompt_instructions, 120)}
+Hint settings: ${(() => { const v = project.hint_settings as Record<string, unknown> | null; if (!v || typeof v !== "object") return "—"; const keys = Object.keys(v); return keys.length === 0 ? "(empty)" : `(${keys.length} keys: ${truncate(keys.join(", "), 80)})`; })()}
+Envelope settings: ${(() => { const v = project.envelope_settings as Record<string, unknown> | null; if (!v || typeof v !== "object") return "—"; const keys = Object.keys(v); return keys.length === 0 ? "(empty)" : `(${keys.length} keys: ${truncate(keys.join(", "), 80)})`; })()}
 Existing suspects (${suspectCount}):
 ${suspectsList}
 Existing documents (${docCount}):
