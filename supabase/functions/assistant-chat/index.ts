@@ -447,6 +447,12 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Pre-mint the ID for the assistant message we'll insert at the end so
+    // every tool write can stamp `created_by_message_id` BEFORE the row exists.
+    // This lets the UI jump from any field/item back to the chat turn that
+    // produced it.
+    const assistantMessageId = crypto.randomUUID();
+
     // Tool-calling loop: up to 4 rounds
     const convo: Array<Record<string, unknown>> = [
       { role: "system", content: systemPrompt },
@@ -456,7 +462,6 @@ Deno.serve(async (req) => {
 
     const MAX_ROUNDS = 8;
     for (let round = 0; round < MAX_ROUNDS; round++) {
-      // On the final round, drop tools so the model MUST produce a text answer.
       const isFinalRound = round === MAX_ROUNDS - 1;
       const body: Record<string, unknown> = { model, messages: convo, stream: false };
       if (!isFinalRound) body.tools = TOOLS;
@@ -506,7 +511,7 @@ Deno.serve(async (req) => {
         for (const call of toolCalls) {
           let args: Record<string, unknown> = {};
           try { args = JSON.parse(call.function.arguments || "{}"); } catch { /* ignore */ }
-          const result = await executeTool(supa, projectId, call.function.name, args);
+          const result = await executeTool(supa, projectId, call.function.name, args, assistantMessageId);
           executedTools.push({ name: call.function.name, result });
           convo.push({
             role: "tool",
@@ -514,11 +519,9 @@ Deno.serve(async (req) => {
             content: JSON.stringify(result),
           });
         }
-        continue; // ask the model to produce final text after tool results
+        continue;
       }
 
-      // Final assistant message — pull the most recent propose_options result
-      // so the client can render quick-reply buttons under this message.
       const finalText = msg.content ?? "";
       const lastOptionsTool = [...executedTools].reverse().find(
         (t) => t.name === "propose_options" && (t.result as { ok?: boolean })?.ok,
@@ -530,6 +533,7 @@ Deno.serve(async (req) => {
       const quickQuestion = optionsResult?.question ?? null;
 
       await supa.from("chat_messages").insert({
+        id: assistantMessageId,
         project_id: projectId,
         role: "assistant",
         content: finalText,
@@ -540,7 +544,7 @@ Deno.serve(async (req) => {
         },
       });
 
-      return new Response(JSON.stringify({ content: finalText, tools: executedTools, model }), {
+      return new Response(JSON.stringify({ content: finalText, tools: executedTools, model, messageId: assistantMessageId }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
