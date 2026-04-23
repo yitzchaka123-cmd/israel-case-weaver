@@ -1146,6 +1146,7 @@ Deno.serve(async (req) => {
       const roundStartedAt = Date.now();
       const resp = await chatCompletions(body);
       const fb = extractFallback(resp, model);
+      lastFb = fb;
       // Log every round (best-effort, non-blocking semantics)
       logAiRun({
         userId: callerUserId, projectId, surface: "assistant-chat",
