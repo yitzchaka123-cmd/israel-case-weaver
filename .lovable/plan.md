@@ -1,49 +1,79 @@
 
 
-## Three fixes for the AI provider settings
+## Hints workflow + structural hint nodes on the Logic Flow
 
-### 1. "Image generation" picker → real model dropdown
+Three pieces, all centered on the existing `hints` table:
 
-Today the **AI provider routing** section shows Planning and Documents as full dropdowns (Lovable, Gemini variants, OpenAI variants, Claude variants), but **Image generation** is just a 2-button toggle (`Lovable` / `OpenAI`). Replace it with a real grouped dropdown matching the per-surface `ImageModelPicker`:
+### 1. Wire hints into the Assistant + Canvas
 
-- **Lovable AI Gateway** (workspace credits): Nano Banana, Nano Banana 2, Nano Banana Pro
-- **Your Google key (direct)**: same three Nano Banana models routed via your `GEMINI_API_KEY`
-- **OpenAI**: ChatGPT Image 1 (gpt-image-1), ChatGPT Image 2 (gpt-image-2)
+Today the assistant only has `update_hint` — no way to **create** hints, no way to bulk-generate a stage, and no way to render them on the detective board. Fixes:
 
-This sets the **workspace default** that's used when a per-surface picker has no override. The existing per-image `ImageModelPicker` (cover, suspect, media…) keeps overriding.
+- **New tool `add_hint`** in `assistant-chat` — creates one row (`stage`, `level`, `text`).
+- **New tool `generate_hint_stage`** — given a `stage` number + optional steering ("user is stuck on the alibi clue"), writes all 3 Hebrew hints for that stage in one call (vague → helpful → reveal), inserting all 3 rows.
+- **Extend `add_canvas_node` enum** with `"hint"` so the assistant can place hint nodes on either board.
+- **Playbook addition** to the system prompt (`renderHintsSystemBlock`): a new "HINT SYSTEM (Phase 5/6)" block explaining the 3-rung ladder, when to call `generate_hint_stage` vs `add_hint`, and that each stage should be tied to the clue/deduction it nudges toward.
+- **New `hint` node type** added to `CanvasNodeType` + `NODE_META` in `CanvasNodeTypes.tsx` (icon: Lightbulb, accent amber `oklch(0.78 0.16 75)`).
+- **Hints tab** gets a "Place on canvas" button per stage that creates a `hint` node on the **final** board pre-titled "Stage N hints".
 
-### 2. Add a "Prompt generation" row
+### 2. Hint nodes on the auto-generated Logic Flow (NEW)
 
-Add a fourth row in **AI provider routing** called **Prompt generation** (drives `suggest-image-prompt`), using the same `TEXT_PROVIDER_OPTIONS` dropdown as Planning/Documents (Lovable, all Gemini direct/gateway, OpenAI 5/5.2/5.4/mini, Claude Sonnet/Opus/Haiku).
+Extend `generate-logic-flow` so hint stages become **structural nodes** on the logic board, showing how each clue/deduction is supported by a hint ladder. Just the structure — text stays empty until the user (or assistant) writes it later.
 
-- New profile column: `ai_provider_prompt_writer text default 'lovable'`
-- `suggest-image-prompt` already accepts a `writerModel` override per call — we extend its model resolution to fall back to `profile.ai_provider_prompt_writer` (instead of `profile.ai_provider_planning`) when no per-surface override is set
-- The per-surface `PromptWriterModelPicker`'s "Use project default" entry now reads the new column
+- Add `"hint"` to the tool's `node.type` enum.
+- Update the system prompt: after producing clues + deductions, instruct the model to emit **one `hint` node per clue/deduction that warrants a hint stage** (typically 3–5 hint nodes per case), titled `"Hint stage N — for: <clue/deduction title>"`, positioned in a vertical lane to the **left of clues** (x ≈ -200, y matching the clue it supports).
+- Add **edges `hint_stage → clue/deduction`** with label `"hints toward"` so the board reads as: *hints → clue → deduction → solution*.
+- Add `hint` to the `NODE_COLORS` map (amber) so the canvas renders them with the right tint.
+- After insert, for each emitted hint node: create the matching empty 3-row scaffold in the `hints` table (`stage` = sequential, `level` 1/2/3, `text = ""`) so the Hints tab is pre-populated and the printed-card workflow has somewhere to go.
 
-### 3. Fix the misleading Claude test ("404 claude-3-5-haiku-latest")
+### 3. "Create hint sheet" image generator on each stage
 
-That 404 doesn't mean Claude is broken — it means the **test ping** in `api-key-manager` is calling a stale model id (`claude-3-5-haiku-latest`) directly against Anthropic. Your assistant calls actually route through the **Lovable AI Gateway** as `anthropic/claude-haiku-4-5`, which is a totally different code path. So the assistant works, the test fails, and you're left confused.
+Per stage, a new **"Create hint sheet"** button next to Remove. Clicking expands an inline `PromptPanel` block (the same component used for cover/suspect/media — gives the writer-model picker, "Generate prompt", editable Textarea, and "Generate image" with the image-model picker).
 
-Two changes:
+- "Generate prompt" passes `category: "hint-sheet"` to `suggest-image-prompt`, which we extend with hint-sheet guidance: *"Printable A6/A7 single-side hint card, large RTL Hebrew stage label, era-appropriate texture, room for 3 scratch-off panels, no spoilers visible."*
+- "Generate image" posts to `generate-image` with `target: "hint-sheet"` and `targetId: <stage>`. The function persists URL + prompt + provenance onto the new `hint_sheets` row.
+- Generated card appears inline above the 3 hint textareas, with the same hover **AiOriginBadge** + collapsible prompt history used elsewhere.
 
-a. **Update the Anthropic test ping** in `supabase/functions/api-key-manager/index.ts` to use `claude-haiku-4-5` (the current id). If that 404s too, fall back to listing models via `GET /v1/models` (cheaper + version-stable) and report which models the key can see.
+### 4. Schema + storage
 
-b. **Add a clarifying note** under the Claude key row in `ApiKeyManager.tsx`: *"This tests your Anthropic key directly. The assistant normally calls Claude via the Lovable AI Gateway, which uses workspace credits — not this key. The direct key is only used if you pick a `claude` model and the gateway is down."* (Matches how Gemini-direct is already labeled.)
+**Migration:**
+- New table `hint_sheets` (one row per stage):
+  - `id`, `project_id`, `stage int`, `image_url text`, `prompt text`, `prompt_history jsonb default '[]'`
+  - `effective_model text`, `fallback text`, `requested_model text`
+  - Unique on (`project_id`, `stage`); RLS = same `Auth all` policies as `hints`.
+- `canvas_nodes.node_type` is free text — only the UI/tool enum needs `"hint"` added.
+- Storage: reuse `media` bucket under a `hint-sheets/` prefix.
 
-### Separately: the assistant's "error creating 21 nodes" you saw
+### Behavior summary
 
-That's not a Claude problem — that's the canvas tool-call path failing partway through (a known issue with multi-step tool runs, separate from model selection). I'll leave that out of scope here unless you want me to dig into it next; want me to look at the assistant tool-call error after these settings fixes land?
+| Surface | Before | After |
+|---|---|---|
+| Assistant tools | `update_hint` only | `add_hint`, `generate_hint_stage`, `hint` allowed in `add_canvas_node` |
+| Assistant playbook | No hint guidance | New "HINT SYSTEM" block: when/how to write each rung, link to clue node |
+| Logic Flow generator | clues / red_herrings / deductions / solution / envelopes | + `hint` nodes (structure only), edges `hint → clue/deduction`, auto-scaffolds matching `hints` rows |
+| Canvas | No hint nodes | New `hint` node type (Lightbulb / amber) on both boards |
+| Hints tab | 3 textareas per stage | Same + "Create hint sheet" image generator + "Place on canvas" button |
+| `generate-image` | Targets media/suspect/cover/envelope | Adds `hint-sheet` target → persists to new `hint_sheets` row |
+| `suggest-image-prompt` | 6 categories | Adds `hint-sheet` category with print-card guidance |
 
 ### Files touched
 
-- `src/features/settings/SettingsPage.tsx` — replace `ProviderRow` for Images with a `ProviderSelectRow` using new `IMAGE_PROVIDER_OPTIONS`; add a new `Prompt generation` row; persist `ai_provider_prompt_writer`
-- `src/features/settings/ApiKeyManager.tsx` — add clarifying note under the Anthropic row
-- `supabase/functions/api-key-manager/index.ts` — switch Anthropic ping model to `claude-haiku-4-5`, add `GET /v1/models` fallback
-- `supabase/functions/suggest-image-prompt/index.ts` — read `profile.ai_provider_prompt_writer` first, fall back to `ai_provider_planning`, then `lovable`
-- **Migration**: `ALTER TABLE profiles ADD COLUMN ai_provider_prompt_writer text NOT NULL DEFAULT 'lovable'`; matching column also added to `ai_provider_images` value validation if needed (it's already free-form text — no constraint change)
+**Edge functions**
+- `supabase/functions/assistant-chat/index.ts` — add `add_hint` and `generate_hint_stage` tools + executors; extend `add_canvas_node` and `update_canvas_node` enums with `"hint"`.
+- `supabase/functions/_shared/assistant-playbook.ts` (and the `_shared` mirror) — add `renderHintsSystemBlock`.
+- `supabase/functions/generate-logic-flow/index.ts` — add `"hint"` to tool enum + prompt + `NODE_COLORS`; post-insert, scaffold matching `hints` rows.
+- `supabase/functions/generate-image/index.ts` — add `hint-sheet` target → persist to `hint_sheets`.
+- `supabase/functions/suggest-image-prompt/index.ts` — add `hint-sheet` to `CATEGORY_GUIDANCE`.
+
+**Frontend**
+- `src/features/project/canvas/CanvasNodeTypes.tsx` — add `hint` (Lightbulb, amber) to `CanvasNodeType` and `NODE_META`.
+- `src/features/project/HintsSection.tsx` — per-stage `HintSheetGenerator` (PromptPanel + AiOriginBadge + history); "Place on canvas" button.
+- `src/components/PromptWriterModelPicker.tsx` and `src/components/ImageModelPicker.tsx` — extend surface union with `"hint"` so per-surface defaults are remembered separately.
+
+**Migration** — create `hint_sheets` table with RLS matching `hints`.
 
 ### Out of scope
 
-- The "21 nodes failed" assistant error — separate tool-call investigation
-- Adding image-model routing (Lovable vs Direct vs OpenAI) inside `generate-image` — it already auto-routes based on the model id picked; this change is purely about the **default** picker UI
+- Actual QR scratch-off PDF assembly — printer's job; we generate the source card image only.
+- Two-way sync between a `hint` canvas node and the hint rows — "Place on canvas" is one-way.
+- Diagnosing the earlier "21 nodes failed" assistant tool-call error — separate investigation, can do next.
 
