@@ -1,41 +1,64 @@
 
 
-## Three small canvas polish fixes
+## Make the assistant's playbook visible & editable from Settings
 
-### 1. Dotted background (so panning/zooming feels grounded)
+### The problem
 
-The canvas currently uses React Flow's default `<Background>` in line variant with very subtle styling, which reads as a near-flat surface — there's no visual anchor when you pan or zoom.
+Today the assistant's "house rules" live in three different places:
 
-Switch it to React Flow's built-in `BackgroundVariant.Dots` with a slightly larger gap and a higher-contrast dot color (`var(--color-muted-foreground)` at low opacity via `color-mix`) so motion is immediately readable, like Figma / n8n / Reactflow demo boards.
+1. **Hardcoded prompt** in `assistant-chat/index.ts` — things like *"5 numbered Hebrew titles"*, *"3 hints per stage"*, *"Envelopes fixed at 5: Open First / 1 / 2 / 3 / 4"*, *"Phase 1 setup order: mystery_type → genre → titles → difficulty → role → goal → year"*, the canonical mystery-type / genre / difficulty lists, the design-instructions realism floor (20 details), etc. **Not editable from the UI.**
+2. **Live project state** (suspects, documents, settings) — already editable inline.
+3. **USER OVERRIDES / Assistant Tweaks** — already editable in Settings, but they're free-form *additions*, not a way to see and change the defaults.
 
-**File:** `src/features/project/CanvasSection.tsx` — change the existing `<Background gap={24} size={1} color="var(--color-border)" />` to use `variant={BackgroundVariant.Dots}`, `gap={20}`, `size={1.4}`, and a dot color computed via `color-mix(in oklab, var(--color-muted-foreground) 35%, transparent)`. Add `BackgroundVariant` to the existing `reactflow` import.
+So when you say *"easy games should have 7–8 suspects"*, there's nowhere in the UI to set that — your only option is to add a tweak rule, and you can't even see what the current default is.
 
-### 2. Auto-explain when a node is opened
+### What we'll build
 
-Right now the AI explanation only renders after you click **Explain**. The plan: trigger `explain()` automatically the first time a node detail panel opens (per node), so the explanation is already there when you arrive. The manual **Regenerate** button stays for re-runs.
+A new **"Assistant Playbook"** section in Settings (above Assistant Tweaks) that surfaces the previously-hardcoded knobs as plain editable fields. Tweaks stay as the free-form override channel. Live project data stays where it is.
 
-**File:** `src/features/project/CanvasSection.tsx` (`NodeDetailPanel`):
+The playbook is **per user, stored on `profiles`** (same pattern as `assistant_tweaks` and `image_prompt_assistant_instructions`). It's read once per chat turn by the edge function and merged into the system prompt — the wording around each value stays intact, only the value swaps in.
 
-- Track per-node "already auto-explained" state with a `useRef<Set<string>>` so we don't re-fire on every re-render or when the user closes & reopens the same node within the session.
-- In the existing `useEffect([nodeId])` that resets `explanation`, also check: if `nodeId` is set and we haven't auto-explained it yet, call `explain()` and add the id to the ref. Guard against running with no node id.
-- The placeholder copy ("Click *Explain* for an AI breakdown…") stays as a fallback for when the call hasn't completed yet — replace it with a small inline "Generating explanation…" loader state when `explaining && !explanation` so the panel doesn't look empty during the ~2-4s call.
-- The Explain button label stays as "Regenerate" once an explanation exists; before then it shows the spinner.
+### The knobs we expose (v1, intentionally bounded)
 
-**Cost note:** every node click now spends one AI call against the user's selected Logic Flow model. That's expected per the user's request, and it only fires once per node per session (the ref dedupes).
+Grouped into 5 collapsible cards, each card showing **Current default** vs **Your override** with a "Reset to default" link per field. Empty override = use default.
 
-### 3. Hide "Linked documents" on the Logic Flow board
+1. **Suspect counts by difficulty** — `easy: 5–6`, `medium: 6–7`, `hard: 8–10` (currently implicit). Editable as three integer ranges.
+2. **Hints per stage** — number (default 3) and the vague→helpful→giveaway ladder labels.
+3. **Envelopes** — count (default 5) and the fixed labels list (`Open First / 1 / 2 / 3 / 4`). Edit count and rename labels; if count changes, the labels list resizes.
+4. **Phase 1 setup order** — the ordered list of fields the assistant collects in Phase 1 (currently `mystery_type → genre → titles → difficulty → role → goal → year`). Drag to reorder, toggle each on/off. Title-options count (default 5) is a separate number.
+5. **Canonical vocab lists** — the three closed lists the model must map to: `mystery_type`, `genre`, `difficulty`. Add/remove/reorder values. Each value can carry Hebrew/English synonyms used by the mapping logic.
+6. **Realism floor** — minimum realism details for real-world docs (default 20), minimum creative details for unusual props (default 8–15, two numbers).
+7. **Document generation default mode** — `drafts | auto | ask` and whether to ask each new project. (Today the assistant always asks on first Phase 4 entry — this lets you skip.)
 
-On the Logic Flow board there are no documents yet (they're produced later from this very flow), so showing **Linked documents · 0** is just noise. The Suspects-in-linked-documents block is already conditional on `linkedSuspects.length > 0`, so it disappears on its own.
+Each card has a small "?" tooltip explaining where in the assistant's behaviour the value shows up, plus a *"Show in prompt"* toggle that opens a side panel showing the exact prompt fragment that will be injected — so you can see the change before it ships.
 
-**File:** `src/features/project/CanvasSection.tsx`:
+### Files touched
 
-- Pass the current `board` prop down from `CanvasInner` to `<NodeDetailPanel>`.
-- In `NodeDetailPanel`, only render the `Linked documents` `<PanelSection>` when `board === "final"`. The `linkedDocs` query can stay (cheap, scoped by `linked_node_ids` containment) — but skip it on the logic board with `enabled: !!nodeId && board === "final"` to avoid the wasted request.
-- The "Documents" stat tile in the hero header should also hide on the Logic board, leaving just a single full-width "Suspects" tile (or, cleaner: drop the stats grid entirely on the Logic board since suspect counts there are also always 0 until docs exist). Simpler: render the stats grid only when `board === "final"`.
+| File | Change |
+|---|---|
+| `supabase/migrations/<new>` | Add one column on `profiles`: `assistant_playbook jsonb not null default '{}'::jsonb`. Single column keeps the schema small; the shape is enforced in TypeScript. |
+| `src/features/settings/AssistantPlaybookPanel.tsx` *(new)* | Renders the 7 cards above. Reads from `profiles.assistant_playbook`, validates with a Zod schema, persists with the same upsert pattern `AssistantTweaksPanel` uses. Each field shows default vs override + reset link. Includes the *"Show in prompt"* preview drawer. |
+| `src/features/settings/SettingsPage.tsx` | Insert the new `<AssistantPlaybookPanel />` in a new `Section` titled "Assistant playbook — defaults" placed directly above the existing "Assistant tweaks" section. Copy explains: *"These are the assistant's built-in defaults. Edit any value to change how it builds future cases — without losing the rest of the workflow."* |
+| `src/lib/assistant-playbook.ts` *(new — shared)* | Exports `PLAYBOOK_DEFAULTS` (single source of truth for default values) and `resolvePlaybook(override)` which deep-merges override onto defaults. Used by both the Settings UI (to show defaults) AND the edge function (to compute the effective playbook). Also exports the Zod schema. |
+| `supabase/functions/_shared/assistant-playbook.ts` *(new)* | Deno-compatible mirror of `PLAYBOOK_DEFAULTS` + `resolvePlaybook`. Kept as a separate file because Deno can't import from `src/`. Both files share the SAME literal defaults — a comment in each warns to keep them in sync, and we add a tiny unit-test-style script note in the PR. |
+| `supabase/functions/assistant-chat/index.ts` | (a) Fetch `profiles.assistant_playbook` for the project owner alongside the existing tweaks fetch. (b) Pass `resolvePlaybook(playbook)` into `buildSystemPrompt`. (c) Replace the hardcoded magic numbers / lists in the prompt with template interpolations: suspect-count guidance line, hints-per-stage line, envelope count + labels in the Phase 4 paragraph, Phase 1 setup-order sentence, canonical field-value lists in the CANONICAL FIELD VALUES block, realism-floor numbers, doc-generation-mode default. Wording stays the same; only the values become dynamic. |
+
+### Technical notes
+
+- **No breaking change for existing projects.** If `assistant_playbook` is `{}`, every value falls back to the current hardcoded default — the prompt comes out byte-identical to today.
+- **Playbook is per-user, not per-project**, matching how Tweaks and Image-prompt-assistant-instructions already work. If we later want per-project overrides, we add a second `projects.assistant_playbook` jsonb and merge user → project → defaults; the resolver already supports a chain.
+- **Source-of-truth duplication risk** between `src/lib/assistant-playbook.ts` and `supabase/functions/_shared/assistant-playbook.ts` is real but small (≈80 lines of constants). We mitigate with a header comment in both files: *"If you change defaults here, change the other file too."* Long-term we can codegen one from the other; not worth it for v1.
+- **Validation:** the edge function calls `resolvePlaybook` which silently drops unknown keys and clamps numbers to safe ranges (e.g. suspect-count min 1, max 30). A malformed playbook never breaks the chat — worst case it falls back to defaults.
+- **Prompt budget:** the canonical-vocab / phase-order / counts substitutions don't add net characters vs today; the playbook injection is bounded.
 
 ### What stays the same
 
-- All existing behavior (drag, connect, arrange, generate logic flow, solution summary dialog, suspect chips on Final board) is untouched.
-- No DB or edge function changes — `explain-canvas-node` already exists and is just being called automatically now.
-- No new dependencies.
+- Assistant Tweaks (free-form rules), Image-prompt assistant instructions, all per-project overview fields, all `update_*` tools, the EDIT-VS-CREATE rule, the `update_project` extensions we just shipped, the doc-generation-mode flow, the canvas/logic-flow gate.
+- The chat experience is unchanged unless you actually edit a playbook value.
+
+### Out of scope for v1 (good follow-ups)
+
+- A free-form **"View full system prompt"** debug panel that renders the entire resolved prompt (defaults + playbook + tweaks + project state) — useful but heavier; can land later as a read-only modal.
+- Per-project playbook overrides.
+- Localising playbook copy into Hebrew.
 
