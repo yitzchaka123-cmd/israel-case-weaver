@@ -16,6 +16,7 @@ import { HintsSection } from "./HintsSection";
 import { MediaSection } from "./MediaSection";
 import { ExportMenu } from "./ExportMenu";
 import { PhaseStatusBar } from "./PhaseStatusBar";
+import { NotificationBell } from "./notifications/NotificationBell";
 
 export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
@@ -89,6 +90,9 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
         qc.invalidateQueries({ queryKey: ["production-dashboard", projectId] });
         qc.invalidateQueries({ queryKey: ["phase-bar-counts", projectId] });
       })
+      .on("postgres_changes", { event: "*", schema: "public", table: "project_notifications", filter: `project_id=eq.${projectId}` }, () => {
+        qc.invalidateQueries({ queryKey: ["project-notifications", projectId] });
+      })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [projectId, qc]);
@@ -127,6 +131,18 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
             />
           </div>
           <div className="flex items-center gap-2">
+            <NotificationBell
+              projectId={projectId}
+              onOpenAssistant={(prompt) => {
+                setTab("assistant");
+                // Defer until tab actually mounts/focuses, then dispatch the prompt.
+                window.setTimeout(() => {
+                  window.dispatchEvent(
+                    new CustomEvent("mystudio:assistant-prompt", { detail: { projectId, prompt } }),
+                  );
+                }, 50);
+              }}
+            />
             <ExportMenu projectId={projectId} />
             <Button size="icon" variant="ghost" onClick={deleteProject} className="text-muted-foreground hover:text-destructive">
               <Trash2 className="h-4 w-4" />

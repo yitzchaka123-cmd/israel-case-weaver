@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Upload, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,8 @@ import { PromptPanel } from "@/components/PromptPanel";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
 import { ProductionDashboard } from "./ProductionDashboard";
 import { normalizePhase } from "./PhaseStatusBar";
+import { useProjectNotifications } from "./notifications/useProjectNotifications";
+import { notifyForFieldChange, type TriggerableField } from "./notifications/triggers";
 import {
   AlertDialog,
   AlertDialogAction,
