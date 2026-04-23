@@ -742,6 +742,8 @@ function synthesizeOptionsFromProse(text: string): { options: QuickOption[]; que
     question: questionLine && questionLine.length <= 140 ? questionLine : null,
   };
 }
+
+function formatRelativeTime(iso: string): string {
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return "";
   const diffSec = Math.round((Date.now() - then) / 1000);
