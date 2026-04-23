@@ -222,6 +222,12 @@ ${isSellingPoint
       });
     }
 
+    if (isSellingPoint) {
+      return new Response(JSON.stringify({ value: copy.selling_point, model }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     return new Response(JSON.stringify({ copy, model }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
