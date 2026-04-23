@@ -820,10 +820,13 @@ async function executeTool(
       const { data, error } = await supa
         .from("suspects")
         .insert({ ...args, project_id: projectId, created_by_message_id: messageId })
-        .select("id, name")
+        .select("id, name, thumbnail_url, alt_thumbnail_url")
         .single();
       if (error) throw error;
-      return { ok: true, message: `Suspect created: ${data.name}`, id: data.id };
+      const extras: Record<string, unknown> = {};
+      if (data.thumbnail_url) extras.thumbnail_url = data.thumbnail_url;
+      if (data.alt_thumbnail_url) extras.alt_thumbnail_url = data.alt_thumbnail_url;
+      return { ok: true, message: `Suspect created: ${data.name}`, id: data.id, ...extras };
     }
     if (name === "add_document") {
       // Server-side gate: refuse to create documents until the Logic Flow has
@@ -1035,10 +1038,17 @@ async function executeTool(
       if (error) throw error;
       const changed = Object.keys(patch).filter((k) => k !== "created_by_message_id");
       const niceName = formatName((updated ?? {}) as Record<string, unknown>);
+      const u = (updated ?? {}) as Record<string, unknown>;
+      const extras: Record<string, unknown> = {};
+      if (typeof u.thumbnail_url === "string" && u.thumbnail_url) extras.thumbnail_url = u.thumbnail_url;
+      if (typeof u.alt_thumbnail_url === "string" && u.alt_thumbnail_url) extras.alt_thumbnail_url = u.alt_thumbnail_url;
+      if (typeof u.cover_image_url === "string" && u.cover_image_url) extras.cover_image_url = u.cover_image_url;
+      if (typeof u.generated_asset_url === "string" && u.generated_asset_url) extras.image_url = u.generated_asset_url;
       return {
         ok: true,
         message: `Updated ${label}: ${niceName} (${changed.join(", ")})`,
         id,
+        ...extras,
       };
     };
 
@@ -1047,7 +1057,7 @@ async function executeTool(
         "suspects",
         "suspect",
         true,
-        "id, name",
+        "id, name, thumbnail_url, alt_thumbnail_url, thumbnail_prompt, alt_thumbnail_prompt",
         (r) => String(r.name ?? "—"),
       );
     }
@@ -1056,7 +1066,7 @@ async function executeTool(
         "documents",
         "document",
         true,
-        "id, title, doc_number",
+        "id, title, doc_number, generated_asset_url",
         (r) => `#${r.doc_number ?? "?"} ${r.title ?? "—"}`,
       );
     }
@@ -1065,7 +1075,7 @@ async function executeTool(
         "envelopes",
         "envelope",
         false,
-        "id, number, label",
+        "id, number, label, cover_image_url, cover_prompt",
         (r) => `#${r.number ?? "?"} ${r.label ?? ""}`.trim(),
       );
     }
@@ -1083,7 +1093,7 @@ async function executeTool(
         "canvas_nodes",
         "node",
         true,
-        "id, title",
+        "id, title, data",
         (r) => String(r.title ?? "—"),
       );
     }
@@ -1235,6 +1245,19 @@ async function processConversation(
   }
 
   const assistantMessageId = crypto.randomUUID();
+  // Placeholder INSERT so any tool call that stamps `created_by_message_id`
+  // (documents, suspects, canvas_nodes) satisfies its FK to chat_messages
+  // BEFORE the row exists in its final form. We update content+metadata at
+  // the end. Client hides bubbles where in_progress=true && content===""
+  // until the realtime UPDATE arrives.
+  await supa.from("chat_messages").insert({
+    id: assistantMessageId,
+    project_id: projectId,
+    role: "assistant",
+    content: "",
+    metadata: { in_progress: true, model },
+  });
+
   const convo: Array<Record<string, unknown>> = [{ role: "system", content: systemPrompt }, ...messages];
   const executedTools: Array<{ name: string; args?: Record<string, unknown>; result: unknown }> = [];
   const TOOLS = buildTools(playbook);
@@ -1276,10 +1299,10 @@ async function processConversation(
         const okCount = executedTools.filter((t) => (t.result as { ok?: boolean })?.ok).length;
         const totalCount = executedTools.length;
         const recoveryNote = `⚠️ ${errMsg}\n\nBefore this happened I successfully executed ${okCount} of ${totalCount} actions (see receipts below). They are already saved — you don't need to redo them. Reply "continue" once the issue is resolved and I'll pick up where I left off.`;
-        await supa.from("chat_messages").insert({
-          id: assistantMessageId, project_id: projectId, role: "assistant", content: recoveryNote,
-          metadata: { model, effective_model: lastFb.effectiveModel, fallback: lastFb.fallback, tools: executedTools, partial: true, error: errMsg },
-        });
+        await supa.from("chat_messages").update({
+          content: recoveryNote,
+          metadata: { model, effective_model: lastFb.effectiveModel, fallback: lastFb.fallback, tools: executedTools, partial: true, error: errMsg, in_progress: false },
+        }).eq("id", assistantMessageId);
         return;
       }
       throw new Error(errMsg);
@@ -1323,13 +1346,13 @@ async function processConversation(
       if (synth) { quickOptions = synth.options; quickQuestion = synth.question; }
     }
 
-    await supa.from("chat_messages").insert({
-      id: assistantMessageId, project_id: projectId, role: "assistant", content: finalText,
+    await supa.from("chat_messages").update({
+      content: finalText,
       metadata: {
-        model, effective_model: lastFb.effectiveModel, fallback: lastFb.fallback, tools: executedTools,
+        model, effective_model: lastFb.effectiveModel, fallback: lastFb.fallback, tools: executedTools, in_progress: false,
         ...(quickOptions ? { options: quickOptions, question: quickQuestion } : {}),
       },
-    });
+    }).eq("id", assistantMessageId);
     return;
   }
   throw new Error("Too many tool-call rounds");
@@ -1486,6 +1509,16 @@ Deno.serve(async (req) => {
     // This lets the UI jump from any field/item back to the chat turn that
     // produced it.
     const assistantMessageId = crypto.randomUUID();
+    // Placeholder INSERT: satisfies FK constraints from documents/suspects/
+    // canvas_nodes that stamp `created_by_message_id` mid-loop. Updated to
+    // final content+metadata at the end. Client hides empty in_progress bubbles.
+    await supa.from("chat_messages").insert({
+      id: assistantMessageId,
+      project_id: projectId,
+      role: "assistant",
+      content: "",
+      metadata: { in_progress: true, model },
+    });
 
     // Tool-calling loop: up to 4 rounds
     const convo: Array<Record<string, unknown>> = [
@@ -1560,13 +1593,10 @@ Deno.serve(async (req) => {
             `Before this happened I successfully executed ${okCount} of ${totalCount} actions ` +
             `(see receipts below). They are already saved — you don't need to redo them. ` +
             `Reply "continue" once the issue is resolved and I'll pick up where I left off.`;
-          await supa.from("chat_messages").insert({
-            id: assistantMessageId,
-            project_id: projectId,
-            role: "assistant",
+          await supa.from("chat_messages").update({
             content: recoveryNote,
-            metadata: { model, effective_model: lastFb.effectiveModel, fallback: lastFb.fallback, tools: executedTools, partial: true, error: errMsg },
-          });
+            metadata: { model, effective_model: lastFb.effectiveModel, fallback: lastFb.fallback, tools: executedTools, partial: true, error: errMsg, in_progress: false },
+          }).eq("id", assistantMessageId);
           return new Response(
             JSON.stringify({
               content: recoveryNote,
@@ -1641,19 +1671,17 @@ Deno.serve(async (req) => {
         }
       }
 
-      await supa.from("chat_messages").insert({
-        id: assistantMessageId,
-        project_id: projectId,
-        role: "assistant",
+      await supa.from("chat_messages").update({
         content: finalText,
         metadata: {
           model,
           effective_model: lastFb.effectiveModel,
           fallback: lastFb.fallback,
           tools: executedTools,
+          in_progress: false,
           ...(quickOptions ? { options: quickOptions, question: quickQuestion } : {}),
         },
-      });
+      }).eq("id", assistantMessageId);
 
       return new Response(JSON.stringify({ content: finalText, tools: executedTools, model, messageId: assistantMessageId }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

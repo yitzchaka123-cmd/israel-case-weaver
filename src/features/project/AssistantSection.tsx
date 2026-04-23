@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { useVoiceInput } from "@/hooks/use-voice-input";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { useAssistantRun } from "./assistant/useAssistantRun";
+import { AssetLightbox, type LightboxAsset } from "./assistant/AssetLightbox";
 
 const PLANNING_MODELS = [
   { value: "__hdr-lovable", label: "— Lovable AI (workspace credits) —", header: true },
@@ -48,7 +49,16 @@ const IMAGE_MODELS = [
 type ToolCall = {
   name: string;
   args?: Record<string, unknown>;
-  result: { ok: boolean; message: string; id?: string; hebrew_preview?: string; image_url?: string };
+  result: {
+    ok: boolean;
+    message: string;
+    id?: string;
+    hebrew_preview?: string;
+    image_url?: string;
+    thumbnail_url?: string;
+    alt_thumbnail_url?: string;
+    cover_image_url?: string;
+  };
 };
 
 type QuickOption = { label: string; send: string };
@@ -57,7 +67,7 @@ type Msg = {
   id: string;
   role: "user" | "assistant";
   content: string;
-  metadata?: { tools?: ToolCall[]; options?: QuickOption[]; question?: string | null; model?: string | null; effective_model?: string | null; fallback?: string | null } | null;
+  metadata?: { tools?: ToolCall[]; options?: QuickOption[]; question?: string | null; model?: string | null; effective_model?: string | null; fallback?: string | null; in_progress?: boolean | null } | null;
   created_at?: string;
 };
 
@@ -86,6 +96,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
   const scrollRef = useRef<HTMLDivElement>(null);
   const dictationBaseRef = useRef("");
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<LightboxAsset | null>(null);
 
   const { data: tweakCount = 0 } = useQuery({
     queryKey: ["assistant-tweaks-count", user?.id],
@@ -407,17 +418,30 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
               </div>
             )}
 
-            {messages.map((m, idx) => (
-              <MessageBubble
-                key={m.id}
-                msg={m}
-                isLast={idx === messages.length - 1}
-                onPickOption={(text) => send(text)}
-                onEdit={(newText) => editAndResend(m.id, newText)}
-                disabled={sending}
-                highlighted={m.id === highlightedId}
-              />
-            ))}
+            {messages.map((m, idx) => {
+              // Hide empty in-progress assistant bubbles — the placeholder
+              // row exists only to satisfy FK constraints; client shows the
+              // global "Thinking…" indicator instead.
+              if (
+                m.role === "assistant" &&
+                !m.content?.trim() &&
+                (m.metadata?.in_progress || (m.metadata?.tools ?? []).length === 0)
+              ) {
+                return null;
+              }
+              return (
+                <MessageBubble
+                  key={m.id}
+                  msg={m}
+                  isLast={idx === messages.length - 1}
+                  onPickOption={(text) => send(text)}
+                  onEdit={(newText) => editAndResend(m.id, newText)}
+                  disabled={sending}
+                  highlighted={m.id === highlightedId}
+                  onOpenAsset={setLightbox}
+                />
+              );
+            })}
 
             {sending && (
               <div className="flex gap-3 items-start">
@@ -478,6 +502,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
           </div>
         </div>
       </div>
+      <AssetLightbox asset={lightbox} onClose={() => setLightbox(null)} />
     </div>
   );
 }
@@ -501,6 +526,7 @@ function MessageBubble({
   onEdit,
   disabled,
   highlighted,
+  onOpenAsset,
 }: {
   msg: Msg;
   isLast: boolean;
@@ -508,6 +534,7 @@ function MessageBubble({
   onEdit: (newText: string) => void;
   disabled: boolean;
   highlighted?: boolean;
+  onOpenAsset: (asset: LightboxAsset) => void;
 }) {
   const tools = msg.metadata?.tools ?? [];
   const rawMetaOptions = msg.metadata?.options ?? [];
@@ -717,7 +744,8 @@ function MessageBubble({
               </div>
             </div>
           )}
-          {!editing && tools.length > 0 && <ToolReceipts tools={tools} />}
+          {!editing && tools.length > 0 && <ToolReceipts tools={tools} onOpenAsset={onOpenAsset} />}
+          {!editing && tools.length > 0 && <GeneratedAssetsStrip tools={tools} onOpenAsset={onOpenAsset} />}
         </div>
       </div>
     </div>
@@ -955,11 +983,13 @@ function GeneratedDocReceipt({
   hebrewPreview,
   imageUrl,
   documentId,
+  onOpenAsset,
 }: {
   message: string;
   hebrewPreview?: string;
   imageUrl?: string;
   documentId?: string;
+  onOpenAsset?: (asset: LightboxAsset) => void;
 }) {
   const handleJump = () => {
     window.dispatchEvent(
@@ -984,20 +1014,14 @@ function GeneratedDocReceipt({
       </button>
       <div className="flex gap-3">
         {imageUrl && (
-          <a
-            href={imageUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            type="button"
+            onClick={() => onOpenAsset?.({ url: imageUrl, title: message, openInTab: { tab: "documents", targetId: documentId, label: "Open in Documents" } })}
             className="shrink-0 block rounded-md overflow-hidden border border-border/60 bg-background hover:ring-2 hover:ring-accent/40 transition"
-            title="Open full-size image in a new tab"
+            title="View full size"
           >
-            <img
-              src={imageUrl}
-              alt="Generated document preview"
-              className="h-32 w-auto object-cover"
-              loading="lazy"
-            />
-          </a>
+            <img src={imageUrl} alt="Generated document preview" className="h-32 w-auto object-cover" loading="lazy" />
+          </button>
         )}
         {hebrewPreview && (
           <div
@@ -1013,7 +1037,102 @@ function GeneratedDocReceipt({
   );
 }
 
-function ToolReceipts({ tools }: { tools: ToolCall[] }) {
+function ImageReceipt({
+  imageUrl,
+  title,
+  subtitle,
+  destTab,
+  destLabel,
+  targetId,
+  onOpenAsset,
+}: {
+  imageUrl: string;
+  title: string;
+  subtitle?: string;
+  destTab: string;
+  destLabel: string;
+  targetId?: string;
+  onOpenAsset?: (asset: LightboxAsset) => void;
+}) {
+  const jump = () => window.dispatchEvent(new CustomEvent("mystudio:navigate", { detail: { tab: destTab, targetId } }));
+  return (
+    <div className="rounded-lg border border-border/60 bg-muted/30 p-2.5 space-y-2">
+      <button
+        type="button"
+        onClick={jump}
+        title={destLabel}
+        className="flex w-full items-center justify-between gap-2 text-left text-foreground/90 font-medium hover:text-accent-foreground"
+      >
+        <span className="inline-flex items-center gap-1.5 truncate">
+          <ImageIcon className="h-3.5 w-3.5 opacity-70" />
+          <span className="truncate">{title}</span>
+        </span>
+        <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
+      </button>
+      <div className="flex gap-3 items-start">
+        <button
+          type="button"
+          onClick={() => onOpenAsset?.({ url: imageUrl, title, openInTab: { tab: destTab, targetId, label: destLabel } })}
+          className="shrink-0 block rounded-md overflow-hidden border border-border/60 bg-background hover:ring-2 hover:ring-accent/40 transition"
+          title="View full size"
+        >
+          <img src={imageUrl} alt={title} className="h-28 w-28 object-cover" loading="lazy" />
+        </button>
+        <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+          {subtitle && <div className="text-[11.5px] text-muted-foreground">{subtitle}</div>}
+          <button
+            type="button"
+            onClick={jump}
+            className="self-start inline-flex items-center gap-1 text-[11px] text-accent hover:underline"
+          >
+            View prompt → {destLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Aggregates every image generated in this turn into one horizontal strip.
+function GeneratedAssetsStrip({ tools, onOpenAsset }: { tools: ToolCall[]; onOpenAsset: (asset: LightboxAsset) => void }) {
+  const items: Array<{ key: string; url: string; title: string; tab: string; targetId?: string; label: string }> = [];
+  tools.forEach((t, i) => {
+    if (!t.result?.ok) return;
+    const id = t.result.id;
+    if (t.result.image_url) items.push({ key: `${i}-img`, url: t.result.image_url, title: t.result.message || "Document", tab: "documents", targetId: id, label: "Open in Documents" });
+    if (t.result.thumbnail_url) items.push({ key: `${i}-th`, url: t.result.thumbnail_url, title: t.result.message || "Suspect", tab: "suspects", targetId: id, label: "Open in Suspects" });
+    if (t.result.alt_thumbnail_url) items.push({ key: `${i}-alt`, url: t.result.alt_thumbnail_url, title: `${t.result.message || "Suspect"} (alt)`, tab: "suspects", targetId: id, label: "Open in Suspects" });
+    if (t.result.cover_image_url) items.push({ key: `${i}-cov`, url: t.result.cover_image_url, title: t.result.message || "Envelope cover", tab: "envelopes", targetId: id, label: "Open in Envelopes" });
+  });
+  if (items.length === 0) return null;
+  return (
+    <div className="mt-3 rounded-lg border border-border/60 bg-surface/50 p-2.5">
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-2">
+        Generated assets ({items.length})
+      </div>
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {items.map((it) => (
+          <button
+            key={it.key}
+            type="button"
+            onClick={() => onOpenAsset({ url: it.url, title: it.title, openInTab: { tab: it.tab, targetId: it.targetId, label: it.label } })}
+            className="group relative shrink-0 rounded-md overflow-hidden border border-border/60 hover:ring-2 hover:ring-accent/40 transition"
+            title={it.title}
+          >
+            <img src={it.url} alt={it.title} className="h-20 w-20 object-cover" loading="lazy" />
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition flex items-end justify-end p-1">
+              <ExternalLink className="h-3 w-3 text-white opacity-0 group-hover:opacity-100 transition" />
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
+
+function ToolReceipts({ tools, onOpenAsset }: { tools: ToolCall[]; onOpenAsset?: (asset: LightboxAsset) => void }) {
   const [open, setOpen] = useState(false);
   const okCount = tools.filter((t) => t.result.ok).length;
   const failCount = tools.length - okCount;
@@ -1078,6 +1197,48 @@ function ToolReceipts({ tools }: { tools: ToolCall[] }) {
                       hebrewPreview={t.result.hebrew_preview}
                       imageUrl={t.result.image_url}
                       documentId={t.result.id}
+                      onOpenAsset={onOpenAsset}
+                    />
+                  </div>
+                </li>
+              );
+            }
+
+            // Inline image receipts for suspect / envelope when their tool
+            // call returned a thumbnail/cover URL — saves the user a tab hop
+            // and links straight to the prompt textarea.
+            if ((t.name === "add_suspect" || t.name === "update_suspect") && t.result.ok && (t.result.thumbnail_url || t.result.alt_thumbnail_url)) {
+              const url = t.result.thumbnail_url ?? t.result.alt_thumbnail_url!;
+              return (
+                <li key={i} className="flex items-start gap-2">
+                  <span className="mt-1 text-accent-foreground/80"><CheckCircle2 className="h-3.5 w-3.5" /></span>
+                  <div className="flex-1 min-w-0">
+                    <ImageReceipt
+                      imageUrl={url}
+                      title={t.result.message}
+                      subtitle="Suspect thumbnail"
+                      destTab="suspects"
+                      destLabel="Open in Suspects"
+                      targetId={t.result.id}
+                      onOpenAsset={onOpenAsset}
+                    />
+                  </div>
+                </li>
+              );
+            }
+            if ((t.name === "add_envelope" || t.name === "update_envelope") && t.result.ok && t.result.cover_image_url) {
+              return (
+                <li key={i} className="flex items-start gap-2">
+                  <span className="mt-1 text-accent-foreground/80"><CheckCircle2 className="h-3.5 w-3.5" /></span>
+                  <div className="flex-1 min-w-0">
+                    <ImageReceipt
+                      imageUrl={t.result.cover_image_url}
+                      title={t.result.message}
+                      subtitle="Envelope cover"
+                      destTab="envelopes"
+                      destLabel="Open in Envelopes"
+                      targetId={t.result.id}
+                      onOpenAsset={onOpenAsset}
                     />
                   </div>
                 </li>
