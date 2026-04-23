@@ -29,6 +29,7 @@ export function SettingsPage() {
   const [planning, setPlanning] = useState("lovable");
   const [documents, setDocuments] = useState("lovable");
   const [images, setImages] = useState("lovable");
+  const [promptWriter, setPromptWriter] = useState("lovable");
   const [imgAssistantInstructions, setImgAssistantInstructions] = useState("");
   const [logicFlowModel, setLogicFlowModel] = useState<string>(() => {
     if (typeof window === "undefined") return LOGIC_FLOW_MODEL_DEFAULT;
