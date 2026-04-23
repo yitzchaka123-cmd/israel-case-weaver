@@ -516,7 +516,7 @@ function MessageBubble({
   const synth = msg.role === "assistant" && isLast && metaOptions.length === 0
     ? synthesizeOptionsFromProse(msg.content)
     : null;
-  const options = metaOptions.length > 0 ? metaOptions : synth?.options ?? [];
+  const options: QuickOption[] = metaOptions.length > 0 ? metaOptions : synth?.options ?? [];
   const question = metaQuestion ?? synth?.question ?? null;
   // Only render quick-reply buttons on the most recent assistant message —
   // older proposals are stale and clicking them would be confusing.
