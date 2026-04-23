@@ -1,7 +1,10 @@
-import { createFileRoute, Navigate, useNavigate } from "@tanstack/react-router";
-import { useAuth } from "@/lib/auth";
+import { createFileRoute, Navigate } from "@tanstack/react-router";
+import { useAuth, stashInviteCode } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Sparkles } from "lucide-react";
+import { useState } from "react";
 
 export const Route = createFileRoute("/login")({
   component: LoginPage,
@@ -9,7 +12,19 @@ export const Route = createFileRoute("/login")({
 
 function LoginPage() {
   const { session, signInWithGoogle, loading } = useAuth();
+  const [code, setCode] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   if (!loading && session) return <Navigate to="/" />;
+
+  const handleSignIn = async () => {
+    if (code.trim()) stashInviteCode(code);
+    setSubmitting(true);
+    try {
+      await signInWithGoogle();
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="min-h-screen grid md:grid-cols-2 bg-background">
@@ -53,16 +68,35 @@ function LoginPage() {
           <p className="text-sm text-muted-foreground mt-1">
             Sign in to continue your investigations.
           </p>
+
+          <div className="mt-8 space-y-2">
+            <Label htmlFor="invite-code" className="text-xs">
+              Invite code <span className="text-muted-foreground font-normal">(new users only)</span>
+            </Label>
+            <Input
+              id="invite-code"
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              placeholder="MYST-XXXX"
+              className="font-mono tracking-wider"
+              autoComplete="off"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Got an invite from your admin? Enter it here. Existing members can leave it blank.
+            </p>
+          </div>
+
           <Button
-            onClick={signInWithGoogle}
-            className="mt-8 w-full h-11 gap-3"
+            onClick={handleSignIn}
+            disabled={submitting}
+            className="mt-5 w-full h-11 gap-3"
             variant="outline"
           >
             <GoogleIcon />
             Continue with Google
           </Button>
           <p className="mt-6 text-xs text-muted-foreground text-center">
-            For invited team members only. All data is shared across the workspace.
+            New accounts need admin approval before they can use the studio.
           </p>
         </div>
       </div>

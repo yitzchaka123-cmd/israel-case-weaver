@@ -8,9 +8,11 @@ export const Route = createFileRoute("/")({
 });
 
 function IndexRoute() {
-  const { session, loading } = useAuth();
+  const { session, loading, accessStatus } = useAuth();
   if (loading) return <LoadingScreen />;
   if (!session) return <Navigate to="/login" />;
+  if (accessStatus !== "approved" && accessStatus !== "unknown") return <Navigate to="/pending" />;
+  if (accessStatus === "unknown") return <LoadingScreen />;
   return (
     <AppShell>
       <Dashboard />

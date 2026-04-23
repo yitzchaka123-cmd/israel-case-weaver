@@ -8,8 +8,10 @@ export const Route = createFileRoute("/settings")({
 });
 
 function Route1() {
-  const { session, loading } = useAuth();
+  const { session, loading, accessStatus } = useAuth();
   if (loading) return null;
   if (!session) return <Navigate to="/login" />;
+  if (accessStatus !== "approved" && accessStatus !== "unknown") return <Navigate to="/pending" />;
+  if (accessStatus === "unknown") return null;
   return <AppShell><SettingsPage /></AppShell>;
 }
