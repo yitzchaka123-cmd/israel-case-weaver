@@ -922,7 +922,28 @@ async function executeTool(
 
     return { ok: false, message: `Unknown tool: ${name}` };
   } catch (e) {
-    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    // Serialize errors carefully. Supabase/Postgrest errors are plain objects
+    // (not Error instances) with { message, code, details, hint } — so a naive
+    // String(e) would render as "[object Object]" in the chat receipt. Pull
+    // the most useful fields and always include the tool name + args so the
+    // model can correct its next call instead of looping the same mistake.
+    const err = e as { message?: unknown; code?: unknown; details?: unknown; hint?: unknown };
+    let msg: string;
+    if (e instanceof Error) {
+      msg = e.message;
+    } else if (err && typeof err === "object") {
+      const parts = [
+        typeof err.message === "string" ? err.message : null,
+        typeof err.details === "string" ? err.details : null,
+        typeof err.hint === "string" ? err.hint : null,
+        typeof err.code === "string" ? `(code: ${err.code})` : null,
+      ].filter(Boolean);
+      msg = parts.length > 0 ? parts.join(" — ") : JSON.stringify(err);
+    } else {
+      msg = String(e);
+    }
+    console.error(`tool '${name}' failed`, { args, error: e });
+    return { ok: false, message: `${name} failed: ${msg}` };
   }
 }
 
