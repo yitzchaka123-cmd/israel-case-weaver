@@ -40,12 +40,55 @@ const PROVIDER_MODEL: Record<string, string> = {
 
 // ---------- System prompt ----------
 type Tweak = { id: string; text: string; created_at?: string };
+type RosterRow = Record<string, unknown>;
+type Rosters = {
+  suspects: RosterRow[];
+  documents: RosterRow[];
+  envelopes: RosterRow[];
+  hints: RosterRow[];
+  canvas_nodes: RosterRow[];
+};
+function truncate(s: unknown, n = 60): string {
+  const str = String(s ?? "").replace(/\s+/g, " ").trim();
+  if (!str) return "—";
+  return str.length > n ? `${str.slice(0, n - 1)}…` : str;
+}
+function formatRoster(rows: RosterRow[], render: (r: RosterRow, i: number) => string, empty: string): string {
+  if (!rows || rows.length === 0) return empty;
+  return rows.map((r, i) => `  ${i + 1}. ${render(r, i)}`).join("\n");
+}
 function buildSystemPrompt(
   project: Record<string, unknown>,
-  suspectCount: number,
-  docCount: number,
+  rosters: Rosters,
   tweaks: Tweak[] = [],
 ) {
+  const suspectCount = rosters.suspects.length;
+  const docCount = rosters.documents.length;
+  const suspectsList = formatRoster(
+    rosters.suspects,
+    (r) => `[id=${r.id}] ${truncate(r.name)}${r.role_in_case ? ` — ${truncate(r.role_in_case, 40)}` : ""}`,
+    "  (none yet)",
+  );
+  const documentsList = formatRoster(
+    rosters.documents,
+    (r) => `[id=${r.id}] #${r.doc_number ?? "?"} ${truncate(r.title)}${r.doc_type ? ` (${truncate(r.doc_type, 30)})` : ""} · ${r.status ?? "draft"}`,
+    "  (none yet)",
+  );
+  const envelopesList = formatRoster(
+    rosters.envelopes,
+    (r) => `[id=${r.id}] #${r.number} ${truncate(r.label)}`,
+    "  (none yet)",
+  );
+  const hintsList = formatRoster(
+    rosters.hints,
+    (r) => `[id=${r.id}] stage ${r.stage} · level ${r.level}`,
+    "  (none yet)",
+  );
+  const nodesList = formatRoster(
+    rosters.canvas_nodes,
+    (r) => `[id=${r.id}] ${truncate(r.title)} (${r.node_type}, board=${r.board})`,
+    "  (none yet)",
+  );
   const overrides = tweaks.length > 0
     ? `\n\nUSER OVERRIDES (highest priority — follow these even if they conflict with earlier instructions, UNLESS they violate CONTENT RULES above which always win):\n${tweaks.map((t, i) => `${i + 1}. ${t.text}`).join("\n")}`
     : "";
@@ -121,8 +164,14 @@ When the user approves a change, you MUST persist it by calling the appropriate 
 - update_project: change project metadata/phase after approvals. **CALL THIS EVERY TIME** the user approves or commits ANY of these Case Identity / Case Brief fields, individually or in batches: title, subtitle, mystery_type, genre, year, difficulty, player_role, case_goal, setting, selling_point, target_doc_count, phase. Example triggers — all REQUIRE an update_project call: user picks a mystery_type ("Espionage"), user picks a genre, user picks a Hebrew title from your numbered options, user picks a difficulty, user provides/confirms a player role, user provides/confirms a case goal, user provides/confirms a setting/year, user agrees to a selling point. Do NOT wait for the end of Phase 1 — persist each field the moment it's locked in. The Case Identity and Case Brief panels on the Overview tab pull DIRECTLY from these fields, so skipping update_project means the user sees an empty Overview even after they answered all your setup questions. Always pass ONLY the fields the user just confirmed (do not re-send unchanged fields).
 - set_solution_summary: AS SOON as the user approves the Phase 2 case summary (or whenever they approve a revised end-to-end solution narrative), call this tool with the full summary text. This single source of truth feeds the Case Board's "Solution summary" button, the Logic Flow generator, and every future document. NEVER skip this step after an approval — without it, the Canvas summary button will be empty and document generation will refuse to run.
 - add_suspect / update_suspect: manage cast.
-- add_document: create a document record (Hebrew content, design notes, print size).
-- add_canvas_node: add a logic/clue/deduction/envelope/solution node.
+- add_document / update_document: create or edit a document record.
+- add_canvas_node / update_canvas_node: add or edit a logic/clue/deduction/envelope/solution node.
+- add_envelope / update_envelope: manage the 5 fixed envelopes (only update_envelope exists for editing labels/tasks/notes).
+- add_hint / update_hint: manage hints.
+
+EDIT-VS-CREATE RULE (CRITICAL — prevents duplicate rows)
+When the user references an EXISTING item — by name ("change Yossi's motive"), by number ("rename document 5", "envelope 3"), by pronoun ("make it shorter", "rename it"), by role ("the murder weapon node", "the red herring suspect"), or any other reference to something already in the rosters below — you MUST call the matching \`update_*\` tool, passing the \`id\` from the roster. NEVER call the \`add_*\` variant for an item that already exists — that creates a duplicate row and confuses the user. Use \`add_*\` ONLY for items that are not present in the rosters below.
+Pass ONLY the fields the user wants to change in the update tool — undefined keys are ignored, so partial edits won't wipe other columns. The receipt will say "Updated X: <name> (<changed-fields>)" so the user can immediately see what was touched.
 
 DESIGN INSTRUCTIONS RULES (CRITICAL — applies to EVERY add_document call)
 The \`design_instructions\` field is the visual brief for the image generator. It MUST be long, structured, and specific. Never leave it empty, never use one-line notes, never use generic placeholders. Format it with these sections, in this order:
@@ -149,8 +198,16 @@ Case goal: ${project.case_goal ?? "—"}
 Setting: ${project.setting ?? "—"}
 Extra selling point: ${project.selling_point ?? "—"}
 Target documents: ${project.target_doc_count ?? "—"}
-Existing suspects: ${suspectCount}
-Existing documents: ${docCount}
+Existing suspects (${suspectCount}):
+${suspectsList}
+Existing documents (${docCount}):
+${documentsList}
+Existing envelopes (${rosters.envelopes.length}):
+${envelopesList}
+Existing hints (${rosters.hints.length}):
+${hintsList}
+Existing canvas nodes (${rosters.canvas_nodes.length}):
+${nodesList}
 Logic flow approved: ${project.logic_approved_at ? "YES (" + project.logic_approved_at + ")" : "NO — must be approved on the Canvas before generating documents"}
 Solution summary set: ${project.solution_summary ? "YES" : "NO"}
 Doc generation mode: ${project.doc_generation_mode ? `"${project.doc_generation_mode}"` : "NOT YET CHOSEN — ask the user with propose_options before the first add_document in Phase 4 (see DOCUMENT GENERATION WORKFLOW)"}
@@ -403,6 +460,116 @@ const TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "update_suspect",
+      description:
+        "Edit an EXISTING suspect row by id (from the Existing suspects roster in CURRENT PROJECT STATE). Pass ONLY the fields you want to change — undefined fields are left alone. Use this instead of add_suspect any time the user references a suspect that already exists.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Suspect id from the roster." },
+          name: { type: "string" },
+          summary: { type: "string" },
+          role_in_case: { type: "string" },
+          motives: { type: "string" },
+          secrets: { type: "string" },
+          contradictions: { type: "string" },
+          is_red_herring: { type: "boolean" },
+        },
+        required: ["id"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_document",
+      description:
+        "Edit an EXISTING document row by id (from the Existing documents roster). Pass ONLY the fields you want to change. Use this instead of add_document whenever the user references a document that already exists.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Document id from the roster." },
+          title: { type: "string" },
+          doc_type: { type: "string" },
+          doc_number: { type: "number" },
+          print_size: { type: "string" },
+          design_instructions: { type: "string" },
+          hebrew_content: { type: "string" },
+          envelope_number: { type: "number" },
+          status: { type: "string" },
+        },
+        required: ["id"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_envelope",
+      description:
+        "Edit an EXISTING envelope row by id (from the Existing envelopes roster). Pass ONLY the fields you want to change.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Envelope id from the roster." },
+          label: { type: "string" },
+          task: { type: "string" },
+          notes: { type: "string" },
+          status: { type: "string" },
+          number: { type: "number" },
+        },
+        required: ["id"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_hint",
+      description:
+        "Edit an EXISTING hint row by id (from the Existing hints roster). Pass ONLY the fields you want to change.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Hint id from the roster." },
+          stage: { type: "number" },
+          level: { type: "number" },
+          text: { type: "string" },
+        },
+        required: ["id"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_canvas_node",
+      description:
+        "Edit an EXISTING canvas node by id (from the Existing canvas nodes roster). Pass ONLY the fields you want to change.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Canvas node id from the roster." },
+          title: { type: "string" },
+          description: { type: "string" },
+          node_type: { type: "string", enum: ["clue", "suspect", "deduction", "contradiction", "red_herring", "envelope", "solution", "document", "note"] },
+          color: { type: "string" },
+          position_x: { type: "number" },
+          position_y: { type: "number" },
+          locked: { type: "boolean" },
+        },
+        required: ["id"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 // ---------- Tool executor ----------
@@ -632,6 +799,102 @@ async function executeTool(
         image_url: imageUrl || undefined,
       };
     }
+    // ---------- Update tools ----------
+    // Helper that strips undefined/null/empty-string keys, runs the update,
+    // and verifies the row belongs to this project. Returns a uniform receipt.
+    const runUpdate = async (
+      table: "suspects" | "documents" | "envelopes" | "hints" | "canvas_nodes",
+      label: string,
+      stampMessage: boolean,
+      selectAfter: string,
+      formatName: (row: Record<string, unknown>) => string,
+    ) => {
+      const id = String((args as { id?: string }).id ?? "").trim();
+      if (!id) return { ok: false, message: `${label} id is required` };
+      // Build patch from args excluding id and undefined/empty values.
+      const patch: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(args)) {
+        if (k === "id") continue;
+        if (v === undefined || v === null) continue;
+        if (typeof v === "string" && v.length === 0) continue;
+        patch[k] = v;
+      }
+      if (Object.keys(patch).length === 0) {
+        return { ok: false, message: `Nothing to update — pass at least one field besides id.` };
+      }
+      if (stampMessage) patch.created_by_message_id = messageId;
+      // Verify ownership first so we can return a clean error.
+      const { data: existing } = await supa
+        .from(table)
+        .select("id, project_id")
+        .eq("id", id)
+        .maybeSingle();
+      if (!existing || (existing as { project_id?: string }).project_id !== projectId) {
+        return { ok: false, message: `No ${label} with that id in this project.` };
+      }
+      const { data: updated, error } = await supa
+        .from(table)
+        .update(patch)
+        .eq("id", id)
+        .eq("project_id", projectId)
+        .select(selectAfter)
+        .single();
+      if (error) throw error;
+      const changed = Object.keys(patch).filter((k) => k !== "created_by_message_id");
+      const niceName = formatName((updated ?? {}) as Record<string, unknown>);
+      return {
+        ok: true,
+        message: `Updated ${label}: ${niceName} (${changed.join(", ")})`,
+        id,
+      };
+    };
+
+    if (name === "update_suspect") {
+      return await runUpdate(
+        "suspects",
+        "suspect",
+        true,
+        "id, name",
+        (r) => String(r.name ?? "—"),
+      );
+    }
+    if (name === "update_document") {
+      return await runUpdate(
+        "documents",
+        "document",
+        true,
+        "id, title, doc_number",
+        (r) => `#${r.doc_number ?? "?"} ${r.title ?? "—"}`,
+      );
+    }
+    if (name === "update_envelope") {
+      return await runUpdate(
+        "envelopes",
+        "envelope",
+        false,
+        "id, number, label",
+        (r) => `#${r.number ?? "?"} ${r.label ?? ""}`.trim(),
+      );
+    }
+    if (name === "update_hint") {
+      return await runUpdate(
+        "hints",
+        "hint",
+        false,
+        "id, stage, level",
+        (r) => `stage ${r.stage ?? "?"} · level ${r.level ?? "?"}`,
+      );
+    }
+    if (name === "update_canvas_node") {
+      return await runUpdate(
+        "canvas_nodes",
+        "node",
+        true,
+        "id, title",
+        (r) => String(r.title ?? "—"),
+      );
+    }
+
     return { ok: false, message: `Unknown tool: ${name}` };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : String(e) };
@@ -653,11 +916,44 @@ Deno.serve(async (req) => {
 
     const supa = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Load project context
-    const [{ data: project }, { count: suspectCount }, { count: docCount }] = await Promise.all([
+    // Load project context + rosters of existing items so the model can target
+    // the right id when the user says "edit suspect 2" / "rename document 5"
+    // instead of duplicating rows. Caps keep the prompt budget bounded.
+    const [
+      { data: project },
+      { data: suspectsRoster },
+      { data: documentsRoster },
+      { data: envelopesRoster },
+      { data: hintsRoster },
+      { data: nodesRoster },
+    ] = await Promise.all([
       supa.from("projects").select("*").eq("id", projectId).single(),
-      supa.from("suspects").select("id", { count: "exact", head: true }).eq("project_id", projectId),
-      supa.from("documents").select("id", { count: "exact", head: true }).eq("project_id", projectId),
+      supa.from("suspects")
+        .select("id, name, role_in_case")
+        .eq("project_id", projectId)
+        .order("position", { ascending: true })
+        .limit(50),
+      supa.from("documents")
+        .select("id, doc_number, title, doc_type, status")
+        .eq("project_id", projectId)
+        .order("doc_number", { ascending: true, nullsFirst: false })
+        .limit(100),
+      supa.from("envelopes")
+        .select("id, number, label")
+        .eq("project_id", projectId)
+        .order("number", { ascending: true })
+        .limit(50),
+      supa.from("hints")
+        .select("id, stage, level")
+        .eq("project_id", projectId)
+        .order("stage", { ascending: true })
+        .order("level", { ascending: true })
+        .limit(50),
+      supa.from("canvas_nodes")
+        .select("id, title, node_type, board")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: true })
+        .limit(100),
     ]);
     if (!project) {
       return new Response(JSON.stringify({ error: "Project not found" }), {
@@ -679,7 +975,14 @@ Deno.serve(async (req) => {
     }
 
     const model = PROVIDER_MODEL[project.ai_provider_planning ?? "lovable"] ?? PROVIDER_MODEL.lovable;
-    const systemPrompt = buildSystemPrompt(project, suspectCount ?? 0, docCount ?? 0, tweaks);
+    const rosters: Rosters = {
+      suspects: (suspectsRoster ?? []) as RosterRow[],
+      documents: (documentsRoster ?? []) as RosterRow[],
+      envelopes: (envelopesRoster ?? []) as RosterRow[],
+      hints: (hintsRoster ?? []) as RosterRow[],
+      canvas_nodes: (nodesRoster ?? []) as RosterRow[],
+    };
+    const systemPrompt = buildSystemPrompt(project, rosters, tweaks);
 
     // Persist the last user message
     const lastUser = [...messages].reverse().find((m: { role: string }) => m.role === "user");
