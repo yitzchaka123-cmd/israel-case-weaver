@@ -414,6 +414,26 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
           </DropdownMenuContent>
         </DropdownMenu>
 
+        <Button
+          variant="outline"
+          className="gap-2 h-9"
+          onClick={arrangeNodes}
+          disabled={arranging || nodes.length === 0}
+          title={
+            edges.length > 0
+              ? "Auto-arrange nodes by their connections (left → right)"
+              : "Auto-arrange nodes into a clean grid (no connections yet)"
+          }
+        >
+          {arranging ? <Loader2 className="h-4 w-4 animate-spin" /> : <LayoutGrid className="h-4 w-4" />}
+          Arrange
+          {nodes.length > 0 && (
+            <span className="ml-0.5 text-[10px] text-muted-foreground font-normal">
+              · {edges.length > 0 ? "by flow" : "grid"}
+            </span>
+          )}
+        </Button>
+
         {board === "logic" && (
           <>
             <Select
