@@ -348,6 +348,23 @@ async function executeTool(
       if (error) throw error;
       return { ok: true, message: `Canvas node added: ${data.title}`, id: data.id };
     }
+    if (name === "propose_options") {
+      // No state mutation — this tool exists purely so the model can attach
+      // quick-reply button data to its reply. The args are surfaced verbatim
+      // to the client through the tool result.
+      const opts = (args as { options?: Array<{ label: string; send?: string }>; question?: string });
+      const cleaned = (opts.options ?? [])
+        .filter((o) => o && typeof o.label === "string" && o.label.trim().length > 0)
+        .slice(0, 6)
+        .map((o) => ({ label: o.label.trim(), send: (o.send ?? o.label).trim() }));
+      if (cleaned.length < 2) return { ok: false, message: "propose_options needs at least 2 valid options" };
+      return {
+        ok: true,
+        message: `Quick-reply buttons proposed (${cleaned.length})`,
+        options: cleaned,
+        question: typeof opts.question === "string" ? opts.question.trim() : undefined,
+      };
+    }
     return { ok: false, message: `Unknown tool: ${name}` };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : String(e) };
