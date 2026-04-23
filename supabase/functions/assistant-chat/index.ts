@@ -449,7 +449,7 @@ const BASE_TOOLS = [
     function: {
       name: "propose_options",
       description:
-        "Render quick-reply buttons under your message so the user can pick an answer with one click instead of typing. Use ONLY for 2–6 short, distinct, mutually-exclusive choices (picking a title from a list, picking difficulty, approve/revise/restart, yes/no/skip, picking which suspect to flesh out next, etc.). Do NOT use for open-ended prompts. The buttons appear in addition to your text — still write the prose explanation.",
+        "Render quick-reply buttons under your message so the user can pick an answer with one click instead of typing. Use ONLY for 2–6 short, distinct, mutually-exclusive choices (picking a title from a list, picking difficulty, approve/revise/restart, yes/no/skip, picking which suspect to flesh out next, etc.). Do NOT use for open-ended prompts. The buttons appear in addition to your text — still write the prose explanation. CRITICAL: only ONE propose_options call per assistant turn — do NOT bundle a mystery-type question and a genre question in the same message. Ask one, wait for the answer, then ask the next.",
       parameters: {
         type: "object",
         properties: {
