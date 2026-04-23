@@ -132,7 +132,7 @@ export function SettingsPage() {
                 Upload logo
               </Button>
               {logoUrl && (
-                <Button variant="ghost" className="ml-2" onClick={() => setLogoUrl(null)}>
+                <Button variant="ghost" className="ml-2" onClick={() => persistLogoUrl(null)}>
                   Remove
                 </Button>
               )}
