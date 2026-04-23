@@ -1035,10 +1035,17 @@ async function executeTool(
       if (error) throw error;
       const changed = Object.keys(patch).filter((k) => k !== "created_by_message_id");
       const niceName = formatName((updated ?? {}) as Record<string, unknown>);
+      const u = (updated ?? {}) as Record<string, unknown>;
+      const extras: Record<string, unknown> = {};
+      if (typeof u.thumbnail_url === "string" && u.thumbnail_url) extras.thumbnail_url = u.thumbnail_url;
+      if (typeof u.alt_thumbnail_url === "string" && u.alt_thumbnail_url) extras.alt_thumbnail_url = u.alt_thumbnail_url;
+      if (typeof u.cover_image_url === "string" && u.cover_image_url) extras.cover_image_url = u.cover_image_url;
+      if (typeof u.generated_asset_url === "string" && u.generated_asset_url) extras.image_url = u.generated_asset_url;
       return {
         ok: true,
         message: `Updated ${label}: ${niceName} (${changed.join(", ")})`,
         id,
+        ...extras,
       };
     };
 
