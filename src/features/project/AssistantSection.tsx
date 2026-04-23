@@ -743,21 +743,6 @@ function synthesizeOptionsFromProse(text: string): { options: QuickOption[]; que
   };
 }
 
-function formatRelativeTime(iso: string): string {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "";
-  const diffSec = Math.round((Date.now() - then) / 1000);
-  if (diffSec < 5) return "just now";
-  if (diffSec < 60) return `${diffSec}s ago`;
-  const diffMin = Math.round(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.round(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  const diffDay = Math.round(diffHr / 24);
-  if (diffDay < 7) return `${diffDay}d ago`;
-  return new Date(iso).toLocaleDateString();
-}
-
 // Maps a tool name to the workspace tab the user should jump to when clicking
 // the receipt. Returns null for tools that have no obvious destination.
 function destinationFor(toolName: string): { tab: string; label: string } | null {
