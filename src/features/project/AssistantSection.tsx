@@ -507,8 +507,17 @@ function MessageBubble({
   highlighted?: boolean;
 }) {
   const tools = msg.metadata?.tools ?? [];
-  const options = msg.metadata?.options ?? [];
-  const question = msg.metadata?.question ?? null;
+  const metaOptions = msg.metadata?.options ?? [];
+  const metaQuestion = msg.metadata?.question ?? null;
+  // Client-side fallback: if the assistant wrote a numbered choice list in
+  // prose but the server didn't attach any options (older messages, or model
+  // forgot the tool call AND server fallback didn't catch it), synthesize
+  // buttons from the prose so they still appear.
+  const synth = msg.role === "assistant" && isLast && metaOptions.length === 0
+    ? synthesizeOptionsFromProse(msg.content)
+    : null;
+  const options = metaOptions.length > 0 ? metaOptions : synth?.options ?? [];
+  const question = metaQuestion ?? synth?.question ?? null;
   // Only render quick-reply buttons on the most recent assistant message —
   // older proposals are stale and clicking them would be confusing.
   const showOptions = msg.role === "assistant" && isLast && options.length > 0;
