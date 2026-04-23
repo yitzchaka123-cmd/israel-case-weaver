@@ -70,7 +70,10 @@ export function GoogleDriveConnection() {
 
   const connect = async () => {
     const returnTo = "/settings";
-    const { data, error } = await supabase.functions.invoke("drive-oauth-start", { body: { returnTo } });
+    setLastConnectError(null);
+    const { data, error } = await supabase.functions.invoke("drive-oauth-start", {
+      body: { returnTo, loginHint: appEmail ?? undefined },
+    });
     if (error || !data?.url) {
       toast.error(error?.message || "Could not start OAuth");
       return;
@@ -208,6 +211,34 @@ export function GoogleDriveConnection() {
             </p>
           </div>
           <Switch id="auto-backup" checked={s.auto_backup_enabled} onCheckedChange={toggleBackup} />
+        </div>
+      )}
+
+      {!s.connected && appEmail && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-xs space-y-2">
+          <p className="font-medium text-foreground flex items-center gap-1.5">
+            <Info className="h-3.5 w-3.5" /> Before you click Connect
+          </p>
+          <p className="text-muted-foreground">
+            You're signed into MyStudio as <code className="text-foreground">{appEmail}</code>. On the Google screen, pick the Google account that matches <strong>this same email</strong> (or another Google account that is listed as a <strong>Test user</strong> in our Google Cloud OAuth client while the app is in Testing mode).
+          </p>
+          <p className="text-muted-foreground">
+            If you pick a different Google account, Google will return a <strong>403 access denied</strong> page <em>before</em> sending you back here — that means Google rejected the account, not MyStudio.
+          </p>
+        </div>
+      )}
+
+      {lastConnectError && (
+        <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-4 text-xs space-y-2">
+          <p className="font-medium text-destructive flex items-center gap-1.5">
+            <AlertTriangle className="h-3.5 w-3.5" /> Last connection attempt failed
+          </p>
+          <p className="text-muted-foreground">
+            Detail: <code className="text-foreground break-all">{lastConnectError}</code>
+          </p>
+          <p className="text-muted-foreground">
+            If the detail mentions <code>access_denied</code> or you saw a Google 403 page, the most common cause is signing in with a Google account that isn't on the OAuth client's <strong>Test users</strong> list. Click Connect again and use the account chooser to pick the right one.
+          </p>
         </div>
       )}
 
