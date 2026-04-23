@@ -13,6 +13,7 @@ import { Sparkles, Send, Loader2, Bot, User, Wand2, CheckCircle2, Cpu, Image as 
 import { toast } from "sonner";
 import { useVoiceInput } from "@/hooks/use-voice-input";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
+import { useAssistantRun } from "./assistant/useAssistantRun";
 
 const PLANNING_MODELS = [
   { value: "__hdr-lovable", label: "— Lovable AI (workspace credits) —", header: true },
@@ -81,7 +82,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
   const qc = useQueryClient();
   const { user } = useAuth();
   const [input, setInput] = useState("");
-  const [sending, setSending] = useState(false);
+  const { isRunning: sending, send: hookSend } = useAssistantRun(projectId);
   const scrollRef = useRef<HTMLDivElement>(null);
   const dictationBaseRef = useRef("");
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
@@ -236,44 +237,10 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     const content = text.trim();
     if (!content || sending) return;
     setInput("");
-    setSending(true);
-    try {
-      const source = baseMessages ?? messages;
-      const convo = [...source, { role: "user" as const, content }].map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
-
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/assistant-chat`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-        },
-        body: JSON.stringify({ projectId, messages: convo }),
-      });
-
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ error: "Request failed" }));
-        if (resp.status === 429) toast.error("Rate limit — please wait a moment.");
-        else if (resp.status === 402) toast.error("Out of AI credits. Top up in Settings → Workspace → Usage.");
-        else toast.error(err.error ?? "Assistant error");
-        return;
-      }
-      // Message is persisted by the edge function; realtime will refresh
-      qc.invalidateQueries({ queryKey: ["chat", projectId] });
-      qc.invalidateQueries({ queryKey: ["project", projectId] });
-      qc.invalidateQueries({ queryKey: ["suspects", projectId] });
-      qc.invalidateQueries({ queryKey: ["documents", projectId] });
-      qc.invalidateQueries({ queryKey: ["nodes", projectId] });
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Assistant error");
-    } finally {
-      setSending(false);
-    }
+    const source = baseMessages ?? messages;
+    const convo = source.map((m) => ({ role: m.role, content: m.content }));
+    // Hook handles fire-and-forget background mode + realtime status flips.
+    await hookSend(content, convo);
   };
 
   // Edit a previous user message: rewrite the conversation by deleting that
