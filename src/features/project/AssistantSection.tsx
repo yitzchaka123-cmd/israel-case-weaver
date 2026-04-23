@@ -916,6 +916,13 @@ function ToolReceipts({ tools }: { tools: ToolCall[] }) {
                 </li>
               );
             }
+
+            const dest = destinationFor(t.name);
+            const clickable = t.result.ok && dest !== null;
+            const handleClick = () => {
+              if (!clickable || !dest) return;
+              window.dispatchEvent(
+                new CustomEvent("mystudio:navigate", {
                   detail: { tab: dest.tab, targetId: t.result.id },
                 }),
               );
