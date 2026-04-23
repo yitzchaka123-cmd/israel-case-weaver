@@ -13,6 +13,7 @@ import jsPDF from "jspdf";
 
 import { ImageModelPicker, getStoredImageModel } from "@/components/ImageModelPicker";
 import { PromptWriterModelPicker, getStoredWriterModel } from "@/components/PromptWriterModelPicker";
+import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
 import { Sparkles } from "lucide-react";
 
 const DESIGN_PLACEHOLDER = `Describe EXACTLY how this document should look. The more specific, the better the result.
@@ -82,6 +83,7 @@ interface Doc {
   uploaded_asset_url: string | null;
   active_version: string;
   envelope_number: number | null;
+  created_by_message_id: string | null;
 }
 
 export function DocumentsSection({ projectId }: { projectId: string }) {
@@ -164,7 +166,12 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
                   className="border-t cursor-pointer hover:bg-muted/40 transition-colors"
                 >
                   <td className="px-4 py-3 font-mono text-xs">{d.doc_number ?? "—"}</td>
-                  <td className="px-4 py-3 font-medium">{d.title}</td>
+                  <td className="px-4 py-3 font-medium">
+                    <span className="inline-flex items-center gap-1.5">
+                      {d.title}
+                      <AssistantOriginBadge messageId={d.created_by_message_id} label="" />
+                    </span>
+                  </td>
                   <td className="px-4 py-3 hidden md:table-cell text-muted-foreground">{d.doc_type ?? "—"}</td>
                   <td className="px-4 py-3 hidden lg:table-cell text-muted-foreground">{d.print_size ?? "—"}</td>
                   <td className="px-4 py-3">
@@ -346,8 +353,9 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
     <Dialog open={!!doc} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle className="font-display text-2xl">
+          <DialogTitle className="font-display text-2xl flex items-center gap-2 flex-wrap">
             Document <span className="text-muted-foreground font-mono text-lg">#{draft.doc_number}</span>
+            <AssistantOriginBadge messageId={draft.created_by_message_id} />
           </DialogTitle>
         </DialogHeader>
         <div className="grid md:grid-cols-2 gap-4 max-h-[78vh] overflow-y-auto pr-2">
