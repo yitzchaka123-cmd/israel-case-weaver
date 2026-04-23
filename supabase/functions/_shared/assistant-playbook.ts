@@ -81,6 +81,7 @@ export type Playbook = {
   catalogs: {
     print_sizes: string[];
     document_types: string[];
+    unusual_document_types: string[];
   };
   phases: PhaseDefinition[];
 };
@@ -183,6 +184,17 @@ export const PLAYBOOK_DEFAULTS: Playbook = {
       "ID card", "receipt", "telegram", "police form", "bank statement",
       "medical record", "ticket stub", "business card", "map", "diagram",
       "cipher", "blueprint", "ransom note",
+    ],
+    unusual_document_types: [
+      "hand-drawn map", "treasure-style chart", "matchbook cover", "napkin sketch",
+      "tarot card", "playing card with markings", "photo collage", "surveillance polaroid",
+      "evidence bag tag", "ship/building blueprint", "coded crossword", "torn diary page",
+      "wax-sealed letter", "microfilm strip", "punched IBM card", "morse code sheet",
+      "one-time pad page", "invisible-ink note", "lipstick mirror message", "pressed flower with note",
+      "child's crayon drawing", "annotated photograph", "shopping list with hidden cipher",
+      "fortune-cookie slip", "pawn-shop receipt with code", "concert ticket with seat-number cipher",
+      "bus transfer with handwritten time", "library checkout slip", "dry-cleaning tag",
+      "audio cassette J-card", "VHS rental sleeve", "luggage tag",
     ],
   },
   phases: [
@@ -376,6 +388,10 @@ export function resolvePlaybook(override: unknown): Playbook {
   const catalogs = {
     print_sizes: cleanStringArray(o.catalogs?.print_sizes, d.catalogs.print_sizes).slice(0, 24),
     document_types: cleanStringArray(o.catalogs?.document_types, d.catalogs.document_types).slice(0, 60),
+    unusual_document_types: cleanStringArray(
+      o.catalogs?.unusual_document_types,
+      d.catalogs.unusual_document_types,
+    ).slice(0, 60),
   };
 
   const phases = cleanPhaseList(o.phases, d.phases);
@@ -478,7 +494,8 @@ export function renderLogicGateRefusal(p: Playbook): string {
 
 export function renderCatalogsBlock(p: Playbook): string {
   return `Available print sizes (pick from this list when proposing print_size): ${p.catalogs.print_sizes.join(", ")}.
-Common document types (pick from this list when proposing doc_type, but invent variants when needed): ${p.catalogs.document_types.join(", ")}.`;
+Common document types (pick from this list when proposing doc_type, but invent variants when needed): ${p.catalogs.document_types.join(", ")}.
+Unusual / creative-prop document types (use these when the case calls for tactile, surprising, hand-made props instead of bureaucratic paperwork — they trigger the creative-realism floor, not the photo-realism one): ${p.catalogs.unusual_document_types.join(", ")}.`;
 }
 
 export function renderPhaseEnumComment(p: Playbook): string {

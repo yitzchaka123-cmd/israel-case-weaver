@@ -559,6 +559,21 @@ export function AssistantPlaybookPanel({}: Props = {}) {
               placeholder="e.g. memo"
             />
           </div>
+          <div className="space-y-2">
+            <Label className="text-xs font-medium">Unusual / creative-prop document types</Label>
+            <p className="text-xs text-muted-foreground">
+              Tactile, surprising, hand-made props (maps, ciphers, polaroids, matchbooks, etc.). The
+              assistant treats these as creative props, not bureaucratic paperwork — they trigger the
+              creative-realism floor instead of the 20-detail photo-realism floor.
+            </p>
+            <StringListEditor
+              values={playbook.catalogs.unusual_document_types}
+              onChange={(next) =>
+                update("catalogs", { ...playbook.catalogs, unusual_document_types: next })
+              }
+              placeholder="e.g. hand-drawn map"
+            />
+          </div>
         </div>
       </Card>
 
