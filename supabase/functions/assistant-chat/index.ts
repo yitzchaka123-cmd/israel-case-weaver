@@ -702,7 +702,7 @@ Deno.serve(async (req) => {
       { role: "system", content: systemPrompt },
       ...messages,
     ];
-    const executedTools: Array<{ name: string; result: unknown }> = [];
+    const executedTools: Array<{ name: string; args?: Record<string, unknown>; result: unknown }> = [];
 
     const MAX_ROUNDS = 8;
     for (let round = 0; round < MAX_ROUNDS; round++) {
