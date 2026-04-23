@@ -553,6 +553,7 @@ export type Database = {
           ai_provider_documents: string
           ai_provider_images: string
           ai_provider_planning: string
+          ai_provider_prompt_writer: string
           app_logo_url: string | null
           assistant_playbook: Json
           assistant_tweaks: Json
@@ -568,6 +569,7 @@ export type Database = {
           ai_provider_documents?: string
           ai_provider_images?: string
           ai_provider_planning?: string
+          ai_provider_prompt_writer?: string
           app_logo_url?: string | null
           assistant_playbook?: Json
           assistant_tweaks?: Json
@@ -583,6 +585,7 @@ export type Database = {
           ai_provider_documents?: string
           ai_provider_images?: string
           ai_provider_planning?: string
+          ai_provider_prompt_writer?: string
           app_logo_url?: string | null
           assistant_playbook?: Json
           assistant_tweaks?: Json

@@ -1,0 +1,1 @@
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS ai_provider_prompt_writer text NOT NULL DEFAULT 'lovable';
