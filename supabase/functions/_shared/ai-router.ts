@@ -304,19 +304,25 @@ export async function generateImage(opts: { prompt: string; model: string }): Pr
     });
     if (!resp.ok) {
       const t = await resp.text();
-      throw new ImageGenError(`Gemini direct image error ${resp.status}: ${t}`, resp.status, "gemini-direct");
+      // On quota / auth / server errors, fall back to Lovable AI Gateway instead of throwing
+      if (resp.status === 429 || resp.status === 403 || resp.status >= 500) {
+        console.warn(`Gemini direct image ${resp.status} for ${directModel} — falling back to Lovable AI Gateway`);
+      } else {
+        throw new ImageGenError(`Gemini direct image error ${resp.status}: ${t}`, resp.status, "gemini-direct");
+      }
+    } else {
+      const data = await resp.json();
+      const parts = data.candidates?.[0]?.content?.parts ?? [];
+      const inline = parts.find((p: { inlineData?: { data?: string; mimeType?: string } }) => p.inlineData?.data);
+      if (!inline?.inlineData?.data) {
+        throw new ImageGenError("No image returned (Gemini direct)", 500, "gemini-direct");
+      }
+      return {
+        bytes: Uint8Array.from(atob(inline.inlineData.data), (c) => c.charCodeAt(0)),
+        mime: inline.inlineData.mimeType ?? "image/png",
+        provider: "gemini-direct",
+      };
     }
-    const data = await resp.json();
-    const parts = data.candidates?.[0]?.content?.parts ?? [];
-    const inline = parts.find((p: { inlineData?: { data?: string; mimeType?: string } }) => p.inlineData?.data);
-    if (!inline?.inlineData?.data) {
-      throw new ImageGenError("No image returned (Gemini direct)", 500, "gemini-direct");
-    }
-    return {
-      bytes: Uint8Array.from(atob(inline.inlineData.data), (c) => c.charCodeAt(0)),
-      mime: inline.inlineData.mimeType ?? "image/png",
-      provider: "gemini-direct",
-    };
   }
 
   // Lovable AI Gateway fallback
