@@ -116,13 +116,18 @@ export function ProductionDashboard({
         />
       </div>
 
-      <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-accent/5 border border-accent/20 text-sm">
+      <button
+        type="button"
+        onClick={() => onJump("assistant")}
+        title="Open the Assistant"
+        className="w-full flex items-start gap-2 px-3 py-2.5 rounded-lg bg-accent/5 border border-accent/20 text-sm text-left hover:bg-accent/10 hover:border-accent/40 transition-colors cursor-pointer"
+      >
         <ArrowRight className="h-4 w-4 mt-0.5 text-accent shrink-0" />
         <span className="text-foreground/80">
           <span className="font-medium text-foreground">Next:</span>{" "}
           {nextActionFor(normalized, docs, targetDocCount, logicApproved)}
         </span>
-      </div>
+      </button>
     </div>
   );
 }
