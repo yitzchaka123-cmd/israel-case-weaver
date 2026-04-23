@@ -189,7 +189,7 @@ Deno.serve(async (req) => {
         clearTimeout(timeoutId);
         if (e instanceof Error && e.name === "AbortError") {
           return new Response(
-            JSON.stringify({ error: `OpenAI took too long (>110s). Try Medium or Low quality, or switch to a Gemini "Nano Banana" model.` }),
+            JSON.stringify({ error: `OpenAI took too long (>145s). Try Medium or Low quality, or switch to a Gemini "Nano Banana" model.` }),
             { status: 504, headers: { ...corsHeaders, "Content-Type": "application/json" } },
           );
         }
