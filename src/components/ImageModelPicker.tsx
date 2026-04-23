@@ -95,6 +95,12 @@ export function ImageModelPicker({ surface, defaultModel, className, size = "sm"
         </p>
       )}
 
+      {value === "chatgpt-image-2" && (
+        <p className="text-[10px] text-muted-foreground leading-tight">
+          Uses a dedicated OpenAI account if <code className="text-[10px]">OPENAI_IMAGE2_API_KEY</code> is set, otherwise the main OpenAI key.
+        </p>
+      )}
+
       {isOpenAI && (
         <>
           <Select value={quality} onValueChange={handleQualityChange}>
