@@ -8,7 +8,7 @@
 // Returns:
 //   { copy: { front_subtext?, back_headline?, back_body?, tagline? }, model: string }
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { chatCompletions } from "../_shared/ai-router.ts";
+import { chatCompletions, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
 import { resolvePlaybook } from "../_shared/assistant-playbook.ts";
 
 const corsHeaders = {
@@ -172,6 +172,8 @@ ${isSellingPoint
   : `Return JSON like {"front_subtext": "...", "back_headline": "...", "back_body": "...", "tagline": "..."} (only include the requested keys).`}
 `;
 
+    const startedAt = Date.now();
+    const callerUserId = await getUserIdFromAuth(req);
     const resp = await chatCompletions({
       model,
       messages: [
@@ -181,11 +183,19 @@ ${isSellingPoint
       temperature: 0.85,
       response_format: { type: "json_object" },
     });
+    const fb = extractFallback(resp, model);
 
     if (!resp.ok) {
       const t = await resp.text();
       console.error("marketing-copy provider error", resp.status, t);
       const provider = model.startsWith("openai/") ? "OpenAI" : "Lovable AI";
+      await logAiRun({
+        userId: callerUserId, projectId, surface: "generate-marketing-copy",
+        requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
+        status: "error", latencyMs: Date.now() - startedAt,
+        errorMessage: `${provider} ${resp.status}: ${t.slice(0, 200)}`,
+        promptExcerpt: userMsg,
+      });
       if (resp.status === 429) {
         return new Response(JSON.stringify({ error: `${provider} rate limit — try again shortly.` }), {
           status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -227,13 +237,18 @@ ${isSellingPoint
       });
     }
 
+    await logAiRun({
+      userId: callerUserId, projectId, surface: "generate-marketing-copy",
+      requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
+      status: "ok", latencyMs: Date.now() - startedAt, promptExcerpt: userMsg,
+    });
     if (isSellingPoint) {
-      return new Response(JSON.stringify({ value: copy.selling_point, model }), {
+      return new Response(JSON.stringify({ value: copy.selling_point, model, effectiveModel: fb.effectiveModel, fallback: fb.fallback }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    return new Response(JSON.stringify({ copy, model }), {
+    return new Response(JSON.stringify({ copy, model, effectiveModel: fb.effectiveModel, fallback: fb.fallback }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {

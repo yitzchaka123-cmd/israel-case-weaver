@@ -3,7 +3,7 @@
 // rest of the game. Routes through the shared AI router (OpenAI direct when
 // the user picked an openai/* planning model, otherwise Lovable AI Gateway).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { chatCompletions } from "../_shared/ai-router.ts";
+import { chatCompletions, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
 import { resolvePlaybook, renderEnvelopeDesignTemplate } from "../_shared/assistant-playbook.ts";
 
 const corsHeaders = {
@@ -140,6 +140,8 @@ Deno.serve(async (req) => {
     // GPT-5 family rejects any non-default temperature ("Only the default (1)
     // value is supported"), so omit it for openai/* models.
     const supportsTemperature = !model.startsWith("openai/");
+    const startedAt = Date.now();
+    const callerUserId = await getUserIdFromAuth(req);
     const resp = await chatCompletions({
       model,
       messages: [
@@ -148,11 +150,19 @@ Deno.serve(async (req) => {
       ],
       ...(supportsTemperature ? { temperature: 0.9 } : {}),
     });
+    const fb = extractFallback(resp, model);
 
     if (!resp.ok) {
       const t = await resp.text();
       console.error("suggest-image-prompt provider error", resp.status, t);
       const provider = model.startsWith("openai/") ? "OpenAI" : "Lovable AI";
+      await logAiRun({
+        userId: callerUserId, projectId, surface: "suggest-image-prompt",
+        requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
+        status: "error", latencyMs: Date.now() - startedAt,
+        errorMessage: `${provider} ${resp.status}: ${t.slice(0, 200)}`,
+        promptExcerpt: userMsg,
+      });
       if (resp.status === 429) {
         return new Response(JSON.stringify({ error: `${provider} rate limit — try again shortly.` }), {
           status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -176,7 +186,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    return new Response(JSON.stringify({ prompt: text, model }), {
+    await logAiRun({
+      userId: callerUserId, projectId, surface: "suggest-image-prompt",
+      requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
+      status: "ok", latencyMs: Date.now() - startedAt, promptExcerpt: userMsg,
+    });
+    return new Response(JSON.stringify({ prompt: text, model, effectiveModel: fb.effectiveModel, fallback: fb.fallback }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {

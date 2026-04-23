@@ -1,7 +1,7 @@
 // Mystery Studio Assistant — streaming chat with structured tool calls
 // Uses Lovable AI Gateway (Gemini + GPT-5). Tools mutate project state server-side.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { chatCompletions } from "../_shared/ai-router.ts";
+import { chatCompletions, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
 import {
   PLAYBOOK_DEFAULTS,
   resolvePlaybook,
@@ -1137,12 +1137,24 @@ Deno.serve(async (req) => {
     const TOOLS = buildTools(playbook);
 
     const MAX_ROUNDS = 8;
+    const callerUserId = await getUserIdFromAuth(req);
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const isFinalRound = round === MAX_ROUNDS - 1;
       const body: Record<string, unknown> = { model, messages: convo, stream: false };
       if (!isFinalRound) body.tools = TOOLS;
 
+      const roundStartedAt = Date.now();
       const resp = await chatCompletions(body);
+      const fb = extractFallback(resp, model);
+      // Log every round (best-effort, non-blocking semantics)
+      logAiRun({
+        userId: callerUserId, projectId, surface: "assistant-chat",
+        requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
+        status: resp.ok ? "ok" : "error", latencyMs: Date.now() - roundStartedAt,
+        errorMessage: resp.ok ? undefined : `status ${resp.status}`,
+        targetId: assistantMessageId,
+        promptExcerpt: lastUser?.content ? String(lastUser.content) : undefined,
+      });
 
       if (!resp.ok) {
         const provider = model.startsWith("openai/")

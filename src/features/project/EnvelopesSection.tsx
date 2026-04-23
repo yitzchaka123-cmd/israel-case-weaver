@@ -44,6 +44,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
+import { AiOriginBadge } from "@/components/AiOriginBadge";
 import {
   ImageModelPicker,
   getStoredImageModel,
@@ -67,6 +68,8 @@ interface Envelope {
   linked_document_ids: string[] | null;
   linked_node_ids: string[] | null;
   created_by_message_id: string | null;
+  cover_effective_model?: string | null;
+  cover_fallback?: string | null;
 }
 
 interface DocOption {
@@ -649,12 +652,20 @@ function EnvelopeCard({
               href={cover}
               target="_blank"
               rel="noreferrer"
-              className="block rounded-lg overflow-hidden border bg-muted/30 hover:border-foreground/30 transition-colors"
+              className="block rounded-lg overflow-hidden border bg-muted/30 hover:border-foreground/30 transition-colors relative group"
             >
               <img
                 src={cover}
                 alt={`Envelope ${slot.n} cover`}
                 className="w-full h-auto max-h-72 object-contain"
+              />
+              <AiOriginBadge
+                info={{
+                  requested: env?.cover_image_url ? "nano-banana" : null,
+                  effective: env?.cover_effective_model ?? null,
+                  fallback: env?.cover_fallback ?? null,
+                }}
+                hoverOnly
               />
             </a>
           ) : (
