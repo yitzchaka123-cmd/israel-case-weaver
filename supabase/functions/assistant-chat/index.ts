@@ -1026,6 +1026,51 @@ async function executeTool(
         (r) => String(r.title ?? "—"),
       );
     }
+    if (name === "add_hint") {
+      const a = args as { stage?: number; level?: number; text?: string };
+      const stage = Number(a.stage);
+      const level = Number(a.level);
+      if (!Number.isFinite(stage) || stage < 1) return { ok: false, message: "stage must be a positive number" };
+      if (!Number.isFinite(level) || level < 1) return { ok: false, message: "level must be a positive number" };
+      const { data, error } = await supa
+        .from("hints")
+        .insert({
+          project_id: projectId,
+          stage,
+          level,
+          text: typeof a.text === "string" ? a.text : null,
+        })
+        .select("id, stage, level")
+        .single();
+      if (error) throw error;
+      return { ok: true, message: `Hint added: stage ${data.stage} · level ${data.level}`, id: data.id };
+    }
+    if (name === "generate_hint_stage") {
+      const a = args as { stage?: number; hints?: unknown[]; context?: string };
+      const stage = Number(a.stage);
+      if (!Number.isFinite(stage) || stage < 1) return { ok: false, message: "stage must be a positive number" };
+      const rawHints = Array.isArray(a.hints) ? a.hints : [];
+      const cleaned = rawHints
+        .map((h) => (typeof h === "string" ? h.trim() : ""))
+        .filter((h) => h.length > 0)
+        .slice(0, 6);
+      if (cleaned.length === 0) return { ok: false, message: "Provide at least one Hebrew hint string" };
+      // Replace any existing rows for this stage so the ladder stays clean.
+      await supa.from("hints").delete().eq("project_id", projectId).eq("stage", stage);
+      const rows = cleaned.map((text, i) => ({
+        project_id: projectId,
+        stage,
+        level: i + 1,
+        text,
+      }));
+      const { error } = await supa.from("hints").insert(rows);
+      if (error) throw error;
+      const ctx = a.context ? ` — for: ${String(a.context).trim().slice(0, 80)}` : "";
+      return {
+        ok: true,
+        message: `Hint stage ${stage} written (${cleaned.length} rungs)${ctx}`,
+      };
+    }
     if (name === "notify_user") {
       const a = args as { title?: string; body?: string; starter_prompt?: string; kind?: string };
       const title = String(a.title ?? "").trim();
