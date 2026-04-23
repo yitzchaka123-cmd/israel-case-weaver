@@ -916,11 +916,44 @@ Deno.serve(async (req) => {
 
     const supa = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Load project context
-    const [{ data: project }, { count: suspectCount }, { count: docCount }] = await Promise.all([
+    // Load project context + rosters of existing items so the model can target
+    // the right id when the user says "edit suspect 2" / "rename document 5"
+    // instead of duplicating rows. Caps keep the prompt budget bounded.
+    const [
+      { data: project },
+      { data: suspectsRoster },
+      { data: documentsRoster },
+      { data: envelopesRoster },
+      { data: hintsRoster },
+      { data: nodesRoster },
+    ] = await Promise.all([
       supa.from("projects").select("*").eq("id", projectId).single(),
-      supa.from("suspects").select("id", { count: "exact", head: true }).eq("project_id", projectId),
-      supa.from("documents").select("id", { count: "exact", head: true }).eq("project_id", projectId),
+      supa.from("suspects")
+        .select("id, name, role_in_case")
+        .eq("project_id", projectId)
+        .order("position", { ascending: true })
+        .limit(50),
+      supa.from("documents")
+        .select("id, doc_number, title, doc_type, status")
+        .eq("project_id", projectId)
+        .order("doc_number", { ascending: true, nullsFirst: false })
+        .limit(100),
+      supa.from("envelopes")
+        .select("id, number, label")
+        .eq("project_id", projectId)
+        .order("number", { ascending: true })
+        .limit(50),
+      supa.from("hints")
+        .select("id, stage, level")
+        .eq("project_id", projectId)
+        .order("stage", { ascending: true })
+        .order("level", { ascending: true })
+        .limit(50),
+      supa.from("canvas_nodes")
+        .select("id, title, node_type, board")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: true })
+        .limit(100),
     ]);
     if (!project) {
       return new Response(JSON.stringify({ error: "Project not found" }), {
