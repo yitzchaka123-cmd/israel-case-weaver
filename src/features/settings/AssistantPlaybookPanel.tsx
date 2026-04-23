@@ -16,9 +16,17 @@ import {
   renderPhase1OrderSentence,
   renderCanonicalVocabBlock,
   renderRealismParagraphs,
+  renderIdentityBlock,
+  renderContentRulesBlock,
+  renderDesignSkeletonLine,
+  renderDocModeButtonsBlock,
+  renderLogicGateRefusal,
+  renderCatalogsBlock,
+  renderPhaseEnumComment,
   type Playbook,
   type CanonicalValue,
-  type PhaseSetupStep,
+  type DesignSkeletonSection,
+  type PhaseDefinition,
 } from "@/lib/assistant-playbook";
 import { toast } from "sonner";
 import {
