@@ -1,85 +1,49 @@
 
 
-## Three additions: AI run log, image badges, and persistent prompt visibility
+## Three fixes for the AI provider settings
 
-### 1. New `ai_run_logs` table + Settings page
+### 1. "Image generation" picker → real model dropdown
 
-A new table records every AI call so you have a single place to see what actually ran:
+Today the **AI provider routing** section shows Planning and Documents as full dropdowns (Lovable, Gemini variants, OpenAI variants, Claude variants), but **Image generation** is just a 2-button toggle (`Lovable` / `OpenAI`). Replace it with a real grouped dropdown matching the per-surface `ImageModelPicker`:
 
-| Column | What it stores |
-|---|---|
-| `id`, `created_at`, `user_id`, `project_id` | Standard |
-| `surface` | Where it was called from (`assistant-chat`, `generate-image`, `suggest-image-prompt`, `generate-marketing-copy`, `generate-storyboard`, `generate-document`, `generate-logic-flow`, `generate-envelopes`, `explain-canvas-node`) |
-| `requested_model` | What you picked (e.g. `claude-opus-4.5`) |
-| `effective_model` | What actually ran (e.g. `openai/gpt-5.2`) |
-| `fallback` | `none` \| `openai-direct` \| `lovable-ai` |
-| `status` | `ok` \| `error` |
-| `latency_ms`, `error_message` | For debugging |
-| `target_id`, `prompt_excerpt` | Lets you trace the row back to a specific image / message |
+- **Lovable AI Gateway** (workspace credits): Nano Banana, Nano Banana 2, Nano Banana Pro
+- **Your Google key (direct)**: same three Nano Banana models routed via your `GEMINI_API_KEY`
+- **OpenAI**: ChatGPT Image 1 (gpt-image-1), ChatGPT Image 2 (gpt-image-2)
 
-RLS: each user reads their own rows; admins read all.
+This sets the **workspace default** that's used when a per-surface picker has no override. The existing per-image `ImageModelPicker` (cover, suspect, media…) keeps overriding.
 
-**Settings → "AI activity log"** section (new): paginated table, last 200 runs by default, filter chips for surface and fallback. Color-coded row dot (green = no fallback, amber = fallback fired, red = error). Inline "View prompt" expand for image runs.
+### 2. Add a "Prompt generation" row
 
-### 2. Image generation badges
+Add a fourth row in **AI provider routing** called **Prompt generation** (drives `suggest-image-prompt`), using the same `TEXT_PROVIDER_OPTIONS` dropdown as Planning/Documents (Lovable, all Gemini direct/gateway, OpenAI 5/5.2/5.4/mini, Claude Sonnet/Opus/Haiku).
 
-Update `generate-image` to return `requestedModel`, `effectiveModel`, `provider`, and `fallback` in the JSON response, plus persist `effective_model` and `fallback` onto `media_assets` (two new columns: `effective_model text`, `fallback text`). Existing `model` column stays as the requested one for back-compat.
+- New profile column: `ai_provider_prompt_writer text default 'lovable'`
+- `suggest-image-prompt` already accepts a `writerModel` override per call — we extend its model resolution to fall back to `profile.ai_provider_prompt_writer` (instead of `profile.ai_provider_planning`) when no per-surface override is set
+- The per-surface `PromptWriterModelPicker`'s "Use project default" entry now reads the new column
 
-Then surface a **provider badge** in three spots:
+### 3. Fix the misleading Claude test ("404 claude-3-5-haiku-latest")
 
-- **AssetCard grid** (`MediaSection`, `CoverAndVisuals`): small chip top-right of every image thumbnail — green "Nano Banana Pro" if no fallback, amber "Nano Banana Pro → ChatGPT (fallback)" if it fell back. Hover shows the full requested → effective tooltip.
-- **AssetDialog** (existing image detail modal): expands the chip into a full line: *"Generated with `gpt-image-2` (your OpenAI key) · requested `nano-banana-pro` · fell back due to Gemini 429."*
-- **Project cover, suspect thumbnails, envelope covers**: same hover chip overlaid on the image (top-right corner, only visible on hover).
+That 404 doesn't mean Claude is broken — it means the **test ping** in `api-key-manager` is calling a stale model id (`claude-3-5-haiku-latest`) directly against Anthropic. Your assistant calls actually route through the **Lovable AI Gateway** as `anthropic/claude-haiku-4-5`, which is a totally different code path. So the assistant works, the test fails, and you're left confused.
 
-For the Storyboard keyframes and marketing back-cover, same hover chip on the rendered image.
+Two changes:
 
-### 3. Stop losing prompts
+a. **Update the Anthropic test ping** in `supabase/functions/api-key-manager/index.ts` to use `claude-haiku-4-5` (the current id). If that 404s too, fall back to listing models via `GET /v1/models` (cheaper + version-stable) and report which models the key can see.
 
-This is the source of "the prompt got deleted":
-- `generate-image` already inserts a `prompts` row, but only `media`-target images also keep the prompt on `media_assets.prompt`. Suspect, cover, envelope, storyboard, marketing-back currently overwrite or never store the prompt anywhere visible.
-- The `AssetDialog` clears local edit state on close — if the regenerate fails, the edited prompt is gone.
+b. **Add a clarifying note** under the Claude key row in `ApiKeyManager.tsx`: *"This tests your Anthropic key directly. The assistant normally calls Claude via the Lovable AI Gateway, which uses workspace credits — not this key. The direct key is only used if you pick a `claude` model and the gateway is down."* (Matches how Gemini-direct is already labeled.)
 
-Fixes:
-- Always write the final prompt into the corresponding row's prompt field — add `prompt`/`prompt_history jsonb` columns to `suspects`, `envelopes`, `projects` (cover_prompt), and one to `project_storyboards` shots so every generated image carries its origin prompt.
-- `prompt_history` is appended on every regenerate (timestamp + prompt + effective_model + fallback). Used by the hover badge and the new log to show "what generated this image" with full lineage.
-- Auto-save the edited prompt in `AssetDialog` on every change (debounced) so closing the modal never wipes work in progress.
-- Show prompt history under each image in the dialog as a collapsible "Previous prompts" list.
+### Separately: the assistant's "error creating 21 nodes" you saw
 
-### Behavior summary
+That's not a Claude problem — that's the canvas tool-call path failing partway through (a known issue with multi-step tool runs, separate from model selection). I'll leave that out of scope here unless you want me to dig into it next; want me to look at the assistant tool-call error after these settings fixes land?
 
-| Surface | Before | After |
-|---|---|---|
-| Image grid (Media, Marketing) | No badge | Hover chip with requested → effective model |
-| Image dialog | "Originally generated with: model" | Full provenance line + fallback reason + prompt history |
-| Cover / suspect / envelope / storyboard images | Prompt sometimes lost | Prompt + history persisted on the row itself |
-| Settings | No log | New "AI activity log" with filter, status dots, expand |
-| `media_assets.prompt` | Set on insert, cleared on retry | Always reflects the prompt that produced the current `url`; history in `prompt_history` |
+### Files touched
 
-### Technical changes
-
-**Migration**
-- Create table `ai_run_logs` with RLS (`user_id = auth.uid()` for select; admins read all; service role inserts).
-- Add columns: `media_assets.effective_model text`, `media_assets.fallback text`, `media_assets.prompt_history jsonb default '[]'`.
-- Add columns: `suspects.thumbnail_prompt text`, `suspects.thumbnail_prompt_history jsonb default '[]'` (and same `_alt_` pair).
-- Add columns: `projects.cover_prompt text`, `projects.cover_prompt_history jsonb default '[]'`.
-- Add columns: `envelopes.cover_prompt text`, `envelopes.cover_prompt_history jsonb default '[]'`.
-- Add columns: `project_storyboards.shot_prompts jsonb default '{}'` (keyed by shot id → prompt + history).
-
-**Edge functions** — add a tiny shared `logAiRun()` helper in `_shared/ai-router.ts` and call it after every `chatCompletions(...)` and `generateImage(...)`. Same helper extracts `x-ai-fallback` / computes `effectiveModel`. Update each of the 8 functions listed above (one call site each).
-
-**`generate-image`** specifically:
-- Extend the response with `{ requestedModel, effectiveModel, provider, fallback }`.
-- For each `target` (`media`, `suspect-thumbnail`, `suspect-alt-thumbnail`, `project-cover`, `envelope`), persist the prompt + history + effective_model + fallback onto the right row.
-
-**Frontend**
-- New `src/features/settings/AiRunLog.tsx`, mounted as a Section in `SettingsPage.tsx`.
-- New `src/components/AiOriginBadge.tsx` — reusable hover chip (`requested`, `effective`, `fallback`). Used by `MediaSection.AssetCard`, `MediaSection.AssetDialog`, `CoverAndVisuals` (cover + extras), `SuspectsSection` (thumbnails), `EnvelopesSection` (envelope covers), `StoryboardStudio` (keyframes), `BarcodeAndBackPanel` (back image), `ProjectOverview` (cover).
-- Update each generation handler to read the new response fields and update local cache so the badge appears immediately without a refetch.
-- `AssetDialog`: debounced autosave of `editPrompt` to `media_assets.prompt`; render `prompt_history` as collapsible list.
+- `src/features/settings/SettingsPage.tsx` — replace `ProviderRow` for Images with a `ProviderSelectRow` using new `IMAGE_PROVIDER_OPTIONS`; add a new `Prompt generation` row; persist `ai_provider_prompt_writer`
+- `src/features/settings/ApiKeyManager.tsx` — add clarifying note under the Anthropic row
+- `supabase/functions/api-key-manager/index.ts` — switch Anthropic ping model to `claude-haiku-4-5`, add `GET /v1/models` fallback
+- `supabase/functions/suggest-image-prompt/index.ts` — read `profile.ai_provider_prompt_writer` first, fall back to `ai_provider_planning`, then `lovable`
+- **Migration**: `ALTER TABLE profiles ADD COLUMN ai_provider_prompt_writer text NOT NULL DEFAULT 'lovable'`; matching column also added to `ai_provider_images` value validation if needed (it's already free-form text — no constraint change)
 
 ### Out of scope
 
-- No retry-from-log button (tell me if you want one — easy to add).
-- No CSV export of the log (also easy follow-up).
-- No image-gen badge on the assistant chat avatar — assistant chat is text-only; badge there is for the next round when we tackle text-model badges.
+- The "21 nodes failed" assistant error — separate tool-call investigation
+- Adding image-model routing (Lovable vs Direct vs OpenAI) inside `generate-image` — it already auto-routes based on the model id picked; this change is purely about the **default** picker UI
 
