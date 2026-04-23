@@ -89,6 +89,25 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
     },
   });
 
+  // Envelopes briefing pre-flight: if no envelope has design_instructions yet,
+  // we surface a banner above the Generate logic flow controls so the user is
+  // nudged to brief the assistant first (envelopes now become nodes in the flow).
+  const { data: envelopes } = useQuery({
+    queryKey: ["envelopes-brief-status", projectId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("envelopes")
+        .select("id, design_instructions")
+        .eq("project_id", projectId);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+  const anyEnvelopeBriefed = (envelopes ?? []).some(
+    (e) => (e.design_instructions ?? "").trim().length > 0,
+  );
+  const envelopeCount = envelopes?.length ?? 0;
+
   const [nodes, setNodes] = useNodesState([]);
   const [edges, setEdges] = useEdgesState([]);
   const [generatingFlow, setGeneratingFlow] = useState(false);
