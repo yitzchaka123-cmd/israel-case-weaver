@@ -938,6 +938,24 @@ async function executeTool(
         (r) => String(r.title ?? "—"),
       );
     }
+    if (name === "notify_user") {
+      const a = args as { title?: string; body?: string; starter_prompt?: string; kind?: string };
+      const title = String(a.title ?? "").trim();
+      if (!title) return { ok: false, message: "title is required" };
+      const { error } = await supa
+        .from("project_notifications")
+        .insert({
+          project_id: projectId,
+          kind: String(a.kind ?? "general").trim() || "general",
+          title,
+          body: a.body ? String(a.body).trim() : null,
+          starter_prompt: a.starter_prompt ? String(a.starter_prompt).trim() : null,
+          created_by: "assistant",
+          status: "unread",
+        });
+      if (error) throw error;
+      return { ok: true, message: `Notification dropped: ${title}` };
+    }
 
     return { ok: false, message: `Unknown tool: ${name}` };
   } catch (e) {
