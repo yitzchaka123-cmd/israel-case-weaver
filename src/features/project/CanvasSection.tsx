@@ -656,7 +656,7 @@ function NodeDetailPanel({
 
   const { data: linkedDocs = [] } = useQuery({
     queryKey: ["canvas-node-docs", nodeId],
-    enabled: !!nodeId,
+    enabled: !!nodeId && board === "final",
     queryFn: async () => {
       const { data, error } = await supabase
         .from("documents")
