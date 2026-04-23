@@ -435,11 +435,13 @@ function MessageBubble({
   isLast,
   onPickOption,
   disabled,
+  highlighted,
 }: {
   msg: Msg;
   isLast: boolean;
   onPickOption: (text: string) => void;
   disabled: boolean;
+  highlighted?: boolean;
 }) {
   const tools = msg.metadata?.tools ?? [];
   const options = msg.metadata?.options ?? [];
@@ -449,7 +451,12 @@ function MessageBubble({
   const showOptions = msg.role === "assistant" && isLast && options.length > 0;
 
   return (
-    <div className="flex gap-3 items-start">
+    <div
+      data-msg-id={msg.id}
+      className={`flex gap-3 items-start scroll-mt-24 rounded-xl transition-colors duration-700 ${
+        highlighted ? "bg-accent/15 ring-2 ring-accent/50 -mx-2 px-2 py-2" : ""
+      }`}
+    >
       <Avatar role={msg.role} />
       <div className="flex-1 min-w-0 pt-1">
         <div className="text-xs font-medium mb-1 text-muted-foreground">
