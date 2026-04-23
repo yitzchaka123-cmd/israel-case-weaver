@@ -128,6 +128,7 @@ function TolerantSelect({
 
 
 export function ProjectOverview({ project }: { project: any }) {
+  const assistantRunning = useAssistantRunStatus(project.id);
   const [draft, setDraft] = useState(project);
   const fileInput = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<number | undefined>(undefined);
@@ -313,6 +314,19 @@ export function ProjectOverview({ project }: { project: any }) {
 
   return (
     <div className="max-w-6xl mx-auto px-6 md:px-10 py-8 grid lg:grid-cols-3 gap-8">
+      {assistantRunning && (
+        <div className="lg:col-span-3 -mb-4">
+          <div
+            onClick={() => window.dispatchEvent(new CustomEvent("mystudio:navigate", { detail: { tab: "assistant" } }))}
+            className="cursor-pointer flex items-center gap-2 rounded-md border border-accent/30 bg-accent/10 px-3 py-2 text-xs text-foreground hover:bg-accent/20 transition-colors"
+          >
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
+            <span className="font-medium">Assistant is working on your case…</span>
+            <span className="text-muted-foreground ml-1">Tap to view progress</span>
+            <ArrowRight className="h-3 w-3 ml-auto text-muted-foreground" />
+          </div>
+        </div>
+      )}
       <div className="lg:col-span-2 space-y-6">
         <Panel>
           <SectionTitle>Case Identity</SectionTitle>
