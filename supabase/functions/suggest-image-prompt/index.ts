@@ -140,6 +140,8 @@ Deno.serve(async (req) => {
     // GPT-5 family rejects any non-default temperature ("Only the default (1)
     // value is supported"), so omit it for openai/* models.
     const supportsTemperature = !model.startsWith("openai/");
+    const startedAt = Date.now();
+    const callerUserId = await getUserIdFromAuth(req);
     const resp = await chatCompletions({
       model,
       messages: [
@@ -148,11 +150,19 @@ Deno.serve(async (req) => {
       ],
       ...(supportsTemperature ? { temperature: 0.9 } : {}),
     });
+    const fb = extractFallback(resp, model);
 
     if (!resp.ok) {
       const t = await resp.text();
       console.error("suggest-image-prompt provider error", resp.status, t);
       const provider = model.startsWith("openai/") ? "OpenAI" : "Lovable AI";
+      await logAiRun({
+        userId: callerUserId, projectId, surface: "suggest-image-prompt",
+        requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
+        status: "error", latencyMs: Date.now() - startedAt,
+        errorMessage: `${provider} ${resp.status}: ${t.slice(0, 200)}`,
+        promptExcerpt: userMsg,
+      });
       if (resp.status === 429) {
         return new Response(JSON.stringify({ error: `${provider} rate limit — try again shortly.` }), {
           status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
