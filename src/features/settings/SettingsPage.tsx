@@ -318,18 +318,11 @@ function Section({ title, desc, children }: { title: string; desc?: string; chil
   );
 }
 
-const PROVIDER_LABEL: Record<string, string> = {
-  lovable: "Lovable",
-  openai: "OpenAI",
-  claude: "Claude",
-  "gemini-direct-pro": "Gemini",
-};
-
 type ProviderOption = { value: string; label: string; header?: boolean };
 
-// Used by Planning / Document rows. Grouped headers (header:true) render as
-// non-selectable separators. Every entry maps to a key in the edge functions'
-// PROVIDER_MODEL / PLANNING_MODEL maps.
+// Used by Planning / Document / Prompt-generation rows. Grouped headers
+// (header:true) render as non-selectable separators. Every entry maps to a key
+// in the edge functions' PROVIDER_MODEL / PLANNING_MODEL maps.
 const TEXT_PROVIDER_OPTIONS: ProviderOption[] = [
   { value: "__hdr-lovable", label: "Lovable AI (workspace credits)", header: true },
   { value: "lovable", label: "Lovable default" },
@@ -353,6 +346,23 @@ const TEXT_PROVIDER_OPTIONS: ProviderOption[] = [
   { value: "claude", label: "Claude Sonnet 4.5" },
   { value: "claude-opus", label: "Claude Opus 4.5" },
   { value: "claude-haiku", label: "Claude Haiku 4.5" },
+];
+
+// Image provider keys must match generate-image's IMAGE_MODEL map keys
+// (chatgpt-image-2, chatgpt-image, nano-banana-pro, nano-banana-2, nano-banana).
+// generate-image auto-routes Nano Banana via GEMINI_API_KEY when present,
+// otherwise via the Lovable AI Gateway — the "direct" headers below clarify
+// which billing account each model lands on for the user.
+const IMAGE_PROVIDER_OPTIONS: ProviderOption[] = [
+  { value: "__hdr-lovable-img", label: "Lovable AI Gateway (workspace credits)", header: true },
+  { value: "lovable", label: "Lovable default (Nano Banana)" },
+  { value: "nano-banana-pro", label: "Nano Banana Pro — top quality (Gemini)" },
+  { value: "nano-banana-2", label: "Nano Banana 2 — fast (Gemini)" },
+  { value: "nano-banana", label: "Nano Banana — classic (Gemini)" },
+  { value: "__hdr-openai-img", label: "OpenAI (your OpenAi key)", header: true },
+  { value: "chatgpt-image-2", label: "ChatGPT Image 2 (gpt-image-2) — latest" },
+  { value: "chatgpt-image", label: "ChatGPT Image 1 (gpt-image-1)" },
+  { value: "openai", label: "OpenAI default (ChatGPT Image)" },
 ];
 
 function ProviderSelectRow({
@@ -384,28 +394,6 @@ function ProviderSelectRow({
           )}
         </SelectContent>
       </Select>
-    </div>
-  );
-}
-
-function ProviderRow({ label, value, onChange, providers }: { label: string; value: string; onChange: (v: string) => void; providers: string[] }) {
-  return (
-    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-      <div className="text-sm">{label}</div>
-      <div className="flex flex-wrap gap-1 p-1 bg-muted rounded-lg">
-        {providers.map((p) => (
-          <button
-            key={p}
-            onClick={() => onChange(p)}
-            className={[
-              "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
-              value === p ? "bg-surface shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground",
-            ].join(" ")}
-          >
-            {PROVIDER_LABEL[p] ?? p}
-          </button>
-        ))}
-      </div>
     </div>
   );
 }
