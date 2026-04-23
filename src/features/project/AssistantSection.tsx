@@ -34,11 +34,13 @@ type ToolCall = {
   result: { ok: boolean; message: string; id?: string };
 };
 
+type QuickOption = { label: string; send: string };
+
 type Msg = {
   id: string;
   role: "user" | "assistant";
   content: string;
-  metadata?: { tools?: ToolCall[] } | null;
+  metadata?: { tools?: ToolCall[]; options?: QuickOption[]; question?: string | null } | null;
   created_at?: string;
 };
 
