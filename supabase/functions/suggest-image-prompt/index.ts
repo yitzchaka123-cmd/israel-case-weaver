@@ -132,13 +132,16 @@ Deno.serve(async (req) => {
       hint ? `\n\nUSER STEERING: ${hint}` : ""
     }${currentPrompt ? `\n\nPREVIOUS PROMPT (revise / improve, don't repeat verbatim):\n${currentPrompt}` : ""}\n\nWrite the new image prompt now. Only the prompt — no preamble, no quotes, no markdown.`;
 
+    // GPT-5 family rejects any non-default temperature ("Only the default (1)
+    // value is supported"), so omit it for openai/* models.
+    const supportsTemperature = !model.startsWith("openai/");
     const resp = await chatCompletions({
       model,
       messages: [
         { role: "system", content: system },
         { role: "user", content: userMsg },
       ],
-      temperature: 0.9,
+      ...(supportsTemperature ? { temperature: 0.9 } : {}),
     });
 
     if (!resp.ok) {
