@@ -31,10 +31,19 @@ Deno.serve(async (req) => {
     hasCode: !!code,
     hasState: !!state,
     userId: userId || null,
+    returnTo,
     googleError: error,
     googleErrorDescription: errorDescription,
     origin,
+    ts: new Date().toISOString(),
   });
+  if (error) {
+    console.warn("[drive-oauth-callback] google denied", {
+      googleError: error,
+      googleErrorDescription: errorDescription,
+      userId: userId || null,
+    });
+  }
 
   const back = (status: "connected" | "error", detail?: string) => {
     if (!origin) {
