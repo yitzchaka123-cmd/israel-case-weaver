@@ -7,10 +7,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, FileText, Users, Layers } from "lucide-react";
-import { useState } from "react";
+import { Plus, FileText, Users, Layers, Search, X, SlidersHorizontal } from "lucide-react";
+import { useMemo, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 
 interface Project {
   id: string;
@@ -18,11 +20,14 @@ interface Project {
   subtitle: string | null;
   cover_image_url: string | null;
   mystery_type: string | null;
+  genre: string | null;
   difficulty: string | null;
   phase: string;
   target_doc_count: number | null;
   updated_at: string;
 }
+
+type SortKey = "updated_desc" | "updated_asc" | "title_asc" | "title_desc";
 
 export function Dashboard() {
   const { data: projects, isLoading } = useQuery({
@@ -30,16 +35,70 @@ export function Dashboard() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("projects")
-        .select("id,title,subtitle,cover_image_url,mystery_type,difficulty,phase,target_doc_count,updated_at")
+        .select("id,title,subtitle,cover_image_url,mystery_type,genre,difficulty,phase,target_doc_count,updated_at")
         .order("updated_at", { ascending: false });
       if (error) throw error;
       return data as Project[];
     },
   });
 
+  const [query, setQuery] = useState("");
+  const [difficulties, setDifficulties] = useState<string[]>([]);
+  const [mysteryTypes, setMysteryTypes] = useState<string[]>([]);
+  const [genres, setGenres] = useState<string[]>([]);
+  const [phases, setPhases] = useState<string[]>([]);
+  const [sort, setSort] = useState<SortKey>("updated_desc");
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Build option lists from the actual data so users only see filters that
+  // can match something. Falls back gracefully when the field is null.
+  const options = useMemo(() => {
+    const dedupe = (arr: (string | null)[]) =>
+      Array.from(new Set(arr.filter((v): v is string => !!v))).sort();
+    return {
+      difficulty: dedupe(projects?.map((p) => p.difficulty) ?? []),
+      mystery_type: dedupe(projects?.map((p) => p.mystery_type) ?? []),
+      genre: dedupe(projects?.map((p) => p.genre) ?? []),
+      phase: dedupe(projects?.map((p) => p.phase) ?? []),
+    };
+  }, [projects]);
+
+  const filtered = useMemo(() => {
+    if (!projects) return [];
+    const q = query.trim().toLowerCase();
+    let result = projects.filter((p) => {
+      if (q && !`${p.title} ${p.subtitle ?? ""}`.toLowerCase().includes(q)) return false;
+      if (difficulties.length && !difficulties.includes(p.difficulty ?? "")) return false;
+      if (mysteryTypes.length && !mysteryTypes.includes(p.mystery_type ?? "")) return false;
+      if (genres.length && !genres.includes(p.genre ?? "")) return false;
+      if (phases.length && !phases.includes(p.phase)) return false;
+      return true;
+    });
+    result = [...result].sort((a, b) => {
+      switch (sort) {
+        case "updated_asc": return new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime();
+        case "title_asc": return a.title.localeCompare(b.title);
+        case "title_desc": return b.title.localeCompare(a.title);
+        default: return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+      }
+    });
+    return result;
+  }, [projects, query, difficulties, mysteryTypes, genres, phases, sort]);
+
+  const activeFilterCount =
+    difficulties.length + mysteryTypes.length + genres.length + phases.length + (query ? 1 : 0);
+
+  const clearAll = () => {
+    setQuery("");
+    setDifficulties([]);
+    setMysteryTypes([]);
+    setGenres([]);
+    setPhases([]);
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-6 md:px-10 py-10">
-      <div className="flex items-end justify-between mb-10">
+      <div className="flex items-end justify-between mb-8 gap-4 flex-wrap">
         <div>
           <div className="text-xs font-medium tracking-widest uppercase text-muted-foreground mb-1.5">
             Workspace
@@ -52,18 +111,163 @@ export function Dashboard() {
         <CreateProjectDialog />
       </div>
 
+      {/* Filter bar — shown only when there are any cases at all. */}
+      {projects && projects.length > 0 && (
+        <div className="mb-6 space-y-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative flex-1 min-w-[220px] max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search title or subtitle…"
+                className="pl-9 pr-9"
+              />
+              {query && (
+                <button
+                  onClick={() => setQuery("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+                  aria-label="Clear search"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+
+            <Button
+              variant={showFilters ? "secondary" : "outline"}
+              size="sm"
+              onClick={() => setShowFilters((v) => !v)}
+              className="gap-2"
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="ml-1 inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full bg-accent text-accent-foreground text-[10px] font-semibold">
+                  {activeFilterCount}
+                </span>
+              )}
+            </Button>
+
+            <div className="ml-auto flex items-center gap-2">
+              <span className="text-xs text-muted-foreground hidden sm:inline">Sort</span>
+              <Select value={sort} onValueChange={(v) => setSort(v as SortKey)}>
+                <SelectTrigger className="h-9 w-[170px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="updated_desc">Recently updated</SelectItem>
+                  <SelectItem value="updated_asc">Oldest updated</SelectItem>
+                  <SelectItem value="title_asc">Title A → Z</SelectItem>
+                  <SelectItem value="title_desc">Title Z → A</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {showFilters && (
+            <div className="rounded-2xl border bg-card/50 p-4 space-y-4">
+              <FilterGroup
+                label="Difficulty"
+                options={options.difficulty}
+                selected={difficulties}
+                onChange={setDifficulties}
+              />
+              <FilterGroup
+                label="Mystery type"
+                options={options.mystery_type}
+                selected={mysteryTypes}
+                onChange={setMysteryTypes}
+              />
+              <FilterGroup
+                label="Genre"
+                options={options.genre}
+                selected={genres}
+                onChange={setGenres}
+              />
+              <FilterGroup
+                label="Phase"
+                options={options.phase}
+                selected={phases}
+                onChange={setPhases}
+                capitalize
+              />
+              {activeFilterCount > 0 && (
+                <div className="flex items-center justify-between pt-2 border-t">
+                  <div className="text-xs text-muted-foreground">
+                    {filtered.length} of {projects.length} cases match
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={clearAll} className="text-xs h-7">
+                    <X className="h-3 w-3 mr-1" /> Clear all
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {isLoading ? (
         <SkeletonGrid />
       ) : !projects || projects.length === 0 ? (
         <EmptyState />
+      ) : filtered.length === 0 ? (
+        <NoResultsState onClear={clearAll} />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {projects.map((p) => (
+          {filtered.map((p) => (
             <ProjectCard key={p.id} project={p} />
           ))}
-          <NewCard />
+          {activeFilterCount === 0 && <NewCard />}
         </div>
       )}
+    </div>
+  );
+}
+
+function FilterGroup({
+  label,
+  options,
+  selected,
+  onChange,
+  capitalize,
+}: {
+  label: string;
+  options: string[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+  capitalize?: boolean;
+}) {
+  if (options.length === 0) return null;
+  const toggle = (v: string) => {
+    onChange(selected.includes(v) ? selected.filter((s) => s !== v) : [...selected, v]);
+  };
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold mb-2">
+        {label}
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {options.map((opt) => {
+          const active = selected.includes(opt);
+          return (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => toggle(opt)}
+              className={cn(
+                "text-xs px-2.5 py-1 rounded-full border transition-colors",
+                capitalize && "capitalize",
+                active
+                  ? "bg-accent text-accent-foreground border-accent"
+                  : "bg-background hover:bg-muted border-border text-foreground/80"
+              )}
+            >
+              {opt}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -124,6 +328,25 @@ function NewCard() {
         </button>
       }
     />
+  );
+}
+
+function NoResultsState({ onClear }: { onClear: () => void }) {
+  return (
+    <div className="border-2 border-dashed rounded-3xl p-12 text-center">
+      <div className="inline-flex items-center justify-center h-12 w-12 rounded-2xl bg-muted mb-4">
+        <Search className="h-5 w-5 text-muted-foreground" />
+      </div>
+      <h3 className="font-display text-xl">No cases match your filters</h3>
+      <p className="text-muted-foreground mt-1.5 text-sm">
+        Try removing a filter or clearing the search.
+      </p>
+      <div className="mt-5">
+        <Button variant="outline" size="sm" onClick={onClear}>
+          <X className="h-3.5 w-3.5 mr-1.5" /> Clear all filters
+        </Button>
+      </div>
+    </div>
   );
 }
 
