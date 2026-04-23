@@ -23,6 +23,7 @@ import { nodeTypes as caseNodeTypes, getNodeMeta, NODE_META } from "./canvas/Can
 // Stored in localStorage so it persists per-browser. Note: "openai-5.2" routes
 // through your OpenAI key directly (not Lovable AI credits) — see ai-router.ts.
 export const LOGIC_FLOW_MODELS = [
+  { value: "openai-5.4", label: "ChatGPT 5.4 (newest · your OpenAI key)" },
   { value: "openai-5.2", label: "ChatGPT 5.2 (default · your OpenAI key)" },
   { value: "openai", label: "ChatGPT 5 (your OpenAI key)" },
   { value: "openai-mini", label: "ChatGPT 5 mini (your OpenAI key)" },

@@ -20,6 +20,7 @@ const PROVIDER_MODEL: Record<string, string> = {
   "gemini-3-pro": "google/gemini-3.1-pro-preview",
   "gemini-flash": "google/gemini-2.5-flash",
   openai: "openai/gpt-5",
+  "openai-5.4": "openai/gpt-5.4",
   "openai-5.2": "openai/gpt-5.2",
   "openai-mini": "openai/gpt-5-mini",
   claude: "anthropic/claude-sonnet-4-5",

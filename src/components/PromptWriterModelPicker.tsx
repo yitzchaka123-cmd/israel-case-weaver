@@ -12,6 +12,7 @@ export const PROMPT_WRITER_MODELS = [
   { value: "gemini-3-pro", label: "Gemini 3.1 Pro (preview)" },
   { value: "gemini-flash", label: "Gemini 2.5 Flash" },
   { value: "openai", label: "OpenAI GPT-5" },
+  { value: "openai-5.4", label: "OpenAI GPT-5.4 (newest)" },
   { value: "openai-5.2", label: "OpenAI GPT-5.2" },
   { value: "openai-mini", label: "OpenAI GPT-5 mini" },
   { value: "claude", label: "Claude Sonnet 4.5" },

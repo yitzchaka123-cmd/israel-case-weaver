@@ -17,7 +17,8 @@ const PLANNING_MODELS = [
   { value: "lovable", label: "Gemini 3.1 Pro (default)" },
   { value: "gemini", label: "Gemini 2.5 Pro" },
   { value: "gemini-flash", label: "Gemini 2.5 Flash (fast)" },
-  { value: "openai-5.2", label: "ChatGPT 5.2 (latest)" },
+  { value: "openai-5.4", label: "ChatGPT 5.4 (newest)" },
+  { value: "openai-5.2", label: "ChatGPT 5.2" },
   { value: "openai", label: "ChatGPT 5" },
   { value: "openai-mini", label: "ChatGPT 5 mini" },
 ];

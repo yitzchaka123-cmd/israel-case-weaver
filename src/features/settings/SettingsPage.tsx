@@ -9,6 +9,7 @@ import { Sun, Moon, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useEffect, useRef, useState } from "react";
 import { ApiKeyManager } from "./ApiKeyManager";
+import { UsageDashboard } from "./UsageDashboard";
 import { GeminiConnection } from "./GeminiConnection";
 import { AssistantTweaksPanel } from "./AssistantTweaksPanel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -235,6 +236,10 @@ export function SettingsPage() {
           desc="Connect your Google AI Studio API key to call Nano Banana, Nano Banana 2, and Nano Banana Pro directly — bypassing the Lovable AI Gateway and billing to your Google account."
         >
           <GeminiConnection />
+        </Section>
+
+        <Section title="Usage & credits" desc="Live spend and quick links to top up each provider. Only OpenAI publishes a usage API; the other providers open their billing dashboards in a new tab.">
+          <UsageDashboard />
         </Section>
 
         <Section title="API keys" desc="Manage and test all API keys this workspace uses to call AI providers.">
