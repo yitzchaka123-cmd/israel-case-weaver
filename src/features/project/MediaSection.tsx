@@ -334,7 +334,7 @@ function CategoryPanel({ projectId, category, items }: { projectId: string; cate
 
 function AssetCard({ asset, onOpen, onDelete }: { asset: MediaAsset; onOpen: () => void; onDelete: () => void }) {
   return (
-    <div className="group rounded-2xl border bg-card overflow-hidden shadow-soft hover:shadow-elegant transition-shadow">
+    <div className="group rounded-2xl border bg-card overflow-hidden shadow-soft hover:shadow-elegant transition-shadow relative">
       <button onClick={onOpen} className="block w-full text-left">
         <div className="aspect-[4/3] bg-muted relative overflow-hidden">
           {asset.url && asset.mime_type?.startsWith("image") ? (
@@ -345,6 +345,16 @@ function AssetCard({ asset, onOpen, onDelete }: { asset: MediaAsset; onOpen: () 
             <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs uppercase tracking-widest">
               {asset.provider === "prompt-only" ? "Prompt only" : "File"}
             </div>
+          )}
+          {(asset.model || asset.effective_model) && asset.mime_type?.startsWith("image") && (
+            <AiOriginBadge
+              info={{
+                requested: asset.model,
+                effective: asset.effective_model ?? asset.model,
+                fallback: asset.fallback,
+                provider: asset.provider,
+              }}
+            />
           )}
         </div>
         <div className="p-3">
