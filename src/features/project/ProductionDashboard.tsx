@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Progress } from "@/components/ui/progress";
-import { FileText, Users, Network, Mail, ArrowRight } from "lucide-react";
+import { FileText, Users, Network, Mail, ArrowRight, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { normalizePhase } from "./PhaseStatusBar";
+import { useAssistantRunStatus } from "./assistant/useAssistantRun";
 
 function nextActionFor(phase: string, docs: number, target: number | null, logicApproved: boolean): string {
   switch (phase) {
@@ -77,8 +78,22 @@ export function ProductionDashboard({
   const docTarget = targetDocCount ?? 0;
   const docPct = docTarget > 0 ? Math.min(100, Math.round((docs / docTarget) * 100)) : 0;
 
+  const assistantRunning = useAssistantRunStatus(projectId);
+
   return (
     <div className="space-y-4">
+      {assistantRunning && (
+        <button
+          type="button"
+          onClick={() => onJump("assistant")}
+          className="w-full flex items-center gap-2 rounded-md border border-accent/30 bg-accent/10 px-3 py-2 text-xs text-foreground hover:bg-accent/20 transition-colors"
+        >
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
+          <span className="font-medium">Assistant is working on your case…</span>
+          <span className="text-muted-foreground ml-1">Tap to view progress</span>
+          <ArrowRight className="h-3 w-3 ml-auto text-muted-foreground" />
+        </button>
+      )}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Tile
           icon={<FileText className="h-3.5 w-3.5" />}
