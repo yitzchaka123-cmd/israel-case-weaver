@@ -21,7 +21,7 @@ import { PromptWriterModelPicker, getStoredWriterModel } from "./PromptWriterMod
 
 interface Props {
   projectId: string;
-  surface: "cover" | "suspect" | "document" | "media";
+  surface: "cover" | "suspect" | "document" | "media" | "hint";
   category?: string;       // for media tabs (cover/back/news/promo/external)
   initialPrompt?: string;  // existing prompt (archive mode) or empty (inline)
   onGenerate: (prompt: string) => Promise<void> | void;

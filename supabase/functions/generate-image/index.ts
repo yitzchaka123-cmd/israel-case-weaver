@@ -64,7 +64,8 @@ type Target =
   | "suspect-thumbnail"
   | "suspect-alt-thumbnail"
   | "project-cover"
-  | "envelope";
+  | "envelope"
+  | "hint-sheet";
 
 type Quality = "low" | "medium" | "high";
 
@@ -150,7 +151,7 @@ Deno.serve(async (req) => {
         await logAiRun({ userId, projectId: projectIdForLog, surface: "generate-image", requestedModel: requestedModelForLog, status: "error", errorMessage: errMsg, latencyMs: Date.now() - startedAt, targetId: targetIdForLog, promptExcerpt: promptForLog });
         return new Response(JSON.stringify({ error: errMsg }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
-      const ar = aspect ?? (target.startsWith("suspect") || target === "project-cover" || target === "envelope" ? "portrait" : "landscape");
+      const ar = aspect ?? (target.startsWith("suspect") || target === "project-cover" || target === "envelope" || target === "hint-sheet" ? "portrait" : "landscape");
       const size = ar === "portrait" ? "1024x1536" : ar === "landscape" ? "1536x1024" : "1024x1024";
       const q: Quality = quality ?? "medium";
 
@@ -270,6 +271,9 @@ Deno.serve(async (req) => {
     } else if (target === "envelope") {
       bucket = "media";
       path = `${projectId}/envelopes/${targetId ?? "x"}-${Date.now()}.${ext}`;
+    } else if (target === "hint-sheet") {
+      bucket = "media";
+      path = `${projectId}/hint-sheets/${targetId ?? "x"}-${Date.now()}.${ext}`;
     }
 
     const { error: upErr } = await supa.storage.from(bucket).upload(path, bytes, { contentType: mime, upsert: true });
@@ -353,6 +357,29 @@ Deno.serve(async (req) => {
         cover_fallback: fallbackLabel,
         cover_prompt_history: [historyEntry, ...priorHist].slice(0, 20),
       } as any).eq("id", targetId);
+    } else if (target === "hint-sheet" && targetId) {
+      // targetId is the stage number as a string (e.g. "1", "2"…)
+      const stageNum = Number.parseInt(targetId, 10);
+      if (Number.isFinite(stageNum)) {
+        const { data: prior } = await supa
+          .from("hint_sheets")
+          .select("prompt_history")
+          .eq("project_id", projectId)
+          .eq("stage", stageNum)
+          .maybeSingle();
+        const priorHist = ((prior as any)?.prompt_history ?? []) as any[];
+        await supa.from("hint_sheets").upsert({
+          project_id: projectId,
+          stage: stageNum,
+          image_url: pub.publicUrl,
+          prompt,
+          requested_model: requestedModelForLog,
+          effective_model: effectiveModel,
+          fallback: fallbackLabel,
+          prompt_history: [historyEntry, ...priorHist].slice(0, 20),
+          updated_at: new Date().toISOString(),
+        } as any, { onConflict: "project_id,stage" });
+      }
     }
 
     await supa.from("prompts").insert({
