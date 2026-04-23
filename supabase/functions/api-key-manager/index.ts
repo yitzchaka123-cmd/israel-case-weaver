@@ -77,6 +77,63 @@ function maskHint(name: string): string | null {
   return `${v.slice(0, 4)}••••${v.slice(-4)} (${v.length} chars)`;
 }
 
+// ---------------- OpenAI usage ----------------
+type DailyPoint = { date: string; usd: number };
+type OpenAiUsage =
+  | { available: true; daily: DailyPoint[]; total7d: number; currency: string; hardLimitUsd: number | null }
+  | { available: false; reason: string; needsScope?: boolean };
+
+async function fetchOpenAiUsage(): Promise<OpenAiUsage> {
+  const key = Deno.env.get("OpenAi") ?? Deno.env.get("OPENAI_API_KEY") ?? "";
+  if (!key) return { available: false, reason: "OpenAI key not configured. Add the OpenAi secret in Settings → API keys." };
+
+  const now = new Date();
+  const startMs = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 6);
+  const startSec = Math.floor(startMs / 1000);
+
+  try {
+    const url = `https://api.openai.com/v1/organization/costs?start_time=${startSec}&bucket_width=1d&limit=7`;
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${key}` } });
+    if (!r.ok) {
+      let msg = r.statusText;
+      try { const j = await r.json(); msg = j?.error?.message ?? msg; } catch { /* */ }
+      const needsScope = r.status === 401 || r.status === 403 || /scope|admin|permission/i.test(msg);
+      return {
+        available: false,
+        needsScope,
+        reason: needsScope
+          ? `Your OpenAI key lacks the api.usage.read scope (or isn't an admin key). Create an admin key at platform.openai.com → Settings → Admin keys with api.usage.read enabled, then replace the OpenAi secret. (${r.status}: ${msg})`
+          : `OpenAI usage API error (${r.status}): ${msg}`,
+      };
+    }
+    const j = await r.json();
+    const buckets: Array<Record<string, unknown>> = Array.isArray(j?.data) ? j.data : [];
+    const daily: DailyPoint[] = buckets.map((b) => {
+      const startTime = Number((b as { start_time?: number }).start_time ?? 0);
+      const results = ((b as { results?: Array<Record<string, unknown>> }).results ?? []) as Array<{ amount?: { value?: number; currency?: string } }>;
+      const usd = results.reduce((sum, r) => sum + (Number(r?.amount?.value) || 0), 0);
+      const date = new Date(startTime * 1000).toISOString().slice(0, 10);
+      return { date, usd: Math.round(usd * 1e4) / 1e4 };
+    });
+    const total7d = Math.round(daily.reduce((a, b) => a + b.usd, 0) * 100) / 100;
+    const currency = (buckets[0] as { results?: Array<{ amount?: { currency?: string } }> })?.results?.[0]?.amount?.currency ?? "usd";
+
+    let hardLimitUsd: number | null = null;
+    try {
+      const lr = await fetch("https://api.openai.com/v1/organization/usage_limits", { headers: { Authorization: `Bearer ${key}` } });
+      if (lr.ok) {
+        const lj = await lr.json();
+        const v = Number(lj?.hard_limit_usd ?? lj?.hard_limit ?? lj?.data?.hard_limit_usd);
+        if (Number.isFinite(v) && v > 0) hardLimitUsd = v;
+      }
+    } catch { /* ignore */ }
+
+    return { available: true, daily, total7d, currency: String(currency).toLowerCase(), hardLimitUsd };
+  } catch (e) {
+    return { available: false, reason: e instanceof Error ? e.message : "network error" };
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
