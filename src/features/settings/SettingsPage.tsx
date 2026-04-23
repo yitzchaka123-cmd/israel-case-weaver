@@ -247,13 +247,6 @@ export function SettingsPage() {
           <GeminiConnection />
         </Section>
 
-        <Section
-          title="Google Drive"
-          desc="Connect your personal Google Drive so MyStudio can save case packages, auto-backup generated assets, and let you import reference files from Drive. Per-user — each teammate connects their own account."
-        >
-          <GoogleDriveConnection />
-        </Section>
-
         <Section title="Usage & credits" desc="Live spend and quick links to top up each provider. Only OpenAI publishes a usage API; the other providers open their billing dashboards in a new tab.">
           <UsageDashboard />
         </Section>
