@@ -26,6 +26,7 @@ const PROVIDER_MODEL: Record<string, string> = {
   "gemini-flash": "google/gemini-2.5-flash",
   // OpenAI direct (uses OpenAi secret)
   openai: "openai/gpt-5",
+  "openai-5.4": "openai/gpt-5.4",
   "openai-5.2": "openai/gpt-5.2",
   "openai-mini": "openai/gpt-5-mini",
   // Anthropic direct (uses ANTHROPIC_API_KEY)
