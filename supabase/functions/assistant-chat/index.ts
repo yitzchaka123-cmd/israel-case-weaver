@@ -404,6 +404,8 @@ const TOOLS = [
     },
   },
 ];
+
+// ---------- Tool executor ----------
 // `messageId` is the chat_messages row this tool call is being attributed to.
 // Every write stamps it so the UI can later jump back to the chat turn that
 // created or last edited the row.
