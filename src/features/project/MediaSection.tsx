@@ -168,7 +168,7 @@ function CategoryPanel({ projectId, category, items }: { projectId: string; cate
     if (!prompt.trim()) return toast.error("Add a prompt first (or click Generate Prompt)");
     setGenerating(true);
     try {
-      const modelOverride = getStoredImageModel("media", "chatgpt-image-2");
+      const modelOverride = getStoredImageModel("media", "chatgpt-image");
       const quality = getStoredImageQuality("media", "medium");
       const resp = await callEdge("generate-image", { projectId, category, prompt, title, modelOverride, quality });
       if (!resp.ok) {
@@ -406,7 +406,7 @@ function AssetDialog({
     if (!editPrompt.trim()) return toast.error("Prompt is empty");
     setRetrying(true);
     try {
-      const modelOverride = getStoredImageModel("media", "chatgpt-image-2");
+      const modelOverride = getStoredImageModel("media", "chatgpt-image");
       const quality = getStoredImageQuality("media", "medium");
       const resp = await callEdge("generate-image", {
         projectId,
