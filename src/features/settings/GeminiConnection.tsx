@@ -30,6 +30,14 @@ const NANO_MODELS = [
   { name: "Nano Banana Pro", id: "google/gemini-3-pro-image-preview", note: "Top quality" },
 ];
 
+const CHAT_MODELS = [
+  { name: "Gemini 2.5 Pro", id: "gemini-direct/gemini-2.5-pro", note: "Top reasoning" },
+  { name: "Gemini 2.5 Flash", id: "gemini-direct/gemini-2.5-flash", note: "Fast, balanced" },
+  { name: "Gemini 2.5 Flash Lite", id: "gemini-direct/gemini-2.5-flash-lite", note: "Cheapest, classification" },
+  { name: "Gemini 3.1 Pro preview", id: "gemini-direct/gemini-3.1-pro-preview", note: "Next-gen reasoning" },
+  { name: "Gemini 3 Flash preview", id: "gemini-direct/gemini-3-flash-preview", note: "Next-gen fast" },
+];
+
 export function GeminiConnection() {
   const [s, setS] = useState<Status>({ loading: true, present: false, hint: null, testing: false });
 
@@ -154,10 +162,10 @@ export function GeminiConnection() {
         </div>
       </div>
 
-      {/* Models list */}
+      {/* Image models list */}
       <div className="rounded-xl border divide-y">
         <div className="px-4 py-2.5 text-xs font-medium text-muted-foreground bg-muted/40 rounded-t-xl">
-          Models routed through this connection
+          Image models routed through this key
         </div>
         {NANO_MODELS.map((m) => (
           <div key={m.id} className="px-4 py-3 flex items-center justify-between gap-3 text-sm">
@@ -169,6 +177,26 @@ export function GeminiConnection() {
               <Badge className="bg-accent/15 text-accent hover:bg-accent/20 shrink-0">via your key</Badge>
             ) : (
               <Badge variant="outline" className="text-muted-foreground shrink-0">via Lovable AI</Badge>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Chat / text models list */}
+      <div className="rounded-xl border divide-y">
+        <div className="px-4 py-2.5 text-xs font-medium text-muted-foreground bg-muted/40 rounded-t-xl">
+          Chat / text models routed through this key
+        </div>
+        {CHAT_MODELS.map((m) => (
+          <div key={m.id} className="px-4 py-3 flex items-center justify-between gap-3 text-sm">
+            <div className="min-w-0">
+              <div className="font-medium">{m.name}</div>
+              <div className="text-xs text-muted-foreground">{m.note} · <code className="text-[10px]">{m.id}</code></div>
+            </div>
+            {s.present ? (
+              <Badge className="bg-accent/15 text-accent hover:bg-accent/20 shrink-0">via your key</Badge>
+            ) : (
+              <Badge variant="outline" className="text-muted-foreground shrink-0">requires key</Badge>
             )}
           </div>
         ))}
