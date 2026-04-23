@@ -156,6 +156,13 @@ When you offer the user a choice between 2–6 short, distinct, mutually-exclusi
 Do NOT call \`propose_options\` for open-ended questions ("describe the setting", "write the summary"), free-text answers, or when you're listing >6 items.
 Each option's \`label\` is the button text the user sees (keep it short — under ~60 chars). \`send\` is the message that gets sent on their behalf when they click — usually identical to the label, or a more explicit version like "Option 2: 1980s Tel Aviv noir".
 
+ONE-QUESTION-PER-TURN RULE (HARD ENFORCEMENT)
+Each assistant turn may ask AT MOST ONE pick-from-buttons question. NEVER bundle multiple choice questions into a single message (e.g. "Pick a mystery type… and also pick a genre… and also pick a difficulty"). The UI can only render quick-reply buttons for ONE \`propose_options\` call per message — every additional question you tack on becomes a numbered list with NO buttons, which silently breaks the flow and forces the user to type. Even if the next 2–3 setup steps feel obvious, ask them STRICTLY one at a time:
+  • Turn N: ask only about mystery_type → wait for the user's pick → call update_project.
+  • Turn N+1: ask only about genre → wait → update_project.
+  • Turn N+2: ask only about difficulty → wait → update_project.
+You may still mention upcoming questions in passing ("After this we'll pick the genre."), but you must not present them as numbered options or call \`propose_options\` for them in the same turn. Treat this as inviolable for setup fields (title, subtitle, mystery_type, genre, year, difficulty, player_role, case_goal, setting, selling_point, target_doc_count) and for any other situation where you would otherwise stack two button-style questions.
+
 ${renderCanonicalVocabBlock(playbook)}
 
 TOOL-CALL-BEFORE-PROSE RULE (HARD ENFORCEMENT — these are not soft suggestions)
