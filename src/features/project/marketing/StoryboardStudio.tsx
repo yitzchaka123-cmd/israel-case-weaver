@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Sparkles, ArrowRight, Wand2, Image as ImageIcon, Save, FileText, Copy, Trash2, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
+import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { useProjectNotifications } from "@/features/project/notifications/useProjectNotifications";
 
 type Engine = "sora" | "kling";
@@ -32,6 +33,9 @@ interface Shot {
   image_url: string | null;
   in_prompts: boolean; // visible in column 2
   in_storyboard: boolean; // visible in column 3
+  image_requested_model?: string | null;
+  image_effective_model?: string | null;
+  image_fallback?: string | null;
 }
 
 interface StoryboardRow {
