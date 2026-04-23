@@ -1,44 +1,46 @@
 
 
-## Fix `gpt-image-2` document generation crashes
+## Apply gpt-image-2 community findings to document image generation
 
-### What's broken
+Four small, independent improvements to `supabase/functions/generate-document/index.ts` based on what the OpenAI community thread + official `gpt-image-2` docs revealed.
 
-The `generate-document` edge function calls OpenAI's `gpt-image-2` with **`quality: "high"` and no timeout**. `gpt-image-2` at `high` can take up to 2 minutes; the edge runtime kills the request at ~150s, producing the `RUNTIME_ERROR` / blank-screen you're hitting (no logs written, because the worker was killed mid-flight). On top of that, when OpenAI *does* return an error (e.g. "your organization must be verified to use gpt-image-2"), the function masks it with a generic "OpenAI image generation failed (500)" so you never see what's actually wrong.
+### 1. Truer A4 aspect ratio (better fidelity)
 
-The sister function `generate-image` already has all the right fixes — we just need to bring `generate-document` up to the same standard.
+Current portrait sizes hard-code `1024x1536` (a 2:3 ratio). True A4 is 1:√2 ≈ `1448x2048` — and `gpt-image-2` accepts arbitrary sizes as long as edges are multiples of 16, ratio ≤ 3:1, and total pixels are between 0.6M and 8.3M.
 
-### Changes
+Change the size mapping for `gpt-image-2` only:
 
-**1. `supabase/functions/generate-document/index.ts` — harden the OpenAI image branch**
+| Print size | Old | New (gpt-image-2) |
+|---|---|---|
+| A3 / A4 / A5 / A6 portrait | `1024x1536` | `1448x2048` |
+| Business card landscape | `1536x1024` | `2048x1448` |
 
-- Add a **110-second `AbortController`** around the OpenAI fetch so we return a clean `504` with a "switch to Medium quality or Nano Banana" message instead of being killed by the platform.
-- Default OpenAI image **quality to `"medium"`** (OpenAI's documented sweet spot for `gpt-image-2`) instead of hard-coded `"high"`.
-- Add **`output_format: "jpeg"` + `output_compression: 90`** — same speedup the media generator already uses, dramatically cuts latency.
-- **Surface OpenAI's real error message**, including the special "Verify Organization" hint with a deep link to `https://platform.openai.com/settings/organization/general` when the 403 says the org isn't verified for `gpt-image-2`.
-- Include `x-request-id` in the error string so you can paste it to OpenAI support if needed.
-- Wrap the entire image branch so storage upload / DB write failures still return JSON instead of a raw 500.
+`gpt-image-1` keeps the old fixed sizes (it doesn't accept arbitrary dimensions).
 
-**2. `src/features/project/DocumentsSection.tsx` — make `generate()` crash-safe**
+### 2. Strip parameters that crash gpt-image-2
 
-- The current `generate()` only calls `toast.error` on `!resp.ok`. If the response is `ok` but the JSON body is malformed (which happens when the worker is killed mid-write), `await resp.json()` throws and the dialog re-render crashes — that's the blank screen.
-- Wrap the whole `generate` body in `try/catch`, show a toast on any thrown error, and keep the dialog mounted.
-- Allow the user to pick image quality (Low / Medium / High) via the existing model picker affordance — pass it through `body` as `quality`.
+`background` and `input_fidelity` are unsupported on `gpt-image-2` and return a 400. We don't currently send them, but I'll add an explicit comment and a guard so a future edit doesn't accidentally reintroduce them. No runtime change today — defensive only.
 
-**3. Quick UX polish**
+### 3. Add `moderation: "low"` for gpt-image-2
 
-- When the user has `chatgpt-image-2` selected but their OpenAI org isn't verified, show a one-time inline warning above the **Generate image** button pointing them at "ChatGPT Image 1" or a Nano Banana model as a working alternative.
+Detective / mystery prompts (blood-stained letters, ransom notes, weapon photos, autopsy reports) often trigger false-positive content blocks. `gpt-image-2` supports `moderation: "low"` to relax this. Send it only for `gpt-image-2` (not `gpt-image-1`).
+
+### 4. Better error message for the 5 IPM tier-1 rate limit
+
+When OpenAI returns 429 with "rate_limit_exceeded" specifically due to the **5 images/minute** tier-1 cap, append: *"Tier 1 OpenAI accounts are limited to 5 images/min on gpt-image-2. Wait ~60s and retry, or upgrade your OpenAI tier."*
 
 ### Files touched
 
 | File | Change |
-|------|--------|
-| `supabase/functions/generate-document/index.ts` | Add abort timeout, jpeg output, medium default, real error surfacing, verification-hint message |
-| `src/features/project/DocumentsSection.tsx` | Wrap `generate()` in try/catch; pass optional `quality`; show fallback hint when `gpt-image-2` is selected |
+|---|---|
+| `supabase/functions/generate-document/index.ts` | Items 1–4 above (size map, defensive guard, `moderation`, refined 429 message) |
 
 ### What you'll see after
 
-- Generation either succeeds in <60s, or you get a precise toast: e.g. *"OpenAI requires organization verification to use gpt-image-2. Open https://platform.openai.com/settings/organization/general → Verify Organization."*
-- No more blank screens — the dialog stays open and you can retry with a different model.
-- If you want the heaviest output you can still pick **High**, but **Medium** is the new default.
+- Document images render at higher resolution and proper A4 proportions when using `gpt-image-2`.
+- Mystery/crime-scene prompts get blocked far less often.
+- 429s tell you exactly *why* (tier cap) and *what to do*.
+- `gpt-image-1` behaviour is unchanged.
+
+No frontend changes needed — only the edge function.
 
