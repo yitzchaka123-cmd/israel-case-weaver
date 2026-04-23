@@ -518,8 +518,44 @@ function AssetDialog({
             className="font-mono text-xs leading-relaxed"
             placeholder={asset.prompt ? undefined : "No prompt was saved with this asset. You can write one and retry."}
           />
-          {asset.model && (
-            <p className="text-[11px] text-muted-foreground">Originally generated with: {asset.model}</p>
+          {(asset.model || asset.effective_model) && (
+            <div className="text-[11px] text-muted-foreground space-y-1 pt-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span>Generated with</span>
+                <code className="text-[10px] bg-muted px-1.5 py-0.5 rounded">{asset.effective_model ?? asset.model}</code>
+                {asset.fallback && asset.fallback !== "none" && (
+                  <span className="text-amber-600 dark:text-amber-400">
+                    (fell back from <code className="text-[10px]">{asset.model}</code> via {asset.fallback})
+                  </span>
+                )}
+                {asset.provider && <span>· {asset.provider}</span>}
+              </div>
+              {asset.prompt_history && asset.prompt_history.length > 0 && (
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setShowHistory((s) => !s)}
+                    className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
+                  >
+                    <History className="h-3 w-3" />
+                    {showHistory ? "Hide" : "Show"} previous prompts ({asset.prompt_history.length})
+                  </button>
+                  {showHistory && (
+                    <ul className="mt-2 space-y-2 max-h-48 overflow-y-auto pr-2">
+                      {asset.prompt_history.map((h, i) => (
+                        <li key={i} className="border-l-2 border-muted pl-2">
+                          <div className="text-[10px] text-muted-foreground">
+                            {new Date(h.at).toLocaleString()} · {h.effective_model ?? h.requested_model ?? "—"}
+                            {h.fallback && h.fallback !== "none" && ` · ${h.fallback}`}
+                          </div>
+                          <div className="font-mono text-[10px] whitespace-pre-wrap">{h.prompt}</div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
 
