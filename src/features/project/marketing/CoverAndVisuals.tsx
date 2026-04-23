@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PromptPanel } from "@/components/PromptPanel";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
+import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -20,6 +21,9 @@ interface MediaAsset {
   prompt: string | null;
   created_at: string;
   mime_type: string | null;
+  model: string | null;
+  effective_model: string | null;
+  fallback: string | null;
 }
 
 const MARKETING_CATEGORIES = ["cover", "back", "marketing-extra"];
@@ -46,7 +50,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const { data: project } = useQuery({
     queryKey: ["project-cover-only", projectId],
     queryFn: async () => {
-      const { data } = await supabase.from("projects").select("title, cover_image_url").eq("id", projectId).maybeSingle();
+      const { data } = await supabase.from("projects").select("title, cover_image_url, cover_effective_model, cover_fallback, ai_provider_images").eq("id", projectId).maybeSingle();
       return data;
     },
   });
@@ -56,7 +60,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
     queryFn: async (): Promise<MediaAsset[]> => {
       const { data, error } = await supabase
         .from("media_assets")
-        .select("id, category, title, url, prompt, created_at, mime_type")
+        .select("id, category, title, url, prompt, created_at, mime_type, model, effective_model, fallback")
         .eq("project_id", projectId)
         .in("category", MARKETING_CATEGORIES)
         .order("created_at", { ascending: false });
