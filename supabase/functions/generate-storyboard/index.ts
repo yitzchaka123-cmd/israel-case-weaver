@@ -206,7 +206,12 @@ Return: {"shots": [ ... ]}`;
           status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      return new Response(JSON.stringify({ shots, model }), {
+      await logAiRun({
+        userId: callerUserId, projectId, surface: "generate-storyboard",
+        requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
+        status: "ok", latencyMs: Date.now() - startedAt, promptExcerpt: userMsg,
+      });
+      return new Response(JSON.stringify({ shots, model, effectiveModel: fb.effectiveModel, fallback: fb.fallback }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -226,6 +231,7 @@ ON-SCREEN TEXT: ${shot.on_screen_text || "(none)"}
 ${body.engine_instructions ? `${engine.toUpperCase()} STYLE INSTRUCTIONS:\n${body.engine_instructions}\n` : ""}
 Write the ${engine} prompt now.`;
 
+      const startedAt = Date.now();
       const resp = await chatCompletions({
         model,
         messages: [
@@ -234,11 +240,18 @@ Write the ${engine} prompt now.`;
         ],
         temperature: 0.85,
       });
+      const fb = extractFallback(resp, model);
 
       if (!resp.ok) {
         const t = await resp.text();
         console.error("storyboard prompt provider error", resp.status, t);
         const provider = model.startsWith("openai/") ? "OpenAI" : "Lovable AI";
+        await logAiRun({
+          userId: callerUserId, projectId, surface: "generate-storyboard",
+          requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
+          status: "error", latencyMs: Date.now() - startedAt,
+          errorMessage: `${provider} ${resp.status}: ${t.slice(0, 200)}`, promptExcerpt: userMsg,
+        });
         if (resp.status === 402) {
           return new Response(JSON.stringify({ error: `${provider} credits/key issue (status 402). Add credits in Settings → Workspace → Usage.` }), {
             status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -261,7 +274,12 @@ Write the ${engine} prompt now.`;
           status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      return new Response(JSON.stringify({ prompt: text, model }), {
+      await logAiRun({
+        userId: callerUserId, projectId, surface: "generate-storyboard",
+        requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
+        status: "ok", latencyMs: Date.now() - startedAt, promptExcerpt: userMsg,
+      });
+      return new Response(JSON.stringify({ prompt: text, model, effectiveModel: fb.effectiveModel, fallback: fb.fallback }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
