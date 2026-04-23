@@ -159,9 +159,23 @@ export function useAssistantRun(projectId: string) {
     }
   };
 
+  // Cancel the in-flight run (best-effort): aborts the local fetch if this tab
+  // started it, and clears the local isRunning flag so the user can immediately
+  // kick off a new turn (e.g. via Edit & re-run). The realtime subscription on
+  // assistant_runs is still the source of truth across tabs/devices — if the
+  // server-side background task is already mid-flight, it will still finish
+  // and write its result, but editAndResend's delete-tail logic cleans it up.
+  const cancel = () => {
+    const cur = readRunState(projectId);
+    cur.controller?.abort();
+    sendingRef.current = false;
+    setRunState(qc, projectId, { isRunning: false });
+  };
+
   return {
     isRunning: state.isRunning,
     send,
+    cancel,
   };
 }
 
