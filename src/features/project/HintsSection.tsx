@@ -291,12 +291,11 @@ function HintSheetBlock({ projectId, stage, sheet }: { projectId: string; stage:
             alt={`Stage ${stage} hint sheet`}
             className="rounded-lg border max-h-72 object-contain bg-background"
           />
-          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-            <AiOriginBadge
-              effectiveModel={sheet.effective_model ?? null}
-              fallback={sheet.fallback ?? null}
-            />
-          </div>
+          <AiOriginBadge
+            info={{ effective: sheet.effective_model, fallback: sheet.fallback }}
+            position="absolute"
+            hoverOnly
+          />
         </div>
       )}
 
