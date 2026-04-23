@@ -1,65 +1,52 @@
 
-Goal: eliminate the persistent Google Drive 403 by fixing the point where Google blocks the flow before it returns to the app.
 
-What the evidence shows
-- The app successfully calls the backend function that creates the Google OAuth URL.
-- The returned OAuth URL contains the expected client ID, redirect URI, and Drive scopes.
-- There are no callback logs for `drive-oauth-callback`, which means Google is denying access before the user is sent back to the app.
-- That makes this a Google-side authorization issue, not a database or post-callback app error.
+## Remove Google Drive integration; keep zip export
 
-Implementation plan
-1. Harden the OAuth start flow so Google stops picking the wrong account silently
-- Update `supabase/functions/drive-oauth-start/index.ts` to request:
-  - `prompt=consent select_account`
-  - `login_hint=<signed-in app email>`
-- Extend the auth helper in `supabase/functions/_shared/google-drive.ts` so the OAuth start function can resolve both the current user id and email from the access token.
-- This will force the account chooser and steer Google toward the same email the user is signed into the app with.
+Drive is wired into Settings, the Export menu, and the Suspects "From Drive" / auto-backup hooks. Export already supports a local zip download — that path stays and becomes the only export option.
 
-2. Improve the Google Drive settings UI so the user sees the exact account requirement before redirect
-- Update `src/features/settings/GoogleDriveConnection.tsx` to show:
-  - which app email is expected for the Drive connection
-  - a short warning that the exact same Google email must be listed as a Google Cloud test user while the OAuth app is in Testing mode
-  - a clearer explanation for 403 failures
-- Keep the current success/error hash handling, but add more actionable copy for the Google-side denial case.
+### Frontend changes
 
-3. Add better diagnostics to the backend OAuth functions
-- Add structured logs in:
-  - `supabase/functions/drive-oauth-start/index.ts`
-  - `supabase/functions/drive-oauth-callback/index.ts`
-- Log only safe metadata such as:
-  - user id
-  - hinted email
-  - chosen return path
-  - whether callback was reached
-  - Google error code/description
-- This will make future failures immediately distinguishable between:
-  - wrong Google account
-  - missing test-user access
-  - consent-screen audience misconfiguration
-  - redirect mismatch
+- **`src/features/project/ExportMenu.tsx`** — remove the "Save case to Google Drive" item, the `Cloud` icon import, and the `exportProjectToDrive` import.
+- **`src/lib/export.ts`** — delete `exportProjectToDrive`. Keep `exportProjectPackage` (the zip), `exportDocumentsOnly`, `exportPromptsOnly`, `exportMediaOnly`, and the shared `buildProjectPackage` helper.
+- **`src/features/project/SuspectsSection.tsx`** — remove:
+  - `DrivePicker` import + usage
+  - `backupAsset` import + the fire-and-forget call after portrait generation
+  - `HardDrive` icon, "From Drive" button, `drivePickerOpen` state
+- **`src/features/settings/SettingsPage.tsx`** — remove the `GoogleDriveConnection` import and its entire "Google Drive" `Section` block.
+- **Delete files**:
+  - `src/features/settings/GoogleDriveConnection.tsx`
+  - `src/features/project/DrivePicker.tsx`
+  - `src/lib/drive-backup.ts`
 
-4. Re-verify the Google Cloud configuration against the live flow
-- Confirm these settings match the live request exactly:
-  - OAuth consent screen audience is External
-  - the app is either Published or still in Testing with the exact Google account added under Test users
-  - redirect URI is exactly:
-    `https://disanuvopbwdruathmfx.supabase.co/functions/v1/drive-oauth-callback`
-- No database migration is needed for this fix.
+### Backend changes
 
-Files to update
-- `supabase/functions/_shared/google-drive.ts`
-- `supabase/functions/drive-oauth-start/index.ts`
-- `supabase/functions/drive-oauth-callback/index.ts`
-- `src/features/settings/GoogleDriveConnection.tsx`
+- **Delete edge functions** (code + deployment):
+  - `drive-oauth-start`
+  - `drive-oauth-callback`
+  - `drive-status`
+  - `drive-list`
+  - `drive-upload`
+  - `drive-download`
+  - `drive-disconnect`
+  - `drive-toggle-backup`
+- **Delete shared helper**: `supabase/functions/_shared/google-drive.ts`.
 
-Validation plan
-- Open Settings and click Connect Google Drive.
-- Google should show an account chooser or prefill the correct email instead of jumping straight to a 403.
-- After consent, the callback function should log a hit and redirect back to `/settings#drive=connected`.
-- The settings panel should show the connected Google email.
-- The built-in Drive “Test” action should upload a file successfully.
+### Database
 
-Technical details
-- Current backend request generation is working; the failure happens before callback return.
-- The highest-probability cause is Google using a different signed-in account than the one approved as a test user.
-- The proposed code change reduces user error without weakening security or changing RLS/data access rules.
+- Migration to drop the now-unused tables:
+  - `drop table if exists public.drive_backup_log;`
+  - `drop table if exists public.user_google_drive_connections;`
+
+### Out of scope / unchanged
+
+- Local zip download (`Download .zip`), Documents-only, Media-only, Prompts JSON exports — all kept as-is.
+- No changes to authentication, storage buckets, or other edge functions.
+- The `GOOGLE_DRIVE_CLIENT_ID` / `GOOGLE_DRIVE_CLIENT_SECRET` secrets in Lovable Cloud become unused; you can clear them later from Cloud settings if you want — not required for the code to work.
+
+### Validation
+
+- Settings page renders without the Google Drive section.
+- Export menu shows only: Download .zip, Documents only, Media only, Prompts (JSON).
+- Opening a suspect shows Generate / Upload only (no "From Drive" button) and generating a portrait no longer triggers a backup call.
+- No console errors referencing `drive-*` functions or missing imports.
+
