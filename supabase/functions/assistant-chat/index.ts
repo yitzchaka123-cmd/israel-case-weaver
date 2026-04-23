@@ -494,13 +494,27 @@ Deno.serve(async (req) => {
         continue; // ask the model to produce final text after tool results
       }
 
-      // Final assistant message
+      // Final assistant message — pull the most recent propose_options result
+      // so the client can render quick-reply buttons under this message.
       const finalText = msg.content ?? "";
+      const lastOptionsTool = [...executedTools].reverse().find(
+        (t) => t.name === "propose_options" && (t.result as { ok?: boolean })?.ok,
+      );
+      const optionsResult = lastOptionsTool?.result as
+        | { options?: Array<{ label: string; send: string }>; question?: string }
+        | undefined;
+      const quickOptions = optionsResult?.options ?? null;
+      const quickQuestion = optionsResult?.question ?? null;
+
       await supa.from("chat_messages").insert({
         project_id: projectId,
         role: "assistant",
         content: finalText,
-        metadata: { model, tools: executedTools },
+        metadata: {
+          model,
+          tools: executedTools,
+          ...(quickOptions ? { options: quickOptions, question: quickQuestion } : {}),
+        },
       });
 
       return new Response(JSON.stringify({ content: finalText, tools: executedTools, model }), {
