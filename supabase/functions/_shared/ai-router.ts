@@ -58,11 +58,34 @@ export async function chatCompletions(body: Record<string, unknown>): Promise<Re
   }
 
   if (isGeminiDirectModel(model)) {
-    if (!GEMINI_API_KEY) return jsonError("Google Gemini API key (GEMINI_API_KEY) is not configured");
-    return await callGeminiDirect(body, model.slice("gemini-direct/".length));
+    if (!GEMINI_API_KEY) {
+      // Soft fallback: route to Lovable AI Gateway using equivalent google/* model
+      return await callLovableGateway({ ...body, model: toGatewayModel(model) });
+    }
+    const directResp = await callGeminiDirect(body, model.slice("gemini-direct/".length));
+    // On quota / auth / server errors, transparently fall back to Lovable AI Gateway
+    if (!directResp.ok && shouldFallbackStatus(directResp.status)) {
+      console.warn(`Gemini direct ${directResp.status} for ${model} — falling back to Lovable AI Gateway`);
+      return await callLovableGateway({ ...body, model: toGatewayModel(model) });
+    }
+    return directResp;
   }
 
   // Default: Lovable AI Gateway
+  return await callLovableGateway(body);
+}
+
+function shouldFallbackStatus(status: number): boolean {
+  // 429 quota, 403 permission, 5xx server errors all warrant a fallback
+  return status === 429 || status === 403 || status >= 500;
+}
+
+function toGatewayModel(directModel: string): string {
+  // "gemini-direct/gemini-2.5-pro" → "google/gemini-2.5-pro"
+  return "google/" + directModel.slice("gemini-direct/".length);
+}
+
+async function callLovableGateway(body: Record<string, unknown>): Promise<Response> {
   return await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
     method: "POST",
     headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
