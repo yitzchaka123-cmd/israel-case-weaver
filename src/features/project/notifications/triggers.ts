@@ -109,3 +109,22 @@ export function notifyForFieldChange(
 
   return null;
 }
+
+/**
+ * Fires once when every envelope has both `task` and `design_instructions`
+ * filled in. Nudges the user toward the next step (logic flow generation,
+ * which now wires envelopes into the board as nodes).
+ *
+ * Caller is responsible for de-duping (e.g. only call when the
+ * "all-drafted" boolean transitions from false → true).
+ */
+export function notifyEnvelopesDrafted(): NotificationDraft {
+  return {
+    kind: "envelopes_drafted",
+    title: "Envelopes are drafted — wire them into the board.",
+    body: "All envelopes have a task and a design brief. Generate the logic flow next so they become nodes connected to the case.",
+    starter_prompt:
+      "All envelopes are drafted. Walk me through generating the logic flow so the envelopes become nodes wired into the case.",
+    created_by: "user",
+  };
+}
