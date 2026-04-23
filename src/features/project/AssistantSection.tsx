@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { useVoiceInput } from "@/hooks/use-voice-input";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { useAssistantRun } from "./assistant/useAssistantRun";
+import { AssetLightbox, type LightboxAsset } from "./assistant/AssetLightbox";
 
 const PLANNING_MODELS = [
   { value: "__hdr-lovable", label: "— Lovable AI (workspace credits) —", header: true },
@@ -48,7 +49,16 @@ const IMAGE_MODELS = [
 type ToolCall = {
   name: string;
   args?: Record<string, unknown>;
-  result: { ok: boolean; message: string; id?: string; hebrew_preview?: string; image_url?: string };
+  result: {
+    ok: boolean;
+    message: string;
+    id?: string;
+    hebrew_preview?: string;
+    image_url?: string;
+    thumbnail_url?: string;
+    alt_thumbnail_url?: string;
+    cover_image_url?: string;
+  };
 };
 
 type QuickOption = { label: string; send: string };
@@ -57,7 +67,7 @@ type Msg = {
   id: string;
   role: "user" | "assistant";
   content: string;
-  metadata?: { tools?: ToolCall[]; options?: QuickOption[]; question?: string | null; model?: string | null; effective_model?: string | null; fallback?: string | null } | null;
+  metadata?: { tools?: ToolCall[]; options?: QuickOption[]; question?: string | null; model?: string | null; effective_model?: string | null; fallback?: string | null; in_progress?: boolean | null } | null;
   created_at?: string;
 };
 
