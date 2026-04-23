@@ -125,6 +125,26 @@ Deno.serve(async (req) => {
       });
     }
 
+    if (action === "usage_openai") {
+      const result = await fetchOpenAiUsage();
+      return new Response(JSON.stringify(result), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "usage_summary") {
+      const openai = await fetchOpenAiUsage();
+      return new Response(
+        JSON.stringify({
+          openai,
+          lovable: { available: false, reason: "Lovable AI Gateway doesn't expose per-key usage via API. Open your Workspace → Usage page." },
+          anthropic: { available: false, reason: "Anthropic doesn't expose balance/usage via API. Open the Anthropic console billing page." },
+          gemini: { available: false, reason: "Google AI Studio doesn't expose balance/usage via API. Open the AI Studio billing page in Google Cloud." },
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     return new Response(JSON.stringify({ error: "Unknown action" }), {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
