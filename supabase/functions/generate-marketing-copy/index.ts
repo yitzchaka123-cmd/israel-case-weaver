@@ -24,7 +24,9 @@ const PLANNING_MODEL: Record<string, string> = {
   lovable: "google/gemini-2.5-flash",
   gemini: "google/gemini-2.5-pro",
   "gemini-3-pro": "google/gemini-3.1-pro-preview",
+  "gemini-3-flash": "google/gemini-3-flash-preview",
   "gemini-flash": "google/gemini-2.5-flash",
+  "gemini-flash-lite": "google/gemini-2.5-flash-lite",
   openai: "openai/gpt-5",
   "openai-5.4": "openai/gpt-5.4",
   "openai-5.2": "openai/gpt-5.2",
@@ -34,6 +36,9 @@ const PLANNING_MODEL: Record<string, string> = {
   "claude-haiku": "anthropic/claude-haiku-4-5",
   "gemini-direct-pro": "gemini-direct/gemini-2.5-pro",
   "gemini-direct-flash": "gemini-direct/gemini-2.5-flash",
+  "gemini-direct-flash-lite": "gemini-direct/gemini-2.5-flash-lite",
+  "gemini-direct-3-pro": "gemini-direct/gemini-3.1-pro-preview",
+  "gemini-direct-3-flash": "gemini-direct/gemini-3-flash-preview",
 };
 
 type Field =
