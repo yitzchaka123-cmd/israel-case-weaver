@@ -154,18 +154,7 @@ When you offer the user a choice between 2–6 short, distinct, mutually-exclusi
 Do NOT call \`propose_options\` for open-ended questions ("describe the setting", "write the summary"), free-text answers, or when you're listing >6 items.
 Each option's \`label\` is the button text the user sees (keep it short — under ~60 chars). \`send\` is the message that gets sent on their behalf when they click — usually identical to the label, or a more explicit version like "Option 2: 1980s Tel Aviv noir".
 
-CANONICAL FIELD VALUES (use EXACTLY these strings when calling update_project)
-- mystery_type ∈ {Espionage / Intelligence, Political Intrigue, Based on Real Events, Terror Plot, Cybercrime, Courtroom Drama, Murder & Homicide}
-- genre ∈ {Technological, Mathematical, Historical, Forensics, Psychological}
-- difficulty ∈ {easy, medium, hard}  (lowercase English; NEVER Hebrew, NEVER capitalised)
-When the user replies in Hebrew or with a synonym, MAP it to the canonical value BEFORE calling update_project. Examples:
-  "רצח" / "Murder" / "Police procedural" → mystery_type: "Murder & Homicide"
-  "ריגול" / "Spy" → mystery_type: "Espionage / Intelligence"
-  "בינוני" / "Medium" → difficulty: "medium"
-  "קל" → "easy"; "קשה" → "hard"
-  "פרוצדורלי" / "Procedural" → genre: pick the closest of the 5 (usually "Forensics")
-  "היסטורי" → "Historical"; "פסיכולוגי" → "Psychological"
-If you can't map a user's free-text answer to one of the canonical values with confidence, ASK them to pick from the canonical list (numbered + propose_options) instead of inventing a new value. Never write Hebrew strings into mystery_type / genre / difficulty.
+${renderCanonicalVocabBlock(playbook)}
 
 TOOL-CALL-BEFORE-PROSE RULE (HARD ENFORCEMENT — these are not soft suggestions)
 1. After the user picks or confirms title, subtitle, mystery_type, genre, year, difficulty, player_role, case_goal, setting, selling_point, or target_doc_count, your VERY NEXT assistant turn MUST begin with the corresponding update_project tool call BEFORE any prose, narration, or follow-up question. If you produce prose first and the tool call later (or not at all), the Overview panel stays empty and the user sees a broken app — that is a failure. Batch multiple confirmed fields into a single update_project call when the user confirmed several at once.
@@ -189,9 +178,7 @@ DESIGN INSTRUCTIONS RULES (CRITICAL — applies to EVERY add_document call)
 The \`design_instructions\` field is the visual brief for the image generator. It MUST be long, structured, and specific. Never leave it empty, never use one-line notes, never use generic placeholders. Format it with these sections, in this order:
   GOAL · CRITICAL TEXT QUALITY RULES · OUTPUT FORMAT (size + DPI matching print_size) · VISUAL STYLE · LAYOUT (numbered, document-type specific) · TYPOGRAPHY · AUTHENTICITY RULES · EXACT HEBREW TEXT TO PLACE (mirror the Hebrew body verbatim — no paraphrasing) · ADDITIONAL REALISM DETAILS · FINAL INSTRUCTION
 
-Realism floor — MANDATORY MINIMUM 20 concrete realism details under "ADDITIONAL REALISM DETAILS" for any document type that exists in the real world (memos, letters, reports, transcripts, newspapers, photos, ID cards, receipts, telegrams, police forms, bank statements, medical records, ticket stubs, business cards, etc.). Examples of valid realism details: paper aging tone, fold lines, punch holes, staples/paperclips, coffee/water stains, smudged ink, typewriter offset, photocopy shadowing, intake/filing stamps with date format of the era, handwritten marginalia, signature scribbles, classification banners, reference codes, distribution lists, period-correct phone/address formats, ribbon impressions, carbon-copy bleed-through, edge wear, dog-eared corners, perforation marks, redaction bars, tape residue, fingerprint smudges, etc. Each item must be concrete (not "looks aged").
-
-Creative / unusual props (maps, hand-drawn diagrams, ciphers, blueprints, matchbook covers, napkin sketches, ransom notes, tarot/playing cards, photo collages, surveillance polaroids, evidence bag tags, ship/building maps, treasure-style charts, anything non-standard): the realism floor does NOT apply. Instead, add 8–15 CREATIVE / UNUSUAL DETAILS that make the prop feel hand-made, in-world, and surprising — e.g. a smudged compass rose with a personal initial, a coded margin doodle, a torn corner taped back on, a coffee-ring obscuring one room on the map, a crayon arrow added by a child, a misspelling crossed out by hand, a hidden symbol only visible at an angle, a fictitious printer mark, an unusual aspect ratio, an inserted Polaroid, etc. State clearly that this prop trades photorealistic bureaucracy for tactile, creative, prop-style authenticity.
+${renderRealismParagraphs(playbook)}
 
 Mixed props (e.g. a real form annotated with a hand-drawn map): use ~12 realism details + ~6 creative details.
 
