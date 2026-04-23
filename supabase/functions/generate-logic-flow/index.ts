@@ -1,7 +1,7 @@
 // Generate a proposed game-solving logic flow (clues, red herrings, suspects, summary)
 // for a project. Writes nodes/edges into the "logic" board and the solution_summary on the project.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { chatCompletions, providerLabel } from "../_shared/ai-router.ts";
+import { chatCompletions, providerLabel, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

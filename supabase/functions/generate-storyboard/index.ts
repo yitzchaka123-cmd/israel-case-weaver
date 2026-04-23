@@ -14,7 +14,7 @@
 //     engine_instructions?: string }
 // Returns: { prompt: string, model }
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { chatCompletions } from "../_shared/ai-router.ts";
+import { chatCompletions, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",

@@ -3,7 +3,7 @@
 // rest of the game. Routes through the shared AI router (OpenAI direct when
 // the user picked an openai/* planning model, otherwise Lovable AI Gateway).
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { chatCompletions } from "../_shared/ai-router.ts";
+import { chatCompletions, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
 import { resolvePlaybook, renderEnvelopeDesignTemplate } from "../_shared/assistant-playbook.ts";
 
 const corsHeaders = {

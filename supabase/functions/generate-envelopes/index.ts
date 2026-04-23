@@ -2,7 +2,7 @@
 // and design_instructions for every envelope slot defined by the playbook.
 // Reuses existing rows by `number` (UPSERT semantics) so it's safe to re-run.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { chatCompletions, providerLabel } from "../_shared/ai-router.ts";
+import { chatCompletions, providerLabel, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
 import {
   PLAYBOOK_DEFAULTS,
   resolvePlaybook,

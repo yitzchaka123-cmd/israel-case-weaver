@@ -1,7 +1,7 @@
 // Generate Hebrew document content + optional image. Routes through the shared
 // AI router so OpenAI / Anthropic / Gemini direct keys are used when configured.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { chatCompletions, providerLabel, generateImage, ImageGenError } from "../_shared/ai-router.ts";
+import { chatCompletions, providerLabel, generateImage, ImageGenError, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
