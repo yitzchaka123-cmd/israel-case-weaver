@@ -1,5 +1,6 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 export const IMAGE_MODELS = [
   { value: "chatgpt-image-2", label: "ChatGPT Image 2 (gpt-image-2) — latest" },
@@ -50,11 +51,34 @@ interface Props {
 export function ImageModelPicker({ surface, defaultModel, className, size = "sm" }: Props) {
   const [value, setValue] = useState<ImageModelKey>(defaultModel);
   const [quality, setQuality] = useState<ImageQuality>("medium");
+  const [geminiKeyPresent, setGeminiKeyPresent] = useState<boolean | null>(null);
 
   useEffect(() => {
     setValue(getStoredImageModel(surface, defaultModel));
     setQuality(getStoredImageQuality(surface, "medium"));
   }, [surface, defaultModel]);
+
+  // One lightweight ping to detect whether the user's GEMINI_API_KEY is configured.
+  // The result is cached on window so multiple pickers don't all re-fetch.
+  useEffect(() => {
+    const cached = (window as { __geminiKeyPresent?: boolean }).__geminiKeyPresent;
+    if (typeof cached === "boolean") {
+      setGeminiKeyPresent(cached);
+      return;
+    }
+    let cancelled = false;
+    supabase.functions
+      .invoke("api-key-manager", { body: { action: "list" } })
+      .then(({ data }) => {
+        if (cancelled) return;
+        const entry = (data?.keys ?? []).find((k: { name: string }) => k.name === "GEMINI_API_KEY");
+        const present = !!entry?.present;
+        (window as { __geminiKeyPresent?: boolean }).__geminiKeyPresent = present;
+        setGeminiKeyPresent(present);
+      })
+      .catch(() => { /* silent — caption just stays generic */ });
+    return () => { cancelled = true; };
+  }, []);
 
   const handleChange = (v: string) => {
     setValue(v as ImageModelKey);
@@ -91,7 +115,9 @@ export function ImageModelPicker({ surface, defaultModel, className, size = "sm"
 
       {isNanoBanana && (
         <p className="text-[10px] text-muted-foreground leading-tight">
-          Uses Lovable AI credits unless a Google <code className="text-[10px]">GEMINI_API_KEY</code> is set in Settings → API keys.
+          {geminiKeyPresent
+            ? "Currently routed via your Google key (free of Lovable credits)."
+            : "Routed via Lovable AI Gateway. Connect your GEMINI_API_KEY in Settings to bypass."}
         </p>
       )}
 
