@@ -799,6 +799,102 @@ async function executeTool(
         image_url: imageUrl || undefined,
       };
     }
+    // ---------- Update tools ----------
+    // Helper that strips undefined/null/empty-string keys, runs the update,
+    // and verifies the row belongs to this project. Returns a uniform receipt.
+    const runUpdate = async (
+      table: "suspects" | "documents" | "envelopes" | "hints" | "canvas_nodes",
+      label: string,
+      stampMessage: boolean,
+      selectAfter: string,
+      formatName: (row: Record<string, unknown>) => string,
+    ) => {
+      const id = String((args as { id?: string }).id ?? "").trim();
+      if (!id) return { ok: false, message: `${label} id is required` };
+      // Build patch from args excluding id and undefined/empty values.
+      const patch: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(args)) {
+        if (k === "id") continue;
+        if (v === undefined || v === null) continue;
+        if (typeof v === "string" && v.length === 0) continue;
+        patch[k] = v;
+      }
+      if (Object.keys(patch).length === 0) {
+        return { ok: false, message: `Nothing to update — pass at least one field besides id.` };
+      }
+      if (stampMessage) patch.created_by_message_id = messageId;
+      // Verify ownership first so we can return a clean error.
+      const { data: existing } = await supa
+        .from(table)
+        .select("id, project_id")
+        .eq("id", id)
+        .maybeSingle();
+      if (!existing || (existing as { project_id?: string }).project_id !== projectId) {
+        return { ok: false, message: `No ${label} with that id in this project.` };
+      }
+      const { data: updated, error } = await supa
+        .from(table)
+        .update(patch)
+        .eq("id", id)
+        .eq("project_id", projectId)
+        .select(selectAfter)
+        .single();
+      if (error) throw error;
+      const changed = Object.keys(patch).filter((k) => k !== "created_by_message_id");
+      const niceName = formatName((updated ?? {}) as Record<string, unknown>);
+      return {
+        ok: true,
+        message: `Updated ${label}: ${niceName} (${changed.join(", ")})`,
+        id,
+      };
+    };
+
+    if (name === "update_suspect") {
+      return await runUpdate(
+        "suspects",
+        "suspect",
+        true,
+        "id, name",
+        (r) => String(r.name ?? "—"),
+      );
+    }
+    if (name === "update_document") {
+      return await runUpdate(
+        "documents",
+        "document",
+        true,
+        "id, title, doc_number",
+        (r) => `#${r.doc_number ?? "?"} ${r.title ?? "—"}`,
+      );
+    }
+    if (name === "update_envelope") {
+      return await runUpdate(
+        "envelopes",
+        "envelope",
+        false,
+        "id, number, label",
+        (r) => `#${r.number ?? "?"} ${r.label ?? ""}`.trim(),
+      );
+    }
+    if (name === "update_hint") {
+      return await runUpdate(
+        "hints",
+        "hint",
+        false,
+        "id, stage, level",
+        (r) => `stage ${r.stage ?? "?"} · level ${r.level ?? "?"}`,
+      );
+    }
+    if (name === "update_canvas_node") {
+      return await runUpdate(
+        "canvas_nodes",
+        "node",
+        true,
+        "id, title",
+        (r) => String(r.title ?? "—"),
+      );
+    }
+
     return { ok: false, message: `Unknown tool: ${name}` };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : String(e) };
