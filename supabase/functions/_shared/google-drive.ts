@@ -241,6 +241,12 @@ export function corsHeaders(): Record<string, string> {
 
 // Resolve the calling user from the Authorization header (uses anon client + JWT).
 export async function getUserIdFromAuth(req: Request): Promise<string | null> {
+  const u = await getUserFromAuth(req);
+  return u?.id ?? null;
+}
+
+// Resolve the calling user (id + email) from the Authorization header.
+export async function getUserFromAuth(req: Request): Promise<{ id: string; email: string | null } | null> {
   const auth = req.headers.get("Authorization") ?? "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : auth;
   if (!token) return null;
@@ -251,5 +257,6 @@ export async function getUserIdFromAuth(req: Request): Promise<string | null> {
   });
   if (!r.ok) return null;
   const j = await r.json();
-  return j.id ?? null;
+  if (!j?.id) return null;
+  return { id: j.id as string, email: (j.email as string | undefined) ?? null };
 }
