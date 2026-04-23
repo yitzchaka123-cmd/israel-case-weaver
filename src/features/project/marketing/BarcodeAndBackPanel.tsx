@@ -1,0 +1,277 @@
+// Panel C — Generate barcode (EAN-13) and back-of-box image. Barcode is
+// rendered client-side, uploaded to the media bucket, and stamped onto the
+// back-of-box generation as a final compositing step (also client-side).
+import { useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Loader2, Barcode as BarcodeIcon, Image as ImageIcon, RefreshCw, Wand2 } from "lucide-react";
+import { toast } from "sonner";
+import { ean13ToPngBlob, ean13ToSvg, generateEan13 } from "./ean13";
+import { getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
+import { useProjectNotifications } from "@/features/project/notifications/useProjectNotifications";
+
+interface Marketing {
+  project_id: string;
+  front_subtext: string | null;
+  back_headline: string | null;
+  back_body: string | null;
+  tagline: string | null;
+  barcode_value: string | null;
+  barcode_url: string | null;
+  back_cover_url: string | null;
+}
+
+async function callEdge(name: string, body: unknown) {
+  const { data: { session } } = await supabase.auth.getSession();
+  return fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${name}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+async function fetchAsImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = (e) => reject(e);
+    img.src = url + (url.includes("?") ? "&" : "?") + "cb=" + Date.now();
+  });
+}
+
+export function BarcodeAndBackPanel({ projectId }: { projectId: string }) {
+  const qc = useQueryClient();
+  const [generatingBarcode, setGeneratingBarcode] = useState(false);
+  const [generatingBack, setGeneratingBack] = useState(false);
+  const seenBarcode = useRef<string | null>(null);
+  const { create: createNotif } = useProjectNotifications(projectId);
+
+  const { data } = useQuery({
+    queryKey: ["project-marketing-barcode", projectId],
+    queryFn: async (): Promise<Marketing | null> => {
+      const { data, error } = await supabase.from("project_marketing").select("*").eq("project_id", projectId).maybeSingle();
+      if (error) throw error;
+      return (data as Marketing) ?? null;
+    },
+  });
+
+  useEffect(() => {
+    const ch = supabase
+      .channel(`marketing-barcode-${projectId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "project_marketing", filter: `project_id=eq.${projectId}` }, () =>
+        qc.invalidateQueries({ queryKey: ["project-marketing-barcode", projectId] }),
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [projectId, qc]);
+
+  useEffect(() => {
+    if (!data?.barcode_value) return;
+    if (seenBarcode.current === data.barcode_value) return;
+    if (seenBarcode.current === null) {
+      seenBarcode.current = data.barcode_value;
+      return;
+    }
+    seenBarcode.current = data.barcode_value;
+  }, [data?.barcode_value]);
+
+  const handleGenerateBarcode = async () => {
+    setGeneratingBarcode(true);
+    try {
+      const code = generateEan13();
+      const blob = await ean13ToPngBlob(code);
+      const path = `${projectId}/marketing/barcode-${code}.png`;
+      const { error: upErr } = await supabase.storage.from("media").upload(path, blob, { upsert: true, contentType: "image/png" });
+      if (upErr) {
+        toast.error(upErr.message);
+        return;
+      }
+      const { data: pub } = supabase.storage.from("media").getPublicUrl(path);
+      const { error } = await supabase
+        .from("project_marketing")
+        .upsert({
+          project_id: projectId,
+          barcode_value: code,
+          barcode_url: pub.publicUrl,
+        } as never, { onConflict: "project_id" });
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      toast.success(`Barcode ${code} generated`);
+      createNotif({
+        kind: "barcode_generated",
+        title: "Barcode is ready — generate the back cover next.",
+        body: `EAN-13 ${code} is saved. Use the Back-of-box generator below to bake it into the artwork.`,
+        starter_prompt: "Help me design the back-of-box layout around the new barcode.",
+        created_by: "assistant",
+      });
+    } finally {
+      setGeneratingBarcode(false);
+    }
+  };
+
+  const handleGenerateBack = async () => {
+    if (!data?.barcode_url || !data?.back_body) {
+      toast.error("Generate the barcode + write back-cover copy first.");
+      return;
+    }
+    setGeneratingBack(true);
+    try {
+      const composedPrompt = `Design a printable BACK-OF-BOX cover for a premium boxed murder-mystery game.
+
+HEADLINE (place prominently at top): "${data.back_headline ?? ""}"
+
+BODY COPY (place as a single readable paragraph in the central area, reserve enough negative space for it; do NOT render this text in the image — it will be typeset over the artwork later):
+"""
+${data.back_body}
+"""
+
+${data.tagline ? `TAGLINE (small, near top or bottom): "${data.tagline}"` : ""}
+
+LAYOUT REQUIREMENTS:
+- Vertical, 3:4 print-ready canvas, atmospheric, evocative.
+- Genre-appropriate imagery; do NOT spoil the solution.
+- Reserve a clean, untextured rectangular area in the LOWER-RIGHT corner (~22% x 18%) for a barcode that will be added in post — leave that area visually quiet.
+- Reserve clean negative space across the central body region for paragraph copy.
+- No text rendered into the artwork itself — typography will be added later.`;
+
+      const modelOverride = getStoredImageModel("media", "chatgpt-image");
+      const quality = getStoredImageQuality("media", "medium");
+      const resp = await callEdge("generate-image", {
+        projectId,
+        category: "marketing-back",
+        prompt: composedPrompt,
+        title: "Back of box",
+        modelOverride,
+        quality,
+        aspect: "portrait",
+      });
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        toast.error(json.error ?? "Back-cover generation failed", { duration: 10000 });
+        return;
+      }
+      const baseUrl: string | undefined = json.url;
+      if (!baseUrl) {
+        toast.error("No image returned");
+        return;
+      }
+
+      try {
+        const [base, code] = await Promise.all([fetchAsImage(baseUrl), fetchAsImage(data.barcode_url)]);
+        const canvas = document.createElement("canvas");
+        canvas.width = base.naturalWidth;
+        canvas.height = base.naturalHeight;
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(base, 0, 0);
+        const targetW = Math.round(canvas.width * 0.22);
+        const targetH = Math.round((targetW / code.naturalWidth) * code.naturalHeight);
+        const pad = Math.round(canvas.width * 0.025);
+        const x = canvas.width - targetW - pad;
+        const y = canvas.height - targetH - pad;
+        const cardPad = Math.round(targetW * 0.06);
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(x - cardPad, y - cardPad, targetW + cardPad * 2, targetH + cardPad * 2);
+        ctx.drawImage(code, x, y, targetW, targetH);
+        const composedBlob = await new Promise<Blob>((res, rej) =>
+          canvas.toBlob((b) => (b ? res(b) : rej(new Error("toBlob failed"))), "image/jpeg", 0.92),
+        );
+        const finalPath = `${projectId}/marketing/back-final-${Date.now()}.jpg`;
+        const { error: upErr } = await supabase.storage.from("media").upload(finalPath, composedBlob, {
+          upsert: true,
+          contentType: "image/jpeg",
+        });
+        if (upErr) {
+          toast.error(upErr.message);
+          return;
+        }
+        const { data: pub } = supabase.storage.from("media").getPublicUrl(finalPath);
+
+        await supabase.from("media_assets").update({ url: pub.publicUrl, title: "Back of box (with barcode)" }).eq("id", json.asset?.id);
+        await supabase.from("project_marketing").upsert({
+          project_id: projectId,
+          back_cover_url: pub.publicUrl,
+        } as never, { onConflict: "project_id" });
+        toast.success("Back cover ready with barcode baked in");
+      } catch (e) {
+        await supabase.from("project_marketing").upsert({
+          project_id: projectId,
+          back_cover_url: baseUrl,
+        } as never, { onConflict: "project_id" });
+        toast.error("Generated, but barcode overlay failed: " + (e instanceof Error ? e.message : "unknown"));
+      }
+    } finally {
+      setGeneratingBack(false);
+    }
+  };
+
+  const barcodeReady = !!data?.barcode_url;
+  const copyReady = !!data?.back_body && !!data?.back_headline;
+
+  return (
+    <section className="rounded-2xl border bg-card p-6 shadow-soft space-y-5">
+      <div>
+        <h3 className="font-display text-xl">Barcode & back of box</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Generate the EAN-13 first, then the back cover — the barcode is baked into the lower-right corner automatically.
+        </p>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-5">
+        <div className="rounded-xl border bg-muted/30 p-4 space-y-3">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <BarcodeIcon className="h-4 w-4" /> EAN-13 barcode
+          </div>
+          <div className="aspect-[5/2] bg-white rounded-lg flex items-center justify-center overflow-hidden border">
+            {data?.barcode_value ? (
+              <div className="w-full h-full flex items-center justify-center" dangerouslySetInnerHTML={{ __html: ean13ToSvg(data.barcode_value) }} />
+            ) : (
+              <span className="text-xs text-muted-foreground">No barcode yet</span>
+            )}
+          </div>
+          {data?.barcode_value && (
+            <div className="text-xs font-mono text-center text-muted-foreground">{data.barcode_value}</div>
+          )}
+          <Button onClick={handleGenerateBarcode} disabled={generatingBarcode} variant={barcodeReady ? "outline" : "default"} size="sm" className="w-full gap-1.5">
+            {generatingBarcode ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : barcodeReady ? <RefreshCw className="h-3.5 w-3.5" /> : <BarcodeIcon className="h-3.5 w-3.5" />}
+            {barcodeReady ? "Generate new barcode" : "Generate barcode"}
+          </Button>
+        </div>
+
+        <div className="rounded-xl border bg-muted/30 p-4 space-y-3">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <ImageIcon className="h-4 w-4" /> Back cover
+          </div>
+          <div className="aspect-[3/4] bg-muted rounded-lg overflow-hidden flex items-center justify-center">
+            {data?.back_cover_url ? (
+              <img src={data.back_cover_url} alt="Back of box" className="w-full h-full object-cover" />
+            ) : (
+              <span className="text-xs text-muted-foreground text-center px-4">
+                {!barcodeReady
+                  ? "Generate a barcode first."
+                  : !copyReady
+                    ? "Write box copy (headline + body) first."
+                    : "Click Generate to render the back cover."}
+              </span>
+            )}
+          </div>
+          <Button
+            onClick={handleGenerateBack}
+            disabled={generatingBack || !barcodeReady || !copyReady}
+            size="sm"
+            className="w-full gap-1.5"
+          >
+            {generatingBack ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+            {data?.back_cover_url ? "Regenerate back cover" : "Generate back cover"}
+          </Button>
+        </div>
+      </div>
+    </section>
+  );
+}

@@ -173,6 +173,57 @@ export type Database = {
           },
         ]
       }
+      company_profiles: {
+        Row: {
+          address: string | null
+          age_rating: string | null
+          company_name: string | null
+          country: string | null
+          created_at: string
+          legal_text: string | null
+          logo_url: string | null
+          made_in: string | null
+          owner_id: string
+          social: Json
+          support_email: string | null
+          tagline: string | null
+          updated_at: string
+          website: string | null
+        }
+        Insert: {
+          address?: string | null
+          age_rating?: string | null
+          company_name?: string | null
+          country?: string | null
+          created_at?: string
+          legal_text?: string | null
+          logo_url?: string | null
+          made_in?: string | null
+          owner_id: string
+          social?: Json
+          support_email?: string | null
+          tagline?: string | null
+          updated_at?: string
+          website?: string | null
+        }
+        Update: {
+          address?: string | null
+          age_rating?: string | null
+          company_name?: string | null
+          country?: string | null
+          created_at?: string
+          legal_text?: string | null
+          logo_url?: string | null
+          made_in?: string | null
+          owner_id?: string
+          social?: Json
+          support_email?: string | null
+          tagline?: string | null
+          updated_at?: string
+          website?: string | null
+        }
+        Relationships: []
+      }
       documents: {
         Row: {
           active_version: string
@@ -461,6 +512,48 @@ export type Database = {
         }
         Relationships: []
       }
+      project_marketing: {
+        Row: {
+          back_body: string | null
+          back_cover_url: string | null
+          back_headline: string | null
+          barcode_url: string | null
+          barcode_value: string | null
+          copy_origins: Json
+          created_at: string
+          front_subtext: string | null
+          project_id: string
+          tagline: string | null
+          updated_at: string
+        }
+        Insert: {
+          back_body?: string | null
+          back_cover_url?: string | null
+          back_headline?: string | null
+          barcode_url?: string | null
+          barcode_value?: string | null
+          copy_origins?: Json
+          created_at?: string
+          front_subtext?: string | null
+          project_id: string
+          tagline?: string | null
+          updated_at?: string
+        }
+        Update: {
+          back_body?: string | null
+          back_cover_url?: string | null
+          back_headline?: string | null
+          barcode_url?: string | null
+          barcode_value?: string | null
+          copy_origins?: Json
+          created_at?: string
+          front_subtext?: string | null
+          project_id?: string
+          tagline?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       project_notifications: {
         Row: {
           body: string | null
@@ -497,6 +590,45 @@ export type Database = {
           starter_prompt?: string | null
           status?: string
           title?: string
+        }
+        Relationships: []
+      }
+      project_storyboards: {
+        Row: {
+          created_at: string
+          id: string
+          kling_instructions: string | null
+          length_seconds: number
+          project_id: string
+          script_instructions: string | null
+          shots: Json
+          sora_instructions: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          kling_instructions?: string | null
+          length_seconds?: number
+          project_id: string
+          script_instructions?: string | null
+          shots?: Json
+          sora_instructions?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          kling_instructions?: string | null
+          length_seconds?: number
+          project_id?: string
+          script_instructions?: string | null
+          shots?: Json
+          sora_instructions?: string | null
+          status?: string
+          updated_at?: string
         }
         Relationships: []
       }
