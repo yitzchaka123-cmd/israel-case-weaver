@@ -975,7 +975,14 @@ Deno.serve(async (req) => {
     }
 
     const model = PROVIDER_MODEL[project.ai_provider_planning ?? "lovable"] ?? PROVIDER_MODEL.lovable;
-    const systemPrompt = buildSystemPrompt(project, suspectCount ?? 0, docCount ?? 0, tweaks);
+    const rosters: Rosters = {
+      suspects: (suspectsRoster ?? []) as RosterRow[],
+      documents: (documentsRoster ?? []) as RosterRow[],
+      envelopes: (envelopesRoster ?? []) as RosterRow[],
+      hints: (hintsRoster ?? []) as RosterRow[],
+      canvas_nodes: (nodesRoster ?? []) as RosterRow[],
+    };
+    const systemPrompt = buildSystemPrompt(project, rosters, tweaks);
 
     // Persist the last user message
     const lastUser = [...messages].reverse().find((m: { role: string }) => m.role === "user");
