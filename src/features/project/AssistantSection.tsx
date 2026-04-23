@@ -534,94 +534,153 @@ function MessageBubble({
     onEdit(trimmed);
   };
 
+  const copyContent = async () => {
+    try {
+      await navigator.clipboard.writeText(msg.content);
+      toast.success("Copied to clipboard");
+    } catch {
+      toast.error("Failed to copy");
+    }
+  };
+
   return (
     <div
       data-msg-id={msg.id}
-      className={`group flex gap-3 items-start scroll-mt-24 rounded-xl transition-colors duration-700 ${
-        highlighted ? "bg-accent/15 ring-2 ring-accent/50 -mx-2 px-2 py-2" : ""
-      }`}
+      className={`group flex flex-col scroll-mt-24 rounded-xl transition-colors duration-700 ${
+        isUser ? "items-end" : "items-start"
+      } ${highlighted ? "bg-accent/15 ring-2 ring-accent/50 -mx-2 px-2 py-2" : ""}`}
     >
-      <Avatar role={msg.role} />
-      <div className="flex-1 min-w-0 pt-1">
-        <div className="text-xs font-medium mb-1 text-muted-foreground flex items-center gap-2">
-          <span>{msg.role === "assistant" ? "Assistant" : "You"}</span>
-          {isUser && !editing && (
-            <button
-              type="button"
-              onClick={startEdit}
-              disabled={disabled}
-              title="Edit this message and re-run the assistant"
-              className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10.5px] text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              <Pencil className="h-3 w-3" /> Edit
-            </button>
+      {/* Header row: role label + timestamp + actions */}
+      <div className={`flex items-center gap-2 mb-1 px-1 text-[11px] text-muted-foreground ${isUser ? "flex-row-reverse" : ""}`}>
+        <span className={`inline-flex items-center gap-1.5 font-semibold tracking-wide uppercase text-[10px] ${isUser ? "text-accent" : "text-foreground/70"}`}>
+          {isUser ? (
+            <><User className="h-2.5 w-2.5" /> You</>
+          ) : (
+            <><Bot className="h-2.5 w-2.5" /> Assistant</>
           )}
+        </span>
+        {msg.created_at && (
+          <span
+            className="opacity-0 group-hover:opacity-100 transition-opacity"
+            title={new Date(msg.created_at).toLocaleString()}
+          >
+            {formatRelativeTime(msg.created_at)}
+          </span>
+        )}
+        {isUser && !editing && (
+          <button
+            type="button"
+            onClick={startEdit}
+            disabled={disabled}
+            title="Edit and re-run"
+            className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:text-foreground hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <Pencil className="h-3 w-3" /> Edit
+          </button>
+        )}
+        {!isUser && !editing && msg.content.trim() && (
+          <button
+            type="button"
+            onClick={copyContent}
+            title="Copy reply"
+            className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:text-foreground hover:bg-muted"
+          >
+            <Copy className="h-3 w-3" /> Copy
+          </button>
+        )}
+      </div>
+
+      {/* Message body row: avatar + bubble */}
+      <div className={`flex gap-2.5 items-end w-full ${isUser ? "flex-row-reverse" : ""}`}>
+        <Avatar role={msg.role} />
+        <div className={`min-w-0 ${isUser ? "max-w-[82%]" : "flex-1"}`}>
+          {editing ? (
+            <div className="rounded-2xl border border-accent/40 bg-accent/5 p-2 space-y-2">
+              <Textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    submitEdit();
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    cancelEdit();
+                  }
+                }}
+                autoFocus
+                className="min-h-[80px] text-[14.5px] bg-background"
+              />
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10.5px] text-muted-foreground">
+                  Re-running will delete the assistant's reply and any later messages.
+                </p>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Button type="button" variant="ghost" size="sm" onClick={cancelEdit} className="h-7 px-2 text-xs">
+                    <X className="h-3.5 w-3.5 mr-1" /> Cancel
+                  </Button>
+                  <Button type="button" size="sm" onClick={submitEdit} disabled={!draft.trim()} className="h-7 px-2.5 text-xs">
+                    <Check className="h-3.5 w-3.5 mr-1" /> Save & re-run
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div
+              className={`prose prose-sm max-w-none dark:prose-invert whitespace-pre-wrap leading-relaxed text-[14.5px] px-4 py-2.5 ${
+                isUser
+                  ? "rounded-2xl rounded-tr-md bg-accent/10 border border-accent/20 text-foreground"
+                  : "rounded-2xl rounded-tl-md bg-surface border border-border/60 text-foreground shadow-sm"
+              }`}
+            >
+              {msg.content}
+            </div>
+          )}
+          {!editing && showOptions && (
+            <div className="mt-3 rounded-xl border border-accent/20 bg-accent/5 p-3">
+              {question && (
+                <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2 font-medium">
+                  {question}
+                </div>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {options.map((opt, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => onPickOption(opt.send || opt.label)}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-background hover:bg-accent hover:text-accent-foreground hover:border-accent transition-colors px-3.5 py-1.5 text-[13px] font-medium disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                  >
+                    <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-accent/15 text-accent text-[10px] font-bold">
+                      {i + 1}
+                    </span>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {!editing && tools.length > 0 && <ToolReceipts tools={tools} />}
         </div>
-        {editing ? (
-          <div className="rounded-xl border border-accent/30 bg-accent/5 p-2 space-y-2">
-            <Textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                  e.preventDefault();
-                  submitEdit();
-                } else if (e.key === "Escape") {
-                  e.preventDefault();
-                  cancelEdit();
-                }
-              }}
-              autoFocus
-              className="min-h-[80px] text-[14.5px] bg-background"
-            />
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-[10.5px] text-muted-foreground">
-                Editing will delete the assistant's reply and any later messages, then re-run from here.
-              </p>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <Button type="button" variant="ghost" size="sm" onClick={cancelEdit} className="h-7 px-2 text-xs">
-                  <X className="h-3.5 w-3.5 mr-1" /> Cancel
-                </Button>
-                <Button type="button" size="sm" onClick={submitEdit} disabled={!draft.trim()} className="h-7 px-2.5 text-xs">
-                  <Check className="h-3.5 w-3.5 mr-1" /> Save & re-run
-                </Button>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="prose prose-sm max-w-none dark:prose-invert whitespace-pre-wrap leading-relaxed text-[14.5px]">
-            {msg.content}
-          </div>
-        )}
-        {!editing && showOptions && (
-          <div className="mt-3 rounded-xl border border-accent/20 bg-accent/5 p-3">
-            {question && (
-              <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-2 font-medium">
-                {question}
-              </div>
-            )}
-            <div className="flex flex-wrap gap-2">
-              {options.map((opt, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => onPickOption(opt.send || opt.label)}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-background hover:bg-accent hover:text-accent-foreground hover:border-accent transition-colors px-3.5 py-1.5 text-[13px] font-medium disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                >
-                  <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-accent/15 text-accent text-[10px] font-bold">
-                    {i + 1}
-                  </span>
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-        {!editing && tools.length > 0 && <ToolReceipts tools={tools} />}
       </div>
     </div>
   );
+}
+
+function formatRelativeTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const diffSec = Math.round((Date.now() - then) / 1000);
+  if (diffSec < 5) return "just now";
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.round(diffHr / 24);
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return new Date(iso).toLocaleDateString();
 }
 
 // Maps a tool name to the workspace tab the user should jump to when clicking
