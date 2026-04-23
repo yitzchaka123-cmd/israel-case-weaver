@@ -12,6 +12,7 @@ import { ApiKeyManager } from "./ApiKeyManager";
 import { UsageDashboard } from "./UsageDashboard";
 import { GeminiConnection } from "./GeminiConnection";
 import { AssistantTweaksPanel } from "./AssistantTweaksPanel";
+import { AssistantPlaybookPanel } from "./AssistantPlaybookPanel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LOGIC_FLOW_MODELS, LOGIC_FLOW_MODEL_KEY, LOGIC_FLOW_MODEL_DEFAULT } from "@/features/project/CanvasSection";
 import { Textarea } from "@/components/ui/textarea";
@@ -166,8 +167,15 @@ export function SettingsPage() {
         </Section>
 
         <Section
+          title="Assistant playbook — defaults"
+          desc="These are the assistant's built-in defaults (suspect counts, hint count, envelopes, phase-1 setup order, canonical vocab, realism floor, document-generation mode). Edit any value to change how it builds future cases — without losing the rest of the workflow. Empty / reset = use the system default."
+        >
+          <AssistantPlaybookPanel />
+        </Section>
+
+        <Section
           title="Assistant tweaks"
-          desc="Your house rules for the main game-building Assistant. Talk to the mini-assistant in plain English to add, edit or remove rules — they're injected into every project's Assistant prompt as USER OVERRIDES."
+          desc="Free-form house rules layered ON TOP of the playbook above. Use this for one-off preferences (e.g. 'never use noir genres', 'always include a coded margin doodle'). Talk to the mini-assistant in plain English to add, edit or remove rules — they're injected as USER OVERRIDES."
         >
           <AssistantTweaksPanel />
         </Section>
