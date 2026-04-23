@@ -253,23 +253,40 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
-        body: JSON.stringify({ documentId: doc.id, mode, imageModelOverride: mode === "image" ? getStoredImageModel("document", "chatgpt-image-2") : undefined }),
+        body: JSON.stringify({
+          documentId: doc.id,
+          mode,
+          imageModelOverride: mode === "image" ? getStoredImageModel("document", "chatgpt-image-2") : undefined,
+          quality: mode === "image" ? imageQuality : undefined,
+        }),
       });
+
+      // Try to parse JSON safely — when the worker is killed mid-response the
+      // body can be malformed and would otherwise blow up the dialog.
+      let payload: { error?: string; hebrew_content?: string; url?: string } = {};
+      try {
+        payload = await resp.json();
+      } catch {
+        payload = { error: "The server didn't return a valid response (it may have timed out). Try Medium quality, or switch to a Nano Banana model." };
+      }
+
       if (!resp.ok) {
-        const e = await resp.json().catch(() => ({ error: "Failed" }));
         if (resp.status === 429) toast.error("Rate limit — try again in a moment.");
         else if (resp.status === 402) toast.error("Out of AI credits.");
-        else toast.error(e.error ?? "Generation failed");
+        else if (resp.status === 504) toast.error(payload.error ?? "Generation timed out.", { duration: 8000 });
+        else toast.error(payload.error ?? "Generation failed", { duration: 8000 });
         return;
       }
-      const data = await resp.json();
-      if (mode === "text" && data.hebrew_content) {
-        setDraft((d) => d ? { ...d, hebrew_content: data.hebrew_content, status: "review" } : d);
+      if (mode === "text" && payload.hebrew_content) {
+        setDraft((d) => d ? { ...d, hebrew_content: payload.hebrew_content!, status: "review" } : d);
       }
-      if (mode === "image" && data.url) {
-        setDraft((d) => d ? { ...d, generated_asset_url: data.url, active_version: "generated", status: "review" } : d);
+      if (mode === "image" && payload.url) {
+        setDraft((d) => d ? { ...d, generated_asset_url: payload.url!, active_version: "generated", status: "review" } : d);
       }
       toast.success(`${mode === "text" ? "Hebrew content" : "Document image"} generated`);
+    } catch (e) {
+      console.error("generate-document call failed", e);
+      toast.error(e instanceof Error ? e.message : "Generation failed", { duration: 8000 });
     } finally {
       setter(false);
     }
