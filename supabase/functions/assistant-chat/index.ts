@@ -183,7 +183,7 @@ When the user approves a change, you MUST persist it by calling the appropriate 
 - add_document / update_document: create or edit a document record.
 - add_canvas_node / update_canvas_node: add or edit a logic/clue/deduction/envelope/solution node.
 - add_envelope / update_envelope: manage the 5 fixed envelopes (only update_envelope exists for editing labels/tasks/notes).
-- add_hint / update_hint: manage hints.
+- add_hint / generate_hint_stage / update_hint: manage hints (see HINT SYSTEM block below). Prefer generate_hint_stage to scaffold a whole stage; use add_hint for single rows; use update_hint to edit existing rows.
 - notify_user: drop a "callback" notification into the case's bell panel — use ONLY when the user defers a decision ("I'll write the title later"), skips a planning step, or asks something that needs revisiting later. Never use it for in-the-moment choices (use propose_options for those).
 
 EDIT-VS-CREATE RULE (CRITICAL — prevents duplicate rows)
@@ -443,7 +443,7 @@ const BASE_TOOLS = [
       parameters: {
         type: "object",
         properties: {
-          node_type: { type: "string", enum: ["clue", "suspect", "deduction", "contradiction", "red_herring", "envelope", "solution", "document", "note"] },
+          node_type: { type: "string", enum: ["clue", "suspect", "deduction", "contradiction", "red_herring", "envelope", "solution", "document", "hint", "note"] },
           title: { type: "string" },
           description: { type: "string" },
           color: { type: "string" },
@@ -618,7 +618,7 @@ const BASE_TOOLS = [
           id: { type: "string", description: "Canvas node id from the roster." },
           title: { type: "string" },
           description: { type: "string" },
-          node_type: { type: "string", enum: ["clue", "suspect", "deduction", "contradiction", "red_herring", "envelope", "solution", "document", "note"] },
+          node_type: { type: "string", enum: ["clue", "suspect", "deduction", "contradiction", "red_herring", "envelope", "solution", "document", "hint", "note"] },
           color: { type: "string" },
           position_x: { type: "number" },
           position_y: { type: "number" },
