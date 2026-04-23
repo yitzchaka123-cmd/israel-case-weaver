@@ -162,24 +162,45 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     };
   }, [projectId, qc]);
 
+  // Track when an external focus request is in flight, so the
+  // auto-scroll-to-bottom effect doesn't yank the user away from the
+  // highlighted message they just clicked through to.
+  const focusInFlightRef = useRef(false);
+
   useEffect(() => {
+    if (focusInFlightRef.current) return;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, sending]);
 
   // Scroll-to and briefly highlight a message when an outside component
   // (e.g. the AssistantOriginBadge on a suspect/document) asks to focus it.
+  // Retries a few times because the messages query may not have rendered yet
+  // when the tab first switches in.
   useEffect(() => {
     if (!focusMessageId) return;
-    // Wait a tick for the tab switch + render
-    const t = window.setTimeout(() => {
+    focusInFlightRef.current = true;
+    let cancelled = false;
+    let attempts = 0;
+    const tryFocus = () => {
+      if (cancelled) return;
       const el = scrollRef.current?.querySelector<HTMLElement>(`[data-msg-id="${focusMessageId}"]`);
       if (el) {
         el.scrollIntoView({ behavior: "smooth", block: "center" });
         setHighlightedId(focusMessageId);
         window.setTimeout(() => setHighlightedId(null), 2400);
+        // Release the auto-scroll lock a bit after the smooth-scroll completes.
+        window.setTimeout(() => { focusInFlightRef.current = false; }, 800);
+        return;
       }
-    }, 120);
-    return () => window.clearTimeout(t);
+      attempts += 1;
+      if (attempts < 12) window.setTimeout(tryFocus, 100);
+      else focusInFlightRef.current = false;
+    };
+    const t = window.setTimeout(tryFocus, 60);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
   }, [focusMessageId, messages]);
 
   const send = async (text: string, baseMessages?: Msg[]) => {
