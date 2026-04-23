@@ -178,6 +178,16 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
                       <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">No image</div>
                     )}
                   </div>
+                  {(a.model || a.effective_model) && (
+                    <AiOriginBadge
+                      hoverOnly
+                      info={{
+                        requested: a.model,
+                        effective: a.effective_model ?? a.model,
+                        fallback: a.fallback ?? "none",
+                      }}
+                    />
+                  )}
                   <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-between gap-2">
                     <span className="text-[10px] text-white truncate flex-1">{a.title ?? a.category}</span>
                     {a.url && (
