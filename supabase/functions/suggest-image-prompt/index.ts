@@ -186,7 +186,12 @@ Deno.serve(async (req) => {
       });
     }
 
-    return new Response(JSON.stringify({ prompt: text, model }), {
+    await logAiRun({
+      userId: callerUserId, projectId, surface: "suggest-image-prompt",
+      requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
+      status: "ok", latencyMs: Date.now() - startedAt, promptExcerpt: userMsg,
+    });
+    return new Response(JSON.stringify({ prompt: text, model, effectiveModel: fb.effectiveModel, fallback: fb.fallback }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
