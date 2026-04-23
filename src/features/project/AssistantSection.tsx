@@ -386,6 +386,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
                 msg={m}
                 isLast={idx === messages.length - 1}
                 onPickOption={(text) => send(text)}
+                onEdit={(newText) => editAndResend(m.id, newText)}
                 disabled={sending}
                 highlighted={m.id === highlightedId}
               />
