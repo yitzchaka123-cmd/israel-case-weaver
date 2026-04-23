@@ -96,6 +96,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
   const scrollRef = useRef<HTMLDivElement>(null);
   const dictationBaseRef = useRef("");
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<LightboxAsset | null>(null);
 
   const { data: tweakCount = 0 } = useQuery({
     queryKey: ["assistant-tweaks-count", user?.id],
@@ -417,17 +418,30 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
               </div>
             )}
 
-            {messages.map((m, idx) => (
-              <MessageBubble
-                key={m.id}
-                msg={m}
-                isLast={idx === messages.length - 1}
-                onPickOption={(text) => send(text)}
-                onEdit={(newText) => editAndResend(m.id, newText)}
-                disabled={sending}
-                highlighted={m.id === highlightedId}
-              />
-            ))}
+            {messages.map((m, idx) => {
+              // Hide empty in-progress assistant bubbles — the placeholder
+              // row exists only to satisfy FK constraints; client shows the
+              // global "Thinking…" indicator instead.
+              if (
+                m.role === "assistant" &&
+                !m.content?.trim() &&
+                (m.metadata?.in_progress || (m.metadata?.tools ?? []).length === 0)
+              ) {
+                return null;
+              }
+              return (
+                <MessageBubble
+                  key={m.id}
+                  msg={m}
+                  isLast={idx === messages.length - 1}
+                  onPickOption={(text) => send(text)}
+                  onEdit={(newText) => editAndResend(m.id, newText)}
+                  disabled={sending}
+                  highlighted={m.id === highlightedId}
+                  onOpenAsset={setLightbox}
+                />
+              );
+            })}
 
             {sending && (
               <div className="flex gap-3 items-start">
