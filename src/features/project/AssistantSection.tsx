@@ -258,22 +258,17 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     const priorMessages = messages.slice(0, idx);
     const toDelete = messages.slice(idx).map((m) => m.id);
 
-    setSending(true);
     try {
       const { error } = await supabase.from("chat_messages").delete().in("id", toDelete);
       if (error) {
         toast.error(error.message);
-        setSending(false);
         return;
       }
       // Optimistically clear so UI doesn't flash the deleted tail
       qc.setQueryData<Msg[]>(["chat", projectId], priorMessages);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to edit message");
-      setSending(false);
       return;
-    } finally {
-      setSending(false);
     }
 
     // Now resend with the prior context as the base
