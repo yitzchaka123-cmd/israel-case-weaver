@@ -726,3 +726,272 @@ function VocabEditor({
     </div>
   );
 }
+
+function StringListEditor({
+  values,
+  onChange,
+  placeholder,
+  multiline,
+}: {
+  values: string[];
+  onChange: (next: string[]) => void;
+  placeholder?: string;
+  multiline?: boolean;
+}) {
+  return (
+    <div className="space-y-1.5">
+      {values.map((v, i) => (
+        <div key={i} className="flex items-start gap-2">
+          <div className="flex flex-col">
+            <button
+              className="h-4 w-5 inline-flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30"
+              disabled={i === 0}
+              onClick={() => {
+                const next = [...values];
+                [next[i - 1], next[i]] = [next[i], next[i - 1]];
+                onChange(next);
+              }}
+            >
+              <ArrowUp className="h-3 w-3" />
+            </button>
+            <button
+              className="h-4 w-5 inline-flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30"
+              disabled={i === values.length - 1}
+              onClick={() => {
+                const next = [...values];
+                [next[i + 1], next[i]] = [next[i], next[i + 1]];
+                onChange(next);
+              }}
+            >
+              <ArrowDown className="h-3 w-3" />
+            </button>
+          </div>
+          {multiline ? (
+            <Textarea
+              rows={2}
+              value={v}
+              onChange={(e) => {
+                const next = [...values];
+                next[i] = e.target.value;
+                onChange(next);
+              }}
+              placeholder={placeholder}
+              className="text-sm flex-1"
+            />
+          ) : (
+            <Input
+              value={v}
+              onChange={(e) => {
+                const next = [...values];
+                next[i] = e.target.value;
+                onChange(next);
+              }}
+              placeholder={placeholder}
+              className="h-8 text-sm flex-1"
+            />
+          )}
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7 shrink-0"
+            onClick={() => onChange(values.filter((_, idx) => idx !== i))}
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      ))}
+      <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => onChange([...values, ""])}>
+        <Plus className="h-3 w-3 mr-1" /> Add
+      </Button>
+    </div>
+  );
+}
+
+function SectionListEditor({
+  values,
+  onChange,
+}: {
+  values: DesignSkeletonSection[];
+  onChange: (next: DesignSkeletonSection[]) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      {values.map((s, i) => (
+        <div key={s.key + i} className="flex items-start gap-2 rounded-md border bg-surface p-2">
+          <div className="flex flex-col">
+            <button
+              className="h-4 w-5 inline-flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30"
+              disabled={i === 0}
+              onClick={() => {
+                const next = [...values];
+                [next[i - 1], next[i]] = [next[i], next[i - 1]];
+                onChange(next);
+              }}
+            >
+              <ArrowUp className="h-3 w-3" />
+            </button>
+            <button
+              className="h-4 w-5 inline-flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30"
+              disabled={i === values.length - 1}
+              onClick={() => {
+                const next = [...values];
+                [next[i + 1], next[i]] = [next[i], next[i + 1]];
+                onChange(next);
+              }}
+            >
+              <ArrowDown className="h-3 w-3" />
+            </button>
+          </div>
+          <div className="flex-1 space-y-1 min-w-0">
+            <Input
+              value={s.name}
+              onChange={(e) => {
+                const next = [...values];
+                next[i] = { ...s, name: e.target.value };
+                onChange(next);
+              }}
+              placeholder="SECTION NAME"
+              className="h-7 text-sm font-medium"
+            />
+            <Input
+              value={s.note}
+              onChange={(e) => {
+                const next = [...values];
+                next[i] = { ...s, note: e.target.value };
+                onChange(next);
+              }}
+              placeholder="One-line guidance (optional)"
+              className="h-7 text-xs"
+            />
+          </div>
+          <Switch
+            checked={s.enabled}
+            onCheckedChange={(checked) => {
+              const next = [...values];
+              next[i] = { ...s, enabled: checked };
+              onChange(next);
+            }}
+          />
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7 shrink-0"
+            onClick={() => onChange(values.filter((_, idx) => idx !== i))}
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      ))}
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 text-xs"
+        onClick={() =>
+          onChange([
+            ...values,
+            { key: `section_${values.length + 1}`, name: "NEW SECTION", note: "", enabled: true },
+          ])
+        }
+      >
+        <Plus className="h-3 w-3 mr-1" /> Add section
+      </Button>
+    </div>
+  );
+}
+
+function PhaseListEditor({
+  values,
+  onChange,
+}: {
+  values: PhaseDefinition[];
+  onChange: (next: PhaseDefinition[]) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      {values.map((p, i) => (
+        <div key={p.key + i} className="flex items-start gap-2 rounded-md border bg-surface p-2">
+          <div className="flex flex-col">
+            <button
+              className="h-4 w-5 inline-flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30"
+              disabled={i === 0}
+              onClick={() => {
+                const next = [...values];
+                [next[i - 1], next[i]] = [next[i], next[i - 1]];
+                onChange(next);
+              }}
+            >
+              <ArrowUp className="h-3 w-3" />
+            </button>
+            <button
+              className="h-4 w-5 inline-flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30"
+              disabled={i === values.length - 1}
+              onClick={() => {
+                const next = [...values];
+                [next[i + 1], next[i]] = [next[i], next[i + 1]];
+                onChange(next);
+              }}
+            >
+              <ArrowDown className="h-3 w-3" />
+            </button>
+          </div>
+          <div className="flex-1 space-y-1 min-w-0">
+            <div className="flex gap-2">
+              <Input
+                value={p.key}
+                onChange={(e) => {
+                  const next = [...values];
+                  next[i] = { ...p, key: e.target.value.toLowerCase().replace(/[^a-z_]/g, "").slice(0, 32) };
+                  onChange(next);
+                }}
+                placeholder="key"
+                className="h-7 text-xs font-mono w-32"
+              />
+              <Input
+                value={p.label}
+                onChange={(e) => {
+                  const next = [...values];
+                  next[i] = { ...p, label: e.target.value };
+                  onChange(next);
+                }}
+                placeholder="Label"
+                className="h-7 text-sm font-medium flex-1"
+              />
+            </div>
+            <Input
+              value={p.description}
+              onChange={(e) => {
+                const next = [...values];
+                next[i] = { ...p, description: e.target.value };
+                onChange(next);
+              }}
+              placeholder="One-line description"
+              className="h-7 text-xs"
+            />
+          </div>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7 shrink-0"
+            onClick={() => onChange(values.filter((_, idx) => idx !== i))}
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      ))}
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-7 text-xs"
+        onClick={() =>
+          onChange([
+            ...values,
+            { key: `phase_${values.length + 1}`, label: "New phase", description: "" },
+          ])
+        }
+      >
+        <Plus className="h-3 w-3 mr-1" /> Add phase
+      </Button>
+    </div>
+  );
+}
+
