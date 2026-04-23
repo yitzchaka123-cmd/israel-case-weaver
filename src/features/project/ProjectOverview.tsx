@@ -35,7 +35,7 @@ const MYSTERY_TYPES = [
 ];
 const GENRES = ["Technological", "Mathematical", "Historical", "Forensics", "Psychological"];
 const DIFFICULTIES = ["Easy", "Medium", "Hard"];
-const PHASES = ["setup", "summary", "structure", "documents", "hints", "packaging", "done"];
+
 
 export function ProjectOverview({ project }: { project: any }) {
   const [draft, setDraft] = useState(project);
