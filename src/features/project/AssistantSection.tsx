@@ -623,6 +623,16 @@ function MessageBubble({
             <Pencil className="h-3 w-3" /> Edit
           </button>
         )}
+        {!isUser && !editing && (msg.metadata?.model || msg.metadata?.effective_model) && (
+          <AiOriginBadge
+            position="inline"
+            info={{
+              requested: msg.metadata?.model ?? null,
+              effective: msg.metadata?.effective_model ?? msg.metadata?.model ?? null,
+              fallback: msg.metadata?.fallback ?? "none",
+            }}
+          />
+        )}
         {!isUser && !editing && msg.content.trim() && (
           <button
             type="button"
