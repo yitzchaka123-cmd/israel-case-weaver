@@ -41,6 +41,7 @@ const NODE_COLORS: Record<string, string> = {
   suspect: "oklch(0.62 0.2 30)",
   deduction: "oklch(0.65 0.18 285)",
   solution: "oklch(0.45 0.15 285)",
+  envelope: "oklch(0.55 0.18 220)",
 };
 
 Deno.serve(async (req) => {
@@ -62,6 +63,7 @@ Deno.serve(async (req) => {
       });
     }
     const { data: suspects } = await supa.from("suspects").select("*").eq("project_id", projectId).order("position", { ascending: true });
+    const { data: envelopes } = await supa.from("envelopes").select("id, number, label, task, design_instructions, linked_document_ids").eq("project_id", projectId).order("number", { ascending: true });
 
     const modelKey = (modelOverride as string) || (project.ai_provider_planning as string) || "lovable";
     const model = PROVIDER_MODEL[modelKey] ?? PROVIDER_MODEL.lovable;
@@ -79,6 +81,10 @@ Deno.serve(async (req) => {
       ? `\nAPPROVED SOLUTION (source of truth — your flow MUST match this exactly):\n"""\n${approvedSummary}\n"""\n\nYour job is NOT to write a new solution. Your job is to decompose the approved solution above into the nodes/edges below. The "summary" field you return should restate the approved solution faithfully (you may tighten wording but must not change facts, culprit, motive, or method).\n`
       : "";
 
+    const envelopesBlock = (envelopes && envelopes.length > 0)
+      ? `\nENVELOPES (player-facing flow gates — each MUST become an "envelope" node, in numerical order, in a vertical lane on the right side of the canvas):\n${envelopes.map((e) => `  #${e.number} "${e.label ?? ""}" — task: ${e.task ?? "—"}`).join("\n")}\n\nFor each envelope, draw edges showing which clues / deductions belong inside it (clue → envelope, deduction → envelope). Also draw chain edges envelope_n → envelope_{n+1} so the player flow is visible.\n`
+      : "";
+
     const userPrompt = `CASE DESIGN BRIEF
 Title: ${project.title}
 Subtitle: ${project.subtitle ?? ""}
@@ -90,17 +96,17 @@ Selling point: ${project.selling_point ?? "—"}
 ${approvedBlock}
 KNOWN SUSPECTS:
 ${(suspects ?? []).map((s, i) => `${i + 1}. ${s.name}${s.is_red_herring ? " (red herring)" : ""} — role: ${s.role_in_case ?? "—"} — motive: ${s.motives ?? "—"}`).join("\n") || "(none yet — invent 3-5 plausible ones)"}
-
+${envelopesBlock}
 PRODUCE a logic flow with:
 - 6-10 CLUES the player must find/connect to solve the case (mix physical, testimonial, deductive).
 - 2-4 RED HERRINGS that look meaningful but don't lead to the truth — explain briefly why each is misleading.
 - 1-3 KEY DEDUCTIONS the player makes by combining clues.
 - 1 FINAL SOLUTION node identifying the culprit and method.
-- EDGES connecting clues → deductions → solution, and red_herring → suspect (false trail).
+${envelopes && envelopes.length > 0 ? `- ${envelopes.length} ENVELOPE nodes (one per envelope above), positioned in a vertical lane on the right (x ≈ 1400, y stepping down by 160 per envelope, ordered by number).\n` : ""}- EDGES connecting clues → deductions → solution, red_herring → suspect (false trail)${envelopes && envelopes.length > 0 ? `, clue/deduction → envelope (which envelope holds which evidence), and envelope_n → envelope_{n+1} (player chain).` : "."}
 - A SOLUTION SUMMARY (3-5 short paragraphs in Hebrew if the game is Hebrew, otherwise English) explaining EXACTLY how the case is solved end-to-end.
 
-Use stable string ids like "clue_1", "rh_1", "ded_1", "sus_1", "sol_1".
-Position nodes in a left-to-right flow: clues on the left, deductions middle, solution right, red herrings + suspects below.`;
+Use stable string ids like "clue_1", "rh_1", "ded_1", "sus_1", "sol_1"${envelopes && envelopes.length > 0 ? `, "env_0", "env_1", … (one per envelope)` : ""}.
+Position nodes in a left-to-right flow: clues on the left, deductions middle, solution right${envelopes && envelopes.length > 0 ? ", envelopes far right" : ""}, red herrings + suspects below.`;
 
     const tool = {
       type: "function",
@@ -117,7 +123,7 @@ Position nodes in a left-to-right flow: clues on the left, deductions middle, so
                 type: "object",
                 properties: {
                   id: { type: "string" },
-                  type: { type: "string", enum: ["clue", "red_herring", "deduction", "suspect", "solution"] },
+                  type: { type: "string", enum: ["clue", "red_herring", "deduction", "suspect", "solution", "envelope"] },
                   title: { type: "string" },
                   description: { type: "string" },
                   x: { type: "number" },
