@@ -129,13 +129,41 @@ export function ProjectOverview({ project }: { project: any }) {
   const [draft, setDraft] = useState(project);
   const fileInput = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<number | undefined>(undefined);
+  const { create: createNotification } = useProjectNotifications(project.id);
 
-  useEffect(() => setDraft(project), [project.id]);
+  // Local UI state for the "extra selling point" toggle. Default derived from
+  // difficulty: Hard → on, otherwise off. Honors any pre-existing text.
+  const initialSellingOn = !!project.selling_point || normalizeDifficulty(project.difficulty) === "Hard";
+  const [sellingOn, setSellingOn] = useState<boolean>(initialSellingOn);
+
+  useEffect(() => {
+    setDraft(project);
+    setSellingOn(!!project.selling_point || normalizeDifficulty(project.difficulty) === "Hard");
+  }, [project.id]);
+
+  // Fields that may emit a "the assistant should weigh in" notification.
+  const TRIGGER_MAP: Partial<Record<keyof typeof draft, TriggerableField>> = {
+    difficulty: "difficulty",
+    mystery_type: "mystery_type",
+    genre: "genre",
+    player_role: "player_role",
+    target_doc_count: "target_doc_count",
+    case_goal: "case_goal",
+  };
 
   // Debounced autosave
   const update = (patch: Partial<typeof draft>) => {
     const next = { ...draft, ...patch };
     setDraft(next);
+
+    // Fire notifications for any tracked field that just changed.
+    for (const key of Object.keys(patch) as Array<keyof typeof draft>) {
+      const trigger = TRIGGER_MAP[key];
+      if (!trigger) continue;
+      const draftNotif = notifyForFieldChange(trigger, draft[key], next[key], next);
+      if (draftNotif) createNotification(draftNotif);
+    }
+
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(async () => {
       const { error } = await supabase
@@ -158,6 +186,24 @@ export function ProjectOverview({ project }: { project: any }) {
         .eq("id", next.id);
       if (error) toast.error(error.message);
     }, 600);
+  };
+
+  // Toggling the "Extra selling point" switch.
+  const handleSellingToggle = (on: boolean) => {
+    if (!on && draft.selling_point && String(draft.selling_point).trim().length > 0) {
+      const ok = window.confirm(
+        "Turning off the extra selling point will clear what you've written. Continue?",
+      );
+      if (!ok) return;
+    }
+    setSellingOn(on);
+    if (on) {
+      const draftNotif = notifyForFieldChange("selling_point_toggle_on", null, true, draft);
+      if (draftNotif) createNotification(draftNotif);
+    } else {
+      // Clear the value when turning off.
+      update({ selling_point: null });
+    }
   };
 
   const uploadCover = async (file: File) => {
