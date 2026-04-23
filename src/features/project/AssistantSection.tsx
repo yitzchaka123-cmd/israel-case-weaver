@@ -909,7 +909,7 @@ function GeneratedDocReceipt({
   );
 }
 
-
+function ToolReceipts({ tools }: { tools: ToolCall[] }) {
   const [open, setOpen] = useState(false);
   const okCount = tools.filter((t) => t.result.ok).length;
   const failCount = tools.length - okCount;
