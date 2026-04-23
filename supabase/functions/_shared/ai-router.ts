@@ -59,20 +59,53 @@ export async function chatCompletions(body: Record<string, unknown>): Promise<Re
 
   if (isGeminiDirectModel(model)) {
     if (!GEMINI_API_KEY) {
-      // Soft fallback: route to Lovable AI Gateway using equivalent google/* model
-      return await callLovableGateway({ ...body, model: toGatewayModel(model) });
+      // No Google key: prefer OpenAI direct fallback when available, else Lovable Gateway.
+      return await fallbackFromGemini(body, model, "no-key");
     }
     const directResp = await callGeminiDirect(body, model.slice("gemini-direct/".length));
-    // On quota / auth / server errors, transparently fall back to Lovable AI Gateway
+    // On quota / auth / server errors, transparently fall back
     if (!directResp.ok && shouldFallbackStatus(directResp.status)) {
-      console.warn(`Gemini direct ${directResp.status} for ${model} — falling back to Lovable AI Gateway`);
-      return await callLovableGateway({ ...body, model: toGatewayModel(model) });
+      console.warn(`Gemini direct ${directResp.status} for ${model} — falling back`);
+      return await fallbackFromGemini(body, model, `gemini-${directResp.status}`);
     }
     return directResp;
   }
 
   // Default: Lovable AI Gateway
   return await callLovableGateway(body);
+}
+
+// When a gemini-direct/* call cannot be served, prefer OpenAI direct
+// (openai/gpt-5.2) when the OpenAi secret is configured, otherwise fall back
+// to the Lovable AI Gateway with the equivalent google/* model. Adds an
+// `x-ai-fallback` response header so callers/UI can see what actually ran.
+async function fallbackFromGemini(
+  body: Record<string, unknown>,
+  originalModel: string,
+  reason: string,
+): Promise<Response> {
+  if (OPENAI_API_KEY) {
+    const fallbackModel = "openai/gpt-5.2";
+    console.warn(`Falling back from ${originalModel} → ${fallbackModel} (reason: ${reason})`);
+    const openaiBody = { ...body, model: "gpt-5.2" };
+    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify(openaiBody),
+    });
+    return withFallbackHeader(resp, "openai-direct");
+  }
+  console.warn(`Falling back from ${originalModel} → Lovable AI Gateway (reason: ${reason})`);
+  const resp = await callLovableGateway({ ...body, model: toGatewayModel(originalModel) });
+  return withFallbackHeader(resp, "lovable-ai");
+}
+
+async function withFallbackHeader(resp: Response, label: string): Promise<Response> {
+  // Response objects from fetch have immutable headers; clone with a new Headers map.
+  const buf = await resp.arrayBuffer();
+  const headers = new Headers(resp.headers);
+  headers.set("x-ai-fallback", label);
+  return new Response(buf, { status: resp.status, statusText: resp.statusText, headers });
 }
 
 function shouldFallbackStatus(status: number): boolean {
