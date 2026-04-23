@@ -36,7 +36,13 @@ const PLANNING_MODEL: Record<string, string> = {
   "gemini-direct-flash": "gemini-direct/gemini-2.5-flash",
 };
 
-type Field = "front_subtext" | "back_headline" | "back_body" | "tagline" | "all";
+type Field =
+  | "front_subtext"
+  | "back_headline"
+  | "back_body"
+  | "tagline"
+  | "selling_point"
+  | "all";
 
 interface Body {
   projectId: string;
