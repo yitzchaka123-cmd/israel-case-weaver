@@ -14,13 +14,27 @@ import { toast } from "sonner";
 import { useVoiceInput } from "@/hooks/use-voice-input";
 
 const PLANNING_MODELS = [
+  { value: "__hdr-lovable", label: "— Lovable AI (workspace credits) —", header: true },
   { value: "lovable", label: "Gemini 3.1 Pro (default)" },
+  { value: "gemini-3-flash", label: "Gemini 3 Flash (preview)" },
   { value: "gemini", label: "Gemini 2.5 Pro" },
-  { value: "gemini-flash", label: "Gemini 2.5 Flash (fast)" },
+  { value: "gemini-flash", label: "Gemini 2.5 Flash" },
+  { value: "gemini-flash-lite", label: "Gemini 2.5 Flash Lite" },
+  { value: "__hdr-direct", label: "— Your Google AI key (direct) —", header: true },
+  { value: "gemini-direct-3-pro", label: "Gemini 3.1 Pro preview (direct)" },
+  { value: "gemini-direct-3-flash", label: "Gemini 3 Flash preview (direct)" },
+  { value: "gemini-direct-pro", label: "Gemini 2.5 Pro (direct)" },
+  { value: "gemini-direct-flash", label: "Gemini 2.5 Flash (direct)" },
+  { value: "gemini-direct-flash-lite", label: "Gemini 2.5 Flash Lite (direct)" },
+  { value: "__hdr-openai", label: "— OpenAI —", header: true },
   { value: "openai-5.4", label: "ChatGPT 5.4 (newest)" },
   { value: "openai-5.2", label: "ChatGPT 5.2" },
   { value: "openai", label: "ChatGPT 5" },
   { value: "openai-mini", label: "ChatGPT 5 mini" },
+  { value: "__hdr-claude", label: "— Anthropic (your Claude key) —", header: true },
+  { value: "claude", label: "Claude Sonnet 4.5" },
+  { value: "claude-opus", label: "Claude Opus 4.5 (highest quality)" },
+  { value: "claude-haiku", label: "Claude Haiku 4.5 (fast)" },
 ];
 
 const IMAGE_MODELS = [
@@ -356,9 +370,18 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
             <Select value={planningModel} onValueChange={(v) => setProjectAi({ ai_provider_planning: v })}>
               <SelectTrigger className="h-8 text-xs w-[210px]"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {PLANNING_MODELS.map((m) => (
-                  <SelectItem key={m.value} value={m.value} className="text-xs">{m.label}</SelectItem>
-                ))}
+                {PLANNING_MODELS.map((m) => {
+                  if ((m as { header?: boolean }).header) {
+                    return (
+                      <div key={m.value} className="px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {m.label}
+                      </div>
+                    );
+                  }
+                  return (
+                    <SelectItem key={m.value} value={m.value} className="text-xs">{m.label}</SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
           </div>
