@@ -212,6 +212,22 @@ Position nodes in a left-to-right flow: clues on the left, deductions middle, so
     }
     insertedNodes?.forEach((row, i) => idMap.set(parsed.nodes[i].id, row.id));
 
+    // Write back envelope-node ids onto the matching envelopes rows so the
+    // Envelopes tab and the canvas can cross-link.
+    if (envelopes && envelopes.length > 0 && insertedNodes) {
+      const envNodes = parsed.nodes
+        .map((n, i) => ({ n, rowId: insertedNodes[i]?.id }))
+        .filter((x) => x.n.type === "envelope" && x.rowId);
+      // Match by order of appearance — model was instructed to emit them in numerical order.
+      for (let i = 0; i < envNodes.length && i < envelopes.length; i += 1) {
+        const env = envelopes[i];
+        const nodeId = envNodes[i].rowId!;
+        const existing = (env.linked_node_ids ?? []) as string[];
+        const next = Array.from(new Set([...existing, nodeId]));
+        await supa.from("envelopes").update({ linked_node_ids: next }).eq("id", env.id);
+      }
+    }
+
     const edgeRows = parsed.edges
       .map((e) => {
         const s = idMap.get(e.source);
