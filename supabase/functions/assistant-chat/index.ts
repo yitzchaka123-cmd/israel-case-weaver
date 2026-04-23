@@ -583,6 +583,25 @@ const BASE_TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "notify_user",
+      description:
+        "Drop a notification into the case's per-project Notification Panel (the bell in the workspace header). Use sparingly — only when something the user said or deferred should be revisited later. Examples: user said 'I'll write the title myself' → drop a reminder to confirm it. User skipped a planning step → flag it. Each notification optionally carries a `starter_prompt` that becomes the user's next message when they click 'Open in Assistant'. Do NOT use this for every reply — quick-reply buttons (propose_options) are still the default for in-the-moment choices.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", description: "Short headline shown in the bell panel (under ~80 chars)." },
+          body: { type: "string", description: "Optional 1–2 sentence detail." },
+          starter_prompt: { type: "string", description: "Optional message text sent to you when the user clicks 'Open in Assistant'." },
+          kind: { type: "string", description: "Short slug for grouping (e.g. 'reminder', 'follow_up', 'planning'). Defaults to 'general'." },
+        },
+        required: ["title"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 // Build the tool list with the playbook-derived `phase` enum substituted in.
