@@ -124,6 +124,7 @@ Deno.serve(async (req) => {
       });
     }
     const model = modelFor(ctxData.project.ai_provider_planning as string | null);
+    const callerUserId = await getUserIdFromAuth(req);
 
     if (body.mode === "script") {
       const lenRaw = Number(body.length_seconds || 60);
@@ -146,6 +147,7 @@ Each shot must have:
 
 Return: {"shots": [ ... ]}`;
 
+      const startedAt = Date.now();
       const resp = await chatCompletions({
         model,
         messages: [
@@ -155,11 +157,18 @@ Return: {"shots": [ ... ]}`;
         temperature: 0.85,
         response_format: { type: "json_object" },
       });
+      const fb = extractFallback(resp, model);
 
       if (!resp.ok) {
         const t = await resp.text();
         console.error("storyboard script provider error", resp.status, t);
         const provider = model.startsWith("openai/") ? "OpenAI" : "Lovable AI";
+        await logAiRun({
+          userId: callerUserId, projectId, surface: "generate-storyboard",
+          requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
+          status: "error", latencyMs: Date.now() - startedAt,
+          errorMessage: `${provider} ${resp.status}: ${t.slice(0, 200)}`, promptExcerpt: userMsg,
+        });
         if (resp.status === 402) {
           return new Response(JSON.stringify({ error: `${provider} credits/key issue (status 402). Add credits in Settings → Workspace → Usage, or switch this project's planning provider.` }), {
             status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
