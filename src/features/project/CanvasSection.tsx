@@ -626,16 +626,19 @@ function NodeDetailPanel({
   nodeId,
   projectId,
   modelOverride,
+  board,
   onClose,
 }: {
   nodeId: string | null;
   projectId: string;
   modelOverride: string;
+  board: Board;
   onClose: () => void;
 }) {
   const open = nodeId !== null;
   const [explaining, setExplaining] = useState(false);
   const [explanation, setExplanation] = useState<string | null>(null);
+  const autoExplained = useRef<Set<string>>(new Set());
 
   const { data: node } = useQuery({
     queryKey: ["canvas-node", nodeId],
