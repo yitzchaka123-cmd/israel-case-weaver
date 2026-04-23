@@ -580,6 +580,14 @@ export function AssistantPlaybookPanel({}: Props = {}) {
         />
       </Card>
 
+      <div className="flex justify-end pt-2 sticky bottom-0 bg-card -mx-6 px-6 py-3 border-t">
+        <Button onClick={() => persist(playbook)} disabled={saving}>
+          <Save className="h-4 w-4 mr-1.5" /> {saving ? "Saving..." : "Save playbook"}
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 function NumInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   return (
