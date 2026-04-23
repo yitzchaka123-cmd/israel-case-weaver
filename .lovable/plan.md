@@ -1,42 +1,47 @@
 
 
-## Add your Google Gemini direct API key
+## Fall back to OpenAI GPT-5.2 when Gemini direct hits 429
 
-Everything is already wired in the backend — adding the secret is the only remaining step.
+The error came from the assistant chat trying a `gemini-direct/*` model, which hit Google's free-tier quota. Today the router falls back to the Lovable AI Gateway (still Google). You want a different escape hatch: **fall back to OpenAI direct (`openai/gpt-5.2`)**, and make sure the model pickers reflect that GPT-5.2 is a real, selectable option.
 
-### What's already in place (no code changes needed)
+Note: there is no public `gpt-5.4`. The latest model exposed in our stack guidance is **`gpt-5.2`** — I'll use that. If you actually meant a different id, tell me before I implement.
 
-- **`supabase/functions/_shared/ai-router.ts`** reads `GEMINI_API_KEY` and routes any `gemini-direct/*` model straight to `generativelanguage.googleapis.com`.
-- **`generate-image`** prefers your direct key for all three Nano Banana models (`gemini-2.5-flash-image`, `gemini-3.1-flash-image-preview`, `gemini-3-pro-image-preview`) and falls back to the Lovable AI Gateway only if the key is missing.
-- **`suggest-image-prompt`, `generate-marketing-copy`, `explain-canvas-node`, `generate-logic-flow`, `assistant-chat`** all already accept the `gemini-direct-*` model aliases that show up in your Settings dropdowns and the per-image `PromptWriterModelPicker`.
-- **Settings → API keys** (`GeminiConnection.tsx`) already lists the key, shows connected/not-connected status, and has a Test button.
+### Scope
 
-### The single action
+1. **Router fallback chain** — `supabase/functions/_shared/ai-router.ts`
+   - When a `gemini-direct/*` call returns 429 / 403 / 5xx **and** `OpenAi` secret is set, fall back to `openai/gpt-5.2` via OpenAI direct instead of Lovable Gateway.
+   - If `OpenAi` is missing, keep today's behavior (fall back to Lovable Gateway with the equivalent `google/*` model).
+   - Same logic for the chat path and an analogous safety net for image generation: image models can't fall back to GPT, so they keep falling back to Lovable Gateway (image gen on OpenAI is a different API surface — out of scope).
+   - Add a response header `x-ai-fallback: openai-direct` (or `lovable-ai`) so the UI can surface what actually ran if we ever want to.
 
-Once we leave plan mode I will call the **add-secret** tool to securely request `GEMINI_API_KEY`. You'll get a one-time secure paste form in chat — the key is stored as a Supabase secret and never appears in the codebase or logs.
+2. **Model picker updates** — make sure GPT-5.2 appears everywhere a model can be chosen
+   - `src/components/PromptWriterModelPicker.tsx` — add `openai/gpt-5.2` (label: "GPT-5.2 (OpenAI direct)").
+   - `src/features/settings/AssistantTweaksPanel.tsx` model dropdown — add the same option.
+   - `src/components/ImageModelPicker.tsx` — **no change** (image-only models; GPT-5.2 isn't an image model).
+   - Any other picklist that lists chat models gets the same entry. I'll grep for the existing `openai/gpt-5` / `openai/gpt-5-mini` entries and add `gpt-5.2` next to them so the UI is consistent.
 
-**Where to get it:** [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey) → "Create API key" → copy the `AIza…` string and paste it into the form.
+3. **No DB / migration changes.** No new secrets — `OpenAi` is already stored.
 
-### What flips on the moment you save the key
+### Behavior after the change
 
-| Surface | Before | After |
-|---|---|---|
-| Nano Banana, Nano Banana 2, Nano Banana Pro (cover, suspects, documents, media) | Lovable AI Gateway (workspace credits) | Google direct, billed to your AI Studio account |
-| Assistant chat — Gemini 2.5 Pro/Flash/Flash-Lite, Gemini 3.1 Pro preview, Gemini 3 Flash preview | Gateway | Your key |
-| Per-image prompt writer dropdown — all `(direct)` Gemini options | Returned the "not configured" error | Live |
-| Settings → Gemini panel status pill | "Not connected" | "Connected" + Test button works |
+| Scenario | Result |
+|---|---|
+| `gemini-direct/*` selected, Google key healthy | Google direct (unchanged) |
+| `gemini-direct/*` selected, Google returns 429/403/5xx, `OpenAi` set | Auto-retry on `openai/gpt-5.2` direct |
+| `gemini-direct/*` selected, Google fails, `OpenAi` missing | Falls back to Lovable Gateway `google/*` (today's behavior) |
+| `openai/gpt-5.2` selected directly | Routes to OpenAI direct (already supported by `chatCompletions`) |
+| Any non-Gemini model | Unchanged |
 
-### Small UX polish (optional, included in the same change)
+### Files touched
 
-The "Connect Gemini" button in `GeminiConnection.tsx` currently just shows a toast telling you to ask Lovable. Since this flow is now fully self-serve via the add-secret form, no UI change is required — but if you'd like, I can also remove the now-redundant toast wording so it just says "Click to add key." Tell me yes/no when you approve and I'll include it.
-
-### No screenshot needed
-
-I have everything I need. The next step is purely the secret hand-off.
+- `supabase/functions/_shared/ai-router.ts` — extend `chatCompletions` with the OpenAI fallback branch; add a small `callOpenAIFallback(body)` helper that swaps `model` to `openai/gpt-5.2` and reuses the existing OpenAI branch.
+- `src/components/PromptWriterModelPicker.tsx` — add GPT-5.2 entry.
+- `src/features/settings/AssistantTweaksPanel.tsx` — add GPT-5.2 entry to its model list.
+- (any other chat-model dropdowns found via grep — same one-line addition)
 
 ### Out of scope
 
-- No DB / migration / edge function code edits.
-- No changes to `OpenAi` or `ANTHROPIC_API_KEY` handling.
-- No changes to which models appear in pickers (already complete).
+- No change to image generation routing (Nano Banana stays on Google direct → Lovable Gateway).
+- No new secrets, no new tables, no edge function additions — just edits to the shared router and the picker components.
+- Not adding a UI toast for "fallback fired" — happy to add later if you want it visible.
 
