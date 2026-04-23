@@ -1,65 +1,44 @@
 
 
-## Production status bar + locked Production fields + production dashboard
+## Fix `gpt-image-2` document generation crashes
 
-### 1. Sleek "Connected dots" status bar in the project header
+### What's broken
 
-A new horizontal phase tracker lives directly under the case title in `ProjectWorkspace.tsx`'s header — visible from every tab.
+The `generate-document` edge function calls OpenAI's `gpt-image-2` with **`quality: "high"` and no timeout**. `gpt-image-2` at `high` can take up to 2 minutes; the edge runtime kills the request at ~150s, producing the `RUNTIME_ERROR` / blank-screen you're hitting (no logs written, because the worker was killed mid-flight). On top of that, when OpenAI *does* return an error (e.g. "your organization must be verified to use gpt-image-2"), the function masks it with a generic "OpenAI image generation failed (500)" so you never see what's actually wrong.
 
-- Phases shown in order: **Setup → Summary → Structure → Documents → Envelopes → Hints → Packaging → Done**.
-- Past phases: small filled emerald dot + faint emerald connector line.
-- Current phase: slightly larger violet (accent) dot with a soft ring and bold label.
-- Future phases: muted gray dots and gray connector lines.
-- Whole bar sits in a subtle pill (`bg-muted/40`, rounded-full, border) so it reads as one cohesive widget.
-- Each dot is a clickable button — click it to jump straight to that section's tab (e.g. Documents dot → Documents tab).
-- Hovering a dot shows a tooltip with phase name + a one-line summary ("12 / 40 documents").
-- Replaces the current `Phase · {project.phase}` chip, which becomes redundant.
-- The existing `production` legacy phase value gets normalized to **Documents** (closest meaning) so existing projects display correctly.
+The sister function `generate-image` already has all the right fixes — we just need to bring `generate-document` up to the same standard.
 
-```text
-●━━━●━━━●━━━◉━━━○━━━○━━━○━━━○
-Setup Sum Struct Docs* Env Hints Pack Done
-```
+### Changes
 
-### 2. Lock Production fields once set
+**1. `supabase/functions/generate-document/index.ts` — harden the OpenAI image branch**
 
-In `ProjectOverview.tsx`'s **Production** panel:
+- Add a **110-second `AbortController`** around the OpenAI fetch so we return a clean `504` with a "switch to Medium quality or Nano Banana" message instead of being killed by the platform.
+- Default OpenAI image **quality to `"medium"`** (OpenAI's documented sweet spot for `gpt-image-2`) instead of hard-coded `"high"`.
+- Add **`output_format: "jpeg"` + `output_compression: 90`** — same speedup the media generator already uses, dramatically cuts latency.
+- **Surface OpenAI's real error message**, including the special "Verify Organization" hint with a deep link to `https://platform.openai.com/settings/organization/general` when the 403 says the org isn't verified for `gpt-image-2`.
+- Include `x-request-id` in the error string so you can paste it to OpenAI support if needed.
+- Wrap the entire image branch so storage upload / DB write failures still return JSON instead of a raw 500.
 
-- **Target document count**: editable only while it's null/empty. Once a number is saved it becomes read-only with a small lock icon and a one-line caption: *"Locked. Changing this would derail document numbering and envelope flow."* A tiny "Unlock" button next to the lock opens a confirm dialog (*"Are you sure? This can desync your production"*) for the rare override case.
-- **Current phase**: select becomes a read-only display showing the current phase + a hint *"Phase advances automatically as the assistant moves you through Setup → Summary → Structure → … "*. No manual select.
-- **Packaging notes**: hidden by default with a muted placeholder card: *"Packaging notes appear here when the assistant reaches the Packaging phase."* Reveals as a normal textarea once `phase === 'packaging' || phase === 'done'`.
+**2. `src/features/project/DocumentsSection.tsx` — make `generate()` crash-safe**
 
-### 3. Production dashboard inside the Production panel
+- The current `generate()` only calls `toast.error` on `!resp.ok`. If the response is `ok` but the JSON body is malformed (which happens when the worker is killed mid-write), `await resp.json()` throws and the dialog re-render crashes — that's the blank screen.
+- Wrap the whole `generate` body in `try/catch`, show a toast on any thrown error, and keep the dialog mounted.
+- Allow the user to pick image quality (Low / Medium / High) via the existing model picker affordance — pass it through `body` as `quality`.
 
-Replace the current sparse Production grid with a real at-a-glance dashboard. Live counts come from a single small query using the existing realtime subscriptions (so it auto-refreshes when the assistant adds things).
+**3. Quick UX polish**
 
-Layout — 4 compact KPI tiles in a 2×2 grid on mobile / 4-up on desktop:
+- When the user has `chatgpt-image-2` selected but their OpenAI org isn't verified, show a one-time inline warning above the **Generate image** button pointing them at "ChatGPT Image 1" or a Nano Banana model as a working alternative.
 
-1. **Documents**: `12 / 40` with a thin progress bar underneath + tiny breakdown *"3 final · 9 draft"*.
-2. **Suspects**: `5` with caption *"1 red herring"*.
-3. **Canvas nodes**: `28` with caption *"Logic flow approved"* (green) or *"Logic flow pending"* (amber).
-4. **Envelopes / Hints**: combined tile — `4 envelopes · 9 hints` with phase-colored dot.
+### Files touched
 
-Below the KPIs, a one-line **next-action hint** driven by phase:
-- Setup → *"Open Assistant to confirm title and mystery type."*
-- Structure → *"Jump to Case Board to approve the logic flow."*
-- Documents → *"28 documents to go — open Assistant to keep generating."*
-- etc.
+| File | Change |
+|------|--------|
+| `supabase/functions/generate-document/index.ts` | Add abort timeout, jpeg output, medium default, real error surfacing, verification-hint message |
+| `src/features/project/DocumentsSection.tsx` | Wrap `generate()` in try/catch; pass optional `quality`; show fallback hint when `gpt-image-2` is selected |
 
-Each KPI tile is clickable and routes to the relevant tab (Documents tile → Documents, Suspects → Suspects, etc.).
+### What you'll see after
 
-### 4. Files to change
-
-- `src/features/project/ProjectWorkspace.tsx` — add `<PhaseStatusBar>` to the header, remove old Phase pill, normalize legacy `production` → `documents` for display.
-- `src/features/project/PhaseStatusBar.tsx` (new) — the connected-dots component, clickable, with tooltips.
-- `src/features/project/ProductionDashboard.tsx` (new) — KPI tiles + next-action hint, fetches counts via `useQuery` and listens for the same realtime invalidations already wired in.
-- `src/features/project/ProjectOverview.tsx` — swap the old Production grid for `<ProductionDashboard>`, lock target doc count + phase, conditionally hide Packaging notes.
-
-### Acceptance check
-
-1. Header shows the connected-dots bar on every tab; current phase is highlighted in accent color.
-2. Clicking the *Documents* dot jumps you to the Documents tab.
-3. In Overview → Production, the target doc count field is read-only with a lock icon (because it's already 45 on your active project); same for the phase select.
-4. Packaging notes section is hidden until phase reaches Packaging.
-5. Production dashboard shows live `38 / 45` documents, `15` suspects, `92` canvas nodes, `0` envelopes / `3` hints — and they update without a refresh as the assistant adds more.
+- Generation either succeeds in <60s, or you get a precise toast: e.g. *"OpenAI requires organization verification to use gpt-image-2. Open https://platform.openai.com/settings/organization/general → Verify Organization."*
+- No more blank screens — the dialog stays open and you can retry with a different model.
+- If you want the heaviest output you can still pick **High**, but **Medium** is the new default.
 
