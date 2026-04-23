@@ -461,7 +461,7 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
                 <div className="flex items-center gap-1.5 ml-auto flex-wrap justify-end">
                   <ImageModelPicker
                     surface="document"
-                    defaultModel="chatgpt-image-2"
+                    defaultModel="chatgpt-image"
                   />
                   <Select value={imageQuality} onValueChange={(v) => setImageQuality(v as "low" | "medium" | "high")}>
                     <SelectTrigger className="h-8 w-[110px] text-xs">

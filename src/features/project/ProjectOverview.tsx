@@ -295,7 +295,7 @@ export function ProjectOverview({ project }: { project: any }) {
           </div>
           <input ref={fileInput} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadCover(e.target.files[0])} />
           <div className="mt-3 space-y-3">
-            <ImageModelPicker surface="cover" defaultModel="chatgpt-image-2" className="w-full" />
+            <ImageModelPicker surface="cover" defaultModel="chatgpt-image" className="w-full" />
             <PromptPanel
               projectId={project.id}
               surface="cover"
