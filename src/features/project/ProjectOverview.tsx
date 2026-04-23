@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload, Lock } from "lucide-react";
+import { Upload, Lock, Sparkles, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
@@ -135,6 +135,7 @@ export function ProjectOverview({ project }: { project: any }) {
   // difficulty: Hard → on, otherwise off. Honors any pre-existing text.
   const initialSellingOn = !!project.selling_point || normalizeDifficulty(project.difficulty) === "Hard";
   const [sellingOn, setSellingOn] = useState<boolean>(initialSellingOn);
+  const [genSelling, setGenSelling] = useState(false);
 
   useEffect(() => {
     setDraft(project);
@@ -203,6 +204,40 @@ export function ProjectOverview({ project }: { project: any }) {
     } else {
       // Clear the value when turning off.
       update({ selling_point: null });
+    }
+  };
+
+  // Ask the assistant for a single concrete selling-point idea, drop it
+  // straight into the field, and stamp the assistant origin so the badge shows.
+  const handleGenerateSellingPoint = async () => {
+    setGenSelling(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-marketing-copy", {
+        body: { projectId: project.id, field: "selling_point" },
+      });
+      if (error) throw error;
+      const value = (data as { value?: string } | null)?.value?.trim();
+      if (!value) {
+        toast.error("The assistant didn't return an idea — try again.");
+        return;
+      }
+      // Write into the field (autosaves via the existing debounced update)
+      update({ selling_point: value });
+      // Stamp origin so the "by assistant" chip lights up
+      const nextOrigins = {
+        ...(draft.assistant_origins as Record<string, string> ?? {}),
+        selling_point: "manual-generate",
+      };
+      setDraft({ ...draft, selling_point: value, assistant_origins: nextOrigins });
+      await supabase
+        .from("projects")
+        .update({ assistant_origins: nextOrigins })
+        .eq("id", project.id);
+      toast.success("New selling point generated");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to generate selling point");
+    } finally {
+      setGenSelling(false);
     }
   };
 
@@ -352,13 +387,34 @@ export function ProjectOverview({ project }: { project: any }) {
                 <Switch checked={sellingOn} onCheckedChange={handleSellingToggle} />
               </div>
               {sellingOn && (
-                <Textarea
-                  value={draft.selling_point ?? ""}
-                  onChange={(e) => update({ selling_point: e.target.value })}
-                  rows={2}
-                  placeholder="e.g. a 1980s telex machine that decodes the final clue. The assistant can help you plan this — check the bell."
-                  className="bg-background"
-                />
+                <div className="space-y-2">
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={handleGenerateSellingPoint}
+                      disabled={genSelling}
+                      className="h-7 px-2 text-xs gap-1.5"
+                    >
+                      {genSelling ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-3 w-3" />
+                      )}
+                      {draft.selling_point && String(draft.selling_point).trim().length > 0
+                        ? "Regenerate idea"
+                        : "Generate idea"}
+                    </Button>
+                  </div>
+                  <Textarea
+                    value={draft.selling_point ?? ""}
+                    onChange={(e) => update({ selling_point: e.target.value })}
+                    rows={2}
+                    placeholder="e.g. a 1980s telex machine that decodes the final clue. Click ✨ Generate idea to let the assistant draft one."
+                    className="bg-background"
+                  />
+                </div>
               )}
             </div>
           </div>

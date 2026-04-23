@@ -36,7 +36,13 @@ const PLANNING_MODEL: Record<string, string> = {
   "gemini-direct-flash": "gemini-direct/gemini-2.5-flash",
 };
 
-type Field = "front_subtext" | "back_headline" | "back_body" | "tagline" | "all";
+type Field =
+  | "front_subtext"
+  | "back_headline"
+  | "back_body"
+  | "tagline"
+  | "selling_point"
+  | "all";
 
 interface Body {
   projectId: string;
@@ -119,7 +125,22 @@ Deno.serve(async (req) => {
       ? ["front_subtext", "back_headline", "back_body", "tagline"]
       : [field];
 
-    const fieldGuidance = `
+    const isSellingPoint = field === "selling_point";
+
+    const fieldGuidance = isSellingPoint
+      ? `
+You are generating ONE creative "extra selling point" for this case — a standout, concrete, tactile hook that elevates the box above generic murder-mystery products.
+
+Rules for "selling_point":
+- 1–2 short sentences, max ~40 words total.
+- Must be CONCRETE and TACTILE — name a specific physical prop, mechanic, or twist (e.g. "A 1980s telex machine bundled in the box that decodes the final clue when the player feeds it the right paper tape.").
+- Must fit the case's era, setting, mystery type, genre, difficulty, and player role.
+- NO generic marketing fluff ("immersive experience", "thrilling mystery"). Be specific.
+- Do NOT spoil the solution.
+
+Voice: ${playbook.identity.brand_voice}
+Final language: ${playbook.identity.final_content_language} — but write the selling point in English (it's a planning field, not in-game text).`
+      : `
 Each field must follow these rules:
 - "tagline": 1 line, max 9 words, evocative, ad-friendly.
 - "front_subtext": 1–2 short lines, hook for the front of the box, under the title.
@@ -141,7 +162,10 @@ ${fieldGuidance}
 REQUESTED FIELDS: ${fieldsRequested.join(", ")}
 ${hint ? `\nEXTRA STEERING: ${hint}` : ""}
 
-Return JSON like {"front_subtext": "...", "back_headline": "...", "back_body": "...", "tagline": "..."} (only include the requested keys).`;
+${isSellingPoint
+  ? `Return JSON like {"selling_point": "..."} — single key, single 1–2 sentence value.`
+  : `Return JSON like {"front_subtext": "...", "back_headline": "...", "back_body": "...", "tagline": "..."} (only include the requested keys).`}
+`;
 
     const resp = await chatCompletions({
       model,
@@ -195,6 +219,12 @@ Return JSON like {"front_subtext": "...", "back_headline": "...", "back_body": "
     if (Object.keys(copy).length === 0) {
       return new Response(JSON.stringify({ error: "Model returned no usable copy" }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (isSellingPoint) {
+      return new Response(JSON.stringify({ value: copy.selling_point, model }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
