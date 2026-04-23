@@ -9,6 +9,7 @@ import { Loader2, Barcode as BarcodeIcon, Image as ImageIcon, RefreshCw, Wand2 }
 import { toast } from "sonner";
 import { ean13ToPngBlob, ean13ToSvg, generateEan13 } from "./ean13";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
+import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { useProjectNotifications } from "@/features/project/notifications/useProjectNotifications";
 
 interface Marketing {
