@@ -12,7 +12,18 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const OPENAI_API_KEY = Deno.env.get("OpenAi") ?? Deno.env.get("OPENAI_API_KEY") ?? "";
+const OPENAI_API_KEY_PRIMARY = Deno.env.get("OpenAi") ?? Deno.env.get("OPENAI_API_KEY") ?? "";
+const OPENAI_API_KEY_IMAGE2 = Deno.env.get("OPENAI_IMAGE2_API_KEY") ?? "";
+
+// Pick the right OpenAI key per requested model. gpt-image-2 can be billed to a
+// dedicated second OpenAI account by setting OPENAI_IMAGE2_API_KEY; falls back
+// to the primary key if the dedicated one isn't configured.
+function pickOpenAIKey(pref: string): { key: string; usedDedicated: boolean; missingName: string } {
+  if (pref === "chatgpt-image-2" && OPENAI_API_KEY_IMAGE2) {
+    return { key: OPENAI_API_KEY_IMAGE2, usedDedicated: true, missingName: "OPENAI_IMAGE2_API_KEY" };
+  }
+  return { key: OPENAI_API_KEY_PRIMARY, usedDedicated: false, missingName: "OpenAi" };
+}
 
 // Per OpenAI image API docs (Apr 2026):
 //   gpt-image-2     — current flagship; best quality, ~30–120 s depending on quality.
@@ -134,9 +145,11 @@ Deno.serve(async (req) => {
     let mime = "image/png";
     let bytes: Uint8Array;
 
+    const openAiPick = useOpenAI ? pickOpenAIKey(pref) : null;
+
     if (useOpenAI) {
-      if (!OPENAI_API_KEY) {
-        return new Response(JSON.stringify({ error: "OpenAI API key not configured" }), {
+      if (!openAiPick!.key) {
+        return new Response(JSON.stringify({ error: `OpenAI API key not configured (missing ${openAiPick!.missingName})` }), {
           status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -158,7 +171,7 @@ Deno.serve(async (req) => {
         oResp = await fetch("https://api.openai.com/v1/images/generations", {
           method: "POST",
           signal: ctrl.signal,
-          headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
+          headers: { Authorization: `Bearer ${openAiPick!.key}`, "Content-Type": "application/json" },
           // jpeg + compression 90 is dramatically faster than png per OpenAI docs.
           body: JSON.stringify({
             model,
@@ -276,7 +289,7 @@ Deno.serve(async (req) => {
         title: title ?? null,
         url: pub.publicUrl,
         prompt,
-        provider: useOpenAI ? "openai" : (Deno.env.get("GEMINI_API_KEY") ? "gemini-direct" : "lovable-ai"),
+        provider: useOpenAI ? (openAiPick!.usedDedicated ? "openai-image2" : "openai") : (Deno.env.get("GEMINI_API_KEY") ? "gemini-direct" : "lovable-ai"),
         model,
         mime_type: mime,
       }).select().single();
@@ -300,7 +313,7 @@ Deno.serve(async (req) => {
       target_id: targetId ?? asset?.id ?? null,
       original_prompt: prompt,
       final_prompt: finalPrompt,
-      provider: useOpenAI ? "openai" : (Deno.env.get("GEMINI_API_KEY") ? "gemini-direct" : "lovable-ai"),
+      provider: useOpenAI ? (openAiPick!.usedDedicated ? "openai-image2" : "openai") : (Deno.env.get("GEMINI_API_KEY") ? "gemini-direct" : "lovable-ai"),
       model,
     });
 

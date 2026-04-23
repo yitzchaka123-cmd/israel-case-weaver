@@ -11,6 +11,7 @@ const corsHeaders = {
 const ALLOWED_KEYS = [
   { name: "OpenAi", label: "OpenAI API key", provider: "openai" as const },
   { name: "OPENAI_API_KEY", label: "OpenAI API key (alt)", provider: "openai" as const },
+  { name: "OPENAI_IMAGE2_API_KEY", label: "OpenAI API key (Image 2 dedicated)", provider: "openai" as const },
   { name: "LOVABLE_API_KEY", label: "Lovable AI Gateway", provider: "lovable" as const, managed: true },
   { name: "ANTHROPIC_API_KEY", label: "Anthropic (Claude)", provider: "anthropic" as const },
   { name: "GEMINI_API_KEY", label: "Google Gemini (direct)", provider: "gemini" as const },
