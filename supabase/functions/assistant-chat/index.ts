@@ -1336,13 +1336,13 @@ async function processConversation(
       if (synth) { quickOptions = synth.options; quickQuestion = synth.question; }
     }
 
-    await supa.from("chat_messages").insert({
-      id: assistantMessageId, project_id: projectId, role: "assistant", content: finalText,
+    await supa.from("chat_messages").update({
+      content: finalText,
       metadata: {
-        model, effective_model: lastFb.effectiveModel, fallback: lastFb.fallback, tools: executedTools,
+        model, effective_model: lastFb.effectiveModel, fallback: lastFb.fallback, tools: executedTools, in_progress: false,
         ...(quickOptions ? { options: quickOptions, question: quickQuestion } : {}),
       },
-    });
+    }).eq("id", assistantMessageId);
     return;
   }
   throw new Error("Too many tool-call rounds");
