@@ -218,7 +218,10 @@ Deno.serve(async (req) => {
           const reqIdSuffix = reqId ? ` (request id: ${reqId})` : "";
 
           if (oResp.status === 429) {
-            return new Response(JSON.stringify({ error: `OpenAI rate limit. ${realMessage}${reqIdSuffix}` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+            const tierHint = isGptImage2
+              ? ` Tier 1 OpenAI accounts are limited to 5 images/min on gpt-image-2. Wait ~60s and retry, or upgrade your OpenAI tier.`
+              : "";
+            return new Response(JSON.stringify({ error: `OpenAI rate limit. ${realMessage}${tierHint}${reqIdSuffix}` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
           }
           if (oResp.status === 403 && /verif/i.test(realMessage)) {
             return new Response(JSON.stringify({
