@@ -96,8 +96,9 @@ When the user replies in Hebrew or with a synonym, MAP it to the canonical value
   "היסטורי" → "Historical"; "פסיכולוגי" → "Psychological"
 If you can't map a user's free-text answer to one of the canonical values with confidence, ASK them to pick from the canonical list (numbered + propose_options) instead of inventing a new value. Never write Hebrew strings into mystery_type / genre / difficulty.
 
-TOOL-CALL-BEFORE-PROSE RULE
-After the user picks or confirms title, subtitle, mystery_type, genre, year, difficulty, player_role, case_goal, setting, selling_point, or target_doc_count, your VERY NEXT assistant turn MUST begin with the corresponding update_project tool call BEFORE any prose, narration, or follow-up question. If you produce prose first and the tool call later (or not at all), the Overview panel stays empty and the user sees a broken app — that is a failure. Batch multiple confirmed fields into a single update_project call when the user confirmed several at once.
+TOOL-CALL-BEFORE-PROSE RULE (HARD ENFORCEMENT — these are not soft suggestions)
+1. After the user picks or confirms title, subtitle, mystery_type, genre, year, difficulty, player_role, case_goal, setting, selling_point, or target_doc_count, your VERY NEXT assistant turn MUST begin with the corresponding update_project tool call BEFORE any prose, narration, or follow-up question. If you produce prose first and the tool call later (or not at all), the Overview panel stays empty and the user sees a broken app — that is a failure. Batch multiple confirmed fields into a single update_project call when the user confirmed several at once.
+2. If your message contains a numbered list of 2–6 short, mutually-exclusive choices and you do NOT also call \`propose_options\` in the same turn, the user sees no buttons under the message and the app feels broken — that is a failure. Always pair "1) … 2) … 3) …" prose with a \`propose_options\` tool call carrying the same items.
 
 TOOL USE (CRITICAL)
 When the user approves a change, you MUST persist it by calling the appropriate tool. Do NOT just describe the change. Tools write to the shared project state so the UI, canvas and suspects sections update immediately.
@@ -137,7 +138,76 @@ Existing documents: ${docCount}
 Logic flow approved: ${project.logic_approved_at ? "YES (" + project.logic_approved_at + ")" : "NO — must be approved on the Canvas before generating documents"}
 Solution summary set: ${project.solution_summary ? "YES" : "NO"}
 
-Respond in English for planning. Write Hebrew for any final in-game text. Keep outputs concise unless the user requests depth.${overrides}`;
+Respond in English for planning. Write Hebrew for any final in-game text. Keep outputs concise unless the user requests depth.${overrides}
+
+REMINDER (read this before every reply):
+• Any numbered 2–6 mutually-exclusive choice list in your prose → ALSO call \`propose_options\` in the same turn.
+• Any confirmed Case Identity field (title, subtitle, mystery_type, genre, year, difficulty, player_role, case_goal, setting, selling_point, target_doc_count, phase) → ALSO call \`update_project\` in the same turn, BEFORE the prose.
+Skipping either tool means the UI silently breaks for the user.`;
+}
+
+// ---------- Server-side fallback: synthesize quick-reply options from a numbered list ----------
+// Some models (notably newer GPT variants under long conversations) write "1) … 2) … 3) …"
+// in prose but forget to call `propose_options`. When that happens, parse the prose
+// and synthesize options so the UI still renders buttons. Conservative on purpose:
+// only fires when the message looks like a question with 2–6 short numbered choices.
+function synthesizeOptionsFromProse(text: string): { options: Array<{ label: string; send: string }>; question: string | null } | null {
+  if (!text) return null;
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return null;
+
+  // Heuristic gate 1: the message must "feel" like a question or pick-one prompt.
+  // English keywords + Hebrew equivalents (בחר/בחרי/בחרו = pick, איזה/איזו = which).
+  const looksLikeQuestion =
+    /\?\s*$/.test(trimmed) ||
+    /\b(pick|choose|select|which|prefer|approve|confirm)\b/i.test(trimmed) ||
+    /(בחר|בחרי|בחרו|איזה|איזו|תבחר|מעדיף|מעדיפה|לאשר)/.test(trimmed);
+  if (!looksLikeQuestion) return null;
+
+  // Heuristic gate 2: the LAST paragraph should contain the numbered list.
+  // Split on blank lines; consider the last non-empty block.
+  const blocks = trimmed.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
+  if (blocks.length === 0) return null;
+  const lastBlock = blocks[blocks.length - 1];
+
+  const lineRegex = /^\s*(\d+)[\.\)]\s+(.+?)\s*$/gm;
+  const matches: Array<{ n: number; text: string }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = lineRegex.exec(lastBlock)) !== null) {
+    const n = Number(m[1]);
+    const itemText = m[2].trim();
+    if (!itemText || itemText.length > 120) return null; // too long → not a button
+    matches.push({ n, text: itemText });
+  }
+  if (matches.length < 2 || matches.length > 6) return null;
+
+  // Numbers should be sequential starting at 1 (1,2,3…) — guard against numbered
+  // step-by-step instructions being misread as choices.
+  for (let i = 0; i < matches.length; i++) {
+    if (matches[i].n !== i + 1) return null;
+  }
+
+  // Strip trailing parenthetical/em-dash explanation for cleaner button text,
+  // but cap to ~60 chars.
+  const toLabel = (s: string) => {
+    const cleaned = s.replace(/\s+—\s+.*$/, "").replace(/\s*\(.*\)\s*$/, "").trim();
+    const base = cleaned || s;
+    return base.length > 60 ? `${base.slice(0, 57)}…` : base;
+  };
+
+  // Try to lift the question line: the line right above the numbered block, if any.
+  const beforeNumbers = lastBlock.split(lineRegex)[0]?.trim() ?? "";
+  const questionLine = beforeNumbers
+    ? beforeNumbers.split("\n").map((l) => l.trim()).filter(Boolean).pop() ?? null
+    : null;
+
+  return {
+    options: matches.map((mm) => {
+      const label = toLabel(mm.text);
+      return { label, send: mm.text };
+    }),
+    question: questionLine && questionLine.length <= 140 ? questionLine : null,
+  };
 }
 
 // ---------- Tool definitions ----------
@@ -550,8 +620,19 @@ Deno.serve(async (req) => {
       const optionsResult = lastOptionsTool?.result as
         | { options?: Array<{ label: string; send: string }>; question?: string }
         | undefined;
-      const quickOptions = optionsResult?.options ?? null;
-      const quickQuestion = optionsResult?.question ?? null;
+      let quickOptions = optionsResult?.options ?? null;
+      let quickQuestion = optionsResult?.question ?? null;
+
+      // Fallback: model wrote a numbered list in prose but forgot to call
+      // propose_options. Synthesize buttons from the prose so the UI still
+      // renders quick replies.
+      if (!quickOptions || quickOptions.length === 0) {
+        const synth = synthesizeOptionsFromProse(finalText);
+        if (synth) {
+          quickOptions = synth.options;
+          quickQuestion = synth.question;
+        }
+      }
 
       await supa.from("chat_messages").insert({
         id: assistantMessageId,

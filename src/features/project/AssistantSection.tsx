@@ -507,8 +507,17 @@ function MessageBubble({
   highlighted?: boolean;
 }) {
   const tools = msg.metadata?.tools ?? [];
-  const options = msg.metadata?.options ?? [];
-  const question = msg.metadata?.question ?? null;
+  const metaOptions = msg.metadata?.options ?? [];
+  const metaQuestion = msg.metadata?.question ?? null;
+  // Client-side fallback: if the assistant wrote a numbered choice list in
+  // prose but the server didn't attach any options (older messages, or model
+  // forgot the tool call AND server fallback didn't catch it), synthesize
+  // buttons from the prose so they still appear.
+  const synth = msg.role === "assistant" && isLast && metaOptions.length === 0
+    ? synthesizeOptionsFromProse(msg.content)
+    : null;
+  const options: QuickOption[] = metaOptions.length > 0 ? metaOptions : synth?.options ?? [];
+  const question = metaQuestion ?? synth?.question ?? null;
   // Only render quick-reply buttons on the most recent assistant message —
   // older proposals are stale and clicking them would be confusing.
   const showOptions = msg.role === "assistant" && isLast && options.length > 0;
@@ -682,6 +691,56 @@ function formatRelativeTime(iso: string): string {
   const diffDay = Math.round(diffHr / 24);
   if (diffDay < 7) return `${diffDay}d ago`;
   return new Date(iso).toLocaleDateString();
+}
+
+// Mirror of the server-side fallback in supabase/functions/assistant-chat/index.ts.
+// When the model wrote a numbered choice list in prose but no `options` were
+// attached to the message metadata (e.g. older messages, or the server
+// fallback also missed it), parse the prose and surface buttons.
+function synthesizeOptionsFromProse(text: string): { options: QuickOption[]; question: string | null } | null {
+  if (!text) return null;
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+
+  const looksLikeQuestion =
+    /\?\s*$/.test(trimmed) ||
+    /\b(pick|choose|select|which|prefer|approve|confirm)\b/i.test(trimmed) ||
+    /(בחר|בחרי|בחרו|איזה|איזו|תבחר|מעדיף|מעדיפה|לאשר)/.test(trimmed);
+  if (!looksLikeQuestion) return null;
+
+  const blocks = trimmed.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
+  if (blocks.length === 0) return null;
+  const lastBlock = blocks[blocks.length - 1];
+
+  const lineRegex = /^\s*(\d+)[\.\)]\s+(.+?)\s*$/gm;
+  const matches: Array<{ n: number; text: string }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = lineRegex.exec(lastBlock)) !== null) {
+    const n = Number(m[1]);
+    const itemText = m[2].trim();
+    if (!itemText || itemText.length > 120) return null;
+    matches.push({ n, text: itemText });
+  }
+  if (matches.length < 2 || matches.length > 6) return null;
+  for (let i = 0; i < matches.length; i++) {
+    if (matches[i].n !== i + 1) return null;
+  }
+
+  const toLabel = (s: string) => {
+    const cleaned = s.replace(/\s+—\s+.*$/, "").replace(/\s*\(.*\)\s*$/, "").trim();
+    const base = cleaned || s;
+    return base.length > 60 ? `${base.slice(0, 57)}…` : base;
+  };
+
+  const beforeNumbers = lastBlock.split(lineRegex)[0]?.trim() ?? "";
+  const questionLine = beforeNumbers
+    ? beforeNumbers.split("\n").map((l) => l.trim()).filter(Boolean).pop() ?? null
+    : null;
+
+  return {
+    options: matches.map((mm) => ({ label: toLabel(mm.text), send: mm.text })),
+    question: questionLine && questionLine.length <= 140 ? questionLine : null,
+  };
 }
 
 // Maps a tool name to the workspace tab the user should jump to when clicking
