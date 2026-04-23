@@ -606,7 +606,7 @@ function EnvelopeCard({
             </Label>
             <div className="flex items-center gap-2">
               <PromptWriterModelPicker surface="envelope" />
-              <ImageModelPicker surface="envelope" />
+              <ImageModelPicker surface="envelope" defaultModel="chatgpt-image" />
             </div>
           </div>
           <Textarea
