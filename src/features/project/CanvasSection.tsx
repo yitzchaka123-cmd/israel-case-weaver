@@ -832,6 +832,17 @@ function NodeDetailPanel({
               >
                 {explanation}
               </div>
+            ) : explaining ? (
+              <div
+                className="text-xs text-muted-foreground leading-relaxed rounded-lg p-3.5 flex items-center gap-2"
+                style={{
+                  background: `color-mix(in oklab, ${accent} 6%, var(--color-muted))`,
+                  border: `1px solid color-mix(in oklab, ${accent} 18%, var(--color-border))`,
+                }}
+              >
+                <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                Generating explanation…
+              </div>
             ) : (
               <p className="text-xs text-muted-foreground leading-relaxed">
                 Click <em>Explain</em> for an AI breakdown of what this node does and how it fits into the
