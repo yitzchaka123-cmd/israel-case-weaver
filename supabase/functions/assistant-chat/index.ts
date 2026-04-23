@@ -609,7 +609,49 @@ const BASE_TOOLS = [
   {
     type: "function",
     function: {
-      name: "update_canvas_node",
+      name: "add_hint",
+      description:
+        "Create ONE new hint row. Use only when the user wants a single hint at a known stage+level (e.g. 'add stage 2 level 3 hint that says X'). For scaffolding a whole stage at once, use generate_hint_stage instead. For editing an existing hint, use update_hint.",
+      parameters: {
+        type: "object",
+        properties: {
+          stage: { type: "number", description: "Stage number (1-based). Each stage represents one moment the player gets stuck." },
+          level: { type: "number", description: "Hint level within the stage (1=vague, 2=helpful, 3=reveals the task)." },
+          text: { type: "string", description: "Hebrew hint text, RTL, grammatical, one or two short sentences." },
+        },
+        required: ["stage", "level"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "generate_hint_stage",
+      description:
+        "Bulk-create an entire hint stage (vague → helpful → reveal) in one call. Provide all 3 Hebrew hints for the given stage. If hint rows already exist for that stage, this REPLACES them so the stage stays a clean 3-rung ladder. Use this as the default way to scaffold a new stage.",
+      parameters: {
+        type: "object",
+        properties: {
+          stage: { type: "number", description: "Stage number (1-based)." },
+          hints: {
+            type: "array",
+            minItems: 1,
+            maxItems: 6,
+            description: "Hint rungs for this stage, ordered from vague (level 1) to reveal (last level). Each item is the Hebrew hint text for that rung.",
+            items: { type: "string" },
+          },
+          context: {
+            type: "string",
+            description: "Optional one-line description of which clue/deduction/task this stage hints toward. Helps the user audit later.",
+          },
+        },
+        required: ["stage", "hints"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
       description:
         "Edit an EXISTING canvas node by id (from the Existing canvas nodes roster). Pass ONLY the fields you want to change.",
       parameters: {
