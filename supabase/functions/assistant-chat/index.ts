@@ -202,6 +202,8 @@ Mixed props (e.g. a real form annotated with a hand-drawn map): use ~12 realism 
 
 Match every detail to the era, setting, country, and document type — a 1987 Israeli memo gets PMO-style stamps and Hebrew dating; a 1950s noir telegram gets Western Union framing; a pirate map gets parchment burns and compass roses. Never copy real emblems, signatures, or names.
 
+${renderHintsSystemBlock(playbook)}
+
 CURRENT PROJECT STATE
 Title: ${project.title}
 Subtitle: ${project.subtitle ?? "—"}
