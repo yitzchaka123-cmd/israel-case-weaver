@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 export function SettingsPage() {
   const { user, isAdmin } = useAuth();
   const { theme, setTheme } = useTheme();
+  const qc = useQueryClient();
   const fileInput = useRef<HTMLInputElement>(null);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState("");
@@ -67,7 +68,11 @@ export function SettingsPage() {
       image_prompt_assistant_instructions: imgAssistantInstructions,
     } as any);
     if (error) toast.error(error.message);
-    else toast.success("Settings saved");
+    else {
+      toast.success("Settings saved");
+      qc.invalidateQueries({ queryKey: ["app-logo", user.id] });
+      qc.invalidateQueries({ queryKey: ["profile", user.id] });
+    }
   };
 
 
