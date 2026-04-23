@@ -87,7 +87,7 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
         .limit(1)
         .maybeSingle();
       if (error) throw error;
-      return (data as unknown as StoryboardRow) ?? null;
+      return (data as StoryboardRow) ?? null;
     },
   });
 
