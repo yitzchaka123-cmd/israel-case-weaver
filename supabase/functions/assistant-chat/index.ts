@@ -7,6 +7,7 @@ import {
   resolvePlaybook,
   renderSuspectCountsLine,
   renderHintsLine,
+  renderHintsSystemBlock,
   renderEnvelopesLine,
   renderPhase1OrderSentence,
   renderCanonicalVocabBlock,
