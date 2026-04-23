@@ -652,6 +652,9 @@ const BASE_TOOLS = [
     },
   },
   {
+    type: "function",
+    function: {
+      name: "update_canvas_node",
       description:
         "Edit an EXISTING canvas node by id (from the Existing canvas nodes roster). Pass ONLY the fields you want to change.",
       parameters: {
