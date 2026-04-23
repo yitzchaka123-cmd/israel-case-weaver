@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Mic, MicOff, Send, Loader2, X, Pencil, Check, Sparkles, Trash2 } from "lucide-react";
+import { Mic, MicOff, Send, Loader2, X, Pencil, Check, Sparkles, Trash2, Eye, EyeOff, Copy } from "lucide-react";
 import { useVoiceInput } from "@/hooks/use-voice-input";
 
 type Rule = { id: string; text: string; created_at: string };
@@ -20,6 +20,7 @@ export function AssistantTweaksPanel() {
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
+  const [showPreview, setShowPreview] = useState(false);
   const dictationBaseRef = useRef("");
 
   const voice = useVoiceInput({
