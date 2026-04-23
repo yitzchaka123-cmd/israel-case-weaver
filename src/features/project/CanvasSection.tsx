@@ -553,7 +553,12 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
             markerEnd: { type: MarkerType.ArrowClosed, color: "var(--color-accent, #6366f1)", width: 18, height: 18 },
           }}
         >
-          <Background gap={24} size={1} color="var(--color-border)" />
+          <Background
+            variant={BackgroundVariant.Dots}
+            gap={20}
+            size={1.4}
+            color="color-mix(in oklab, var(--color-muted-foreground) 35%, transparent)"
+          />
           <MiniMap
             pannable
             zoomable
