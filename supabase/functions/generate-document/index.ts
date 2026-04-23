@@ -151,22 +151,72 @@ Deno.serve(async (req) => {
         const size = portraitSizes.includes(ps) ? "1024x1536"
           : ps === "business card" ? "1536x1024"
           : "1024x1536";
-        const oResp = await fetch("https://api.openai.com/v1/images/generations", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ model, prompt: imgPrompt, size, quality: "high", n: 1 }),
-        });
+
+        // Default to "medium" — gpt-image-2 at "high" can take ~2 min and exceed
+        // the edge runtime budget. User can still opt into "high" explicitly.
+        const quality = (qualityOverride === "high" || qualityOverride === "low" || qualityOverride === "medium")
+          ? qualityOverride
+          : "medium";
+
+        // Cap at 110s — leaves headroom under the platform's ~150s kill.
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 110_000);
+
+        let oResp: Response;
+        try {
+          oResp = await fetch("https://api.openai.com/v1/images/generations", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model,
+              prompt: imgPrompt,
+              size,
+              quality,
+              n: 1,
+              output_format: "jpeg",
+              output_compression: 90,
+            }),
+            signal: controller.signal,
+          });
+        } catch (e) {
+          clearTimeout(timer);
+          const aborted = (e as Error)?.name === "AbortError";
+          console.error("openai image fetch failed", e);
+          return new Response(JSON.stringify({
+            error: aborted
+              ? `OpenAI image generation timed out after 110s. Try lowering quality to "Medium" or switch to a Nano Banana model.`
+              : `OpenAI request failed: ${(e as Error)?.message ?? "network error"}`,
+          }), { status: aborted ? 504 : 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        clearTimeout(timer);
+
         if (!oResp.ok) {
+          const reqId = oResp.headers.get("x-request-id") ?? "";
           const t = await oResp.text();
-          console.error("openai image error", oResp.status, t);
-          if (oResp.status === 429) return new Response(JSON.stringify({ error: "OpenAI rate limit" }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-          return new Response(JSON.stringify({ error: "OpenAI image generation failed" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          console.error("openai image error", oResp.status, reqId, t);
+          // Try to surface the real OpenAI error message
+          let realMessage = t;
+          try { realMessage = JSON.parse(t)?.error?.message ?? t; } catch { /* not json */ }
+          const reqIdSuffix = reqId ? ` (request id: ${reqId})` : "";
+
+          if (oResp.status === 429) {
+            return new Response(JSON.stringify({ error: `OpenAI rate limit. ${realMessage}${reqIdSuffix}` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          }
+          if (oResp.status === 403 && /verif/i.test(realMessage)) {
+            return new Response(JSON.stringify({
+              error: `OpenAI requires organization verification to use ${model}. Open https://platform.openai.com/settings/organization/general → Verify Organization, then retry. Or switch to "ChatGPT Image 1" or a Nano Banana model.${reqIdSuffix}`,
+            }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          }
+          if (oResp.status === 401 || oResp.status === 403) {
+            return new Response(JSON.stringify({ error: `OpenAI auth failed — ${realMessage}${reqIdSuffix}` }), { status: oResp.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          }
+          return new Response(JSON.stringify({ error: `OpenAI image generation failed (${oResp.status}): ${realMessage}${reqIdSuffix}` }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
         const oData = await oResp.json();
         const b64: string | undefined = oData.data?.[0]?.b64_json;
         if (!b64) return new Response(JSON.stringify({ error: "No image returned (OpenAI)" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-        mime = "image/png";
+        mime = "image/jpeg";
       } else {
         try {
           const result = await generateImage({ prompt: imgPrompt, model });
