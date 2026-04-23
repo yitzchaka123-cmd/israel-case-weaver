@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Sparkles, ArrowRight, Wand2, Image as ImageIcon, Save, FileText, Copy, Trash2, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
+import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { useProjectNotifications } from "@/features/project/notifications/useProjectNotifications";
 
 type Engine = "sora" | "kling";
@@ -32,6 +33,9 @@ interface Shot {
   image_url: string | null;
   in_prompts: boolean; // visible in column 2
   in_storyboard: boolean; // visible in column 3
+  image_requested_model?: string | null;
+  image_effective_model?: string | null;
+  image_fallback?: string | null;
 }
 
 interface StoryboardRow {
@@ -110,6 +114,9 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
       image_url: s.image_url ?? null,
       in_prompts: s.in_prompts ?? !!s.prompt,
       in_storyboard: s.in_storyboard ?? !!s.image_url,
+      image_requested_model: s.image_requested_model ?? null,
+      image_effective_model: s.image_effective_model ?? null,
+      image_fallback: s.image_fallback ?? null,
     })) : []);
   }, [data]);
 
@@ -245,7 +252,13 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
         toast.error(json.error ?? "Keyframe generation failed", { duration: 10000 });
         return;
       }
-      updateShot(shot.id, { image_url: json.url as string, in_storyboard: true });
+      updateShot(shot.id, {
+        image_url: json.url as string,
+        in_storyboard: true,
+        image_requested_model: (json.requestedModel as string) ?? modelOverride ?? null,
+        image_effective_model: (json.effectiveModel as string) ?? null,
+        image_fallback: (json.fallback as string) ?? "none",
+      });
       toast.success(`Shot ${shot.n} keyframe ready`);
     } finally {
       setBusyShot((b) => ({ ...b, [shot.id]: undefined }));
@@ -508,7 +521,7 @@ function ShotPromptCard({ shot, busy, onChange, onGenerate, onPush }: { shot: Sh
 function ShotBoardCard({ shot, busy, onGenerate }: { shot: Shot; busy: boolean; onGenerate: () => void }) {
   return (
     <div className="rounded-lg border bg-card overflow-hidden">
-      <div className="aspect-video bg-muted relative">
+      <div className="group aspect-video bg-muted relative">
         {shot.image_url ? (
           <img src={shot.image_url} alt={`Shot ${shot.n}`} className="w-full h-full object-cover" />
         ) : (
@@ -520,6 +533,19 @@ function ShotBoardCard({ shot, busy, onGenerate }: { shot: Shot; busy: boolean; 
         <div className={`absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded text-[10px] font-medium ${shot.engine === "sora" ? "bg-purple-500/90 text-white" : "bg-teal-500/90 text-white"}`}>
           {shot.engine.toUpperCase()}
         </div>
+        {shot.image_url && (shot.image_effective_model || shot.image_requested_model) && (
+          <div className="absolute bottom-1.5 right-1.5">
+            <AiOriginBadge
+              position="inline"
+              hoverOnly
+              info={{
+                requested: shot.image_requested_model ?? null,
+                effective: shot.image_effective_model ?? null,
+                fallback: shot.image_fallback ?? "none",
+              }}
+            />
+          </div>
+        )}
       </div>
       <div className="p-2 space-y-1.5">
         <div className="text-[10px] text-muted-foreground line-clamp-3 font-mono leading-relaxed">{shot.prompt || "—"}</div>

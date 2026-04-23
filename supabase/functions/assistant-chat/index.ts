@@ -1138,6 +1138,7 @@ Deno.serve(async (req) => {
 
     const MAX_ROUNDS = 8;
     const callerUserId = await getUserIdFromAuth(req);
+    let lastFb: { effectiveModel: string; fallback: string } = { effectiveModel: model, fallback: "none" };
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const isFinalRound = round === MAX_ROUNDS - 1;
       const body: Record<string, unknown> = { model, messages: convo, stream: false };
@@ -1146,6 +1147,7 @@ Deno.serve(async (req) => {
       const roundStartedAt = Date.now();
       const resp = await chatCompletions(body);
       const fb = extractFallback(resp, model);
+      lastFb = fb;
       // Log every round (best-effort, non-blocking semantics)
       logAiRun({
         userId: callerUserId, projectId, surface: "assistant-chat",
@@ -1204,7 +1206,7 @@ Deno.serve(async (req) => {
             project_id: projectId,
             role: "assistant",
             content: recoveryNote,
-            metadata: { model, tools: executedTools, partial: true, error: errMsg },
+            metadata: { model, effective_model: lastFb.effectiveModel, fallback: lastFb.fallback, tools: executedTools, partial: true, error: errMsg },
           });
           return new Response(
             JSON.stringify({
@@ -1278,6 +1280,8 @@ Deno.serve(async (req) => {
         content: finalText,
         metadata: {
           model,
+          effective_model: lastFb.effectiveModel,
+          fallback: lastFb.fallback,
           tools: executedTools,
           ...(quickOptions ? { options: quickOptions, question: quickQuestion } : {}),
         },

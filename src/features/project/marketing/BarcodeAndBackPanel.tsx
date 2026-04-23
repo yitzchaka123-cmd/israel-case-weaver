@@ -9,6 +9,7 @@ import { Loader2, Barcode as BarcodeIcon, Image as ImageIcon, RefreshCw, Wand2 }
 import { toast } from "sonner";
 import { ean13ToPngBlob, ean13ToSvg, generateEan13 } from "./ean13";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
+import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { useProjectNotifications } from "@/features/project/notifications/useProjectNotifications";
 
 interface Marketing {
@@ -48,6 +49,7 @@ export function BarcodeAndBackPanel({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
   const [generatingBarcode, setGeneratingBarcode] = useState(false);
   const [generatingBack, setGeneratingBack] = useState(false);
+  const [backOrigin, setBackOrigin] = useState<{ requested: string | null; effective: string | null; fallback: string | null } | null>(null);
   const seenBarcode = useRef<string | null>(null);
   const { create: createNotif } = useProjectNotifications(projectId);
 
@@ -162,6 +164,11 @@ LAYOUT REQUIREMENTS:
         toast.error("No image returned");
         return;
       }
+      setBackOrigin({
+        requested: (json.requestedModel as string) ?? null,
+        effective: (json.effectiveModel as string) ?? null,
+        fallback: (json.fallback as string) ?? "none",
+      });
 
       try {
         const [base, code] = await Promise.all([fetchAsImage(baseUrl), fetchAsImage(data.barcode_url)]);
@@ -248,9 +255,14 @@ LAYOUT REQUIREMENTS:
           <div className="flex items-center gap-2 text-sm font-medium">
             <ImageIcon className="h-4 w-4" /> Back cover
           </div>
-          <div className="aspect-[3/4] bg-muted rounded-lg overflow-hidden flex items-center justify-center">
+          <div className="group aspect-[3/4] bg-muted rounded-lg overflow-hidden flex items-center justify-center relative">
             {data?.back_cover_url ? (
-              <img src={data.back_cover_url} alt="Back of box" className="w-full h-full object-cover" />
+              <>
+                <img src={data.back_cover_url} alt="Back of box" className="w-full h-full object-cover" />
+                {backOrigin && (backOrigin.effective || backOrigin.requested) && (
+                  <AiOriginBadge hoverOnly info={backOrigin} />
+                )}
+              </>
             ) : (
               <span className="text-xs text-muted-foreground text-center px-4">
                 {!barcodeReady

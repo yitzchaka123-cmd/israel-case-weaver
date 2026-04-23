@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { PromptPanel } from "@/components/PromptPanel";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
+import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { ProductionDashboard } from "./ProductionDashboard";
 import { normalizePhase } from "./PhaseStatusBar";
 import { useProjectNotifications } from "./notifications/useProjectNotifications";
@@ -500,9 +501,21 @@ export function ProjectOverview({ project }: { project: any }) {
       <div className="space-y-6">
         <Panel>
           <SectionTitle>Cover</SectionTitle>
-          <div className="aspect-[3/4] rounded-xl overflow-hidden border bg-gradient-soft relative">
+          <div className="group aspect-[3/4] rounded-xl overflow-hidden border bg-gradient-soft relative">
             {draft.cover_image_url ? (
-              <img src={draft.cover_image_url} alt="Cover" className="w-full h-full object-cover" />
+              <>
+                <img src={draft.cover_image_url} alt="Cover" className="w-full h-full object-cover" />
+                {(draft.cover_effective_model || draft.cover_fallback) && (
+                  <AiOriginBadge
+                    hoverOnly
+                    info={{
+                      requested: draft.ai_provider_images ?? null,
+                      effective: draft.cover_effective_model ?? null,
+                      fallback: draft.cover_fallback ?? "none",
+                    }}
+                  />
+                )}
+              </>
             ) : (
               <div className="h-full flex items-center justify-center text-muted-foreground">
                 <Upload className="h-8 w-8 opacity-30" />

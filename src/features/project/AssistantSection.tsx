@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Sparkles, Send, Loader2, Bot, User, Wand2, CheckCircle2, Cpu, Image as ImageIcon, Settings2, Video, ChevronRight, ExternalLink, AlertCircle, Mic, MicOff, Sliders, Pencil, X, Check, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { useVoiceInput } from "@/hooks/use-voice-input";
+import { AiOriginBadge } from "@/components/AiOriginBadge";
 
 const PLANNING_MODELS = [
   { value: "__hdr-lovable", label: "— Lovable AI (workspace credits) —", header: true },
@@ -55,7 +56,7 @@ type Msg = {
   id: string;
   role: "user" | "assistant";
   content: string;
-  metadata?: { tools?: ToolCall[]; options?: QuickOption[]; question?: string | null } | null;
+  metadata?: { tools?: ToolCall[]; options?: QuickOption[]; question?: string | null; model?: string | null; effective_model?: string | null; fallback?: string | null } | null;
   created_at?: string;
 };
 
@@ -621,6 +622,16 @@ function MessageBubble({
           >
             <Pencil className="h-3 w-3" /> Edit
           </button>
+        )}
+        {!isUser && !editing && (msg.metadata?.model || msg.metadata?.effective_model) && (
+          <AiOriginBadge
+            position="inline"
+            info={{
+              requested: msg.metadata?.model ?? null,
+              effective: msg.metadata?.effective_model ?? msg.metadata?.model ?? null,
+              fallback: msg.metadata?.fallback ?? "none",
+            }}
+          />
         )}
         {!isUser && !editing && msg.content.trim() && (
           <button

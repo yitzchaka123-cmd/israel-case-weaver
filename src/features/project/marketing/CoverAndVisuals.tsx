@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PromptPanel } from "@/components/PromptPanel";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
+import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -20,6 +21,9 @@ interface MediaAsset {
   prompt: string | null;
   created_at: string;
   mime_type: string | null;
+  model: string | null;
+  effective_model: string | null;
+  fallback: string | null;
 }
 
 const MARKETING_CATEGORIES = ["cover", "back", "marketing-extra"];
@@ -46,7 +50,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const { data: project } = useQuery({
     queryKey: ["project-cover-only", projectId],
     queryFn: async () => {
-      const { data } = await supabase.from("projects").select("title, cover_image_url").eq("id", projectId).maybeSingle();
+      const { data } = await supabase.from("projects").select("title, cover_image_url, cover_effective_model, cover_fallback, ai_provider_images").eq("id", projectId).maybeSingle();
       return data;
     },
   });
@@ -56,7 +60,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
     queryFn: async (): Promise<MediaAsset[]> => {
       const { data, error } = await supabase
         .from("media_assets")
-        .select("id, category, title, url, prompt, created_at, mime_type")
+        .select("id, category, title, url, prompt, created_at, mime_type, model, effective_model, fallback")
         .eq("project_id", projectId)
         .in("category", MARKETING_CATEGORIES)
         .order("created_at", { ascending: false });
@@ -131,9 +135,21 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
 
       <div className="grid lg:grid-cols-[3fr_2fr] gap-5">
         <div className="rounded-xl border bg-muted/30 overflow-hidden">
-          <div className="aspect-[3/4] bg-muted relative">
+          <div className="group aspect-[3/4] bg-muted relative">
             {cover ? (
-              <img src={cover} alt={project?.title ?? "Cover"} className="w-full h-full object-cover" />
+              <>
+                <img src={cover} alt={project?.title ?? "Cover"} className="w-full h-full object-cover" />
+                {(project?.cover_effective_model || project?.cover_fallback) && (
+                  <AiOriginBadge
+                    hoverOnly
+                    info={{
+                      requested: project?.ai_provider_images ?? null,
+                      effective: project?.cover_effective_model ?? null,
+                      fallback: project?.cover_fallback ?? "none",
+                    }}
+                  />
+                )}
+              </>
             ) : (
               <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground gap-2 text-center px-6">
                 <ImageIcon className="h-8 w-8" />
@@ -162,6 +178,16 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
                       <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">No image</div>
                     )}
                   </div>
+                  {(a.model || a.effective_model) && (
+                    <AiOriginBadge
+                      hoverOnly
+                      info={{
+                        requested: a.model,
+                        effective: a.effective_model ?? a.model,
+                        fallback: a.fallback ?? "none",
+                      }}
+                    />
+                  )}
                   <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-between gap-2">
                     <span className="text-[10px] text-white truncate flex-1">{a.title ?? a.category}</span>
                     {a.url && (
