@@ -293,7 +293,7 @@ function synthesizeOptionsFromProse(text: string): { options: Array<{ label: str
 }
 
 // ---------- Tool definitions ----------
-const TOOLS = [
+const BASE_TOOLS = [
   {
     type: "function",
     function: {
