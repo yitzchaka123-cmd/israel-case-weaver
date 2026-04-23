@@ -693,6 +693,69 @@ function formatRelativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
+// Mirror of the server-side fallback in supabase/functions/assistant-chat/index.ts.
+// When the model wrote a numbered choice list in prose but no `options` were
+// attached to the message metadata (e.g. older messages, or the server
+// fallback also missed it), parse the prose and surface buttons.
+function synthesizeOptionsFromProse(text: string): { options: QuickOption[]; question: string | null } | null {
+  if (!text) return null;
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+
+  const looksLikeQuestion =
+    /\?\s*$/.test(trimmed) ||
+    /\b(pick|choose|select|which|prefer|approve|confirm)\b/i.test(trimmed) ||
+    /(בחר|בחרי|בחרו|איזה|איזו|תבחר|מעדיף|מעדיפה|לאשר)/.test(trimmed);
+  if (!looksLikeQuestion) return null;
+
+  const blocks = trimmed.split(/\n{2,}/).map((b) => b.trim()).filter(Boolean);
+  if (blocks.length === 0) return null;
+  const lastBlock = blocks[blocks.length - 1];
+
+  const lineRegex = /^\s*(\d+)[\.\)]\s+(.+?)\s*$/gm;
+  const matches: Array<{ n: number; text: string }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = lineRegex.exec(lastBlock)) !== null) {
+    const n = Number(m[1]);
+    const itemText = m[2].trim();
+    if (!itemText || itemText.length > 120) return null;
+    matches.push({ n, text: itemText });
+  }
+  if (matches.length < 2 || matches.length > 6) return null;
+  for (let i = 0; i < matches.length; i++) {
+    if (matches[i].n !== i + 1) return null;
+  }
+
+  const toLabel = (s: string) => {
+    const cleaned = s.replace(/\s+—\s+.*$/, "").replace(/\s*\(.*\)\s*$/, "").trim();
+    const base = cleaned || s;
+    return base.length > 60 ? `${base.slice(0, 57)}…` : base;
+  };
+
+  const beforeNumbers = lastBlock.split(lineRegex)[0]?.trim() ?? "";
+  const questionLine = beforeNumbers
+    ? beforeNumbers.split("\n").map((l) => l.trim()).filter(Boolean).pop() ?? null
+    : null;
+
+  return {
+    options: matches.map((mm) => ({ label: toLabel(mm.text), send: mm.text })),
+    question: questionLine && questionLine.length <= 140 ? questionLine : null,
+  };
+}
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const diffSec = Math.round((Date.now() - then) / 1000);
+  if (diffSec < 5) return "just now";
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const diffMin = Math.round(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.round(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.round(diffHr / 24);
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
 // Maps a tool name to the workspace tab the user should jump to when clicking
 // the receipt. Returns null for tools that have no obvious destination.
 function destinationFor(toolName: string): { tab: string; label: string } | null {
