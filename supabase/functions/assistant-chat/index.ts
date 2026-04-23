@@ -2,6 +2,17 @@
 // Uses Lovable AI Gateway (Gemini + GPT-5). Tools mutate project state server-side.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { chatCompletions } from "../_shared/ai-router.ts";
+import {
+  PLAYBOOK_DEFAULTS,
+  resolvePlaybook,
+  renderSuspectCountsLine,
+  renderHintsLine,
+  renderEnvelopesLine,
+  renderPhase1OrderSentence,
+  renderCanonicalVocabBlock,
+  renderRealismParagraphs,
+  type Playbook,
+} from "../_shared/assistant-playbook.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -61,6 +72,7 @@ function buildSystemPrompt(
   project: Record<string, unknown>,
   rosters: Rosters,
   tweaks: Tweak[] = [],
+  playbook: Playbook = PLAYBOOK_DEFAULTS,
 ) {
   const suspectCount = rosters.suspects.length;
   const docCount = rosters.documents.length;
@@ -106,7 +118,7 @@ CONTENT RULES (strict)
 - No single document may spoil the solution. Evidence must cross-reference.
 
 WORKFLOW — proceed ONE STEP AT A TIME, WAIT FOR APPROVAL before advancing phases.
-Phase 1 Setup: mystery_type → genre → 5 numbered Hebrew title options → difficulty → player role → case goal → year. For Hard games discuss an "extra selling point" (physical artifact, USB puzzle, coded insert, etc.).
+${renderPhase1OrderSentence(playbook)}
 Phase 2 Summary: English news-style summary of how the case is solved, layered evidence, balanced red herrings, fictional quoted evidence.
 Phase 3 Structure: suspects, clue sequence, red herrings, deduction logic, envelope flow. Output fits the node canvas.
 Phase 3.5 LOGIC FLOW (MANDATORY GATE before Phase 4):
@@ -132,8 +144,8 @@ RULES:
 3. The user can switch modes any time. If they say "switch to drafts only" / "go full auto" / "ask me each time", call set_doc_generation_mode and acknowledge.
 4. generate_document_assets is gated server-side: it will refuse if the Logic Flow is not approved, or if the document_id doesn't belong to this project. Trust the receipt.
 5. The Hebrew body produced by generate_document_assets MAY differ slightly from the hebrew_content you wrote in add_document — that's expected. The receipt shows the final stored version.
-Envelopes (fixed 5): Open First / 1 / 2 / 3 / 4. Tasks short, bold, not overly revealing. Every envelope ends with: "פתחו את המעטפה הבאה רק אם אתם בטוחים שביצעתם את המשימה הקודמת כראוי."
-Hints: 3 per stage — vague → helpful → gives away task.
+${renderEnvelopesLine(playbook)}
+${renderHintsLine(playbook)}
 
 NUMBERED OPTIONS & QUICK-REPLY BUTTONS
 When you offer the user a choice between 2–6 short, distinct, mutually-exclusive answers (e.g. picking a mystery type, picking a difficulty, choosing one of N proposed Hebrew titles, yes/no/skip, picking which suspect to flesh out next, "approve / revise / start over"), you MUST:
@@ -142,18 +154,7 @@ When you offer the user a choice between 2–6 short, distinct, mutually-exclusi
 Do NOT call \`propose_options\` for open-ended questions ("describe the setting", "write the summary"), free-text answers, or when you're listing >6 items.
 Each option's \`label\` is the button text the user sees (keep it short — under ~60 chars). \`send\` is the message that gets sent on their behalf when they click — usually identical to the label, or a more explicit version like "Option 2: 1980s Tel Aviv noir".
 
-CANONICAL FIELD VALUES (use EXACTLY these strings when calling update_project)
-- mystery_type ∈ {Espionage / Intelligence, Political Intrigue, Based on Real Events, Terror Plot, Cybercrime, Courtroom Drama, Murder & Homicide}
-- genre ∈ {Technological, Mathematical, Historical, Forensics, Psychological}
-- difficulty ∈ {easy, medium, hard}  (lowercase English; NEVER Hebrew, NEVER capitalised)
-When the user replies in Hebrew or with a synonym, MAP it to the canonical value BEFORE calling update_project. Examples:
-  "רצח" / "Murder" / "Police procedural" → mystery_type: "Murder & Homicide"
-  "ריגול" / "Spy" → mystery_type: "Espionage / Intelligence"
-  "בינוני" / "Medium" → difficulty: "medium"
-  "קל" → "easy"; "קשה" → "hard"
-  "פרוצדורלי" / "Procedural" → genre: pick the closest of the 5 (usually "Forensics")
-  "היסטורי" → "Historical"; "פסיכולוגי" → "Psychological"
-If you can't map a user's free-text answer to one of the canonical values with confidence, ASK them to pick from the canonical list (numbered + propose_options) instead of inventing a new value. Never write Hebrew strings into mystery_type / genre / difficulty.
+${renderCanonicalVocabBlock(playbook)}
 
 TOOL-CALL-BEFORE-PROSE RULE (HARD ENFORCEMENT — these are not soft suggestions)
 1. After the user picks or confirms title, subtitle, mystery_type, genre, year, difficulty, player_role, case_goal, setting, selling_point, or target_doc_count, your VERY NEXT assistant turn MUST begin with the corresponding update_project tool call BEFORE any prose, narration, or follow-up question. If you produce prose first and the tool call later (or not at all), the Overview panel stays empty and the user sees a broken app — that is a failure. Batch multiple confirmed fields into a single update_project call when the user confirmed several at once.
@@ -177,9 +178,7 @@ DESIGN INSTRUCTIONS RULES (CRITICAL — applies to EVERY add_document call)
 The \`design_instructions\` field is the visual brief for the image generator. It MUST be long, structured, and specific. Never leave it empty, never use one-line notes, never use generic placeholders. Format it with these sections, in this order:
   GOAL · CRITICAL TEXT QUALITY RULES · OUTPUT FORMAT (size + DPI matching print_size) · VISUAL STYLE · LAYOUT (numbered, document-type specific) · TYPOGRAPHY · AUTHENTICITY RULES · EXACT HEBREW TEXT TO PLACE (mirror the Hebrew body verbatim — no paraphrasing) · ADDITIONAL REALISM DETAILS · FINAL INSTRUCTION
 
-Realism floor — MANDATORY MINIMUM 20 concrete realism details under "ADDITIONAL REALISM DETAILS" for any document type that exists in the real world (memos, letters, reports, transcripts, newspapers, photos, ID cards, receipts, telegrams, police forms, bank statements, medical records, ticket stubs, business cards, etc.). Examples of valid realism details: paper aging tone, fold lines, punch holes, staples/paperclips, coffee/water stains, smudged ink, typewriter offset, photocopy shadowing, intake/filing stamps with date format of the era, handwritten marginalia, signature scribbles, classification banners, reference codes, distribution lists, period-correct phone/address formats, ribbon impressions, carbon-copy bleed-through, edge wear, dog-eared corners, perforation marks, redaction bars, tape residue, fingerprint smudges, etc. Each item must be concrete (not "looks aged").
-
-Creative / unusual props (maps, hand-drawn diagrams, ciphers, blueprints, matchbook covers, napkin sketches, ransom notes, tarot/playing cards, photo collages, surveillance polaroids, evidence bag tags, ship/building maps, treasure-style charts, anything non-standard): the realism floor does NOT apply. Instead, add 8–15 CREATIVE / UNUSUAL DETAILS that make the prop feel hand-made, in-world, and surprising — e.g. a smudged compass rose with a personal initial, a coded margin doodle, a torn corner taped back on, a coffee-ring obscuring one room on the map, a crayon arrow added by a child, a misspelling crossed out by hand, a hidden symbol only visible at an angle, a fictitious printer mark, an unusual aspect ratio, an inserted Polaroid, etc. State clearly that this prop trades photorealistic bureaucracy for tactile, creative, prop-style authenticity.
+${renderRealismParagraphs(playbook)}
 
 Mixed props (e.g. a real form annotated with a hand-drawn map): use ~12 realism details + ~6 creative details.
 
@@ -972,16 +971,18 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Load owner's assistant tweaks (house rules)
+    // Load owner's assistant tweaks (free-form rules) AND assistant playbook (default overrides)
     let tweaks: Tweak[] = [];
+    let playbook: Playbook = PLAYBOOK_DEFAULTS;
     if (project.owner_id) {
       const { data: ownerProfile } = await supa
         .from("profiles")
-        .select("assistant_tweaks")
+        .select("assistant_tweaks, assistant_playbook")
         .eq("id", project.owner_id)
         .maybeSingle();
-      const raw = (ownerProfile as { assistant_tweaks?: unknown } | null)?.assistant_tweaks;
-      if (Array.isArray(raw)) tweaks = raw as Tweak[];
+      const raw = (ownerProfile as { assistant_tweaks?: unknown; assistant_playbook?: unknown } | null);
+      if (raw && Array.isArray(raw.assistant_tweaks)) tweaks = raw.assistant_tweaks as Tweak[];
+      if (raw) playbook = resolvePlaybook(raw.assistant_playbook);
     }
 
     const model = PROVIDER_MODEL[project.ai_provider_planning ?? "lovable"] ?? PROVIDER_MODEL.lovable;
@@ -992,7 +993,7 @@ Deno.serve(async (req) => {
       hints: (hintsRoster ?? []) as RosterRow[],
       canvas_nodes: (nodesRoster ?? []) as RosterRow[],
     };
-    const systemPrompt = buildSystemPrompt(project, rosters, tweaks);
+    const systemPrompt = buildSystemPrompt(project, rosters, tweaks, playbook);
 
     // Persist the last user message
     const lastUser = [...messages].reverse().find((m: { role: string }) => m.role === "user");
