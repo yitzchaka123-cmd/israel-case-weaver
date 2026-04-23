@@ -971,16 +971,18 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Load owner's assistant tweaks (house rules)
+    // Load owner's assistant tweaks (free-form rules) AND assistant playbook (default overrides)
     let tweaks: Tweak[] = [];
+    let playbook: Playbook = PLAYBOOK_DEFAULTS;
     if (project.owner_id) {
       const { data: ownerProfile } = await supa
         .from("profiles")
-        .select("assistant_tweaks")
+        .select("assistant_tweaks, assistant_playbook")
         .eq("id", project.owner_id)
         .maybeSingle();
-      const raw = (ownerProfile as { assistant_tweaks?: unknown } | null)?.assistant_tweaks;
-      if (Array.isArray(raw)) tweaks = raw as Tweak[];
+      const raw = (ownerProfile as { assistant_tweaks?: unknown; assistant_playbook?: unknown } | null);
+      if (raw && Array.isArray(raw.assistant_tweaks)) tweaks = raw.assistant_tweaks as Tweak[];
+      if (raw) playbook = resolvePlaybook(raw.assistant_playbook);
     }
 
     const model = PROVIDER_MODEL[project.ai_provider_planning ?? "lovable"] ?? PROVIDER_MODEL.lovable;
@@ -991,7 +993,7 @@ Deno.serve(async (req) => {
       hints: (hintsRoster ?? []) as RosterRow[],
       canvas_nodes: (nodesRoster ?? []) as RosterRow[],
     };
-    const systemPrompt = buildSystemPrompt(project, rosters, tweaks);
+    const systemPrompt = buildSystemPrompt(project, rosters, tweaks, playbook);
 
     // Persist the last user message
     const lastUser = [...messages].reverse().find((m: { role: string }) => m.role === "user");
