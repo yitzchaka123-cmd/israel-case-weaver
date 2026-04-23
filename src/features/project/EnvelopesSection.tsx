@@ -516,7 +516,7 @@ function EnvelopeCard({
             </Label>
             <Input
               dir="rtl"
-              className="text-right font-semibold text-red-600"
+              className="text-right font-semibold text-destructive"
               value={value("task") as string}
               onChange={(e) => onUpdate({ task: e.target.value })}
               placeholder="המשימה — קצרה, ברורה, לא חושפת"
