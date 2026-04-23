@@ -526,6 +526,7 @@ function MessageBubble({
   onEdit,
   disabled,
   highlighted,
+  onOpenAsset,
 }: {
   msg: Msg;
   isLast: boolean;
@@ -533,6 +534,7 @@ function MessageBubble({
   onEdit: (newText: string) => void;
   disabled: boolean;
   highlighted?: boolean;
+  onOpenAsset: (asset: LightboxAsset) => void;
 }) {
   const tools = msg.metadata?.tools ?? [];
   const rawMetaOptions = msg.metadata?.options ?? [];
