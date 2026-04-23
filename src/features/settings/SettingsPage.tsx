@@ -68,6 +68,7 @@ export function SettingsPage() {
       ai_provider_planning: planning,
       ai_provider_documents: documents,
       ai_provider_images: images,
+      ai_provider_prompt_writer: promptWriter,
       image_prompt_assistant_instructions: imgAssistantInstructions,
     } as any);
     if (error) toast.error(error.message);
