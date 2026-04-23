@@ -228,7 +228,7 @@ export function ProjectOverview({ project }: { project: any }) {
         ...(draft.assistant_origins as Record<string, string> ?? {}),
         selling_point: "manual-generate",
       };
-      setDraft((d) => ({ ...d, assistant_origins: nextOrigins }));
+      setDraft({ ...draft, selling_point: value, assistant_origins: nextOrigins });
       await supabase
         .from("projects")
         .update({ assistant_origins: nextOrigins })
