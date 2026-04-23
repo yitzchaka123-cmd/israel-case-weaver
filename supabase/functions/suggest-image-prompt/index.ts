@@ -89,28 +89,34 @@ Deno.serve(async (req) => {
       .order("position")
       .limit(8);
 
-    // Resolve writer model: explicit override → project planning provider → lovable
-    const projectKey = (writerModel && PLANNING_MODEL[writerModel])
-      ? writerModel
-      : ((project.ai_provider_planning as string) || "lovable");
-    const model = PLANNING_MODEL[projectKey] ?? PLANNING_MODEL.lovable;
-
-    // Pull global "image prompt assistant instructions" from the user's profile
+    // Pull global "image prompt assistant instructions" + workspace-default
+    // prompt-writer model from the user's profile.
     const profileOwnerId = userId ?? project.owner_id;
     let globalAssistantInstructions = "";
     let envelopeTemplateBlock = "";
+    let profilePromptWriter = "";
     if (profileOwnerId) {
       const { data: profile } = await supa
         .from("profiles")
-        .select("image_prompt_assistant_instructions, assistant_playbook")
+        .select("image_prompt_assistant_instructions, assistant_playbook, ai_provider_prompt_writer")
         .eq("id", profileOwnerId)
         .maybeSingle();
       globalAssistantInstructions = ((profile as { image_prompt_assistant_instructions?: string } | null)?.image_prompt_assistant_instructions ?? "").trim();
+      profilePromptWriter = ((profile as { ai_provider_prompt_writer?: string } | null)?.ai_provider_prompt_writer ?? "").trim();
       if (category === "envelope") {
         const playbook = resolvePlaybook((profile as { assistant_playbook?: unknown } | null)?.assistant_playbook);
         envelopeTemplateBlock = `\n\n${renderEnvelopeDesignTemplate(playbook)}`;
       }
     }
+
+    // Resolve writer model: explicit per-call override → workspace prompt-writer
+    // default → project's planning provider → lovable.
+    const projectKey = (writerModel && PLANNING_MODEL[writerModel])
+      ? writerModel
+      : (profilePromptWriter && PLANNING_MODEL[profilePromptWriter])
+        ? profilePromptWriter
+        : ((project.ai_provider_planning as string) || "lovable");
+    const model = PLANNING_MODEL[projectKey] ?? PLANNING_MODEL.lovable;
 
     const ctx = [
       project.title && `Title: ${project.title}`,

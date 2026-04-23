@@ -51,15 +51,39 @@ async function testKey(name: string, provider: string): Promise<TestResult> {
       return { ok: keyValid, status: r.status, detail, latencyMs: Date.now() - t0 };
     }
     if (provider === "anthropic") {
+      // Try a tiny chat completion against the current Haiku model.
+      // If it 404s (model id moved), fall back to GET /v1/models so we can
+      // still verify the key is good and report which models it can see.
       const r = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "x-api-key": key, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "claude-3-5-haiku-latest", max_tokens: 1, messages: [{ role: "user", content: "ping" }] }),
+        body: JSON.stringify({ model: "claude-haiku-4-5", max_tokens: 1, messages: [{ role: "user", content: "ping" }] }),
       });
-      const ok = r.ok;
-      let detail = ok ? "valid" : r.statusText;
-      if (!ok) { try { const j = await r.json(); detail = j?.error?.message ?? detail; } catch { /* */ } }
-      return { ok, status: r.status, detail, latencyMs: Date.now() - t0 };
+      if (r.ok) {
+        return { ok: true, status: r.status, detail: "valid (claude-haiku-4-5)", latencyMs: Date.now() - t0 };
+      }
+      // 401/403 = bad key. 404 = model id stale but key likely fine — verify via /v1/models.
+      let firstDetail = r.statusText;
+      try { const j = await r.json(); firstDetail = j?.error?.message ?? firstDetail; } catch { /* */ }
+      if (r.status === 401 || r.status === 403) {
+        return { ok: false, status: r.status, detail: firstDetail, latencyMs: Date.now() - t0 };
+      }
+      // Fall back to listing models — succeeds whenever the key itself is valid.
+      const lr = await fetch("https://api.anthropic.com/v1/models?limit=5", {
+        headers: { "x-api-key": key, "anthropic-version": "2023-06-01" },
+      });
+      if (lr.ok) {
+        let names = "";
+        try {
+          const lj = await lr.json();
+          const ids = (lj?.data ?? []).map((m: { id?: string }) => m.id).filter(Boolean).slice(0, 3);
+          names = ids.length ? ` · sees ${ids.join(", ")}` : "";
+        } catch { /* */ }
+        return { ok: true, status: lr.status, detail: `valid (chat ping 404 — model id moved)${names}`, latencyMs: Date.now() - t0 };
+      }
+      let lDetail = lr.statusText;
+      try { const lj = await lr.json(); lDetail = lj?.error?.message ?? lDetail; } catch { /* */ }
+      return { ok: false, status: lr.status, detail: lDetail, latencyMs: Date.now() - t0 };
     }
     if (provider === "gemini") {
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`);

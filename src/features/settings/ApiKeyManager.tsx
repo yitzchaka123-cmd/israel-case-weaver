@@ -183,6 +183,16 @@ export function ApiKeyManager() {
                     <span>{docs.how}</span>
                   </div>
                 )}
+                {k.provider === "anthropic" && (
+                  <div className="mt-2 text-[11px] text-muted-foreground leading-relaxed">
+                    This tests your Anthropic key directly. The assistant normally calls Claude via the <strong>Lovable AI Gateway</strong> (uses workspace credits — not this key). Your direct key is only used if you pick a <code>claude</code> model and the gateway is down.
+                  </div>
+                )}
+                {k.provider === "gemini" && (
+                  <div className="mt-2 text-[11px] text-muted-foreground leading-relaxed">
+                    This tests your Google AI Studio key directly. Nano Banana models prefer this key when present, otherwise route through the Lovable AI Gateway.
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-2 shrink-0">
