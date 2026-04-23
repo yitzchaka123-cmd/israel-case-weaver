@@ -416,14 +416,170 @@ export function AssistantPlaybookPanel({}: Props = {}) {
         </div>
       </Card>
 
-      <div className="flex justify-end pt-2 sticky bottom-0 bg-card -mx-6 px-6 py-3 border-t">
-        <Button onClick={() => persist(playbook)} disabled={saving}>
-          <Save className="h-4 w-4 mr-1.5" /> {saving ? "Saving..." : "Save playbook"}
-        </Button>
-      </div>
-    </div>
-  );
-}
+      {/* 8. Identity & voice */}
+      <Card
+        id="identity"
+        title="Identity & voice"
+        hint="The high-level voice/style header injected at the top of every system prompt."
+        open={open.identity}
+        onToggle={() => toggle("identity")}
+        onReset={() => reset("identity")}
+        showPrompt={showPrompt.identity}
+        onTogglePrompt={() => togglePrompt("identity")}
+        promptText={renderIdentityBlock(playbook)}
+      >
+        <div className="space-y-3">
+          {([
+            ["planning_language", "Planning language"],
+            ["final_content_language", "Final in-game content language"],
+            ["brand_voice", "Brand voice"],
+            ["setting_flavor", "Setting flavor"],
+          ] as const).map(([k, label]) => (
+            <div key={k} className="space-y-1">
+              <Label className="text-xs">{label}</Label>
+              <Textarea
+                rows={k === "brand_voice" || k === "setting_flavor" ? 2 : 1}
+                value={playbook.identity[k]}
+                onChange={(e) => update("identity", { ...playbook.identity, [k]: e.target.value })}
+                className="text-sm"
+              />
+              <div className="text-[10px] text-muted-foreground truncate">
+                default: {PLAYBOOK_DEFAULTS.identity[k]}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* 9. Content rules */}
+      <Card
+        id="contentrules"
+        title="Content rules"
+        hint="Strict do-not-do bullets the assistant must obey. Rendered verbatim under CONTENT RULES."
+        open={open.contentrules}
+        onToggle={() => toggle("contentrules")}
+        onReset={() => reset("content_rules")}
+        showPrompt={showPrompt.contentrules}
+        onTogglePrompt={() => togglePrompt("contentrules")}
+        promptText={renderContentRulesBlock(playbook)}
+      >
+        <StringListEditor
+          values={playbook.content_rules}
+          onChange={(next) => update("content_rules", next)}
+          placeholder="One rule per line, e.g. No real politicians by name."
+          multiline
+        />
+      </Card>
+
+      {/* 10. Design skeleton */}
+      <Card
+        id="skeleton"
+        title="Document design-instructions skeleton"
+        hint="The ordered sections every add_document call must produce. Toggle, rename, reorder, or add new ones."
+        open={open.skeleton}
+        onToggle={() => toggle("skeleton")}
+        onReset={() => reset("design_skeleton")}
+        showPrompt={showPrompt.skeleton}
+        onTogglePrompt={() => togglePrompt("skeleton")}
+        promptText={renderDesignSkeletonLine(playbook)}
+      >
+        <SectionListEditor
+          values={playbook.design_skeleton}
+          onChange={(next) => update("design_skeleton", next)}
+        />
+      </Card>
+
+      {/* 11. Doc-mode copy */}
+      <Card
+        id="docmodecopy"
+        title="Doc-generation mode labels & gate copy"
+        hint="The 3 button labels shown on first Phase 4 entry, plus the refusal text the assistant says when the Logic Flow isn't approved."
+        open={open.docmodecopy}
+        onToggle={() => toggle("docmodecopy")}
+        onReset={() => reset("doc_mode_copy")}
+        showPrompt={showPrompt.docmodecopy}
+        onTogglePrompt={() => togglePrompt("docmodecopy")}
+        promptText={`${renderDocModeButtonsBlock(playbook)}\n\nLogic-flow refusal:\n${renderLogicGateRefusal(playbook)}`}
+      >
+        <div className="space-y-3">
+          {([
+            ["drafts_label", "Drafts button"],
+            ["auto_label", "Full-auto button"],
+            ["ask_label", "Ask-each-time button"],
+          ] as const).map(([k, label]) => (
+            <div key={k} className="space-y-1">
+              <Label className="text-xs">{label}</Label>
+              <Input
+                value={playbook.doc_mode_copy[k]}
+                onChange={(e) => update("doc_mode_copy", { ...playbook.doc_mode_copy, [k]: e.target.value })}
+                className="h-8 text-sm"
+              />
+            </div>
+          ))}
+          <div className="space-y-1">
+            <Label className="text-xs">Logic-flow gate refusal message</Label>
+            <Textarea
+              rows={3}
+              value={playbook.doc_mode_copy.logic_gate_refusal}
+              onChange={(e) =>
+                update("doc_mode_copy", { ...playbook.doc_mode_copy, logic_gate_refusal: e.target.value })
+              }
+              className="text-sm"
+            />
+          </div>
+        </div>
+      </Card>
+
+      {/* 12. Catalogs */}
+      <Card
+        id="catalogs"
+        title="Document catalogs"
+        hint="Reference lists of print sizes and document types the assistant picks from when proposing documents."
+        open={open.catalogs}
+        onToggle={() => toggle("catalogs")}
+        onReset={() => reset("catalogs")}
+        showPrompt={showPrompt.catalogs}
+        onTogglePrompt={() => togglePrompt("catalogs")}
+        promptText={renderCatalogsBlock(playbook)}
+      >
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label className="text-xs font-medium">Print sizes</Label>
+            <StringListEditor
+              values={playbook.catalogs.print_sizes}
+              onChange={(next) => update("catalogs", { ...playbook.catalogs, print_sizes: next })}
+              placeholder="e.g. A4"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-xs font-medium">Document types</Label>
+            <StringListEditor
+              values={playbook.catalogs.document_types}
+              onChange={(next) => update("catalogs", { ...playbook.catalogs, document_types: next })}
+              placeholder="e.g. memo"
+            />
+          </div>
+        </div>
+      </Card>
+
+      {/* 13. Phase definitions */}
+      <Card
+        id="phases"
+        title="Phase definitions"
+        hint="The ordered phases the project moves through. Renaming a key won't migrate existing projects — they keep their old phase string until you edit them."
+        open={open.phases}
+        onToggle={() => toggle("phases")}
+        onReset={() => reset("phases")}
+        showPrompt={showPrompt.phases}
+        onTogglePrompt={() => togglePrompt("phases")}
+        promptText={renderPhaseEnumComment(playbook)}
+      >
+        <PhaseListEditor
+          values={playbook.phases}
+          onChange={(next) => update("phases", next)}
+        />
+      </Card>
+
 
 function NumInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   return (
