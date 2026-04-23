@@ -1137,12 +1137,24 @@ Deno.serve(async (req) => {
     const TOOLS = buildTools(playbook);
 
     const MAX_ROUNDS = 8;
+    const callerUserId = await getUserIdFromAuth(req);
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const isFinalRound = round === MAX_ROUNDS - 1;
       const body: Record<string, unknown> = { model, messages: convo, stream: false };
       if (!isFinalRound) body.tools = TOOLS;
 
+      const roundStartedAt = Date.now();
       const resp = await chatCompletions(body);
+      const fb = extractFallback(resp, model);
+      // Log every round (best-effort, non-blocking semantics)
+      logAiRun({
+        userId: callerUserId, projectId, surface: "assistant-chat",
+        requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
+        status: resp.ok ? "ok" : "error", latencyMs: Date.now() - roundStartedAt,
+        errorMessage: resp.ok ? undefined : `status ${resp.status}`,
+        targetId: assistantMessageId,
+        promptExcerpt: lastUser?.content ? String(lastUser.content) : undefined,
+      });
 
       if (!resp.ok) {
         const provider = model.startsWith("openai/")
