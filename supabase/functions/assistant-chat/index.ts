@@ -522,6 +522,113 @@ async function executeTool(
         question: typeof opts.question === "string" ? opts.question.trim() : undefined,
       };
     }
+    if (name === "set_doc_generation_mode") {
+      const mode = String((args as { mode?: string }).mode ?? "").trim();
+      if (!["drafts", "auto", "ask"].includes(mode)) {
+        return { ok: false, message: "mode must be 'drafts', 'auto', or 'ask'" };
+      }
+      const { data: current } = await supa
+        .from("projects")
+        .select("assistant_origins")
+        .eq("id", projectId)
+        .single();
+      const origins = { ...(current?.assistant_origins as Record<string, string> ?? {}) };
+      origins.doc_generation_mode = messageId;
+      const { error } = await supa
+        .from("projects")
+        .update({ doc_generation_mode: mode, assistant_origins: origins })
+        .eq("id", projectId);
+      if (error) throw error;
+      const friendly = mode === "drafts"
+        ? "Drafts only — I'll write the rows, you press Generate"
+        : mode === "auto"
+          ? "Full auto — I'll generate text + image after every doc"
+          : "Ask each time — I'll check before generating";
+      return { ok: true, message: `Document workflow set: ${friendly}` };
+    }
+    if (name === "generate_document_assets") {
+      const documentId = String((args as { document_id?: string }).document_id ?? "").trim();
+      const requestedMode = String((args as { mode?: string }).mode ?? "both").trim();
+      if (!documentId) return { ok: false, message: "document_id is required" };
+      if (!["text", "image", "both"].includes(requestedMode)) {
+        return { ok: false, message: "mode must be 'text', 'image', or 'both'" };
+      }
+      // Gate: logic flow must be approved + document must belong to project.
+      const { data: proj } = await supa
+        .from("projects")
+        .select("solution_summary, logic_approved_at")
+        .eq("id", projectId)
+        .single();
+      if (!proj?.solution_summary || !proj?.logic_approved_at) {
+        return {
+          ok: false,
+          message: "Cannot generate — Logic Flow not approved yet. Tell the user to approve it on the Canvas first.",
+        };
+      }
+      const { data: docRow } = await supa
+        .from("documents")
+        .select("id, project_id, title")
+        .eq("id", documentId)
+        .single();
+      if (!docRow || docRow.project_id !== projectId) {
+        return { ok: false, message: "Document not found in this project." };
+      }
+
+      const callGenerate = async (m: "text" | "image") => {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 120_000);
+        try {
+          const r = await fetch(`${SUPABASE_URL}/functions/v1/generate-document`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ documentId, mode: m }),
+            signal: ctrl.signal,
+          });
+          const body = await r.json().catch(() => ({}));
+          return { ok: r.ok, status: r.status, body };
+        } catch (e) {
+          const aborted = (e as Error)?.name === "AbortError";
+          return { ok: false, status: aborted ? 504 : 500, body: { error: aborted ? "timeout after 120s — generation continues server-side, check Documents tab" : (e as Error)?.message ?? "fetch failed" } };
+        } finally {
+          clearTimeout(timer);
+        }
+      };
+
+      const errors: string[] = [];
+      if (requestedMode === "text" || requestedMode === "both") {
+        const r = await callGenerate("text");
+        if (!r.ok) errors.push(`text: ${r.body?.error ?? r.status}`);
+      }
+      if (requestedMode === "image" || requestedMode === "both") {
+        const r = await callGenerate("image");
+        if (!r.ok) errors.push(`image: ${r.body?.error ?? r.status}`);
+      }
+
+      // Re-read row to grab whatever made it through.
+      const { data: finalDoc } = await supa
+        .from("documents")
+        .select("hebrew_content, generated_asset_url, title")
+        .eq("id", documentId)
+        .single();
+      const hebrew = (finalDoc?.hebrew_content ?? "").toString();
+      const preview = hebrew.length > 240 ? `${hebrew.slice(0, 240)}…` : hebrew;
+      const imageUrl = finalDoc?.generated_asset_url ?? null;
+
+      if (errors.length > 0 && !imageUrl && !hebrew) {
+        return { ok: false, message: `Generation failed — ${errors.join("; ")}`, id: documentId };
+      }
+      const partial = errors.length > 0 ? ` (partial: ${errors.join("; ")})` : "";
+      return {
+        ok: true,
+        message: `Generated assets for "${finalDoc?.title ?? "document"}"${partial}`,
+        id: documentId,
+        hebrew_preview: preview || undefined,
+        image_url: imageUrl || undefined,
+      };
+    }
     return { ok: false, message: `Unknown tool: ${name}` };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : String(e) };
