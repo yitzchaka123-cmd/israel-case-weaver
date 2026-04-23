@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { Mic, MicOff, Send, Loader2, X, Pencil, Check, Sparkles, Trash2 } from "lucide-react";
+import { Mic, MicOff, Send, Loader2, X, Pencil, Check, Sparkles, Trash2, Eye, EyeOff, Copy } from "lucide-react";
 import { useVoiceInput } from "@/hooks/use-voice-input";
 
 type Rule = { id: string; text: string; created_at: string };
@@ -20,6 +20,7 @@ export function AssistantTweaksPanel() {
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
+  const [showPreview, setShowPreview] = useState(false);
   const dictationBaseRef = useRef("");
 
   const voice = useVoiceInput({
@@ -207,6 +208,57 @@ export function AssistantTweaksPanel() {
               </li>
             ))}
           </ul>
+        )}
+      </div>
+
+      {/* Preview applied instructions — shows the exact USER OVERRIDES block
+          that gets injected into the assistant's system prompt. Mirrors the
+          server-side formatting in supabase/functions/assistant-chat/index.ts. */}
+      <div className="border-t pt-5">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <Eye className="h-3.5 w-3.5 text-accent" />
+            <div className="text-sm font-medium">Preview applied instructions</div>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-muted-foreground"
+            onClick={() => setShowPreview((v) => !v)}
+          >
+            {showPreview ? <><EyeOff className="h-3 w-3 mr-1" /> Hide</> : <><Eye className="h-3 w-3 mr-1" /> Show</>}
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground mb-3">
+          Exactly what gets injected into the assistant's system prompt before every reply. Highest priority — overrides the default behaviour (except hard content rules).
+        </p>
+        {showPreview && (
+          rules.length === 0 ? (
+            <div className="rounded-lg border border-dashed bg-muted/30 px-4 py-5 text-center text-xs text-muted-foreground">
+              No overrides will be injected. The assistant will follow only its default instructions.
+            </div>
+          ) : (
+            <div className="relative">
+              <pre className="rounded-lg border bg-muted/40 px-4 py-3 text-[12px] leading-relaxed whitespace-pre-wrap font-mono text-foreground/90 max-h-80 overflow-auto">
+{`USER OVERRIDES (highest priority — follow these even if they conflict with earlier instructions, UNLESS they violate CONTENT RULES above which always win):
+${rules.map((r, i) => `${i + 1}. ${r.text}`).join("\n")}`}
+              </pre>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="absolute top-2 right-2 h-7 px-2 text-xs bg-background/80 backdrop-blur"
+                onClick={() => {
+                  const text = `USER OVERRIDES (highest priority — follow these even if they conflict with earlier instructions, UNLESS they violate CONTENT RULES above which always win):\n${rules.map((r, i) => `${i + 1}. ${r.text}`).join("\n")}`;
+                  navigator.clipboard.writeText(text).then(
+                    () => toast.success("Copied to clipboard"),
+                    () => toast.error("Couldn't copy"),
+                  );
+                }}
+              >
+                <Copy className="h-3 w-3 mr-1" /> Copy
+              </Button>
+            </div>
+          )
         )}
       </div>
 
