@@ -40,12 +40,55 @@ const PROVIDER_MODEL: Record<string, string> = {
 
 // ---------- System prompt ----------
 type Tweak = { id: string; text: string; created_at?: string };
+type RosterRow = Record<string, unknown>;
+type Rosters = {
+  suspects: RosterRow[];
+  documents: RosterRow[];
+  envelopes: RosterRow[];
+  hints: RosterRow[];
+  canvas_nodes: RosterRow[];
+};
+function truncate(s: unknown, n = 60): string {
+  const str = String(s ?? "").replace(/\s+/g, " ").trim();
+  if (!str) return "—";
+  return str.length > n ? `${str.slice(0, n - 1)}…` : str;
+}
+function formatRoster(rows: RosterRow[], render: (r: RosterRow, i: number) => string, empty: string): string {
+  if (!rows || rows.length === 0) return empty;
+  return rows.map((r, i) => `  ${i + 1}. ${render(r, i)}`).join("\n");
+}
 function buildSystemPrompt(
   project: Record<string, unknown>,
-  suspectCount: number,
-  docCount: number,
+  rosters: Rosters,
   tweaks: Tweak[] = [],
 ) {
+  const suspectCount = rosters.suspects.length;
+  const docCount = rosters.documents.length;
+  const suspectsList = formatRoster(
+    rosters.suspects,
+    (r) => `[id=${r.id}] ${truncate(r.name)}${r.role_in_case ? ` — ${truncate(r.role_in_case, 40)}` : ""}`,
+    "  (none yet)",
+  );
+  const documentsList = formatRoster(
+    rosters.documents,
+    (r) => `[id=${r.id}] #${r.doc_number ?? "?"} ${truncate(r.title)}${r.doc_type ? ` (${truncate(r.doc_type, 30)})` : ""} · ${r.status ?? "draft"}`,
+    "  (none yet)",
+  );
+  const envelopesList = formatRoster(
+    rosters.envelopes,
+    (r) => `[id=${r.id}] #${r.number} ${truncate(r.label)}`,
+    "  (none yet)",
+  );
+  const hintsList = formatRoster(
+    rosters.hints,
+    (r) => `[id=${r.id}] stage ${r.stage} · level ${r.level}`,
+    "  (none yet)",
+  );
+  const nodesList = formatRoster(
+    rosters.canvas_nodes,
+    (r) => `[id=${r.id}] ${truncate(r.title)} (${r.node_type}, board=${r.board})`,
+    "  (none yet)",
+  );
   const overrides = tweaks.length > 0
     ? `\n\nUSER OVERRIDES (highest priority — follow these even if they conflict with earlier instructions, UNLESS they violate CONTENT RULES above which always win):\n${tweaks.map((t, i) => `${i + 1}. ${t.text}`).join("\n")}`
     : "";
