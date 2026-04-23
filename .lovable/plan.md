@@ -2,55 +2,120 @@
 
 ## Goal
 
-Make the OpenAI image models (ChatGPT Image 2 + ChatGPT Image 1) selectable everywhere in the app where images are generated. The picker already supports both — they're just missing from four panels. Also expose the optional second OpenAI account so you can route `gpt-image-2` to a separate billing key.
+One `GEMINI_API_KEY` (Google AI Studio) — yes, the same key powers both Gemini chat/text models and Nano Banana image generation. After this change, every model picker in the app will show **all Google models twice**:
+- **Lovable AI route** — billed to your workspace credits
+- **Your Gemini key route** — billed directly to your Google account (bypasses Lovable)
 
-## What's already done (no change needed)
+The user picks per-surface which route to use. If your direct key is missing, the "via your key" entries will fall back automatically — but the dropdown labels make the routing explicit.
 
-- The `ImageModelPicker` already lists **ChatGPT Image 2 (gpt-image-2) — latest** and **ChatGPT Image 1 (gpt-image-1)** at the top of the dropdown.
-- The picker is already rendered on: **Suspects**, **Project cover (overview)**, **Envelopes**, **Documents**.
-- Backend `generate-image` already routes both OpenAI models, including the optional dedicated key path (`OPENAI_IMAGE2_API_KEY`) for `gpt-image-2`.
+## What's already in place (no work needed)
 
-## What's missing (the actual work)
+- `GeminiConnection` panel in Settings (paste/test/disconnect the key) — keep as-is.
+- Backend `ai-router.ts` already routes `gemini-direct/<id>` to your key and `google/<id>` to Lovable Gateway.
+- Backend `generate-image` already routes Nano Banana to your key when present.
+- The connection panel already lists the 3 Nano Banana image models routed through this key. We'll add the chat models to that same panel for clarity.
 
-The picker is NOT shown in these four image-generating panels — they silently use whatever was last picked under the `"media"` storage key:
+## What's missing — the actual work
 
-1. **Media tab** (`src/features/project/MediaSection.tsx`) — main media generator
-2. **Marketing → Cover & Visuals** (`src/features/project/marketing/CoverAndVisuals.tsx`) — back-of-box + extras
-3. **Marketing → Storyboard Studio** (`src/features/project/marketing/StoryboardStudio.tsx`) — keyframe per shot
-4. **Marketing → Barcode & Back Panel** (`src/features/project/marketing/BarcodeAndBackPanel.tsx`) — back-of-box render
+### 1. Text/chat model pickers — add the missing Google entries
 
-### Changes per file
+There are two text-model pickers and one settings dropdown. Each is missing some Google models on one or both routes.
 
-For each of the four files above:
-- Import `ImageModelPicker` from `@/components/ImageModelPicker`.
-- Render `<ImageModelPicker surface="..." defaultModel="..." />` next to the existing "Generate" button (matching the pattern already used in `EnvelopesSection` / `DocumentsSection`).
-- Use a **dedicated surface key per panel** so each remembers its own model independently (today they all share `"media"`, which causes one panel's choice to silently affect another):
-  - `MediaSection` → surface `"media"`, default `chatgpt-image-2`
-  - `CoverAndVisuals` → surface `"marketing-cover"`, default `chatgpt-image-2`
-  - `StoryboardStudio` → surface `"storyboard"`, default `nano-banana-2` (storyboards are many shots → speed matters)
-  - `BarcodeAndBackPanel` → surface `"marketing-back"`, default `chatgpt-image-2`
-- Update the matching `getStoredImageModel(...)` / `getStoredImageQuality(...)` calls in those files to use the new surface key.
+**`PromptWriterModelPicker`** (per-image prompt drafting — Cover, Suspect, Document, Media surfaces). Replace the model list with a clean grouped layout:
 
-### Default model bump
+```text
+— Lovable AI (workspace credits) —
+  Gemini 3.1 Pro (preview)            [lovable / gemini-3-pro]
+  Gemini 3 Flash (preview)            [gemini-3-flash]            ← NEW
+  Gemini 2.5 Pro                      [gemini]
+  Gemini 2.5 Flash                    [gemini-flash]
+  Gemini 2.5 Flash Lite               [gemini-flash-lite]         ← NEW
 
-Currently most surfaces default to `chatgpt-image` (the legacy gpt-image-1). New default for cover, suspect, envelope, document, media, marketing surfaces becomes **`chatgpt-image-2`** (latest). Storyboard keeps `nano-banana-2` for speed. Existing user choices in localStorage are preserved.
+— Your Google AI key (direct) —
+  Gemini 2.5 Pro (direct)             [gemini-direct-pro]
+  Gemini 2.5 Flash (direct)           [gemini-direct-flash]
+  Gemini 2.5 Flash Lite (direct)      [gemini-direct-flash-lite]  ← NEW
+  Gemini 3.1 Pro preview (direct)     [gemini-direct-3-pro]       ← NEW
+  Gemini 3 Flash preview (direct)     [gemini-direct-3-flash]     ← NEW
 
-### Optional second OpenAI key (already wired)
+— OpenAI / Anthropic — (unchanged)
+```
 
-The picker already shows a small hint under "ChatGPT Image 2": *"Uses a dedicated OpenAI account if `OPENAI_IMAGE2_API_KEY` is set, otherwise the main OpenAI key."*
+**`LOGIC_FLOW_MODELS`** (`src/features/project/CanvasSection.tsx`, also surfaced in Settings → Logic Flow generator). Add the same two new "your Gemini key" preview entries plus Gemini 2.5 Flash direct so all three Google routes are representable on both sides.
 
-No code change needed — but the secret isn't currently configured. After the UI changes are in, if you want to route `gpt-image-2` traffic to a separate OpenAI billing account, add the secret `OPENAI_IMAGE2_API_KEY` in Lovable Cloud settings. (I'll prompt for it after the plan is approved if you want it.)
+**`Settings → AI provider routing`** (`SettingsPage.tsx`). The "Planning / Game design" and "Document generation" rows currently only let you pick `gemini-direct-pro` for the Google direct route. Expand them so you can pick **any** of the Lovable Gemini models (3.1 Pro, 3 Flash, 2.5 Pro, 2.5 Flash, 2.5 Flash Lite) or **any** of the direct Gemini models (Pro, Flash, Flash Lite, 3.1 Pro preview, 3 Flash preview).
+
+### 2. Backend mappings — add the new keys
+
+Add the new provider keys to `PROVIDER_MODEL` / `PLANNING_MODEL` in every edge function so the new dropdown entries actually resolve to a real model id:
+
+- `assistant-chat/index.ts`
+- `generate-document/index.ts`
+- `generate-envelopes/index.ts`
+- `generate-logic-flow/index.ts`
+- `generate-marketing-copy/index.ts`
+- `generate-storyboard/index.ts`
+- `explain-canvas-node/index.ts`
+- `suggest-image-prompt/index.ts`
+
+New entries (added once, mirrored in each map):
+
+```text
+"gemini-3-flash":            "google/gemini-3-flash-preview"
+"gemini-flash-lite":         "google/gemini-2.5-flash-lite"
+"gemini-direct-flash-lite":  "gemini-direct/gemini-2.5-flash-lite"
+"gemini-direct-3-pro":       "gemini-direct/gemini-3.1-pro-preview"
+"gemini-direct-3-flash":     "gemini-direct/gemini-3-flash-preview"
+```
+
+No router changes needed — `ai-router.ts` already handles both `google/...` and `gemini-direct/...` prefixes.
+
+### 3. Image picker — already complete
+
+`ImageModelPicker` already lists all 3 Nano Banana variants and they already auto-route through your `GEMINI_API_KEY` when present. No change needed. We'll only update the small caption under each Nano Banana entry to be explicit:
+
+```text
+Currently routed via your Google key (free of Lovable credits).
+```
+…or, when the key is missing:
+```text
+Routed via Lovable AI Gateway. Connect your GEMINI_API_KEY in Settings to bypass.
+```
+
+(One-line conditional based on the existing `api-key-manager` "list" call already used by `GeminiConnection`.)
+
+### 4. Settings → "Google Gemini" panel — extend the routed-models list
+
+`GeminiConnection.tsx` currently lists just the 3 Nano Banana image models. Add a second sub-list of chat models routed through the same key:
+
+```text
+Image models routed through this key
+  • Nano Banana            google/gemini-2.5-flash-image
+  • Nano Banana 2          google/gemini-3.1-flash-image-preview
+  • Nano Banana Pro        google/gemini-3-pro-image-preview
+
+Chat / text models routed through this key
+  • Gemini 2.5 Pro         gemini-direct/gemini-2.5-pro
+  • Gemini 2.5 Flash       gemini-direct/gemini-2.5-flash
+  • Gemini 2.5 Flash Lite  gemini-direct/gemini-2.5-flash-lite
+  • Gemini 3.1 Pro preview gemini-direct/gemini-3.1-pro-preview
+  • Gemini 3 Flash preview gemini-direct/gemini-3-flash-preview
+```
+
+Helps the user understand that one key covers both modalities.
 
 ## Validation
 
-- Open Media, Marketing → Cover & Visuals, Marketing → Storyboard, Marketing → Barcode/Back: each shows a model dropdown with **ChatGPT Image 2 (latest)** at the top.
-- Selecting ChatGPT Image 2 in one panel does NOT change the model in another panel (per-surface persistence).
-- Generating an image from any panel routes through OpenAI when an OpenAI model is picked, and through Gemini/Lovable AI when a Nano Banana model is picked.
-- No console errors, no missing imports.
+- Open **any** "Generate prompt" surface (Cover / Suspect / Document / Media) → dropdown shows all 5 Lovable Gemini entries AND all 5 direct Gemini entries.
+- Settings → AI provider routing → Planning / Documents rows now offer every Gemini model on both routes.
+- Settings → Logic Flow generator → dropdown lists Gemini 3.1 Pro preview direct, Gemini 3 Flash direct, etc.
+- Generating with any new "direct" entry actually hits your Google account (no Lovable credits used) — verify by disconnecting the Lovable AI key in test or by inspecting the response `provider` field in the asset row (`gemini-direct`).
+- Disconnecting `GEMINI_API_KEY` makes the direct entries fall back to Lovable Gateway with a clear inline error toast (existing behavior in `ai-router.ts`).
+- ChatGPT Image and Anthropic options remain unchanged.
 
 ## Out of scope
 
-- No backend / edge function changes.
 - No DB migrations.
-- No changes to non-image generators (text, copy, storyboard script, etc.).
+- No changes to OpenAI or Anthropic listings.
+- No new edge function — purely additive entries in existing maps.
 
