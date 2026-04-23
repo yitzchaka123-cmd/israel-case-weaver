@@ -1,51 +1,51 @@
 
 
-## Envelope nodes in the logic flow — make them appear and make them useful
+## Approved + scope addition: prompts behind every assistant-shown image must land in the right UI field
 
-### Why you didn't see envelope nodes
+Confirming and extending what we'll ship.
 
-Your project currently has **zero envelopes** in the database. The logic-flow generator is conditional: it only emits envelope nodes when `envelopes.length > 0`. With no envelopes drafted, the entire envelope section of the prompt is omitted, so the model has nothing to render on the right-hand lane of the canvas.
+### What's already saved (no extra work needed)
 
-On top of that, even when envelopes exist, the envelope nodes today only carry a short title — **not the task or how it ties into the case structure**, which is exactly what you want to read at a glance on the board.
+`generate-image` and `generate-document` already write the prompt into the appropriate row column AND append to a prompt-history JSONB array, on every call:
 
-### Fix — three changes
+| Asset shown in chat | Row field updated | History column |
+|---|---|---|
+| Document image | `documents.generated_asset_url`; prompt in `prompts` table (scope `document-image`) | — |
+| Document Hebrew body | `documents.hebrew_content`; prompt in `prompts` table (scope `document`) | — |
+| Suspect main thumbnail | `suspects.thumbnail_prompt` | `suspects.thumbnail_prompt_history` (last 20) |
+| Suspect alt thumbnail | `suspects.alt_thumbnail_prompt` | `suspects.alt_thumbnail_prompt_history` |
+| Envelope cover | `envelopes.cover_prompt` | `envelopes.cover_prompt_history` |
+| Project cover | `projects.cover_prompt` | `projects.cover_prompt_history` |
+| Hint sheet | `hint_sheets.prompt` | `hint_sheets.prompt_history` |
 
-**1. `supabase/functions/generate-logic-flow/index.ts`**
+The Suspects, Envelopes, Cover, and Hints tabs already render those `*_prompt` fields in editable textareas with a history dropdown, so once the row is updated, the prompt shows up in the appropriate space automatically.
 
-- **Auto-scaffold envelopes when none exist.** Before building the prompt, if `envelopes.length === 0`, derive a sensible default count from `project.target_doc_count` (≈ one envelope per 6-8 documents, clamped to 4-7) and ask the model to also propose `{ number, label, task }` for each as part of the same tool call. After the response, insert these into the `envelopes` table so the Envelopes tab is populated and the canvas nodes link to real rows.
-  - Add an `envelopes` array to the `emit_logic_flow` tool schema (only required when no envelopes exist on input): `{ number, label, task, design_instructions }`.
-  - Insert the new envelope rows BEFORE inserting nodes, then map the envelope node ids onto them via the existing `linked_node_ids` write-back loop.
-- **Make every envelope node body informative.** Update the prompt so each `envelope` node's `description` field is required and must contain three lines:
-  - **Task:** _<what the player physically does with this envelope — open, scan QR, assemble, etc.>_
-  - **Contains:** _<one-line summary of which clues/deductions sit inside it>_
-  - **Why it matters:** _<one sentence on how it advances the case structure / what it unlocks for the next envelope>_
-- Keep the existing right-side vertical lane positioning (x ≈ 1400, y stepping 160) and the `envelope_n → envelope_{n+1}` chain edges.
+### What we'll add this turn (carries the user's approval forward)
 
-**2. `src/features/project/canvas/CanvasNodeTypes.tsx`**
+**1. Fix the FK error so `add_document` / `add_suspect` / `add_canvas_node` / `add_envelope` succeed** — placeholder-insert the assistant `chat_messages` row up-front, then UPDATE it with the final body. Same in background (`processConversation`) and sync handlers. Skip rendering empty `in_progress` bubbles client-side (small "Working…" shimmer instead).
 
-- The `CaseNode` body already renders `data.description` but truncates with `line-clamp-2`. Bump envelope nodes specifically to `line-clamp-4` (or remove the clamp on envelope/solution types) and slightly widen the max width from 240 → 280 for envelope nodes so the three-line "Task / Contains / Why it matters" body is readable without opening the node.
-- Add a small **"Envelope #N"** label in the colored header strip when `node_type === "envelope"` (pull the number from `data.envelopeNumber`, which we'll start writing during node insert), so the player flow order is visible at a glance.
+**2. Inline image receipts in chat** — three new mini-cards next to the existing `GeneratedDocReceipt`:
+- `SuspectThumbnailReceipt` — appears whenever a tool call returns a new `thumbnail_url`.
+- `EnvelopeCoverReceipt` — appears for envelope cover generation.
+- `CanvasNodeImageReceipt` — for envelope-node art if/when generated.
 
-**3. Persist the envelope number on the node** (small migration-free change)
+Each card shows: thumbnail (click → fullscreen lightbox), the asset title, and a **"View prompt →"** link that jumps to the exact textarea in its tab (Suspects/Envelopes/Cover/Hints) where the saved prompt is editable. The link uses the same `mystudio:navigate` event pattern the origin badges already use.
 
-- In `generate-logic-flow`, when a node is type `envelope`, store the envelope number in the `data` JSONB column (e.g. `data: { envelopeNumber: 1 }`). The canvas reads this directly via `data.envelopeNumber` — no schema change required.
+**3. Bottom-of-message "Generated assets" strip** — `<GeneratedAssetsStrip>` aggregates every `image_url` from every tool in the turn into a single horizontal thumbnail row. Click → lightbox. Each thumb has a "Open in tab" affordance.
 
-### What you'll see after this lands
+**4. New `AssetLightbox` component** (`src/features/project/assistant/AssetLightbox.tsx`) — shared fullscreen overlay with copy-prompt button (reads from the same row that owns the asset).
 
-Re-running "Generate logic flow" on this project will:
-1. Scaffold ~5 envelopes (based on your 40-doc target) into the Envelopes tab with placeholder labels and tasks the AI proposes from the case brief.
-2. Add 5 colored envelope nodes in a vertical lane on the right side of the canvas, each labeled `Envelope #1 … #5` in the header strip.
-3. Each node body shows the **task**, what it **contains**, and **why it matters** — three short lines, fully visible on the card.
-4. Edges connect clues/deductions → their envelope, and `Envelope #N → Envelope #N+1` so the player flow reads top-to-bottom on the right edge.
+**5. Wire any NEW assistant-driven image generation through `generate-image`** — if/when we add an assistant tool that produces a suspect/envelope/cover image (currently only documents are auto-generated), it MUST route through the existing `generate-image` edge function so the prompt-persistence shown in the table above kicks in automatically. We do NOT introduce a new generation path that bypasses these columns.
 
 ### Files touched
 
-- `supabase/functions/generate-logic-flow/index.ts` — auto-scaffold envelopes when none exist; require richer envelope-node descriptions; persist `envelopeNumber` in node `data`.
-- `src/features/project/canvas/CanvasNodeTypes.tsx` — wider envelope nodes, looser line clamp, header shows envelope number.
+- `supabase/functions/assistant-chat/index.ts` — placeholder-insert + final-update pattern; fixes the FK error; deploy.
+- `src/features/project/AssistantSection.tsx` — three new receipt components, `GeneratedAssetsStrip`, in_progress bubble guard, "View prompt →" deep links.
+- `src/features/project/assistant/AssetLightbox.tsx` — new shared lightbox.
 
 ### Out of scope
 
-- Re-running this on projects that already have envelopes will NOT overwrite their labels/tasks — auto-scaffolding only triggers when zero envelopes exist.
-- Two-way sync (editing the envelope node body on the canvas writing back to the `envelopes` row) — out of scope; the node is a read-only mirror for now.
-- Auto-generating envelope cover art — separate flow, untouched.
+- Building a new "auto-generate suspect thumbnail" tool — separate request; today only documents auto-generate. When we add it, it must use `generate-image` (covered by point 5).
+- A side-panel "Artifacts" view — inline receipts cover the user's stated need.
+- Backfilling old prompt-less assets — every new generation from now on persists; older ones are unaffected.
 
