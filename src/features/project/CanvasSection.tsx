@@ -562,7 +562,8 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
                               projectId,
                               prompt:
                                 "Walk me through the envelope flow from the playbook. Explain what each envelope's role is in this case, what should be inside it, and the closing-line rule. Then ask me which envelope you should help me draft first.",
-                            }),
+                            },
+                          }),
                         );
                       }, 50);
                     }}
