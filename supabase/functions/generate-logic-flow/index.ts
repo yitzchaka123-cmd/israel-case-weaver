@@ -243,6 +243,30 @@ Position nodes in a left-to-right flow: hints far left (x ≈ -200), clues left 
       }
     }
 
+    // For every emitted hint node, scaffold an empty 3-rung row set in the
+    // `hints` table so the Hints tab is pre-populated.
+    if (insertedNodes) {
+      const hintNodes = parsed.nodes.filter((n) => n.type === "hint");
+      if (hintNodes.length > 0) {
+        const { data: existingHints } = await supa
+          .from("hints").select("stage").eq("project_id", projectId);
+        const maxStage = (existingHints ?? []).reduce(
+          (acc, r) => Math.max(acc, Number((r as { stage?: number }).stage ?? 0)), 0,
+        );
+        const hintRows: { project_id: string; stage: number; level: number; text: string }[] = [];
+        hintNodes.forEach((_, i) => {
+          const stage = maxStage + i + 1;
+          for (let level = 1; level <= 3; level += 1) {
+            hintRows.push({ project_id: projectId, stage, level, text: "" });
+          }
+        });
+        if (hintRows.length > 0) {
+          const { error: hErr } = await supa.from("hints").insert(hintRows);
+          if (hErr) console.error("hint scaffold insert", hErr);
+        }
+      }
+    }
+
     const edgeRows = parsed.edges
       .map((e) => {
         const s = idMap.get(e.source);
