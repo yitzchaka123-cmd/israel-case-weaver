@@ -161,7 +161,7 @@ TOOL-CALL-BEFORE-PROSE RULE (HARD ENFORCEMENT — these are not soft suggestions
 
 TOOL USE (CRITICAL)
 When the user approves a change, you MUST persist it by calling the appropriate tool. Do NOT just describe the change. Tools write to the shared project state so the UI, canvas and suspects sections update immediately.
-- update_project: change project metadata/phase after approvals. **CALL THIS EVERY TIME** the user approves or commits ANY of these Case Identity / Case Brief fields, individually or in batches: title, subtitle, mystery_type, genre, year, difficulty, player_role, case_goal, setting, selling_point, target_doc_count, phase. Example triggers — all REQUIRE an update_project call: user picks a mystery_type ("Espionage"), user picks a genre, user picks a Hebrew title from your numbered options, user picks a difficulty, user provides/confirms a player role, user provides/confirms a case goal, user provides/confirms a setting/year, user agrees to a selling point. Do NOT wait for the end of Phase 1 — persist each field the moment it's locked in. The Case Identity and Case Brief panels on the Overview tab pull DIRECTLY from these fields, so skipping update_project means the user sees an empty Overview even after they answered all your setup questions. Always pass ONLY the fields the user just confirmed (do not re-send unchanged fields).
+- update_project: change project metadata/phase after approvals. **CALL THIS EVERY TIME** the user approves or commits ANY of these Case Identity / Case Brief fields, individually or in batches: title, subtitle, mystery_type, genre, year, difficulty, player_role, case_goal, setting, selling_point, target_doc_count, phase. Example triggers — all REQUIRE an update_project call: user picks a mystery_type ("Espionage"), user picks a genre, user picks a Hebrew title from your numbered options, user picks a difficulty, user provides/confirms a player role, user provides/confirms a case goal, user provides/confirms a setting/year, user agrees to a selling point. Do NOT wait for the end of Phase 1 — persist each field the moment it's locked in. The Case Identity and Case Brief panels on the Overview tab pull DIRECTLY from these fields, so skipping update_project means the user sees an empty Overview even after they answered all your setup questions. Always pass ONLY the fields the user just confirmed (do not re-send unchanged fields). **ALSO** call update_project whenever the user approves or revises any of these case-level briefs: packaging_notes (Phase 7 packaging brief), image_prompt_instructions (per-project image style guide), video_prompt_instructions (per-project video style guide), hint_settings (stage/level hint config — pass the full object), envelope_settings (envelope numbering & defaults — pass the full object). Same rules as for title/genre: persist the moment it's locked in.
 - set_solution_summary: AS SOON as the user approves the Phase 2 case summary (or whenever they approve a revised end-to-end solution narrative), call this tool with the full summary text. This single source of truth feeds the Case Board's "Solution summary" button, the Logic Flow generator, and every future document. NEVER skip this step after an approval — without it, the Canvas summary button will be empty and document generation will refuse to run.
 - add_suspect / update_suspect: manage cast.
 - add_document / update_document: create or edit a document record.
@@ -198,6 +198,11 @@ Case goal: ${project.case_goal ?? "—"}
 Setting: ${project.setting ?? "—"}
 Extra selling point: ${project.selling_point ?? "—"}
 Target documents: ${project.target_doc_count ?? "—"}
+Packaging notes: ${truncate(project.packaging_notes, 120)}
+Image prompt style: ${truncate(project.image_prompt_instructions, 120)}
+Video prompt style: ${truncate(project.video_prompt_instructions, 120)}
+Hint settings: ${(() => { const v = project.hint_settings as Record<string, unknown> | null; if (!v || typeof v !== "object") return "—"; const keys = Object.keys(v); return keys.length === 0 ? "(empty)" : `(${keys.length} keys: ${truncate(keys.join(", "), 80)})`; })()}
+Envelope settings: ${(() => { const v = project.envelope_settings as Record<string, unknown> | null; if (!v || typeof v !== "object") return "—"; const keys = Object.keys(v); return keys.length === 0 ? "(empty)" : `(${keys.length} keys: ${truncate(keys.join(", "), 80)})`; })()}
 Existing suspects (${suspectCount}):
 ${suspectsList}
 Existing documents (${docCount}):
@@ -290,7 +295,7 @@ const TOOLS = [
     type: "function",
     function: {
       name: "update_project",
-      description: "Update project metadata (title, subtitle, phase, mystery_type, genre, year, difficulty, player_role, case_goal, setting, selling_point, target_doc_count).",
+      description: "Update project metadata. Covers Case Identity (title, subtitle, phase, mystery_type, genre, year, difficulty, player_role, case_goal, setting, selling_point, target_doc_count) AND case-level briefs (packaging_notes, image_prompt_instructions, video_prompt_instructions, hint_settings, envelope_settings). Pass ONLY the fields that changed — undefined keys are ignored. For hint_settings/envelope_settings, pass the FULL object you want stored (it overwrites, no shallow merge).",
       parameters: {
         type: "object",
         properties: {
@@ -306,6 +311,11 @@ const TOOLS = [
           setting: { type: "string" },
           selling_point: { type: "string" },
           target_doc_count: { type: "number" },
+          packaging_notes: { type: "string", description: "Phase 7 packaging brief — physical box / print / fulfilment notes." },
+          image_prompt_instructions: { type: "string", description: "Per-project visual style guide injected into every image-prompt call." },
+          video_prompt_instructions: { type: "string", description: "Per-project style guide for video prompts." },
+          hint_settings: { type: "object", description: "Stage/level hint configuration object. Replaces the existing value (no shallow merge)." },
+          envelope_settings: { type: "object", description: "Envelope numbering & defaults object. Replaces the existing value (no shallow merge)." },
         },
         additionalProperties: false,
       },
