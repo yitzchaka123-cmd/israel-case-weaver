@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Trash2, LayoutDashboard, Sparkles, Network, Users, FileText, Mail, Lightbulb, Image as ImageIcon } from "lucide-react";
+import { ArrowLeft, Trash2, LayoutDashboard, Sparkles, Network, Users, FileText, Mail, Lightbulb, Image as ImageIcon, Megaphone } from "lucide-react";
 import { toast } from "sonner";
 import { ProjectOverview } from "./ProjectOverview";
 import { SuspectsSection } from "./SuspectsSection";
@@ -14,6 +14,7 @@ import { AssistantSection } from "./AssistantSection";
 import { EnvelopesSection } from "./EnvelopesSection";
 import { HintsSection } from "./HintsSection";
 import { MediaSection } from "./MediaSection";
+import { MarketingSection } from "./MarketingSection";
 import { ExportMenu } from "./ExportMenu";
 import { PhaseStatusBar } from "./PhaseStatusBar";
 import { NotificationBell } from "./notifications/NotificationBell";
@@ -95,6 +96,17 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "project_notifications", filter: `project_id=eq.${projectId}` }, () => {
         qc.invalidateQueries({ queryKey: ["project-notifications", projectId] });
       })
+      .on("postgres_changes", { event: "*", schema: "public", table: "project_marketing", filter: `project_id=eq.${projectId}` }, () => {
+        qc.invalidateQueries({ queryKey: ["project-marketing", projectId] });
+        qc.invalidateQueries({ queryKey: ["project-marketing-barcode", projectId] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "project_storyboards", filter: `project_id=eq.${projectId}` }, () => {
+        qc.invalidateQueries({ queryKey: ["project-storyboards", projectId] });
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "media_assets", filter: `project_id=eq.${projectId}` }, () => {
+        qc.invalidateQueries({ queryKey: ["marketing-assets", projectId] });
+        qc.invalidateQueries({ queryKey: ["marketing-back-assets", projectId] });
+      })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [projectId, qc]);
@@ -171,6 +183,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
                 { v: "documents", l: "Documents", icon: FileText },
                 { v: "envelopes", l: "Envelopes", icon: Mail },
                 { v: "hints", l: "Hints", icon: Lightbulb },
+                { v: "marketing", l: "Marketing", icon: Megaphone },
                 { v: "media", l: "Media", icon: ImageIcon },
               ].map((t) => {
                 const Icon = t.icon;
@@ -221,6 +234,9 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
           </TabsContent>
           <TabsContent value="hints" className="h-full overflow-auto m-0">
             <HintsSection projectId={projectId} />
+          </TabsContent>
+          <TabsContent value="marketing" className="h-full overflow-auto m-0">
+            <MarketingSection projectId={projectId} />
           </TabsContent>
           <TabsContent value="media" className="h-full overflow-auto m-0">
             <MediaSection projectId={projectId} />
