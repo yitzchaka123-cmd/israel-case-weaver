@@ -178,6 +178,7 @@ ${renderDocModeButtonsBlock(playbook)}
 5. Document/file generation is strict: the selected document model gets the honest first chance to create the actual file directly. Do not ask for or imply hidden fallback to another provider.
 6. generate_document_assets is gated server-side: it will refuse if the Logic Flow is not approved, or if the document_id doesn't belong to this project. Trust the receipt.
 7. The Hebrew body produced by generate_document_assets MAY differ slightly from the hebrew_content you wrote in add_document — that's expected. The receipt shows the final stored version.
+8. If the user asks to install/add a Claude Skill from chat and there is no attached installable package, call explain_claude_skill_install. Claude can automatically choose among enabled installed skills passed to it, but the app must manage installation.
 ${renderEnvelopesLine(playbook)}
 ${renderHintsLine(playbook)}
 
