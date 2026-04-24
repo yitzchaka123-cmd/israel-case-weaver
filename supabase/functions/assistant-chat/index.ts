@@ -519,7 +519,7 @@ const BASE_TOOLS = [
     type: "function",
     function: {
       name: "create_final_documents_map",
-      description: "Create/replace the Final board production map with one document node per planned game document. This does NOT create document rows or assets; it marks planned documents as ungenerated for review first.",
+      description: "Create/replace the Final board production map with the approved logic nodes, envelopes, suspects, planned document nodes, and connecting lines. If documents are omitted, the app derives the full map from the approved logic flow and existing case data. This does NOT create document rows or assets.",
       parameters: {
         type: "object",
         properties: {
@@ -542,7 +542,7 @@ const BASE_TOOLS = [
             },
           },
         },
-        required: ["documents"],
+        required: [],
         additionalProperties: false,
       },
     },
