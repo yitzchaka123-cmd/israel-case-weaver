@@ -426,9 +426,14 @@ export function resolvePlaybook(override: unknown): Playbook {
 
   const modeRaw = String(o.doc_generation?.default_mode ?? d.doc_generation.default_mode);
   const default_mode = (["drafts", "auto", "ask", "unset"].includes(modeRaw) ? modeRaw : "unset") as Playbook["doc_generation"]["default_mode"];
+  const outputTypeRaw = String(o.doc_generation?.output_type_default ?? d.doc_generation.output_type_default);
   const doc_generation = {
     default_mode,
     ask_each_new_project: o.doc_generation?.ask_each_new_project !== false,
+    direct_file_first: o.doc_generation?.direct_file_first !== false,
+    strict_model_ownership: o.doc_generation?.strict_model_ownership !== false,
+    save_file_prompts: o.doc_generation?.save_file_prompts !== false,
+    output_type_default: (["image", "document", "both", "ask"].includes(outputTypeRaw) ? outputTypeRaw : "ask") as Playbook["doc_generation"]["output_type_default"],
   };
 
   const explanations = {
