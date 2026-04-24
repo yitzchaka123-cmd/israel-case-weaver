@@ -116,6 +116,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
   const [nodes, setNodes] = useNodesState([]);
   const [edges, setEdges] = useEdgesState([]);
   const [generatingFlow, setGeneratingFlow] = useState(false);
+  const [creatingFinalMap, setCreatingFinalMap] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [summaryDraft, setSummaryDraft] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -152,6 +153,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
           description: n.description,
           createdByMessageId: (n as { created_by_message_id?: string | null }).created_by_message_id ?? null,
           envelopeNumber: (n.data as { envelopeNumber?: number } | null)?.envelopeNumber,
+          generationStatus: (n.data as { generationStatus?: string } | null)?.generationStatus,
         },
         type: "case",
         draggable: !n.locked,
@@ -404,6 +406,30 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
     setSummaryOpen(false);
     qc.invalidateQueries({ queryKey: ["project", projectId] });
     setBoard("final");
+  };
+
+  const createFinalDocumentsMap = async () => {
+    if (!approved) return toast.error("Approve the Logic Flow first");
+    if (nodes.length > 0 && !confirm("This will replace the current Final board document map. Continue?")) return;
+    setCreatingFinalMap(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-final-documents-map`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({ projectId, replace: true }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) return toast.error(data.error ?? "Could not create Final Documents Map");
+      toast.success(`Final Documents Map created · ${data.nodeCount ?? 0} planned nodes`);
+      qc.invalidateQueries({ queryKey: ["nodes", projectId, "final"] });
+      qc.invalidateQueries({ queryKey: ["edges", projectId, "final"] });
+    } finally {
+      setCreatingFinalMap(false);
+    }
   };
 
   const approved = !!project?.logic_approved_at;
