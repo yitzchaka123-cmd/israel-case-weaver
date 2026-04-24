@@ -60,16 +60,74 @@ function parseSkillMarkdown(text: string) {
   return result;
 }
 
+function u16(bytes: Uint8Array, offset: number) {
+  return bytes[offset] | (bytes[offset + 1] << 8);
+}
+
+function u32(bytes: Uint8Array, offset: number) {
+  return (bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24)) >>> 0;
+}
+
+function inspectZip(bytes: Uint8Array) {
+  const files: string[] = [];
+  let skillText: string | null = null;
+  for (let i = 0; i < bytes.length - 46; i++) {
+    if (u32(bytes, i) !== 0x02014b50) continue;
+    const compression = u16(bytes, i + 10);
+    const compressedSize = u32(bytes, i + 20);
+    const nameLen = u16(bytes, i + 28);
+    const extraLen = u16(bytes, i + 30);
+    const commentLen = u16(bytes, i + 32);
+    const localOffset = u32(bytes, i + 42);
+    const name = new TextDecoder().decode(bytes.slice(i + 46, i + 46 + nameLen));
+    files.push(name);
+    if (name.toLowerCase().endsWith("skill.md") && compression === 0 && localOffset + 30 < bytes.length) {
+      const localNameLen = u16(bytes, localOffset + 26);
+      const localExtraLen = u16(bytes, localOffset + 28);
+      const start = localOffset + 30 + localNameLen + localExtraLen;
+      skillText = new TextDecoder("utf-8", { fatal: false }).decode(bytes.slice(start, start + compressedSize));
+    }
+    i += 45 + nameLen + extraLen + commentLen;
+  }
+  return { files, skillText, hasSkill: files.some((f) => f.toLowerCase().endsWith("skill.md")) };
+}
+
+function inspectTar(bytes: Uint8Array) {
+  const files: string[] = [];
+  let skillText: string | null = null;
+  const decoder = new TextDecoder("utf-8", { fatal: false });
+  for (let offset = 0; offset + 512 <= bytes.length;) {
+    const header = bytes.slice(offset, offset + 512);
+    if (header.every((b) => b === 0)) break;
+    const name = decoder.decode(header.slice(0, 100)).replace(/\0.*$/, "");
+    const prefix = decoder.decode(header.slice(345, 500)).replace(/\0.*$/, "");
+    const fullName = [prefix, name].filter(Boolean).join("/");
+    const sizeRaw = decoder.decode(header.slice(124, 136)).replace(/\0.*$/, "").trim();
+    const size = Number.parseInt(sizeRaw || "0", 8) || 0;
+    if (fullName) files.push(fullName);
+    const start = offset + 512;
+    if (fullName.toLowerCase().endsWith("skill.md")) skillText = decoder.decode(bytes.slice(start, start + size));
+    offset = start + Math.ceil(size / 512) * 512;
+  }
+  return { files, skillText, hasSkill: files.some((f) => f.toLowerCase().endsWith("skill.md")) };
+}
+
 function textLooksLikeSkillMarkdown(fileName: string, text: string) {
   const lower = fileName.toLowerCase();
   return lower.endsWith("skill.md") || (text.includes("---") && /\nname:\s*[-a-z0-9]+/i.test(text) && /\ndescription:\s*/i.test(text));
 }
 
-function packageContainsSkillEntrypoint(fileName: string, bytesText: string) {
+function inspectSkillPackage(fileName: string, arrayBuffer: ArrayBuffer) {
   const lower = fileName.toLowerCase();
-  return lower.endsWith(".zip") || lower.endsWith(".tar") || lower.endsWith(".tgz") || lower.endsWith(".tar.gz")
-    ? bytesText.includes("SKILL.md") || bytesText.includes("skill.md")
-    : textLooksLikeSkillMarkdown(fileName, bytesText);
+  const bytes = new Uint8Array(arrayBuffer);
+  const bytesText = new TextDecoder("utf-8", { fatal: false }).decode(arrayBuffer.slice(0, Math.min(arrayBuffer.byteLength, 250_000)));
+  if (lower.endsWith(".zip")) {
+    const zip = inspectZip(bytes);
+    return { ...zip, format: "zip" };
+  }
+  if (lower.endsWith(".tar")) return { ...inspectTar(bytes), format: "tar" };
+  if (lower.endsWith(".tgz") || lower.endsWith(".tar.gz")) return { files: [], skillText: null, hasSkill: bytesText.includes("SKILL.md") || bytesText.includes("skill.md"), format: "compressed-tar" };
+  return { files: [fileName], skillText: bytesText, hasSkill: textLooksLikeSkillMarkdown(fileName, bytesText), format: "markdown" };
 }
 
 async function getUserId(req: Request): Promise<string | null> {
@@ -111,15 +169,21 @@ Deno.serve(async (req) => {
         if (!fileResp.ok) throw new Error(`Could not download uploaded skill package (${fileResp.status})`);
         const blob = await fileResp.blob();
         const arrayBuffer = await blob.arrayBuffer();
-        const bytesText = new TextDecoder("utf-8", { fatal: false }).decode(arrayBuffer.slice(0, Math.min(arrayBuffer.byteLength, 250_000)));
-        const isValidSkillPackage = packageContainsSkillEntrypoint(body.fileName ?? "", bytesText);
-        const frontmatter = textLooksLikeSkillMarkdown(body.fileName ?? "", bytesText) ? parseSkillMarkdown(bytesText) : {};
+        const inspection = inspectSkillPackage(body.fileName ?? "", arrayBuffer);
+        const isValidSkillPackage = inspection.hasSkill;
+        const frontmatter = inspection.skillText ? parseSkillMarkdown(inspection.skillText) : {};
         const frontmatterName = typeof frontmatter.name === "string" ? sanitizeSkillId(frontmatter.name) : "";
         const frontmatterDescription = typeof frontmatter.description === "string" ? frontmatter.description.slice(0, 800) : "";
         remoteSkillId = frontmatterName || localSkillId;
         skillName = frontmatterName || requestedName;
         description = frontmatterDescription || description;
-        metadata = { ...metadata, validation: isValidSkillPackage ? "valid_skill_package" : "missing_skill_md", frontmatter };
+        metadata = {
+          ...metadata,
+          validation: isValidSkillPackage ? (inspection.skillText ? "valid_skill_package" : "valid_package_needs_review") : "missing_skill_md",
+          packageFormat: inspection.format,
+          manifest: { files: inspection.files.slice(0, 80), fileCount: inspection.files.length, skillMdExtracted: !!inspection.skillText },
+          frontmatter,
+        };
         if (!isValidSkillPackage) {
           installStatus = "invalid_package";
           installError = "Claude Skills must be uploaded as a SKILL.md file or a package/archive containing SKILL.md.";

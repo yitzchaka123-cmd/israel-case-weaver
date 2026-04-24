@@ -48,6 +48,7 @@ const STATUS_LABELS: Record<string, string> = {
   needs_review: "Saved, needs review",
   invalid_package: "Invalid package",
 };
+const META_BADGES = ["disable-model-invocation", "user-invocable", "allowed-tools", "context", "agent", "model", "effort"];
 
 function frontmatterOf(skill: ClaudeSkill) {
   const metadata = skill.metadata ?? {};
@@ -258,17 +259,31 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function SkillMetadata({ skill }: { skill: ClaudeSkill }) {
   const frontmatter = frontmatterOf(skill);
   const visible = Object.entries(frontmatter).filter(([, value]) => value !== undefined && value !== "");
-  if (!visible.length) return null;
+  const metadata = skill.metadata ?? {};
+  const manifest = (metadata.manifest ?? {}) as Record<string, unknown>;
+  const validation = typeof metadata.validation === "string" ? metadata.validation : "";
+  const badges = META_BADGES.filter((key) => frontmatter[key] !== undefined && frontmatter[key] !== "");
+  if (!visible.length && !validation && !manifest.fileCount) return null;
   return (
-    <div className="rounded-lg border bg-muted/20 p-3 text-xs">
-      <div className="mb-2 font-medium">SKILL.md metadata</div>
-      <div className="grid gap-1 sm:grid-cols-2">
-        {visible.map(([key, value]) => (
-          <div key={key} className="min-w-0">
-            <span className="text-muted-foreground">{key}: </span>
-            <span className="break-words">{Array.isArray(value) ? value.join(", ") : String(value)}</span>
-          </div>
-        ))}
+    <div className="rounded-lg border bg-muted/20 p-3 text-xs space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="font-medium">SKILL.md metadata</div>
+        {validation && <Badge variant="outline">{validation.replace(/_/g, " ")}</Badge>}
+        {typeof manifest.fileCount === "number" && <Badge variant="secondary">{manifest.fileCount} files</Badge>}
+        {badges.map((key) => <Badge key={key} variant="outline">{key}</Badge>)}
+      </div>
+      {visible.length > 0 && (
+        <div className="grid gap-1 sm:grid-cols-2">
+          {visible.map(([key, value]) => (
+            <div key={key} className="min-w-0">
+              <span className="text-muted-foreground">{key}: </span>
+              <span className="break-words">{Array.isArray(value) ? value.join(", ") : String(value)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="text-[11px] text-muted-foreground">
+        {manifest.skillMdExtracted ? "SKILL.md was extracted and parsed." : "Package entrypoint was detected, but SKILL.md contents may require review."}
       </div>
     </div>
   );

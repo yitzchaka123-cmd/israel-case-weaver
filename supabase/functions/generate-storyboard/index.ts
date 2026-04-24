@@ -15,6 +15,7 @@
 // Returns: { prompt: string, model }
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { chatCompletions, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
+import { claudeSkillPromptBlock, loadClaudeSkillsForSurface, withClaudeSkills } from "../_shared/claude-skills.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -126,6 +127,7 @@ Deno.serve(async (req) => {
     }
     const model = modelFor(ctxData.project.ai_provider_planning as string | null);
     const callerUserId = await getUserIdFromAuth(req);
+    const enabledSkills = model.startsWith("anthropic/") ? await loadClaudeSkillsForSurface(supa, "media") : [];
 
     if (body.mode === "script") {
       const lenRaw = Number(body.length_seconds || 60);
@@ -133,7 +135,7 @@ Deno.serve(async (req) => {
       const shotCount = SHOT_COUNT_BY_LEN[len] ?? 10;
       const perShot = Math.round((len / shotCount) * 10) / 10;
 
-      const system = `You are a trailer director for premium boxed murder-mystery games. You write tight, cinematic, dialogue-light shot lists. Output ONLY a JSON object with key "shots" — a flat array. No preamble, no markdown.`;
+      const system = `You are a trailer director for premium boxed murder-mystery games. You write tight, cinematic, dialogue-light shot lists. Output ONLY a JSON object with key "shots" — a flat array. No preamble, no markdown.\n\n${claudeSkillPromptBlock(enabledSkills, "media")}`;
       const userMsg = `PROJECT CONTEXT:
 ${ctxData.ctx}
 
@@ -149,7 +151,7 @@ Each shot must have:
 Return: {"shots": [ ... ]}`;
 
       const startedAt = Date.now();
-      const resp = await chatCompletions({
+      const resp = await chatCompletions(withClaudeSkills({
         model,
         messages: [
           { role: "system", content: system },
@@ -157,7 +159,7 @@ Return: {"shots": [ ... ]}`;
         ],
         temperature: 0.85,
         response_format: { type: "json_object" },
-      });
+      }, enabledSkills));
       const fb = extractFallback(resp, model);
 
       if (!resp.ok) {
@@ -220,7 +222,7 @@ Return: {"shots": [ ... ]}`;
     if (body.mode === "prompt") {
       const engine = body.engine === "kling" ? "Kling 3" : "Sora 2";
       const shot = body.shot;
-      const system = `You write expert text-to-video prompts for ${engine}. Output ONLY the final prompt — no preamble, no quotes, no markdown. Be specific about subject, camera move, lens/focal length, lighting, palette, mood, era, and pacing for a single ~${Math.round(shot.duration_s)}s shot. NO scene-by-scene cuts.`;
+      const system = `You write expert text-to-video prompts for ${engine}. Output ONLY the final prompt — no preamble, no quotes, no markdown. Be specific about subject, camera move, lens/focal length, lighting, palette, mood, era, and pacing for a single ~${Math.round(shot.duration_s)}s shot. NO scene-by-scene cuts.\n\n${claudeSkillPromptBlock(enabledSkills, "media")}`;
       const userMsg = `PROJECT CONTEXT:
 ${ctxData.ctx}
 
@@ -233,14 +235,14 @@ ${body.engine_instructions ? `${engine.toUpperCase()} STYLE INSTRUCTIONS:\n${bod
 Write the ${engine} prompt now.`;
 
       const startedAt = Date.now();
-      const resp = await chatCompletions({
+      const resp = await chatCompletions(withClaudeSkills({
         model,
         messages: [
           { role: "system", content: system },
           { role: "user", content: userMsg },
         ],
         temperature: 0.85,
-      });
+      }, enabledSkills));
       const fb = extractFallback(resp, model);
 
       if (!resp.ok) {

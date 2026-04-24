@@ -4,6 +4,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { chatCompletions, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
 import { resolvePlaybook } from "../_shared/assistant-playbook.ts";
+import { claudeSkillPromptBlock, loadClaudeSkillsForSurface, withClaudeSkills } from "../_shared/claude-skills.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -104,6 +105,7 @@ Deno.serve(async (req) => {
 
     const projectKey = (project.ai_provider_planning as string) || "lovable";
     const model = PLANNING_MODEL[projectKey] ?? PLANNING_MODEL.lovable;
+    const enabledSkills = model.startsWith("anthropic/") ? await loadClaudeSkillsForSurface(supa, "marketing") : [];
 
     const docCount = docsRes.count ?? 0;
     const envCount = envRes.count ?? playbook.envelopes.count;
@@ -184,7 +186,7 @@ BACK COVER TEXT
 Voice: ${playbook.identity.brand_voice}
 Final language: ${gameLanguage}.`;
 
-    const system = `You are a senior copywriter for premium boxed murder-mystery games. You write tight, evocative marketing copy. You return ONLY a JSON object — no preamble, no markdown fences. Keys must match the requested fields exactly.`;
+    const system = `You are a senior copywriter for premium boxed murder-mystery games. You write tight, evocative marketing copy. You return ONLY a JSON object — no preamble, no markdown fences. Keys must match the requested fields exactly.\n\n${claudeSkillPromptBlock(enabledSkills, "marketing")}`;
 
     const userMsg = `PROJECT CONTEXT:
 ${ctx}
@@ -203,7 +205,7 @@ ${isSellingPoint
 
     const startedAt = Date.now();
     const callerUserId = await getUserIdFromAuth(req);
-    const resp = await chatCompletions({
+    const resp = await chatCompletions(withClaudeSkills({
       model,
       messages: [
         { role: "system", content: system },
@@ -211,7 +213,7 @@ ${isSellingPoint
       ],
       temperature: 0.85,
       response_format: { type: "json_object" },
-    });
+    }, enabledSkills));
     const fb = extractFallback(resp, model);
 
     if (!resp.ok) {
