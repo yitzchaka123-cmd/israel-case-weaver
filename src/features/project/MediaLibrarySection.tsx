@@ -190,6 +190,15 @@ function LibraryCard({ item }: { item: LibraryItem }) {
   const isVideo = item.mime?.startsWith("video");
   const isPdf = item.mime === "application/pdf";
   const Icon = item.source === "Document" ? FileText : item.type.includes("cover") || item.type.includes("back") ? Package : isVideo ? Video : ImageIcon;
+  const copyPrompt = async () => {
+    if (!item.prompt) return;
+    try {
+      await navigator.clipboard.writeText(item.prompt);
+      toast.success("Prompt copied");
+    } catch {
+      toast.error("Failed to copy prompt");
+    }
+  };
   return (
     <article className="rounded-2xl border bg-card overflow-hidden shadow-soft">
       <div className="aspect-[4/3] bg-muted relative overflow-hidden">
@@ -210,6 +219,17 @@ function LibraryCard({ item }: { item: LibraryItem }) {
           <span className="text-[11px] text-muted-foreground truncate">{item.model ?? item.mime ?? "Asset"}</span>
           {item.url && <a href={item.url} target="_blank" rel="noreferrer" className="text-xs text-accent inline-flex items-center gap-1 hover:underline"><ExternalLink className="h-3 w-3" /> Open</a>}
         </div>
+        {item.prompt && (
+          <div className="rounded-lg border bg-muted/30 p-2 space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Document prompt</span>
+              <Button type="button" variant="ghost" size="sm" className="h-6 px-2 gap-1 text-[11px]" onClick={copyPrompt}>
+                <Copy className="h-3 w-3" /> Copy
+              </Button>
+            </div>
+            <p className="line-clamp-3 text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap">{item.prompt}</p>
+          </div>
+        )}
       </div>
     </article>
   );
