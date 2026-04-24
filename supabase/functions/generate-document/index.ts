@@ -157,6 +157,51 @@ Deno.serve(async (req) => {
       const directFilePrompt = `Create the final ${documentFormat.toUpperCase()} document directly if your API supports returning generated files. If you cannot return an actual file, say exactly: UNABLE_TO_CREATE_FILE.\n\nCase: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nDocument title: ${doc.title}\nType: ${doc.doc_type ?? "generic"}\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\nContent:\n${doc.hebrew_content ?? ""}`;
       const startedAt = Date.now();
       const callerUserId = await getUserIdFromAuth(req);
+
+      if (model.startsWith("anthropic/")) {
+        if (!ANTHROPIC_API_KEY) return new Response(JSON.stringify({ error: "Anthropic API key not configured" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        const { data: skills } = await supa.from("claude_skills").select("skill_id, skill_type, version, enabled, usage_scope").eq("enabled", true);
+        const enabledSkills = ((skills ?? []) as Array<{ skill_id: string; skill_type: string; version: string; usage_scope: string[] }>).filter((s) => (s.usage_scope ?? []).includes("documents"));
+        const wanted = enabledSkills.find((s) => s.skill_id === documentFormat) ?? enabledSkills[0];
+        const skillPayload = wanted ? [{ type: wanted.skill_type === "anthropic" ? "anthropic" : "custom", skill_id: wanted.skill_id, version: wanted.version || "latest" }] : [{ type: "anthropic", skill_id: documentFormat, version: "latest" }];
+        const anthropicResp = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "x-api-key": ANTHROPIC_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "anthropic-beta": "code-execution-2025-05-22,files-api-2025-04-14,skills-2025-10-02",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: model.slice("anthropic/".length),
+            max_tokens: 8192,
+            tools: [{ type: "code_execution_20250522", name: "code_execution" }],
+            container: { skills: skillPayload },
+            messages: [{ role: "user", content: directFilePrompt }],
+          }),
+        });
+        const anthropicData = await anthropicResp.json().catch(() => ({}));
+        if (!anthropicResp.ok) {
+          await logAiRun({ userId: callerUserId, projectId: doc.project_id, surface: "generate-document-file", requestedModel: model, effectiveModel: model, fallback: "none", status: "error", latencyMs: Date.now() - startedAt, errorMessage: JSON.stringify(anthropicData).slice(0, 200), targetId: documentId, promptExcerpt: directFilePrompt });
+          return new Response(JSON.stringify({ error: `Claude could not create the ${documentFormat.toUpperCase()} (${anthropicResp.status})` }), { status: anthropicResp.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        const fileId = findFileIds(anthropicData)[0];
+        if (fileId) {
+          const fileResp = await fetch(`https://api.anthropic.com/v1/files/${fileId}/content`, { headers: { "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "anthropic-beta": "files-api-2025-04-14" } });
+          if (fileResp.ok) {
+            const bytes = new Uint8Array(await fileResp.arrayBuffer());
+            const mime = fileResp.headers.get("content-type") ?? MIME_BY_FORMAT[documentFormat] ?? "application/octet-stream";
+            const path = `${doc.project_id}/${documentId}-${Date.now()}.${documentFormat}`;
+            await supa.storage.from("documents").upload(path, bytes, { contentType: mime, upsert: true });
+            const { data: pub } = supa.storage.from("documents").getPublicUrl(path);
+            await supa.from("documents").update({ generated_document_url: pub.publicUrl, generated_pdf_url: documentFormat === "pdf" ? pub.publicUrl : doc.generated_pdf_url, document_format: documentFormat, document_provider: "anthropic-direct", document_model: model, document_skill_id: String((skillPayload[0] as Record<string, unknown>).skill_id), status: "review" }).eq("id", documentId);
+            await supa.from("media_assets").insert({ project_id: doc.project_id, category: "document", title: doc.title, url: pub.publicUrl, mime_type: mime, provider: "anthropic-direct", model, effective_model: model, asset_type: "document", document_format: documentFormat, skill_id: String((skillPayload[0] as Record<string, unknown>).skill_id), source_document_id: documentId, generation_mode: "claude-skill" } as never);
+            await logAiRun({ userId: callerUserId, projectId: doc.project_id, surface: "generate-document-file", requestedModel: model, effectiveModel: model, fallback: "none", status: "ok", latencyMs: Date.now() - startedAt, targetId: documentId, promptExcerpt: directFilePrompt });
+            return new Response(JSON.stringify({ ok: true, documentUrl: pub.publicUrl, documentFormat, model, skillId: (skillPayload[0] as Record<string, unknown>).skill_id }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          }
+        }
+      }
+
       const resp = await chatCompletions({ model, messages: [{ role: "user", content: directFilePrompt }] });
       const fb = extractFallback(resp, model);
       if (!resp.ok) {
