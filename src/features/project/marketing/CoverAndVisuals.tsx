@@ -13,6 +13,14 @@ import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { Copy, Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
+type OutputType = "image" | "document" | "both";
+
+const OUTPUT_TYPES: { value: OutputType; label: string }[] = [
+  { value: "image", label: "Image" },
+  { value: "document", label: "Document/file" },
+  { value: "both", label: "Both" },
+];
+
 interface MediaAsset {
   id: string;
   category: string;
@@ -47,6 +55,8 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const [newHint, setNewHint] = useState("");
   const [generating, setGenerating] = useState(false);
   const [generatingCover, setGeneratingCover] = useState(false);
+  const [coverOutputType, setCoverOutputType] = useState<OutputType>("image");
+  const [extraOutputType, setExtraOutputType] = useState<OutputType>("image");
 
   const { data: project } = useQuery({
     queryKey: ["project-cover-only", projectId],
@@ -89,23 +99,28 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const handleGenerateCover = async (prompt: string) => {
     setGeneratingCover(true);
     try {
-      const modelOverride = getStoredImageModel("marketing-cover", "chatgpt-image-2");
-      const quality = getStoredImageQuality("marketing-cover", "medium");
-      const resp = await callEdge("generate-image", {
-        projectId,
-        category: "cover",
-        target: "project-cover",
-        prompt,
-        modelOverride,
-        aspect: "portrait",
-        quality,
-      });
-      if (!resp.ok) {
-        const e = await resp.json().catch(() => ({}));
-        toast.error(e.error ?? "Cover generation failed", { duration: 10000 });
-        return;
+      if (coverOutputType === "image" || coverOutputType === "both") {
+        const modelOverride = getStoredImageModel("marketing-cover", "chatgpt-image-2");
+        const quality = getStoredImageQuality("marketing-cover", "medium");
+        const resp = await callEdge("generate-image", {
+          projectId,
+          category: "cover",
+          target: "project-cover",
+          prompt,
+          modelOverride,
+          aspect: "portrait",
+          quality,
+        });
+        if (!resp.ok) {
+          const e = await resp.json().catch(() => ({}));
+          toast.error(e.error ?? "Cover generation failed", { duration: 10000 });
+          if (coverOutputType === "image") return;
+        }
       }
-      toast.success("Cover visual generated");
+      if (coverOutputType === "document" || coverOutputType === "both") {
+        await supabase.from("media_assets").insert({ project_id: projectId, category: "cover", title: "Cover document prompt", prompt, provider: "direct-model-file", asset_type: "document", document_format: "pdf", generation_mode: "direct_model_file", status: "failed", error_message: "Create a document row to generate a real file directly with the selected document model." } as never);
+      }
+      toast.success(coverOutputType === "both" ? "Cover image generated; document prompt saved" : coverOutputType === "document" ? "Cover document prompt saved" : "Cover visual generated");
       qc.invalidateQueries({ queryKey: ["project-cover-only", projectId] });
     } finally {
       setGeneratingCover(false);
@@ -115,22 +130,27 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const handleGenerate = async (prompt: string) => {
     setGenerating(true);
     try {
-      const modelOverride = getStoredImageModel("marketing-cover", "chatgpt-image-2");
-      const quality = getStoredImageQuality("marketing-cover", "medium");
-      const resp = await callEdge("generate-image", {
-        projectId,
-        category: "marketing-extra",
-        prompt,
-        title: newTitle || "Marketing image",
-        modelOverride,
-        quality,
-      });
-      if (!resp.ok) {
-        const e = await resp.json().catch(() => ({}));
-        toast.error(e.error ?? "Image generation failed", { duration: 10000 });
-        return;
+      if (extraOutputType === "image" || extraOutputType === "both") {
+        const modelOverride = getStoredImageModel("marketing-cover", "chatgpt-image-2");
+        const quality = getStoredImageQuality("marketing-cover", "medium");
+        const resp = await callEdge("generate-image", {
+          projectId,
+          category: "marketing-extra",
+          prompt,
+          title: newTitle || "Marketing image",
+          modelOverride,
+          quality,
+        });
+        if (!resp.ok) {
+          const e = await resp.json().catch(() => ({}));
+          toast.error(e.error ?? "Image generation failed", { duration: 10000 });
+          if (extraOutputType === "image") return;
+        }
       }
-      toast.success("Marketing image generated");
+      if (extraOutputType === "document" || extraOutputType === "both") {
+        await supabase.from("media_assets").insert({ project_id: projectId, category: "marketing-extra", title: newTitle || "Marketing document prompt", prompt, provider: "direct-model-file", asset_type: "document", document_format: "pdf", generation_mode: "direct_model_file", status: "failed", error_message: "Create a document row to generate a real file directly with the selected document model." } as never);
+      }
+      toast.success(extraOutputType === "both" ? "Marketing image generated; document prompt saved" : extraOutputType === "document" ? "Marketing document prompt saved" : "Marketing image generated");
       setNewTitle("");
       setNewHint("");
       setAdding(false);
