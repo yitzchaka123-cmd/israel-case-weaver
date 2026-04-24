@@ -8,6 +8,10 @@ export type ClaudeSkillRow = {
   usage_scope: string[];
 };
 
+export function claudeSkillPromptBlock(skills: ClaudeSkillRow[], surface: string) {
+  return `AVAILABLE CLAUDE SKILLS FOR ${surface.toUpperCase()}\n${renderClaudeSkillCatalog(skills)}\nIf a listed Skill is relevant, follow its description. Do not mention unavailable, disabled, review-needed, or manual-only skills.`;
+}
+
 type SupabaseLike = {
   from: (table: string) => {
     select: (columns: string) => {
@@ -52,6 +56,11 @@ export function claudeSkillRequestShape(skills: ClaudeSkillRow[]) {
       })),
     },
   };
+}
+
+export function withClaudeSkills(body: Record<string, unknown>, skills: ClaudeSkillRow[]) {
+  if (!skills.length) return body;
+  return { ...body, ...claudeSkillRequestShape(skills) };
 }
 
 export function preferredClaudeDocumentSkill(skills: ClaudeSkillRow[], documentFormat: string): ClaudeSkillRow {
