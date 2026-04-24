@@ -266,14 +266,14 @@ Deno.serve(async (req) => {
       if (!resp.ok) {
         const t = await resp.text().catch(() => "");
         await saveDocumentPrompt("error", t);
-        await recordDocumentAttempt(supa, { projectId: doc.project_id, documentId, title: doc.title, documentFormat, prompt: directFilePrompt, provider, model, effectiveModel: fb.effectiveModel, status: "failed", errorMessage: t.slice(0, 500), skill: null });
+        await recordDocumentAttempt(supa, { projectId: doc.project_id, documentId, createdByMessageId: doc.created_by_message_id, title: doc.title, documentFormat, prompt: directFilePrompt, provider, model, effectiveModel: fb.effectiveModel, status: "failed", errorMessage: t.slice(0, 500), skill: null });
         await logAiRun({ userId: callerUserId, projectId: doc.project_id, surface: "generate-document-file", requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback, status: "error", latencyMs: Date.now() - startedAt, errorMessage: t.slice(0, 200), targetId: documentId, promptExcerpt: directFilePrompt });
         return new Response(JSON.stringify({ error: `${provider} could not create the ${documentFormat.toUpperCase()} (${resp.status})` }), { status: resp.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       const data = await resp.json();
       const content = String(data.choices?.[0]?.message?.content ?? "").trim();
       await saveDocumentPrompt("error", "Model did not return a downloadable file");
-      await recordDocumentAttempt(supa, { projectId: doc.project_id, documentId, title: doc.title, documentFormat, prompt: directFilePrompt, provider, model, effectiveModel: fb.effectiveModel, status: "failed", errorMessage: "Model did not return a downloadable file", skill: null });
+      await recordDocumentAttempt(supa, { projectId: doc.project_id, documentId, createdByMessageId: doc.created_by_message_id, title: doc.title, documentFormat, prompt: directFilePrompt, provider, model, effectiveModel: fb.effectiveModel, status: "failed", errorMessage: "Model did not return a downloadable file", skill: null });
       await logAiRun({ userId: callerUserId, projectId: doc.project_id, surface: "generate-document-file", requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback, status: "error", latencyMs: Date.now() - startedAt, errorMessage: "Model did not return a downloadable file", targetId: documentId, promptExcerpt: directFilePrompt });
       return new Response(JSON.stringify({ error: content.includes("UNABLE_TO_CREATE_FILE") ? `${provider} was not able to create a downloadable ${documentFormat.toUpperCase()} directly.` : `${provider} responded, but did not return a downloadable ${documentFormat.toUpperCase()} file.` }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
@@ -443,6 +443,24 @@ Deno.serve(async (req) => {
         provider: useOpenAI ? "openai" : (Deno.env.get("GEMINI_API_KEY") ? "gemini-direct" : "lovable-ai"),
         model,
       });
+      await supa.from("media_assets").insert({
+        project_id: doc.project_id,
+        category: "document",
+        title: doc.title,
+        url: pub.publicUrl,
+        mime_type: mime,
+        prompt: imgPrompt,
+        provider: useOpenAI ? "openai" : (Deno.env.get("GEMINI_API_KEY") ? "gemini-direct" : "lovable-ai"),
+        model,
+        effective_model: model,
+        asset_type: "image",
+        document_format: "image",
+        source_document_id: documentId,
+        created_by_message_id: doc.created_by_message_id ?? null,
+        generation_mode: "image_generation",
+        status: "generated",
+        error_message: null,
+      } as never);
 
       return new Response(JSON.stringify({ ok: true, url: pub.publicUrl }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
