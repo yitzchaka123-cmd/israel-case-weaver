@@ -13,6 +13,7 @@ import { Sparkles, Send, Loader2, Bot, User, Wand2, CheckCircle2, Cpu, Image as 
 import { toast } from "sonner";
 import { useVoiceInput } from "@/hooks/use-voice-input";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
+import { IMAGE_MODELS } from "@/components/ImageModelPicker";
 import { useAssistantRun } from "./assistant/useAssistantRun";
 import { AssetLightbox, type LightboxAsset } from "./assistant/AssetLightbox";
 
@@ -38,12 +39,6 @@ const PLANNING_MODELS = [
   { value: "claude", label: "Claude Sonnet 4.5" },
   { value: "claude-opus", label: "Claude Opus 4.5 (highest quality)" },
   { value: "claude-haiku", label: "Claude Haiku 4.5 (fast)" },
-];
-
-const IMAGE_MODELS = [
-  { value: "nano-banana-2", label: "Nano Banana 2 (default — fast + pro)" },
-  { value: "nano-banana-pro", label: "Nano Banana Pro (highest quality)" },
-  { value: "nano-banana", label: "Nano Banana (Gemini 2.5 Flash Image)" },
 ];
 
 type ToolCall = {
