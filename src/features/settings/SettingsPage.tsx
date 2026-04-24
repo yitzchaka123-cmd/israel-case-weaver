@@ -14,6 +14,7 @@ import { UsageDashboard } from "./UsageDashboard";
 import { GeminiConnection } from "./GeminiConnection";
 import { AssistantTweaksPanel } from "./AssistantTweaksPanel";
 import { AssistantPlaybookPanel } from "./AssistantPlaybookPanel";
+import { ClaudeSkillsPanel } from "./ClaudeSkillsPanel";
 import { TeamAccessPanel } from "./TeamAccessPanel";
 import { AiRunLog } from "./AiRunLog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -256,10 +257,13 @@ export function SettingsPage() {
           <Section
             id="assistant-rules"
             title="Assistant rules"
-            desc="Assistant playbook defaults and free-form house rules in one place."
+            desc="Assistant playbook defaults, Claude Skills, and free-form house rules in one place."
           >
             <div className="space-y-8">
               <AssistantPlaybookPanel />
+              <div className="border-t pt-6">
+                <ClaudeSkillsPanel />
+              </div>
               <div className="border-t pt-6">
                 <h3 className="font-display text-lg">Assistant tweaks</h3>
                 <p className="text-sm text-muted-foreground mt-1 mb-5">
