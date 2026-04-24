@@ -77,9 +77,11 @@ Deno.serve(async (req) => {
     const { data: signedIn, error: signInError } = await anon.auth.signInWithPassword({ email, password });
     if (signInError || !signedIn.session) throw signInError ?? new Error("Could not create code session");
 
-    await admin.rpc("redeem_invite_code", { p_code: code }, {
-      headers: { Authorization: `Bearer ${signedIn.session.access_token}` },
+    const userClient = createClient(SUPABASE_URL, ANON, {
+      global: { headers: { Authorization: `Bearer ${signedIn.session.access_token}` } },
     });
+    const { error: redeemError } = await userClient.rpc("redeem_invite_code", { p_code: code });
+    if (redeemError) throw redeemError;
 
     return new Response(JSON.stringify({ session: signedIn.session }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
