@@ -1,237 +1,247 @@
 
-## Redesign the Storyboard Studio so it is understandable and usable
+## Updated plan: keep the Marketing prompt planner simple and familiar
 
 ### Goal
 
-Replace the current cramped three-column storyboard UI with a clearer production workflow that answers, at a glance:
+Add cover visual generation inside the Marketing tab, but make the prompt planner match the existing prompt planners already used elsewhere in the app:
 
 ```text
-Where am I?
-What do I do next?
-Which shots are drafted?
-Which prompts are ready?
-Which keyframes are generated?
+[Prompt writer model selector] [Generate Prompt]
+
+[Prompt textarea]
+
+[Generate image]
 ```
 
-The current layout technically works, but it hides the process inside three dense columns. On smaller screens it becomes especially hard to understand.
+No complex form fields. No separate “purpose / mood / include / avoid” planner.
 
 ---
 
-## New storyboard structure
+## 1. Add front cover generation to the Marketing tab
 
-### 1. Add a clear header and progress summary
+### File
 
-At the top of `StoryboardStudio`, add a production-style header:
+- `src/features/project/marketing/CoverAndVisuals.tsx`
 
-```text
-Storyboard Studio
+### What will change
 
-Build a trailer-style sequence in 3 steps:
-1. Draft shots
-2. Write video prompts
-3. Generate keyframes
+The **Cover & visuals** panel will get a dedicated **Front cover** generation area.
 
-[Length] [Save] [New version]
+It will use the same backend path as the Overview cover generator:
+
+```ts
+target: "project-cover"
+category: "cover"
+aspect: "portrait"
 ```
 
-Below that, add compact progress cards:
+So a cover generated from Marketing updates the real project cover used by:
+
+- Overview
+- Dashboard thumbnail
+- Marketing preview
+
+### UI
+
+The front cover area will include:
 
 ```text
-Shots drafted        8
-Prompts ready        5 / 8
-On storyboard        4 / 8
-Keyframes generated  3 / 4
-```
+Front cover
 
-This makes the state of the storyboard visible immediately.
+[Current cover preview]
 
----
-
-## 2. Replace the confusing 3-column wall with guided workflow tabs
-
-Instead of showing all three dense columns at once, convert the studio into three large workflow tabs:
-
-```text
-[1 Script] [2 Prompts] [3 Storyboard]
-```
-
-Each tab focuses on one task.
-
-### Script tab
-
-Purpose: create and edit the shot list.
-
-Layout:
-
-```text
-Script setup
-[Length picker]
-[Script instructions textarea]
-[Generate / regenerate script]
-
-Shot list
-Shot 1
-- Action
-- Voiceover
-- On-screen text
-- Send to prompts
-
-Shot 2
-...
-```
-
-Improvements:
-- Larger shot cards.
-- Clear labels instead of tiny dense controls.
-- “Send to prompts” becomes a full readable button.
-- Add a “Send all to prompts” action near the shot list.
-
----
-
-### Prompts tab
-
-Purpose: turn approved shots into Sora/Kling prompts.
-
-Layout:
-
-```text
-Prompt settings
-[Sora instructions]
-[Kling instructions]
-
-Prompt queue
-Shot 1
-- Source action preview
-- Engine selector
-- Prompt textarea
-- Generate prompt
-- Send to storyboard
-```
-
-Improvements:
-- The original shot action is shown clearly above the prompt.
-- Engine selection is readable.
-- Prompt textarea has more space.
-- “Generate prompt” and “Send to storyboard” are visually separated so it is obvious what each does.
-
----
-
-### Storyboard tab
-
-Purpose: see the actual visual board and generate keyframes.
-
-Layout:
-
-```text
-Storyboard board
 [Image model selector]
-[Generate missing keyframes] [Copy all prompts]
 
-Shot 1 card
-[16:9 image/keyframe]
-Action summary
-Prompt preview
-Generate / regenerate keyframe
+[Prompt writer model selector] [Generate Prompt]
+[Prompt textarea]
+[Generate / regenerate cover]
 ```
 
-Improvements:
-- Use a responsive grid for storyboard cards:
-  - mobile: 1 column
-  - tablet: 2 columns
-  - desktop: 2–3 columns depending on available width
-- Make generated images the visual focus.
-- Keep model/provenance badge on generated images.
-- Make missing images obvious with a clean placeholder.
+This will reuse the existing `PromptPanel` pattern instead of introducing a new custom planner layout.
 
 ---
 
-## 3. Add a sticky “Next step” guide
+## 2. Make the prompt planner “just like the others”
 
-Add a small contextual guide near the top of the studio:
+### File
 
-Examples:
+- `src/features/project/marketing/CoverAndVisuals.tsx`
 
-```text
-Next step: Generate a script to create your shot list.
-```
+### Updated approach
 
-```text
-Next step: Review the shots, then send them to Prompts.
-```
+The Marketing cover prompt planner will use the existing `PromptPanel` component, the same way the app already does for:
 
-```text
-Next step: Generate prompts for 3 remaining shots.
-```
+- Overview cover
+- Suspects
+- Hints
+- Media images
 
-```text
-Next step: Generate keyframes for the storyboard.
-```
+It will have:
 
-This removes the guessing about what to do next.
+- a text area where you can write or edit the prompt
+- a model selector for the prompt-writing model
+- a **Generate Prompt** / **Revise Prompt** button
+- a final **Generate image** button
 
----
+### Behavior
 
-## 4. Improve mobile and touch layout
+The text area content becomes the prompt used for generation.
 
-The storyboard is currently too dense for the user’s current preview size.
+The prompt writer model selector controls which model drafts the prompt, matching existing planner behavior.
 
-Changes:
-- Remove the mandatory `lg:grid-cols-3` workflow wall.
-- Use full-width stacked sections on mobile.
-- Make the workflow tabs horizontally comfortable and touch-friendly.
-- Increase button hit areas.
-- Avoid tiny icon-only actions where the meaning is unclear.
-- Keep destructive actions like delete visible but not dominant.
+Generated prompts and images continue to be saved through the existing prompt/image history system.
 
 ---
 
-## 5. Keep all existing functionality
+## 3. Keep extra marketing image generation separate
 
-This is a UI/UX redesign only. Existing data and generation flows stay intact:
+### File
 
-- `project_storyboards` remains the saved source of truth.
-- Script generation still uses `generate-storyboard` with `mode: "script"`.
-- Prompt generation still uses `generate-storyboard` with `mode: "prompt"`.
-- Keyframes still use `generate-image` with category `marketing-storyboard`.
-- Save / New version behavior remains.
-- Existing storyboards already in the database continue to load.
+- `src/features/project/marketing/CoverAndVisuals.tsx`
+
+The existing **Add marketing image** flow will remain for extra promotional/supporting visuals.
+
+The panel will be clearer:
+
+```text
+Cover & visuals
+
+A. Front cover
+- Generates/regenerates the actual project cover
+
+B. Marketing asset gallery
+- Extra generated marketing images
+```
+
+This prevents confusion between “replace the real cover” and “generate another marketing asset.”
+
+---
+
+## 4. Make Script → Prompts reversible in Storyboard Studio
+
+### File
+
+- `src/features/project/marketing/StoryboardStudio.tsx`
+
+The current Script tab button will become a true toggle.
+
+Before:
+
+```text
+Send to Prompts
+```
+
+After the shot is in the prompt queue:
+
+```text
+Remove from Prompts
+```
+
+Clicking it once sends the shot in. Clicking it again removes it.
+
+### Removal behavior
+
+Removing a shot from Prompts will:
+
+- set `in_prompts: false`
+- set `in_storyboard: false`
+- keep the shot text
+- keep any drafted prompt text
+- keep any generated keyframe URL in the saved shot data, but hide it from the active board until the shot is sent back in
+
+This makes the workflow reversible without destroying work.
+
+---
+
+## 5. Make Prompts → Storyboard reversible
+
+### File
+
+- `src/features/project/marketing/StoryboardStudio.tsx`
+
+The Prompt tab button will also become a true toggle.
+
+Before:
+
+```text
+Send to Storyboard
+```
+
+After the shot is on the board:
+
+```text
+Remove from Storyboard
+```
+
+Clicking once sends it in. Clicking again removes it.
+
+### Removal behavior
+
+Removing from Storyboard will:
+
+- set `in_storyboard: false`
+- keep the video prompt
+- keep any generated keyframe URL
+- simply hide the shot from the active storyboard board
+
+---
+
+## 6. Add a direct remove action on storyboard cards
+
+### File
+
+- `src/features/project/marketing/StoryboardStudio.tsx`
+
+Each storyboard card will include:
+
+```text
+Remove from board
+```
+
+This gives a quick one-click way to take a shot off the storyboard without returning to the Prompts tab.
+
+---
+
+## 7. Update labels and progress text
+
+### File
+
+- `src/features/project/marketing/StoryboardStudio.tsx`
+
+The progress summary and next-step helper will be adjusted so the reversible workflow is clear:
+
+```text
+Shots drafted
+Prompts queue
+Prompt text ready
+On storyboard
+Keyframes generated
+```
+
+Buttons will use plain, readable labels:
+
+```text
+Send to Prompts
+Remove from Prompts
+
+Send to Storyboard
+Remove from Storyboard
+```
+
+---
+
+## Files to edit
+
+- `src/features/project/marketing/CoverAndVisuals.tsx`
+  - Add real front-cover generation from Marketing.
+  - Reuse the existing `PromptPanel` style.
+  - Include a prompt text area, prompt-writer model selector, Generate Prompt button, image model selector, and Generate Cover button.
+  - Keep extra marketing image generation separate.
+
+- `src/features/project/marketing/StoryboardStudio.tsx`
+  - Make Script → Prompts a one-click in/out toggle.
+  - Make Prompts → Storyboard a one-click in/out toggle.
+  - Add Remove from board on storyboard cards.
+  - Preserve existing prompt/keyframe data when toggling out.
 
 No database migration is required.
-
----
-
-## 6. File to edit
-
-### `src/features/project/marketing/StoryboardStudio.tsx`
-
-Main work:
-- Add workflow tab state.
-- Replace `ColumnFrame` layout with clearer step panels.
-- Add progress summary cards.
-- Add next-step helper text.
-- Redesign `ShotScriptCard`, `ShotPromptCard`, and `ShotBoardCard`.
-- Improve responsive spacing and readability.
-
-Optional supporting imports:
-- Use existing UI components already in the project where helpful, such as:
-  - `Tabs`
-  - `Card`
-  - `Badge`
-  - `Separator`
-
----
-
-## Result
-
-The Storyboard Studio will feel like a guided production board instead of a confusing control panel:
-
-```text
-Header + progress
-Next recommended action
-Step tabs
-Focused workspace
-Readable shot cards
-Clear image storyboard
-```
-
-The user will be able to understand where they are, what exists, and what to click next without needing to decode the interface.
