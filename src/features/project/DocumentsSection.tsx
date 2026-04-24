@@ -490,6 +490,19 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
                     {genImage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
                     Generate document image
                   </Button>
+                  <Select value={documentFormat} onValueChange={(v) => setDocumentFormat(v as "pdf" | "docx" | "pptx" | "xlsx")}>
+                    <SelectTrigger className="h-8 w-[98px] text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pdf">PDF</SelectItem>
+                      <SelectItem value="docx">DOCX</SelectItem>
+                      <SelectItem value="pptx">PPTX</SelectItem>
+                      <SelectItem value="xlsx">XLSX</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button size="sm" variant="outline" className="gap-2" onClick={() => generate("document")} disabled={genDocument}>
+                    {genDocument ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileType className="h-3.5 w-3.5" />}
+                    Generate file
+                  </Button>
                 </div>
               </div>
               {selectedImageModel === "chatgpt-image-2" && (
@@ -509,6 +522,15 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
                 </Button>
               </div>
               <img src={draft.generated_asset_url} alt="" className="rounded-lg border w-full max-h-96 object-contain bg-muted" />
+            </div>
+          )}
+          {(draft.generated_document_url || draft.generated_pdf_url) && (
+            <div className="md:col-span-2 rounded-lg border bg-muted/30 p-3 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Generated document file</Label>
+                <p className="text-sm truncate">{(draft.document_format ?? "file").toUpperCase()} • {draft.document_model ?? draft.document_provider ?? "Selected model"}</p>
+              </div>
+              <a href={draft.generated_document_url ?? draft.generated_pdf_url ?? "#"} target="_blank" rel="noreferrer" className="text-sm text-accent underline shrink-0">Open file</a>
             </div>
           )}
           <div className="md:col-span-2 border-t pt-4">
