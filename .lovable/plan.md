@@ -1,88 +1,169 @@
-Here’s what’s left from the original plan, based on what is already built.
+Here’s the honest explanation first, then the build plan.
 
-Completed already:
+## Why GPT 5.2 made a PDF in ChatGPT, but not here
 
-- Playbook contains the new principles: direct file-first, strict model ownership, Claude Skills, output type choices, and asset metadata.
-- Assistant full-auto now creates a placeholder assistant message first, so `created_by_message_id` references are safer.
-- Document generation has a `document` mode that asks the selected model to create the actual file directly.
-- Claude document generation uses Messages API, code execution, Skills beta, Files API beta, `container.skills`, file ID detection, file download, storage save, and document/media metadata.
-- Non-Claude document generation is strict enough to avoid hidden Gemini fallback by passing `disableFallback: true`.
-- Settings has a Claude Skills manager with built-in/custom sections, upload, enabled toggle, usage surfaces, SKILL.md metadata, install status, archive inspection, and validation messages.
-- Claude Skills are passed into chat, documents, marketing, logic analysis, and storyboard/media prompts.
-- Documents tab has Image / Document file / Both controls.
-- Media library shows document assets, failed attempts, model/provider/skill badges, and has a PDF/image lightbox toggle when a preview exists.
+In ChatGPT’s own app, GPT 5.2 is surrounded by ChatGPT product tools: file creation, code/runtime tools, PDF rendering, and attachment handling. The model can ask those built-in app tools to make a PDF and then ChatGPT gives you the file.
 
-Remaining plan to finish
+In this app, when we call GPT 5.2 through your OpenAI API key, we are currently using the chat-completions style endpoint. That endpoint can return text/tool calls, but it does not automatically return a downloadable PDF file just because the ChatGPT app can. So the app asked GPT 5.2 to “create the PDF directly,” but GPT 5.2 returned a chat response rather than an actual downloadable PDF file. Because we removed hidden fallback rendering, the app correctly refused to fake a PDF.
 
-&nbsp;
+So the rule should become:
 
-2. Tighten full-auto document failure handling
+- GPT 5.2 can create document text and document plans through your OpenAI key.
+- GPT image models can create image previews through your OpenAI key.
+- Real direct PDF/DOCX/PPTX/XLSX generation should be routed only to a model/tool path that can actually return files, currently Claude with document skills.
+- If the selected model cannot return files, the app should say that before trying, not after failing.
 
-- Confirm every assistant-created row that uses `created_by_message_id` only uses the placeholder message ID after the placeholder insert succeeds.
-- If the placeholder insert fails, return a recoverable assistant error instead of continuing with broken references.
-- Make full-auto document 0 retry cleanly after a generation failure.
-- Ensure `generate_document_assets` receipts clearly say which step failed: body text, direct file, image, or both.
+## Build plan
 
-3. Harden strict model ownership everywhere document/file generation can happen
+### 1. Make the document file error pre-emptive and understandable
 
-- Keep `disableFallback: true` for document/file mode.
-- Audit assistant full-auto, manual documents, and “both” mode so no silent provider switching remains.
-- Make failed receipts explicit, for example:
-  - “Claude could not produce a downloadable PDF.”
-  - “GPT responded but did not return a downloadable DOCX.”
-  - “Gemini direct key unavailable for strict file generation.”
-- Keep generic planning/image fallbacks separate from strict document/file behavior.
+Update the document generation backend so that when the selected document model is GPT/OpenAI or Gemini direct and the requested output is PDF/DOCX/PPTX/XLSX, it does not waste a call asking for a file it cannot retrieve.
 
-4. Improve generated file metadata as first-class assets
+Instead it will return a clear message like:
 
-- Continue using `media_assets` as the generated asset ledger, because it already has most required fields.
-- Fill missing metadata consistently for document images too, not only document files:
-  - `asset_type`
-  - `document_format`
-  - `provider`
-  - `model`
-  - `effective_model`
-  - `generation_mode`
-  - `status`
-  - `error_message`
-  - `source_document_id`
-  - `created_by_message_id` where available
-- Decide whether a small schema migration is needed for any missing field, but avoid a new `generated_assets` table unless `media_assets` proves insufficient.
+> ChatGPT 5.2 in this app is connected through your OpenAI API key for chat/text. It can write the document content, but this route cannot return a downloadable PDF file. Switch Documents to Claude with document skills for PDF/DOCX/PPTX/XLSX, or choose Image-only with ChatGPT Image.
 
-5. Add better preview support for real files
+This keeps your “no hidden fallback” rule and avoids confusing “provider returned 400/422” failures.
 
-- For PDFs: store `document_preview_url` / `preview_url` when a preview image exists.
-- For generated document files without a preview, show a polished file card with download/open actions.
-- Keep DOCX/PPTX/XLSX as file cards first; richer previews can come later.
-- Improve the lightbox to show file type, provider/model, skill badge, and download button, not just preview/open.
+### 2. Keep image generation separate from PDF generation
 
-6. Expand output type controls beyond the Documents tab 
+Keep the successful image path as-is for ChatGPT Image / Nano Banana, but make the assistant’s receipts say exactly what happened:
 
-Add Image / Document-file / Both controls where relevant:
+- Image generated successfully via the selected image model.
+- PDF was not attempted or not available because the current document model cannot return downloadable files.
+- Recommended next action: switch document model to Claude with document skills, or continue image-only.
 
-- Cover page / cover asset generation.
-- Marketing poster and box/back-panel flows.
-- Media generation tab.
-- Assistant full-auto defaults.
+### 3. Add a required “Final Documents Map” step before creating final document rows
 
-Suggested defaults:
+Change the Phase 4 assistant workflow so that after Logic Flow is approved, it must first build the Final board document map before generating final documents.
 
-- Evidence document: Document/file or Both.
-- Visual prop: Image.
-- Marketing poster / cover / back panel: Both where useful.
-- Logo: Image.
-  &nbsp;
+New workflow:
 
-9. Final verification pass
+```text
+Approved Logic Flow
+  -> Create Final Documents Map on Case Board / Final board
+  -> User reviews/approves the mapped document nodes
+  -> Assistant creates real document rows from that map
+  -> User chooses Image / PDF / Both per document or batch
+  -> Assets generate only after rows exist
+```
 
-- Run the build.
-- Deploy changed backend functions.
-- Spot-check:
-  - Settings loads Claude Skills.
-  - Built-in skills can be enabled/disabled per surface.
-  - Invalid uploads show useful failure messages.
-  - Manual document file generation records success/failure as a media asset.
-  - Full-auto does not get stuck on document 0.
-  - Media library shows file/image assets and failed attempts.
+The Final board should contain one node per planned real game document, including Doc 0.
 
-&nbsp;
+Each document node should include:
+
+- doc number
+- title
+- document type
+- envelope number, if relevant
+- purpose in the mystery
+- status: `ungenerated` / `draft row created` / `image generated` / `file generated`
+- link to the real document row once created
+
+### 4. Make “ungenerated” document nodes visible and useful
+
+Update the Final board UI so document nodes show whether the document is only planned or already generated.
+
+Planned nodes should visibly say something like:
+
+> Ungenerated — to be generated in the future
+
+Generated/linked nodes should show links/actions in the side panel:
+
+- Open document row in Documents tab
+- Open generated image if available
+- Open/download generated PDF/DOCX if available
+- Show linked suspects/nodes where relevant
+
+### 5. Add backend support for generating the Final Documents Map
+
+Add a backend function or assistant tool that creates/replaces Final board document nodes from the approved logic flow and solution summary.
+
+It should not create document rows yet unless the user approves. It only maps the intended documents first.
+
+It will use the project’s selected planning model, preferably GPT 5.2 if that is what the assistant is using, and output structured nodes.
+
+### 6. Tie document rows back to Final board nodes
+
+When a document row is later created from a Final board node, store the relationship both ways using the existing `linked_node_ids` mechanism and node `data` metadata.
+
+This makes click-through work:
+
+- Final board node -> Documents tab document
+- Document row -> related Final board node
+- Generated assets -> document row -> node
+
+### 7. Make Doc 0 a universal contents / box checklist document
+
+Update the assistant/playbook rules so Doc 0 is not just a generic table of contents. It should be a player-facing contents list for the game box: the buyer can check that they received all documents and pieces.
+
+Doc 0 should include:
+
+- title like “Contents / Case File Inventory”
+- all included documents and physical pieces
+- envelope grouping if relevant
+- clear checklist/table formatting
+- generated/printable as part of the final kit
+- no solution spoilers
+
+### 8. Add a “Universal documents” section to the Playbook editor
+
+Add a new editable section in Settings -> Assistant Playbook for universal documents that apply to every game.
+
+Initial fields:
+
+- Enable Doc 0
+- Doc 0 title template
+- Doc 0 purpose/instructions
+- Doc 0 default document type
+- Doc 0 default print size
+- Whether Doc 0 should list generated assets only or all planned assets
+- Additional universal docs list for future items, e.g. rules page, welcome letter, evidence inventory, hint instructions
+
+These values will be injected into the assistant system prompt and used by the Final Documents Map generator.
+
+### 9. Update the assistant prompt/playbook rules
+
+The assistant should learn these hard rules:
+
+- Never begin final document generation immediately after Logic Flow approval.
+- First create/review the Final Documents Map on the Final board.
+- Treat Final board document nodes as the production checklist.
+- Mark uncreated documents as “ungenerated / to be generated.”
+- Create Doc 0 as the universal box contents checklist from playbook settings.
+- If the user requests PDF while using GPT 5.2, explain that GPT 5.2 here can write content but cannot return direct downloadable PDF files through this route; recommend Claude document skills.
+
+### 10. Manual Documents tab alignment
+
+Update manual Documents tab behavior so it matches the same rules:
+
+- Image generation remains available through selected image models.
+- PDF/DOCX/PPTX/XLSX generation shows a clear model capability message before attempting when the selected document model cannot return files.
+- If a document is linked to a Final board node, show that relationship in the document details.
+
+## Technical notes
+
+Likely files/functions to update:
+
+- `supabase/functions/generate-document/index.ts`
+- `supabase/functions/assistant-chat/index.ts`
+- `supabase/functions/generate-logic-flow/index.ts` or a new final-map generation function
+- `src/features/project/CanvasSection.tsx`
+- `src/features/project/canvas/CanvasNodeTypes.tsx`
+- `src/features/project/DocumentsSection.tsx`
+- `src/features/settings/AssistantPlaybookPanel.tsx`
+- `src/lib/assistant-playbook.ts`
+- `supabase/functions/_shared/assistant-playbook.ts`
+
+A small database migration may be needed if we decide to store explicit final-map approval or richer node/document metadata outside the existing `canvas_nodes.data` JSON field. I’ll prefer using existing `canvas_nodes.data` and `documents.linked_node_ids` first to avoid unnecessary schema changes.
+
+## Recommended next build chunk
+
+Build this in one focused chunk:
+
+1. Add the universal Doc 0 playbook settings.
+2. Add the Final Documents Map workflow rule/tool.
+3. Update Final board document nodes to show ungenerated/generated status and link to documents.
+4. Add the pre-emptive GPT 5.2 PDF capability message.
+
+After that, we can run the current case through the corrected flow: generate the Final Documents Map first, approve it, then create/generate Doc 0 and the rest from the mapped nodes.

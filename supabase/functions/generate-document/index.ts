@@ -64,6 +64,14 @@ function directProviderBlock(model: string, output: string): Response | null {
   return null;
 }
 
+function directFileCapabilityBlock(model: string, format: string): Response | null {
+  if (model.startsWith("anthropic/")) return null;
+  const label = model.startsWith("openai/") ? "ChatGPT 5.2 / OpenAI" : model.startsWith("gemini-direct/") ? "Gemini Direct" : providerLabel(model);
+  return new Response(JSON.stringify({
+    error: `${label} in this app can write document content, but this route cannot return a downloadable ${format.toUpperCase()} file. Switch Documents to Claude with document skills for PDF/DOCX/PPTX/XLSX, or choose Image-only for a visual preview.`,
+  }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+}
+
 const MIME_BY_FORMAT: Record<string, string> = {
   pdf: "application/pdf",
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -87,7 +95,7 @@ function findFileIds(value: unknown): string[] {
   return [...found];
 }
 
-async function recordDocumentAttempt(supa: ReturnType<typeof createClient>, opts: {
+async function recordDocumentAttempt(supa: any, opts: {
   projectId: string;
   documentId: string;
   createdByMessageId?: string | null;
@@ -212,6 +220,8 @@ Deno.serve(async (req) => {
       const model = resolveDocumentModel(project);
       const blocked = directProviderBlock(model, documentFormat.toUpperCase());
       if (blocked) return blocked;
+      const capabilityBlocked = directFileCapabilityBlock(model, documentFormat);
+      if (capabilityBlocked) return capabilityBlocked;
       const provider = providerLabel(model);
       const directFilePrompt = `Create the final ${documentFormat.toUpperCase()} document directly if your API supports returning generated files. If you cannot return an actual file, say exactly: UNABLE_TO_CREATE_FILE.\n\nCase: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nDocument title: ${doc.title}\nType: ${doc.doc_type ?? "generic"}\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\nContent:\n${doc.hebrew_content ?? ""}`;
       const startedAt = Date.now();

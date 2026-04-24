@@ -19,6 +19,7 @@ import {
   renderLogicGateRefusal,
   renderCatalogsBlock,
   renderLanguagesBlock,
+  renderUniversalDocumentsBlock,
   renderPhaseEnumComment,
   getPhaseEnum,
   type Playbook,
@@ -144,7 +145,11 @@ Phase 3.5 LOGIC FLOW (MANDATORY GATE before Phase 4):
 - After approval is in place, you may proceed to Phase 4.
 Phase 4 Documents: Doc 0 = contents; then randomized doc numbers, varied types & print sizes, bodies in the selected Game language. Interrogations must be long, realistic, with pauses & body language.
 
+${renderUniversalDocumentsBlock(playbook)}
+
 DOCUMENT GENERATION WORKFLOW (Phase 4 — read carefully)
+Before creating final document rows, you MUST create/review the Final Documents Map on the Case Board's Final board. The map contains one \`document\` node for every planned real game document, including Doc 0, marked as ungenerated until a real document row is created/generated. If the Final board does not yet contain planned document nodes, call \`create_final_documents_map\` first and ask the user to review it before calling \`add_document\`.
+
 Each project remembers a \`doc_generation_mode\` choice that controls how aggressive you are when producing documents:
   • "drafts"  — write the row only (title + design_instructions + hebrew_content). Do NOT call generate_document_assets. The user clicks Generate themselves.
   • "auto"    — write the row, THEN ask which output to generate with propose_options (three buttons: "Image", "PDF", "Both"). Only after the user chooses, call generate_document_assets with mode "image", "document", or "both". Show one finished doc at a time so the user can react.
@@ -502,8 +507,41 @@ const BASE_TOOLS = [
           design_instructions: { type: "string" },
           hebrew_content: { type: "string" },
           envelope_number: { type: "number" },
+          final_node_id: { type: "string", description: "Optional Final board document-node id this row is being created from." },
         },
         required: ["title"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "create_final_documents_map",
+      description: "Create/replace the Final board production map with one document node per planned game document. This does NOT create document rows or assets; it marks planned documents as ungenerated for review first.",
+      parameters: {
+        type: "object",
+        properties: {
+          replace: { type: "boolean", description: "Default true. Replace existing unlinked Final-board document nodes." },
+          documents: {
+            type: "array",
+            minItems: 1,
+            items: {
+              type: "object",
+              properties: {
+                doc_number: { type: "number" },
+                title: { type: "string" },
+                doc_type: { type: "string" },
+                print_size: { type: "string" },
+                envelope_number: { type: "number" },
+                purpose: { type: "string" },
+              },
+              required: ["title", "purpose"],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["documents"],
         additionalProperties: false,
       },
     },
@@ -792,7 +830,7 @@ function buildTools(playbook: Playbook): typeof BASE_TOOLS {
   return BASE_TOOLS.map((tool) => {
     if (tool.function?.name !== "update_project") return tool;
     const cloned = JSON.parse(JSON.stringify(tool)) as typeof tool;
-    const props = (cloned.function.parameters as { properties?: Record<string, { enum?: string[] }> }).properties;
+    const props = (cloned.function.parameters as unknown as { properties?: Record<string, { enum?: string[] }> }).properties;
     if (props?.phase) props.phase.enum = phaseEnum;
     return cloned;
   });
@@ -803,7 +841,7 @@ function buildTools(playbook: Playbook): typeof BASE_TOOLS {
 // Every write stamps it so the UI can later jump back to the chat turn that
 // created or last edited the row.
 async function executeTool(
-  supa: ReturnType<typeof createClient>,
+  supa: any,
   projectId: string,
   name: string,
   args: Record<string, unknown>,
@@ -886,14 +924,51 @@ async function executeTool(
             "Only after that can documents be generated.",
         };
       }
-      const docNumber = args.doc_number ?? Math.floor(100 + Math.random() * 900);
+      const finalNodeId = typeof args.final_node_id === "string" ? args.final_node_id : null;
+      const insertArgs = { ...args };
+      delete insertArgs.final_node_id;
+      const docNumber = insertArgs.doc_number ?? Math.floor(100 + Math.random() * 900);
+      const linkedNodeIds = finalNodeId ? [finalNodeId] : undefined;
       const { data, error } = await supa
         .from("documents")
-        .insert(withMessage({ ...args, doc_number: docNumber, project_id: projectId }))
+        .insert(withMessage({ ...insertArgs, doc_number: docNumber, project_id: projectId, ...(linkedNodeIds ? { linked_node_ids: linkedNodeIds } : {}) }))
         .select("id, title")
         .single();
       if (error) throw error;
+      if (finalNodeId) {
+        await supa.from("canvas_nodes").update({ data: { documentId: data.id, generationStatus: "draft row created" } }).eq("id", finalNodeId).eq("project_id", projectId);
+      }
       return { ok: true, message: `Document created: ${data.title} (#${docNumber})`, id: data.id };
+    }
+    if (name === "create_final_documents_map") {
+      const docs = ((args as { documents?: Record<string, unknown>[] }).documents ?? []).filter((d) => d?.title);
+      if (docs.length === 0) return { ok: false, message: "documents array is required" };
+      if ((args as { replace?: boolean }).replace !== false) {
+        await supa.from("canvas_nodes").delete().eq("project_id", projectId).eq("board", "final").eq("node_type", "document");
+      }
+      const rows = docs.map((d, i) => {
+        const docNumber = Number(d.doc_number ?? (i === 0 ? 0 : 100 + i));
+        const title = String(d.title ?? `Document ${docNumber}`).slice(0, 200);
+        const docType = String(d.doc_type ?? (docNumber === 0 ? "contents checklist" : "document"));
+        const printSize = String(d.print_size ?? "A4");
+        const purpose = String(d.purpose ?? "Planned game document");
+        const envelopeNumber = typeof d.envelope_number === "number" ? d.envelope_number : null;
+        return {
+          project_id: projectId,
+          board: "final",
+          node_type: "document",
+          title: docNumber === 0 && !/^doc\s*0/i.test(title) ? `Doc 0 — ${title}` : title,
+          description: `Status: Ungenerated — to be generated in the future\nType: ${docType}\nPrint size: ${printSize}${envelopeNumber ? `\nEnvelope: ${envelopeNumber}` : ""}\nPurpose: ${purpose}`,
+          color: "oklch(0.50 0.05 260)",
+          position_x: 80 + (i % 4) * 260,
+          position_y: 80 + Math.floor(i / 4) * 170,
+          data: { generationStatus: "ungenerated", docNumber, docType, printSize, envelopeNumber, purpose },
+          ...(messageId ? { created_by_message_id: messageId } : {}),
+        };
+      });
+      const { error } = await supa.from("canvas_nodes").insert(rows);
+      if (error) throw error;
+      return { ok: true, message: `Final Documents Map created with ${rows.length} planned document nodes. Review the Final board before creating document rows.` };
     }
     if (name === "add_canvas_node") {
       const { data, error } = await supa
@@ -938,7 +1013,7 @@ async function executeTool(
         .eq("id", projectId)
         .single();
       const origins = { ...(current?.assistant_origins as Record<string, string> ?? {}) };
-      origins.doc_generation_mode = messageId;
+      if (messageId) origins.doc_generation_mode = messageId;
       const { error } = await supa
         .from("projects")
         .update({ doc_generation_mode: mode, assistant_origins: origins })
@@ -1102,8 +1177,8 @@ async function executeTool(
         .single();
       if (error) throw error;
       const changed = Object.keys(patch).filter((k) => k !== "created_by_message_id");
-      const niceName = formatName((updated ?? {}) as Record<string, unknown>);
-      const u = (updated ?? {}) as Record<string, unknown>;
+      const niceName = formatName((updated ?? {}) as unknown as Record<string, unknown>);
+      const u = (updated ?? {}) as unknown as Record<string, unknown>;
       const extras: Record<string, unknown> = {};
       if (typeof u.thumbnail_url === "string" && u.thumbnail_url) extras.thumbnail_url = u.thumbnail_url;
       if (typeof u.alt_thumbnail_url === "string" && u.alt_thumbnail_url) extras.alt_thumbnail_url = u.alt_thumbnail_url;
@@ -1257,7 +1332,7 @@ async function executeTool(
 // loop, persist the assistant message). Used by background mode. Throws on
 // error so the caller can flip the assistant_runs row to status='error'.
 async function processConversation(
-  supa: ReturnType<typeof createClient>,
+  supa: any,
   projectId: string,
   messages: Array<Record<string, unknown>>,
   callerUserId: string | null,
@@ -1292,7 +1367,8 @@ async function processConversation(
     if (raw) playbook = resolvePlaybook(raw.assistant_playbook);
   }
 
-  const model = PROVIDER_MODEL[project.ai_provider_planning ?? "lovable"] ?? PROVIDER_MODEL.lovable;
+  const modelKey = String(project.ai_provider_planning ?? "lovable");
+  const model = PROVIDER_MODEL[modelKey] ?? PROVIDER_MODEL.lovable;
   const claudeChatSkills = model.startsWith("anthropic/") ? await loadClaudeSkillsForSurface(supa, "chat") : [];
   const rosters: Rosters = {
     suspects: (suspectsRoster ?? []) as RosterRow[],
