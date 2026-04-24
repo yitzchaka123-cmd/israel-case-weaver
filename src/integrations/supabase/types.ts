@@ -845,6 +845,42 @@ export type Database = {
         }
         Relationships: []
       }
+      project_versions: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          label: string | null
+          owner_id: string
+          project_id: string
+          reason: string
+          snapshot: Json
+          summary: Json
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          label?: string | null
+          owner_id: string
+          project_id: string
+          reason?: string
+          snapshot: Json
+          summary?: Json
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          label?: string | null
+          owner_id?: string
+          project_id?: string
+          reason?: string
+          snapshot?: Json
+          summary?: Json
+        }
+        Relationships: []
+      }
       projects: {
         Row: {
           ai_provider_documents: string | null
@@ -858,6 +894,7 @@ export type Database = {
           cover_prompt: string | null
           cover_prompt_history: Json
           created_at: string
+          deleted_at: string | null
           difficulty: string | null
           doc_generation_mode: string | null
           envelope_settings: Json
@@ -893,6 +930,7 @@ export type Database = {
           cover_prompt?: string | null
           cover_prompt_history?: Json
           created_at?: string
+          deleted_at?: string | null
           difficulty?: string | null
           doc_generation_mode?: string | null
           envelope_settings?: Json
@@ -928,6 +966,7 @@ export type Database = {
           cover_prompt?: string | null
           cover_prompt_history?: Json
           created_at?: string
+          deleted_at?: string | null
           difficulty?: string | null
           doc_generation_mode?: string | null
           envelope_settings?: Json

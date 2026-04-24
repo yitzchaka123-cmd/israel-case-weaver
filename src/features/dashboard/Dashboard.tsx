@@ -7,12 +7,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, FileText, Layers, Search, X, SlidersHorizontal } from "lucide-react";
+import { Plus, FileText, Layers, Search, X, SlidersHorizontal, Archive, RotateCcw, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { permanentlyDeleteProject, restoreTrashedProject } from "@/lib/project-versions";
 
 interface Project {
   id: string;
@@ -25,6 +26,7 @@ interface Project {
   phase: string;
   target_doc_count: number | null;
   updated_at: string;
+  deleted_at: string | null;
 }
 
 type SortKey = "updated_desc" | "updated_asc" | "title_asc" | "title_desc";
@@ -35,7 +37,7 @@ export function Dashboard() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("projects")
-        .select("id,title,subtitle,cover_image_url,mystery_type,genre,difficulty,phase,target_doc_count,updated_at")
+        .select("id,title,subtitle,cover_image_url,mystery_type,genre,difficulty,phase,target_doc_count,updated_at,deleted_at")
         .order("updated_at", { ascending: false });
       if (error) throw error;
       return data as Project[];
@@ -49,6 +51,7 @@ export function Dashboard() {
   const [phases, setPhases] = useState<string[]>([]);
   const [sort, setSort] = useState<SortKey>("updated_desc");
   const [showFilters, setShowFilters] = useState(false);
+  const [showTrash, setShowTrash] = useState(false);
 
   // Build option lists from the actual data so users only see filters that
   // can match something. Falls back gracefully when the field is null.
@@ -67,6 +70,7 @@ export function Dashboard() {
     if (!projects) return [];
     const q = query.trim().toLowerCase();
     let result = projects.filter((p) => {
+      if (showTrash ? !p.deleted_at : p.deleted_at) return false;
       if (q && !`${p.title} ${p.subtitle ?? ""}`.toLowerCase().includes(q)) return false;
       if (difficulties.length && !difficulties.includes(p.difficulty ?? "")) return false;
       if (mysteryTypes.length && !mysteryTypes.includes(p.mystery_type ?? "")) return false;
@@ -83,7 +87,7 @@ export function Dashboard() {
       }
     });
     return result;
-  }, [projects, query, difficulties, mysteryTypes, genres, phases, sort]);
+  }, [projects, query, difficulties, mysteryTypes, genres, phases, sort, showTrash]);
 
   const activeFilterCount =
     difficulties.length + mysteryTypes.length + genres.length + phases.length + (query ? 1 : 0);
@@ -145,6 +149,14 @@ export function Dashboard() {
               {activeFilterCount > 0 && (
                 <span className="ml-1 inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full bg-accent text-accent-foreground text-[10px] font-semibold">
                   {activeFilterCount}
+                </span>
+              )}
+            </Button>
+            <Button variant={showTrash ? "secondary" : "outline"} size="sm" onClick={() => setShowTrash((v) => !v)} className="gap-2">
+              <Archive className="h-3.5 w-3.5" /> Trash
+              {projects.some((p) => p.deleted_at) && (
+                <span className="ml-1 inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full bg-accent text-accent-foreground text-[10px] font-semibold">
+                  {projects.filter((p) => p.deleted_at).length}
                 </span>
               )}
             </Button>
@@ -218,7 +230,7 @@ export function Dashboard() {
           {filtered.map((p) => (
             <ProjectCard key={p.id} project={p} />
           ))}
-          {activeFilterCount === 0 && <NewCard />}
+          {activeFilterCount === 0 && !showTrash && <NewCard />}
         </div>
       )}
     </div>
@@ -274,12 +286,28 @@ function FilterGroup({
 
 function ProjectCard({ project }: { project: Project }) {
   const nav = useNavigate();
+  const qc = useQueryClient();
+  const restore = useMutation({
+    mutationFn: () => restoreTrashedProject(project.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      toast.success("Case restored");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const remove = useMutation({
+    mutationFn: () => permanentlyDeleteProject(project.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      toast.success("Case permanently deleted");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   return (
-    <button
-      onClick={() => nav({ to: "/projects/$projectId", params: { projectId: project.id } })}
-      className="group text-left bg-card border rounded-2xl overflow-hidden shadow-soft hover:shadow-pop hover:-translate-y-0.5 transition-all"
-    >
-      <div className="aspect-[4/3] bg-gradient-soft relative overflow-hidden">
+    <div className="group text-left bg-card border rounded-2xl overflow-hidden shadow-soft hover:shadow-pop hover:-translate-y-0.5 transition-all">
+      <button onClick={() => !project.deleted_at && nav({ to: "/projects/$projectId", params: { projectId: project.id } })} className="block w-full text-left disabled:cursor-default" disabled={!!project.deleted_at}>
+        <div className="aspect-[4/3] bg-gradient-soft relative overflow-hidden">
         {project.cover_image_url ? (
           <img
             src={project.cover_image_url}
@@ -292,6 +320,11 @@ function ProjectCard({ project }: { project: Project }) {
           </div>
         )}
         <div className="absolute top-3 left-3 flex gap-1.5">
+          {project.deleted_at && (
+            <span className="text-[10px] font-medium uppercase tracking-wider px-2 py-1 rounded-md bg-destructive text-destructive-foreground">
+              Trash
+            </span>
+          )}
           {project.mystery_type && (
             <span className="text-[10px] font-medium uppercase tracking-wider px-2 py-1 rounded-md bg-surface/90 backdrop-blur">
               {project.mystery_type}
@@ -303,8 +336,8 @@ function ProjectCard({ project }: { project: Project }) {
             </span>
           )}
         </div>
-      </div>
-      <div className="p-5">
+        </div>
+        <div className="p-5">
         <div className="font-display text-xl leading-tight truncate">{project.title}</div>
         {project.subtitle && (
           <div className="text-sm text-muted-foreground mt-0.5 line-clamp-1">{project.subtitle}</div>
@@ -313,8 +346,19 @@ function ProjectCard({ project }: { project: Project }) {
           <span className="capitalize">Phase · {project.phase}</span>
           <span>{formatDistanceToNow(new Date(project.updated_at), { addSuffix: true })}</span>
         </div>
-      </div>
-    </button>
+        </div>
+      </button>
+      {project.deleted_at && (
+        <div className="px-5 pb-5 flex gap-2">
+          <Button size="sm" variant="outline" onClick={() => restore.mutate()} disabled={restore.isPending} className="gap-1.5 flex-1">
+            <RotateCcw className="h-3.5 w-3.5" /> Restore
+          </Button>
+          <Button size="sm" variant="destructive" onClick={() => confirm("Permanently delete this case and its history?") && remove.mutate()} disabled={remove.isPending} className="gap-1.5 flex-1">
+            <Trash2 className="h-3.5 w-3.5" /> Delete forever
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 
