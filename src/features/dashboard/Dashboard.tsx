@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { permanentlyDeleteProject, restoreTrashedProject } from "@/lib/project-versions";
+import { DEFAULT_GAME_LANGUAGE, DEFAULT_GAME_LANGUAGES, normalizeGameLanguage } from "@/lib/game-language";
 
 interface Project {
   id: string;
@@ -23,6 +24,7 @@ interface Project {
   mystery_type: string | null;
   genre: string | null;
   difficulty: string | null;
+  game_language: string;
   phase: string;
   target_doc_count: number | null;
   updated_at: string;
@@ -37,7 +39,7 @@ export function Dashboard() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("projects")
-        .select("id,title,subtitle,cover_image_url,mystery_type,genre,difficulty,phase,target_doc_count,updated_at,deleted_at")
+        .select("id,title,subtitle,cover_image_url,mystery_type,genre,difficulty,game_language,phase,target_doc_count,updated_at,deleted_at")
         .order("updated_at", { ascending: false });
       if (error) throw error;
       return data as Project[];
@@ -48,6 +50,7 @@ export function Dashboard() {
   const [difficulties, setDifficulties] = useState<string[]>([]);
   const [mysteryTypes, setMysteryTypes] = useState<string[]>([]);
   const [genres, setGenres] = useState<string[]>([]);
+  const [languages, setLanguages] = useState<string[]>([]);
   const [phases, setPhases] = useState<string[]>([]);
   const [sort, setSort] = useState<SortKey>("updated_desc");
   const [showFilters, setShowFilters] = useState(false);
@@ -62,6 +65,7 @@ export function Dashboard() {
       difficulty: dedupe(projects?.map((p) => p.difficulty) ?? []),
       mystery_type: dedupe(projects?.map((p) => p.mystery_type) ?? []),
       genre: dedupe(projects?.map((p) => p.genre) ?? []),
+      language: dedupe(projects?.map((p) => normalizeGameLanguage(p.game_language)) ?? []),
       phase: dedupe(projects?.map((p) => p.phase) ?? []),
     };
   }, [projects]);
@@ -75,6 +79,7 @@ export function Dashboard() {
       if (difficulties.length && !difficulties.includes(p.difficulty ?? "")) return false;
       if (mysteryTypes.length && !mysteryTypes.includes(p.mystery_type ?? "")) return false;
       if (genres.length && !genres.includes(p.genre ?? "")) return false;
+      if (languages.length && !languages.includes(normalizeGameLanguage(p.game_language))) return false;
       if (phases.length && !phases.includes(p.phase)) return false;
       return true;
     });
@@ -87,16 +92,17 @@ export function Dashboard() {
       }
     });
     return result;
-  }, [projects, query, difficulties, mysteryTypes, genres, phases, sort, showTrash]);
+  }, [projects, query, difficulties, mysteryTypes, genres, languages, phases, sort, showTrash]);
 
   const activeFilterCount =
-    difficulties.length + mysteryTypes.length + genres.length + phases.length + (query ? 1 : 0);
+    difficulties.length + mysteryTypes.length + genres.length + languages.length + phases.length + (query ? 1 : 0);
 
   const clearAll = () => {
     setQuery("");
     setDifficulties([]);
     setMysteryTypes([]);
     setGenres([]);
+    setLanguages([]);
     setPhases([]);
   };
 
@@ -196,6 +202,12 @@ export function Dashboard() {
                 options={options.genre}
                 selected={genres}
                 onChange={setGenres}
+              />
+              <FilterGroup
+                label="Language"
+                options={options.language}
+                selected={languages}
+                onChange={setLanguages}
               />
               <FilterGroup
                 label="Phase"
@@ -335,6 +347,9 @@ function ProjectCard({ project }: { project: Project }) {
               {project.difficulty}
             </span>
           )}
+          <span className="text-[10px] font-medium uppercase tracking-wider px-2 py-1 rounded-md bg-surface/90 backdrop-blur">
+            {normalizeGameLanguage(project.game_language)}
+          </span>
         </div>
         </div>
         <div className="p-5">
@@ -432,6 +447,7 @@ function CreateProjectDialog({ trigger }: { trigger?: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [subtitle, setSubtitle] = useState("");
+  const [gameLanguage, setGameLanguage] = useState(DEFAULT_GAME_LANGUAGE);
   const { user } = useAuth();
   const qc = useQueryClient();
   const nav = useNavigate();
@@ -441,7 +457,7 @@ function CreateProjectDialog({ trigger }: { trigger?: React.ReactNode }) {
       if (!user) throw new Error("Not signed in");
       const { data, error } = await supabase
         .from("projects")
-        .insert({ title: title || "Untitled Case", subtitle: subtitle || null, owner_id: user.id })
+        .insert({ title: title || "Untitled Case", subtitle: subtitle || null, owner_id: user.id, game_language: gameLanguage })
         .select()
         .single();
       if (error) throw error;
@@ -452,6 +468,7 @@ function CreateProjectDialog({ trigger }: { trigger?: React.ReactNode }) {
       setOpen(false);
       setTitle("");
       setSubtitle("");
+      setGameLanguage(DEFAULT_GAME_LANGUAGE);
       toast.success("Case created");
       nav({ to: "/projects/$projectId", params: { projectId: data.id } });
     },
@@ -490,6 +507,17 @@ function CreateProjectDialog({ trigger }: { trigger?: React.ReactNode }) {
               value={subtitle}
               onChange={(e) => setSubtitle(e.target.value)}
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Game language</Label>
+            <Select value={gameLanguage} onValueChange={setGameLanguage}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {DEFAULT_GAME_LANGUAGES.map((language) => (
+                  <SelectItem key={language} value={language}>{language}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
         <DialogFooter>

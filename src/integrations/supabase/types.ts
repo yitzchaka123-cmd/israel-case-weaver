@@ -901,6 +901,7 @@ export type Database = {
           difficulty: string | null
           doc_generation_mode: string | null
           envelope_settings: Json
+          game_language: string
           genre: string | null
           hint_settings: Json
           id: string
@@ -937,6 +938,7 @@ export type Database = {
           difficulty?: string | null
           doc_generation_mode?: string | null
           envelope_settings?: Json
+          game_language?: string
           genre?: string | null
           hint_settings?: Json
           id?: string
@@ -973,6 +975,7 @@ export type Database = {
           difficulty?: string | null
           doc_generation_mode?: string | null
           envelope_settings?: Json
+          game_language?: string
           genre?: string | null
           hint_settings?: Json
           id?: string

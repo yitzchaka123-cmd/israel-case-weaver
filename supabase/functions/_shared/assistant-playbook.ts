@@ -89,6 +89,9 @@ export type Playbook = {
     document_types: string[];
     unusual_document_types: string[];
   };
+  languages: {
+    options: string[];
+  };
   phases: PhaseDefinition[];
 };
 
@@ -137,6 +140,7 @@ Looks like an actual archival envelope from the case era — NOT a modern Canva 
   },
   phase1_setup: {
     order: [
+      { key: "language", label: "Game language", enabled: true },
       { key: "mystery_type", label: "Mystery type", enabled: true },
       { key: "genre", label: "Genre", enabled: true },
       { key: "titles", label: "Hebrew title options", enabled: true },
@@ -234,6 +238,9 @@ Looks like an actual archival envelope from the case era — NOT a modern Canva 
       "bus transfer with handwritten time", "library checkout slip", "dry-cleaning tag",
       "audio cassette J-card", "VHS rental sleeve", "luggage tag",
     ],
+  },
+  languages: {
+    options: ["Hebrew", "English", "Arabic", "Spanish", "French", "German", "Russian"],
   },
   phases: [
     { key: "setup", label: "Setup", description: "Phase 1 — gather case identity & brief." },
@@ -382,6 +389,9 @@ export function resolvePlaybook(override: unknown): Playbook {
         })
         .filter((x): x is PhaseSetupStep => !!x)
     : d.phase1_setup.order;
+  for (const def of d.phase1_setup.order) {
+    if (!order.some((step) => step.key === def.key)) order.push(def);
+  }
   const title_options_count = clamp(
     Number(o.phase1_setup?.title_options_count ?? d.phase1_setup.title_options_count),
     2,
@@ -442,6 +452,10 @@ export function resolvePlaybook(override: unknown): Playbook {
     ).slice(0, 60),
   };
 
+  const languages = {
+    options: cleanStringArray(o.languages?.options, d.languages.options).slice(0, 24),
+  };
+
   const phases = cleanPhaseList(o.phases, d.phases);
 
   return {
@@ -458,6 +472,7 @@ export function resolvePlaybook(override: unknown): Playbook {
     design_skeleton,
     doc_mode_copy,
     catalogs,
+    languages,
     phases,
   };
 }
@@ -513,7 +528,7 @@ export function renderPhase1OrderSentence(p: Playbook): string {
   const parts = enabled.map((s) =>
     s.key === "titles" ? `${p.phase1_setup.title_options_count} numbered Hebrew title options` : s.label.toLowerCase(),
   );
-  return `Phase 1 Setup: ${parts.join(" → ")}. For Hard games discuss an "extra selling point" (physical artifact, USB puzzle, coded insert, etc.).`;
+  return `Phase 1 Setup: ${parts.join(" → ")}. Save game language to game_language before writing final in-game content. For Hard games discuss an "extra selling point" (physical artifact, USB puzzle, coded insert, etc.).`;
 }
 
 export function renderCanonicalVocabBlock(p: Playbook): string {
@@ -580,6 +595,10 @@ export function renderCatalogsBlock(p: Playbook): string {
   return `Available print sizes (pick from this list when proposing print_size): ${p.catalogs.print_sizes.join(", ")}.
 Common document types (pick from this list when proposing doc_type, but invent variants when needed): ${p.catalogs.document_types.join(", ")}.
 Unusual / creative-prop document types (use these when the case calls for tactile, surprising, hand-made props instead of bureaucratic paperwork — they trigger the creative-realism floor, not the photo-realism one): ${p.catalogs.unusual_document_types.join(", ")}.`;
+}
+
+export function renderLanguagesBlock(p: Playbook): string {
+  return `Game languages available for per-case final in-game content: ${p.languages.options.join(", ")}. Ask for and save one game_language during Phase 1 unless already set.`;
 }
 
 export function renderPhaseEnumComment(p: Playbook): string {

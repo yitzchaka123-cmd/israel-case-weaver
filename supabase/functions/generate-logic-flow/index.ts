@@ -75,13 +75,14 @@ Deno.serve(async (req) => {
 
     const modelKey = (modelOverride as string) || (project.ai_provider_planning as string) || "lovable";
     const model = PROVIDER_MODEL[modelKey] ?? PROVIDER_MODEL.lovable;
+    const gameLanguage = String(project.game_language ?? "Hebrew").trim() || "Hebrew";
 
     const approvedSummary = (project.solution_summary ?? "").trim();
     const useApproved = useExistingSummary === undefined ? !!approvedSummary : (useExistingSummary && !!approvedSummary);
 
     const sys = useApproved
-      ? `You are a senior mystery game designer. The user has ALREADY APPROVED the case's solution narrative — your job is to break that exact narrative into a printable case logic flow (clues, deductions, red herrings, edges). DO NOT invent a different culprit, motive, weapon, or chain of events. Every node and edge must directly support or mislead from the approved narrative. The output must be a single JSON tool call. No prose. Hebrew is allowed for short labels but English keys.`
-      : `You are a senior mystery game designer. Produce a tight, solvable case logic flow for a printable detective game. The output must be a single JSON tool call. No prose. Hebrew is allowed for short labels but English keys.`;
+      ? `You are a senior mystery game designer. The user has ALREADY APPROVED the case's solution narrative — your job is to break that exact narrative into a printable case logic flow (clues, deductions, red herrings, edges). DO NOT invent a different culprit, motive, weapon, or chain of events. Every node and edge must directly support or mislead from the approved narrative. The output must be a single JSON tool call. No prose. ${gameLanguage} is allowed for short labels but English keys.`
+      : `You are a senior mystery game designer. Produce a tight, solvable case logic flow for a printable detective game. The output must be a single JSON tool call. No prose. ${gameLanguage} is allowed for short labels but English keys.`;
 
     const approvedBlock = useApproved
       ? `\nAPPROVED SOLUTION (source of truth — your flow MUST match this exactly):\n"""\n${approvedSummary}\n"""\n\nYour job is NOT to write a new solution. Your job is to decompose the approved solution above into the nodes/edges below. The "summary" field you return should restate the approved solution faithfully (you may tighten wording but must not change facts, culprit, motive, or method).\n`
@@ -93,6 +94,7 @@ Deno.serve(async (req) => {
 
     const userPrompt = `CASE DESIGN BRIEF
 Title: ${project.title}
+Game language: ${gameLanguage}
 Subtitle: ${project.subtitle ?? ""}
 Year/Setting: ${project.year ?? "—"} · ${project.setting ?? "—"}
 Genre: ${project.genre ?? "mystery"} · Type: ${project.mystery_type ?? "—"} · Difficulty: ${project.difficulty ?? "—"}
@@ -109,9 +111,9 @@ PRODUCE a logic flow with:
 - 1-3 KEY DEDUCTIONS the player makes by combining clues.
 - 1 FINAL SOLUTION node identifying the culprit and method.
 - ${noEnvelopes ? scaffoldCount : existingEnvelopes!.length} ENVELOPE nodes (one per envelope above), positioned in a vertical lane on the right (x ≈ 1400, y stepping down by 160 per envelope, ordered by number).
-- 3-5 HINT nodes (one per clue/deduction that warrants a hint stage), titled "Hint stage N — for: <clue/deduction title>". Position them in a vertical lane to the LEFT of clues at x ≈ -200, with y matching the clue/deduction they support. These are STRUCTURAL placeholders only — the user will fill in the actual hint text later. Do NOT write Hebrew hint text into the description; a one-line English note about WHAT this stage hints toward is enough.
+- 3-5 HINT nodes (one per clue/deduction that warrants a hint stage), titled "Hint stage N — for: <clue/deduction title>". Position them in a vertical lane to the LEFT of clues at x ≈ -200, with y matching the clue/deduction they support. These are STRUCTURAL placeholders only — the user will fill in the actual hint text later. Do NOT write final hint text into the description; a one-line English note about WHAT this stage hints toward is enough.
 - EDGES connecting clues → deductions → solution, red_herring → suspect (false trail), hint → clue/deduction (label "hints toward"), clue/deduction → envelope (which envelope holds which evidence), and envelope_n → envelope_{n+1} (player chain).
-- A SOLUTION SUMMARY (3-5 short paragraphs in Hebrew if the game is Hebrew, otherwise English) explaining EXACTLY how the case is solved end-to-end.
+- A SOLUTION SUMMARY (3-5 short paragraphs in ${gameLanguage}) explaining EXACTLY how the case is solved end-to-end.
 
 Use stable string ids like "clue_1", "rh_1", "ded_1", "sus_1", "sol_1", "hint_1", …, "env_1", "env_2", … (one per envelope, numbered from 1).
 Position nodes in a left-to-right flow: hints far left (x ≈ -200), clues left (x ≈ 0-300), deductions middle, solution right, envelopes far right (x ≈ 1400), red herrings + suspects below.

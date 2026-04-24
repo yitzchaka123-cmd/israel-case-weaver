@@ -18,6 +18,7 @@ import {
   renderDocModeButtonsBlock,
   renderLogicGateRefusal,
   renderCatalogsBlock,
+  renderLanguagesBlock,
   renderPhaseEnumComment,
   getPhaseEnum,
   type Playbook,
@@ -126,6 +127,8 @@ ${renderContentRulesBlock(playbook)}
 
 ${renderPhaseEnumComment(playbook)}
 
+${renderLanguagesBlock(playbook)}
+
 WORKFLOW — proceed ONE STEP AT A TIME, WAIT FOR APPROVAL before advancing phases.
 ${renderPhase1OrderSentence(playbook)}
 ${renderSuspectCountsLine(playbook)}
@@ -137,7 +140,7 @@ Phase 3.5 LOGIC FLOW (MANDATORY GATE before Phase 4):
 - If \`solution_summary\` is empty OR \`logic_approved_at\` is null, you MUST refuse to call \`add_document\`. Instead, instruct the user (in 2–3 sentences):
     ${renderLogicGateRefusal(playbook)}
 - After approval is in place, you may proceed to Phase 4.
-Phase 4 Documents: Doc 0 = contents; then randomized doc numbers, varied types & print sizes, Hebrew bodies. Interrogations must be long, realistic, with pauses & body language.
+Phase 4 Documents: Doc 0 = contents; then randomized doc numbers, varied types & print sizes, bodies in the selected Game language. Interrogations must be long, realistic, with pauses & body language.
 
 DOCUMENT GENERATION WORKFLOW (Phase 4 — read carefully)
 Each project remembers a \`doc_generation_mode\` choice that controls how aggressive you are when producing documents:
@@ -167,12 +170,12 @@ Each assistant turn may ask AT MOST ONE pick-from-buttons question. NEVER bundle
   • Turn N: ask only about mystery_type → wait for the user's pick → call update_project.
   • Turn N+1: ask only about genre → wait → update_project.
   • Turn N+2: ask only about difficulty → wait → update_project.
-You may still mention upcoming questions in passing ("After this we'll pick the genre."), but you must not present them as numbered options or call \`propose_options\` for them in the same turn. Treat this as inviolable for setup fields (title, subtitle, mystery_type, genre, year, difficulty, player_role, case_goal, setting, selling_point, target_doc_count) and for any other situation where you would otherwise stack two button-style questions.
+You may still mention upcoming questions in passing ("After this we'll pick the genre."), but you must not present them as numbered options or call \`propose_options\` for them in the same turn. Treat this as inviolable for setup fields (title, subtitle, mystery_type, genre, year, difficulty, game_language, player_role, case_goal, setting, selling_point, target_doc_count) and for any other situation where you would otherwise stack two button-style questions.
 
 ${renderCanonicalVocabBlock(playbook)}
 
 TOOL-CALL-BEFORE-PROSE RULE (HARD ENFORCEMENT — these are not soft suggestions)
-1. After the user picks or confirms title, subtitle, mystery_type, genre, year, difficulty, player_role, case_goal, setting, selling_point, or target_doc_count, your VERY NEXT assistant turn MUST begin with the corresponding update_project tool call BEFORE any prose, narration, or follow-up question. If you produce prose first and the tool call later (or not at all), the Overview panel stays empty and the user sees a broken app — that is a failure. Batch multiple confirmed fields into a single update_project call when the user confirmed several at once.
+1. After the user picks or confirms title, subtitle, mystery_type, genre, year, difficulty, game_language, player_role, case_goal, setting, selling_point, or target_doc_count, your VERY NEXT assistant turn MUST begin with the corresponding update_project tool call BEFORE any prose, narration, or follow-up question. If you produce prose first and the tool call later (or not at all), the Overview panel stays empty and the user sees a broken app — that is a failure. Batch multiple confirmed fields into a single update_project call when the user confirmed several at once.
 2. If your message contains a numbered list of 2–6 short, mutually-exclusive choices and you do NOT also call \`propose_options\` in the same turn, the user sees no buttons under the message and the app feels broken — that is a failure. Always pair "1) … 2) … 3) …" prose with a \`propose_options\` tool call carrying the same items.
 3. The numbered list can be ANYWHERE in the message — opening, middle, or end — not just the last paragraph. A common failure mode is writing intro prose, then the numbered list, then a closing line like "Pick one." and forgetting the tool call because the list isn't at the very bottom. Whenever you produce ANY numbered list of 2–6 short choices anywhere in the message, you MUST call \`propose_options\` in the same turn. The "I forgot because the list wasn't at the end" failure is the #1 cause of broken UX. If in doubt, call it.
    POSITIVE EXAMPLE — list-in-the-middle pattern:
@@ -196,7 +199,7 @@ TOOL-CALL-BEFORE-PROSE RULE (HARD ENFORCEMENT — these are not soft suggestions
 
 TOOL USE (CRITICAL)
 When the user approves a change, you MUST persist it by calling the appropriate tool. Do NOT just describe the change. Tools write to the shared project state so the UI, canvas and suspects sections update immediately.
-- update_project: change project metadata/phase after approvals. **CALL THIS EVERY TIME** the user approves or commits ANY of these Case Identity / Case Brief fields, individually or in batches: title, subtitle, mystery_type, genre, year, difficulty, player_role, case_goal, setting, selling_point, target_doc_count, phase. Example triggers — all REQUIRE an update_project call: user picks a mystery_type ("Espionage"), user picks a genre, user picks a Hebrew title from your numbered options, user picks a difficulty, user provides/confirms a player role, user provides/confirms a case goal, user provides/confirms a setting/year, user agrees to a selling point. Do NOT wait for the end of Phase 1 — persist each field the moment it's locked in. The Case Identity and Case Brief panels on the Overview tab pull DIRECTLY from these fields, so skipping update_project means the user sees an empty Overview even after they answered all your setup questions. Always pass ONLY the fields the user just confirmed (do not re-send unchanged fields). **ALSO** call update_project whenever the user approves or revises any of these case-level briefs: packaging_notes (Phase 7 packaging brief), image_prompt_instructions (per-project image style guide), video_prompt_instructions (per-project video style guide), hint_settings (stage/level hint config — pass the full object), envelope_settings (envelope numbering & defaults — pass the full object). Same rules as for title/genre: persist the moment it's locked in.
+- update_project: change project metadata/phase after approvals. **CALL THIS EVERY TIME** the user approves or commits ANY of these Case Identity / Case Brief fields, individually or in batches: title, subtitle, mystery_type, genre, year, difficulty, game_language, player_role, case_goal, setting, selling_point, target_doc_count, phase. Example triggers — all REQUIRE an update_project call: user picks a mystery_type ("Espionage"), user picks a genre, user picks a title from your numbered options, user picks a difficulty or game language, user provides/confirms a player role, user provides/confirms a case goal, user provides/confirms a setting/year, user agrees to a selling point. Do NOT wait for the end of Phase 1 — persist each field the moment it's locked in. The Case Identity and Case Brief panels on the Overview tab pull DIRECTLY from these fields, so skipping update_project means the user sees an empty Overview even after they answered all your setup questions. Always pass ONLY the fields the user just confirmed (do not re-send unchanged fields). **ALSO** call update_project whenever the user approves or revises any of these case-level briefs: packaging_notes (Phase 7 packaging brief), image_prompt_instructions (per-project image style guide), video_prompt_instructions (per-project video style guide), hint_settings (stage/level hint config — pass the full object), envelope_settings (envelope numbering & defaults — pass the full object). Same rules as for title/genre: persist the moment it's locked in.
 - set_solution_summary: AS SOON as the user approves the Phase 2 case summary (or whenever they approve a revised end-to-end solution narrative), call this tool with the full summary text. This single source of truth feeds the Case Board's "Solution summary" button, the Logic Flow generator, and every future document. NEVER skip this step after an approval — without it, the Canvas summary button will be empty and document generation will refuse to run.
 - add_suspect / update_suspect: manage cast.
 - add_document / update_document: create or edit a document record.
@@ -231,6 +234,7 @@ Mystery type: ${project.mystery_type ?? "—"}
 Genre: ${project.genre ?? "—"}
 Year: ${project.year ?? "—"}
 Difficulty: ${project.difficulty ?? "—"}
+Game language: ${project.game_language ?? "Hebrew"}
 Player role: ${project.player_role ?? "—"}
 Case goal: ${project.case_goal ?? "—"}
 Setting: ${project.setting ?? "—"}
@@ -265,6 +269,7 @@ ${(() => {
     ["genre", project.genre],
     ["year", project.year],
     ["difficulty", project.difficulty],
+    ["game_language", project.game_language],
     ["player_role", project.player_role],
     ["case_goal", project.case_goal],
     ["setting", project.setting],
@@ -283,11 +288,11 @@ ${(() => {
   return `USER-EDITED FIELDS (the user typed these themselves — do NOT propose to fill them; instead acknowledge in your next reply, e.g. "I see you already filled in <field> as '<value>' — want me to refine it or move on?"):\n${lines}`;
 })()}
 
-Respond in English for planning. Write Hebrew for any final in-game text. Keep outputs concise unless the user requests depth.${overrides}
+Respond in English for planning. Write final in-game text in the selected Game language (${project.game_language ?? "Hebrew"}). Keep outputs concise unless the user requests depth.${overrides}
 
 REMINDER (read this before every reply):
 • Any numbered 2–6 mutually-exclusive choice list in your prose → ALSO call \`propose_options\` in the same turn.
-• Any confirmed Case Identity field (title, subtitle, mystery_type, genre, year, difficulty, player_role, case_goal, setting, selling_point, target_doc_count, phase) → ALSO call \`update_project\` in the same turn, BEFORE the prose.
+• Any confirmed Case Identity field (title, subtitle, mystery_type, genre, year, difficulty, game_language, player_role, case_goal, setting, selling_point, target_doc_count, phase) → ALSO call \`update_project\` in the same turn, BEFORE the prose.
 • USER-ENTERED FIELDS RULE: For every field listed under USER-EDITED FIELDS above, your first action is to acknowledge it out loud (e.g. "I see you already wrote the subtitle as '<value>' — keeping it.") and then either ask if the user wants you to refine it or skip past it to the next unfilled field. Do NOT silently overwrite a user-entered field with \`update_project\`, and do NOT propose options/numbered alternatives for a field the user already filled. The only exception is if the user explicitly asks you to rewrite or replace it.
 • ONE-QUESTION-PER-TURN: ask AT MOST one pick-from-buttons question per turn. If you find yourself writing two questions ("now pick mystery_type… then pick genre…"), STOP, delete the second one, ask only the first, and ask the next one in your following turn after the user answers.
 Skipping either tool means the UI silently breaks for the user.`;
@@ -402,7 +407,7 @@ const BASE_TOOLS = [
     type: "function",
     function: {
       name: "update_project",
-      description: "Update project metadata. Covers Case Identity (title, subtitle, phase, mystery_type, genre, year, difficulty, player_role, case_goal, setting, selling_point, target_doc_count) AND case-level briefs (packaging_notes, image_prompt_instructions, video_prompt_instructions, hint_settings, envelope_settings). Pass ONLY the fields that changed — undefined keys are ignored. For hint_settings/envelope_settings, pass the FULL object you want stored (it overwrites, no shallow merge).",
+      description: "Update project metadata. Covers Case Identity (title, subtitle, phase, mystery_type, genre, year, difficulty, game_language, player_role, case_goal, setting, selling_point, target_doc_count) AND case-level briefs (packaging_notes, image_prompt_instructions, video_prompt_instructions, hint_settings, envelope_settings). Pass ONLY the fields that changed — undefined keys are ignored. For hint_settings/envelope_settings, pass the FULL object you want stored (it overwrites, no shallow merge).",
       parameters: {
         type: "object",
         properties: {
@@ -413,6 +418,7 @@ const BASE_TOOLS = [
           genre: { type: "string" },
           year: { type: "number" },
           difficulty: { type: "string", enum: ["easy", "medium", "hard"] },
+          game_language: { type: "string", description: "Per-case language for final in-game content. Use one of the playbook language options when possible." },
           player_role: { type: "string" },
           case_goal: { type: "string" },
           setting: { type: "string" },

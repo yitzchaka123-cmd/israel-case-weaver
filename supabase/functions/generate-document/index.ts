@@ -1,4 +1,4 @@
-// Generate Hebrew document content + optional image. Routes through the shared
+// Generate document content + optional image. Routes through the shared
 // AI router so OpenAI / Anthropic / Gemini direct keys are used when configured.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { chatCompletions, providerLabel, generateImage, ImageGenError, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
@@ -67,11 +67,13 @@ Deno.serve(async (req) => {
       });
     }
     const { data: project } = await supa.from("projects").select("*").eq("id", doc.project_id).single();
+    const gameLanguage = String(project?.game_language ?? "Hebrew").trim() || "Hebrew";
+    const isRtl = ["Hebrew", "Arabic", "Persian", "Urdu", "Yiddish"].includes(gameLanguage);
 
     if (mode === "text") {
       const model = PROVIDER_MODEL[project?.ai_provider_documents ?? "lovable"] ?? PROVIDER_MODEL.lovable;
-      const sys = `You write in-game evidence documents for premium printable Israeli mystery games. Output ONLY the document body in Hebrew, RTL-ready, realistic and immersive, tailored to the document type. No English. No meta-commentary. No disclaimers. For interrogation transcripts include pauses, body language and back-and-forth. Do not reveal the full solution.`;
-      const userPrompt = `Case: ${project?.title ?? ""}\nPlayer role: ${project?.player_role ?? ""}\nCase goal: ${project?.case_goal ?? ""}\nYear: ${project?.year ?? ""}\nSetting: ${project?.setting ?? ""}\n\nDocument to produce:\nTitle: ${doc.title}\nType: ${doc.doc_type ?? "generic"}\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\n\nWrite the full Hebrew body now.`;
+      const sys = `You write in-game evidence documents for premium printable mystery games. Output ONLY the document body in ${gameLanguage}, ${isRtl ? "RTL-ready" : "properly formatted"}, realistic and immersive, tailored to the document type. No meta-commentary. No disclaimers. For interrogation transcripts include pauses, body language and back-and-forth. Do not reveal the full solution.`;
+      const userPrompt = `Case: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nPlayer role: ${project?.player_role ?? ""}\nCase goal: ${project?.case_goal ?? ""}\nYear: ${project?.year ?? ""}\nSetting: ${project?.setting ?? ""}\n\nDocument to produce:\nTitle: ${doc.title}\nType: ${doc.doc_type ?? "generic"}\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\n\nWrite the full ${gameLanguage} body now.`;
 
       const startedAt = Date.now();
       const callerUserId = await getUserIdFromAuth(req);
@@ -101,9 +103,9 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: `${provider} error (${resp.status})` }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       const data = await resp.json();
-      const hebrew = data.choices?.[0]?.message?.content ?? "";
+      const bodyText = data.choices?.[0]?.message?.content ?? "";
 
-      await supa.from("documents").update({ hebrew_content: hebrew, status: "review" }).eq("id", documentId);
+      await supa.from("documents").update({ hebrew_content: bodyText, status: "review" }).eq("id", documentId);
       await supa.from("prompts").insert({
         project_id: doc.project_id,
         scope: "document",
@@ -120,7 +122,7 @@ Deno.serve(async (req) => {
         status: "ok", latencyMs: Date.now() - startedAt,
         targetId: documentId, promptExcerpt: userPrompt,
       });
-      return new Response(JSON.stringify({ ok: true, hebrew_content: hebrew, model, effectiveModel: fb.effectiveModel, fallback: fb.fallback }), {
+      return new Response(JSON.stringify({ ok: true, hebrew_content: bodyText, model, effectiveModel: fb.effectiveModel, fallback: fb.fallback }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -131,14 +133,14 @@ Deno.serve(async (req) => {
       const useOpenAI = OPENAI_IMAGE_KEYS.has(imgPref);
 
       const designNotes = (doc.design_instructions ?? "").trim();
-      const hebrewExcerpt = (doc.hebrew_content ?? "").trim().slice(0, 1200);
+      const contentExcerpt = (doc.hebrew_content ?? "").trim().slice(0, 1200);
       const userImageInstructions = (project?.image_prompt_instructions as string ?? "").trim();
 
       const imgPrompt = [
         userImageInstructions
           ? `USER GLOBAL IMAGE INSTRUCTIONS (apply to every image in this project — highest priority):\n${userImageInstructions}\n`
           : "",
-        `Create a single high-resolution, photorealistic, print-ready image of a ${doc.doc_type ?? "document"} for a premium Israeli mystery / detective game.`,
+        `Create a single high-resolution, photorealistic, print-ready image of a ${doc.doc_type ?? "document"} for a premium mystery / detective game.`,
         `Game title: "${project?.title ?? ""}"${project?.subtitle ? ` — ${project.subtitle}` : ""}.`,
         `Era / setting: ${project?.year ?? "—"}, ${project?.setting ?? "Israeli setting"}.`,
         `Genre: ${project?.genre ?? "mystery"}. Mystery type: ${project?.mystery_type ?? "—"}.`,
@@ -148,12 +150,12 @@ Deno.serve(async (req) => {
         `STRICT DESIGN & GRAPHIC INSTRUCTIONS (FOLLOW EVERY DETAIL — this is the primary brief):`,
         designNotes ? designNotes : `Authentic, period-correct, high-detail. Treat as a real-world physical prop: realistic paper texture, period-correct typography, believable headers/stamps/signatures.\n\nADDITIONAL REALISM DETAILS — include AT LEAST 20 concrete, period-appropriate details visible on the document. Pick from (and add similar): slight paper yellowing, faint horizontal fold across the center, mild edge wear, punch-hole marks on the left margin, one or two intake/filing stamps with era-correct date format, a typed reference number, a distribution list at the bottom, a small handwritten marginal note in pen or pencil, a signature scribble above a typed name, slightly uneven line spacing, faint photocopy shadowing along one edge, a classification stamp in dark red ink, a smaller box stamp near the lower third, a discreet fictitious seal (never a real emblem), a paperclip or staple shadow, a coffee/ink ring, smudged ribbon impression, carbon-copy bleed-through where applicable, a tape-repaired tear, a tiny fingerprint smudge, perforation marks if it's a tear-off form. Every detail must be concrete and visible — not a vague "looks aged".\n\nIf this document is an unusual / creative prop (map, diagram, hand-drawn note, cipher, blueprint, matchbook, ransom note, photo collage, evidence tag, ship/building map, etc.) instead include 8–15 CREATIVE in-world touches: hand annotations, torn-and-taped corners, smudged compass roses, coded margin doodles, crayon arrows, crossed-out misspellings, hidden symbols, unusual aspect ratios, attached Polaroids, etc. — tactile prop-style authenticity over bureaucratic realism.\n\nNo cartoon style. No watermark text. No copyright marks. No real emblems, real names, or real signatures.`,
         ``,
-        `CONTENT TO RENDER (Hebrew, RTL, grammatically correct, fully legible):`,
-        hebrewExcerpt ? hebrewExcerpt : "Use plausible Hebrew text appropriate to the document type. All Hebrew must be perfectly readable, properly kerned, and right-to-left.",
+        `CONTENT TO RENDER (${gameLanguage}, ${isRtl ? "RTL" : "LTR"}, grammatically correct, fully legible):`,
+        contentExcerpt ? contentExcerpt : `Use plausible ${gameLanguage} text appropriate to the document type. All ${gameLanguage} must be perfectly readable and correctly laid out ${isRtl ? "right-to-left" : "left-to-right"}.`,
         ``,
         `RULES:`,
         `- Render as a real-world physical document photographed or scanned, not a UI mockup.`,
-        `- All visible text must be in Hebrew unless the document type explicitly calls for another language (e.g. an English passport stamp).`,
+        `- All visible player-facing text must be in ${gameLanguage} unless the document type explicitly calls for another language.`,
         `- Do NOT include English placeholder text like "Lorem ipsum".`,
         `- Do NOT add modern watermarks, logos of real companies, or AI-generated artifacts.`,
         `- High dynamic range, sharp focus on the document, neutral lighting, color-accurate.`,

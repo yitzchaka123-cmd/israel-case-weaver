@@ -75,7 +75,7 @@ type Body = ScriptBody | PromptBody;
 async function projectContext(supa: ReturnType<typeof createClient>, projectId: string) {
   const { data: project } = await supa
     .from("projects")
-    .select("title, subtitle, genre, mystery_type, setting, year, player_role, case_goal, selling_point, ai_provider_planning, owner_id")
+    .select("title, subtitle, genre, mystery_type, setting, year, player_role, case_goal, selling_point, game_language, ai_provider_planning, owner_id")
     .eq("id", projectId)
     .single();
   if (!project) return null;
@@ -95,6 +95,7 @@ async function projectContext(supa: ReturnType<typeof createClient>, projectId: 
     project.player_role && `Player role: ${project.player_role}`,
     project.case_goal && `Case goal: ${project.case_goal}`,
     project.selling_point && `Selling point: ${project.selling_point}`,
+    `Game language: ${project.game_language ?? "Hebrew"}`,
     suspects?.length && `Key characters: ${suspects.map((s) => `${s.name}${s.role_in_case ? ` (${s.role_in_case})` : ""}`).join("; ")}`,
   ].filter(Boolean).join("\n");
   return { project, ctx };

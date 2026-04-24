@@ -17,6 +17,7 @@ import { ProductionDashboard } from "./ProductionDashboard";
 import { normalizePhase } from "./PhaseStatusBar";
 import { useProjectNotifications } from "./notifications/useProjectNotifications";
 import { notifyForFieldChange, type TriggerableField } from "./notifications/triggers";
+import { DEFAULT_GAME_LANGUAGES, normalizeGameLanguage } from "@/lib/game-language";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -179,6 +180,7 @@ export function ProjectOverview({ project }: { project: any }) {
           genre: next.genre,
           year: next.year,
           difficulty: next.difficulty,
+          game_language: normalizeGameLanguage(next.game_language),
           player_role: next.player_role,
           case_goal: next.case_goal,
           setting: next.setting,
@@ -361,6 +363,13 @@ export function ProjectOverview({ project }: { project: any }) {
                 options={DIFFICULTIES}
                 onChange={(v) => update({ difficulty: v })}
                 normalize={normalizeDifficulty}
+              />
+            </Field>
+            <Field label="Game language" originId={draft.assistant_origins?.game_language}>
+              <TolerantSelect
+                value={normalizeGameLanguage(draft.game_language)}
+                options={DEFAULT_GAME_LANGUAGES}
+                onChange={(v) => update({ game_language: v })}
               />
             </Field>
             <Field label="Year" originId={draft.assistant_origins?.year}>
