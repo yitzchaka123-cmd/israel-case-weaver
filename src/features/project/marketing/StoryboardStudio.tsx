@@ -301,26 +301,55 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
   };
 
   return (
-    <section className="rounded-2xl border bg-card p-6 shadow-soft space-y-5">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h3 className="font-display text-xl">Storyboard studio</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Script → engine prompts (Sora 2 / Kling 3) → visual storyboard. Save the prompts now, render the videos later.
-          </p>
+    <section className="rounded-2xl border bg-card p-4 md:p-6 shadow-soft space-y-5">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="space-y-2">
+          <div className="inline-flex items-center gap-2 rounded-full border bg-surface px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            <Clapperboard className="h-3.5 w-3.5" /> Marketing video workflow
+          </div>
+          <div>
+            <h3 className="font-display text-2xl">Storyboard Studio</h3>
+            <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
+              Build a trailer-style sequence in 3 steps: draft shots, write video prompts, then generate keyframes.
+            </p>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={handleNewVersion} className="text-xs">New version</Button>
-          <Button onClick={() => persist()} size="sm" variant="outline" className="gap-1.5" disabled={saving}>
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <Button variant="ghost" size="sm" onClick={handleNewVersion} className="flex-1 sm:flex-none">New version</Button>
+          <Button onClick={() => persist()} size="sm" variant="outline" className="gap-1.5 flex-1 sm:flex-none" disabled={saving}>
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
             Save
           </Button>
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-4">
-        {/* Column 1 — Script */}
-        <ColumnFrame title="1 · Script" accent="from-indigo-500/15 to-transparent">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-3">
+        <ProgressTile label="Shots drafted" value={`${shots.length}`} />
+        <ProgressTile label="Prompts ready" value={`${promptsReady} / ${promptShots.length || shots.length}`} />
+        <ProgressTile label="On storyboard" value={`${boardShots.length} / ${shots.length}`} />
+        <ProgressTile label="Keyframes generated" value={`${keyframesReady} / ${boardShots.length}`} />
+      </div>
+
+      <div className="sticky top-2 z-10 rounded-xl border bg-card/95 p-3 shadow-soft backdrop-blur flex items-center gap-3">
+        <div className="h-8 w-8 shrink-0 rounded-full bg-accent text-accent-foreground grid place-items-center">
+          <ChevronRight className="h-4 w-4" />
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Next step</div>
+          <div className="text-sm font-medium">{nextStep}</div>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto scrollbar-none -mx-1 px-1">
+        <div className="grid grid-cols-3 min-w-[520px] gap-2 rounded-xl bg-muted p-1">
+          <StepButton active={activeStep === "script"} onClick={() => setActiveStep("script")} label="1 Script" sublabel={`${shots.length} shots`} />
+          <StepButton active={activeStep === "prompts"} onClick={() => setActiveStep("prompts")} label="2 Prompts" sublabel={`${promptsReady} ready`} />
+          <StepButton active={activeStep === "board"} onClick={() => setActiveStep("board")} label="3 Storyboard" sublabel={`${keyframesReady} frames`} />
+        </div>
+      </div>
+
+      {activeStep === "script" && (
+        <StepPanel title="Script setup" description="Create and edit the shot list before sending shots to prompt writing.">
           <div className="space-y-3">
             <div>
               <Label className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Length</Label>
@@ -354,13 +383,14 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
               {shots.length ? "Re-generate script" : "Generate script"}
             </Button>
             {shots.length > 0 && (
-              <Button onClick={pushAllToPrompts} variant="outline" size="sm" className="w-full gap-1.5 text-xs">
-                Push all shots to prompts <ChevronRight className="h-3 w-3" />
+              <Button onClick={pushAllToPrompts} variant="outline" size="sm" className="w-full gap-1.5">
+                Send all shots to Prompts <ChevronRight className="h-3 w-3" />
               </Button>
             )}
           </div>
 
-          <div className="space-y-2 mt-4 max-h-[600px] overflow-y-auto pr-1">
+          <div className="space-y-3 mt-5">
+            <div className="font-display text-lg">Shot list</div>
             {shots.map((shot) => (
               <ShotScriptCard
                 key={shot.id}
@@ -376,10 +406,11 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
               </div>
             )}
           </div>
-        </ColumnFrame>
+        </StepPanel>
+      )}
 
-        {/* Column 2 — Prompts */}
-        <ColumnFrame title="2 · Visual prompts" accent="from-purple-500/15 to-transparent">
+      {activeStep === "prompts" && (
+        <StepPanel title="Prompt settings" description="Turn approved shots into engine-specific Sora 2 or Kling 3 video prompts.">
           <div className="space-y-3">
             <div className="grid grid-cols-1 gap-2">
               <EngineInstrInput label="Sora 2 instructions" value={soraInstr} onChange={setSoraInstr} engine="sora" />
@@ -387,7 +418,8 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
             </div>
           </div>
 
-          <div className="space-y-2 mt-4 max-h-[600px] overflow-y-auto pr-1">
+          <div className="space-y-3 mt-5">
+            <div className="font-display text-lg">Prompt queue</div>
             {promptShots.map((shot) => (
               <ShotPromptCard
                 key={shot.id}
@@ -404,10 +436,11 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
               </div>
             )}
           </div>
-        </ColumnFrame>
+        </StepPanel>
+      )}
 
-        {/* Column 3 — Storyboard */}
-        <ColumnFrame title="3 · Visual storyboard" accent="from-teal-500/15 to-transparent">
+      {activeStep === "board" && (
+        <StepPanel title="Storyboard board" description="Generate and review 16:9 keyframes for each prompt-ready trailer shot.">
           <div className="space-y-2">
             <div>
               <Label className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Keyframe image model</Label>
@@ -416,16 +449,16 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button onClick={handleGenerateAllKeyframes} size="sm" variant="outline" className="flex-1 gap-1.5 text-xs" disabled={boardShots.length === 0}>
-                <Wand2 className="h-3 w-3" /> Generate all keyframes
+              <Button onClick={handleGenerateAllKeyframes} size="sm" variant="outline" className="flex-1 gap-1.5" disabled={boardShots.length === 0}>
+                <Wand2 className="h-3.5 w-3.5" /> Generate missing keyframes
               </Button>
-              <Button onClick={handleCopyAllPrompts} size="sm" variant="ghost" className="gap-1.5 text-xs" disabled={boardShots.length === 0}>
-                <Copy className="h-3 w-3" /> Copy prompts
+              <Button onClick={handleCopyAllPrompts} size="sm" variant="ghost" className="gap-1.5" disabled={boardShots.length === 0}>
+                <Copy className="h-3.5 w-3.5" /> Copy all prompts
               </Button>
             </div>
           </div>
 
-          <div className="space-y-3 mt-4 max-h-[600px] overflow-y-auto pr-1">
+          <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4 mt-5">
             {boardShots.map((shot) => (
               <ShotBoardCard
                 key={shot.id}
@@ -440,8 +473,8 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
               </div>
             )}
           </div>
-        </ColumnFrame>
-      </div>
+        </StepPanel>
+      )}
     </section>
   );
 }
