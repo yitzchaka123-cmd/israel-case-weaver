@@ -12,6 +12,7 @@ import { normalizeDisplayBackground } from "@/lib/display-background";
 const settingsSections = [
   { id: "branding", label: "Branding" },
   { id: "appearance", label: "Appearance" },
+  { id: "display", label: "Display" },
   { id: "profile", label: "Profile" },
   { id: "image-prompt-assistant", label: "Image prompt assistant" },
   { id: "assistant-playbook", label: "Assistant playbook" },
