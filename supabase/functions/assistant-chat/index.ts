@@ -965,6 +965,26 @@ async function executeTool(
       const linkedNodeIds = finalNodeId ? [finalNodeId] : undefined;
       const isDoc0 = Number(docNumber) === 0 || /\bdoc\s*0\b|document\s*0|contents|inventory|תוכן עניינים|רשימת תכולה/i.test(String(insertArgs.title ?? "")) || String(insertArgs.doc_type ?? "").toLowerCase() === "contents checklist";
       if (isDoc0) {
+        const doc0Def = playbook.universal_documents.docs.find((doc) => doc.key === "doc0_contents") ?? PLAYBOOK_DEFAULTS.universal_documents.docs[0];
+        insertArgs.title = insertArgs.title || doc0Def.title_template;
+        insertArgs.doc_type = doc0Def.doc_type || "contents checklist";
+        insertArgs.print_size = insertArgs.print_size || doc0Def.print_size || "A4";
+        const { data: finalDocNodes } = await supa
+          .from("canvas_nodes")
+          .select("id, title, description, data")
+          .eq("project_id", projectId)
+          .eq("board", "final")
+          .eq("node_type", "document")
+          .order("position_y", { ascending: true });
+        const inventoryLines = (finalDocNodes ?? [])
+          .filter((node: any) => Number(node.data?.docNumber) !== 0)
+          .map((node: any) => `- #${node.data?.docNumber ?? "?"} ${node.title} (${node.data?.docType ?? "document"}, ${node.data?.printSize ?? "A4"})${node.data?.envelopeNumber ? ` — envelope ${node.data.envelopeNumber}` : ""}`);
+        if (inventoryLines.length > 0) {
+          insertArgs.hebrew_content = [
+            String(insertArgs.hebrew_content ?? "").trim(),
+            `\n\nAuthoritative Final Flow inventory source for Doc 0:\n- Doc 0 — ${insertArgs.title}\n${inventoryLines.join("\n")}`,
+          ].filter(Boolean).join("\n");
+        }
         const { data: existingDoc0 } = await supa
           .from("documents")
           .select("id, title")
