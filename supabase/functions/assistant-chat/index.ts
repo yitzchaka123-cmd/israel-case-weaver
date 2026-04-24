@@ -1562,7 +1562,8 @@ Deno.serve(async (req) => {
       hints: (hintsRoster ?? []) as RosterRow[],
       canvas_nodes: (nodesRoster ?? []) as RosterRow[],
     };
-    const systemPrompt = buildSystemPrompt(project, rosters, tweaks, playbook);
+    const claudeChatSkills = model.startsWith("anthropic/") ? await loadClaudeSkillsForSurface(supa, "chat") : [];
+    const systemPrompt = buildSystemPrompt(project, rosters, tweaks, playbook, claudeChatSkills);
 
     // Persist the last user message
     const lastUser = [...messages].reverse().find((m: { role: string }) => m.role === "user");
@@ -1589,8 +1590,14 @@ Deno.serve(async (req) => {
       content: "",
       metadata: { in_progress: true, model },
     });
-    const toolMessageId = assistantPlaceholderError ? null : assistantMessageId;
-    if (assistantPlaceholderError) console.error("assistant placeholder insert failed", assistantPlaceholderError);
+    if (assistantPlaceholderError) {
+      console.error("assistant placeholder insert failed", assistantPlaceholderError);
+      return new Response(JSON.stringify({ error: "I couldn't start a safe assistant message for this run. Please retry; no document rows were created with broken assistant links." }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const toolMessageId = assistantMessageId;
 
     // Tool-calling loop: up to 4 rounds
     const convo: Array<Record<string, unknown>> = [
@@ -1605,7 +1612,7 @@ Deno.serve(async (req) => {
     let lastFb: { effectiveModel: string; fallback: string } = { effectiveModel: model, fallback: "none" };
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const isFinalRound = round === MAX_ROUNDS - 1;
-      const body: Record<string, unknown> = { model, messages: convo, stream: false };
+      const body: Record<string, unknown> = { model, messages: convo, stream: false, ...claudeSkillRequestShape(claudeChatSkills) };
       if (!isFinalRound) body.tools = TOOLS;
 
       const roundStartedAt = Date.now();
