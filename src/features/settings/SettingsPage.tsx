@@ -21,6 +21,26 @@ import { LOGIC_FLOW_MODELS, LOGIC_FLOW_MODEL_KEY, LOGIC_FLOW_MODEL_DEFAULT } fro
 import { Textarea } from "@/components/ui/textarea";
 import { DISPLAY_BACKGROUNDS, DEFAULT_DISPLAY_BACKGROUND, normalizeDisplayBackground } from "@/lib/display-background";
 
+const SETTINGS_SECTIONS = [
+  { id: "branding", label: "Branding" },
+  { id: "appearance", label: "Appearance" },
+  { id: "display", label: "Display" },
+  { id: "profile", label: "Profile" },
+  { id: "image-prompt-assistant", label: "Image prompt assistant" },
+  { id: "assistant-rules", label: "Assistant rules" },
+  { id: "ai-routing", label: "AI routing" },
+  { id: "ai-connections", label: "AI connections" },
+  { id: "ai-ops", label: "Usage, credits, API keys & activity" },
+  { id: "team-access", label: "Team access" },
+] as const;
+
+function normalizeSettingsSection(hash: string) {
+  const section = hash.replace(/^#/, "");
+  if (section === "assistant-playbook" || section === "assistant-tweaks") return "assistant-rules";
+  if (section === "usage-credits" || section === "api-keys" || section === "ai-activity-log") return "ai-ops";
+  return SETTINGS_SECTIONS.some((item) => item.id === section) ? section : "branding";
+}
+
 export function SettingsPage() {
   const { user, isAdmin } = useAuth();
   const { theme, setTheme } = useTheme();
