@@ -552,6 +552,21 @@ const BASE_TOOLS = [
   {
     type: "function",
     function: {
+      name: "generate_logic_flow",
+      description: "Generate or replace the Canvas Logic Flow board from the case brief/approved summary. The user must still review and approve it before final document generation.",
+      parameters: {
+        type: "object",
+        properties: {
+          use_existing_summary: { type: "boolean", description: "Use the saved solution_summary when present. Default true." },
+        },
+        required: [],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "add_canvas_node",
       description: "Add a node to the logic canvas.",
       parameters: {
