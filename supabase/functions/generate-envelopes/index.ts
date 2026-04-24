@@ -90,27 +90,30 @@ Deno.serve(async (req) => {
 
     const modelKey = (modelOverride as string) || (project.ai_provider_planning as string) || "lovable";
     const model = PROVIDER_MODEL[modelKey] ?? PROVIDER_MODEL.lovable;
+    const gameLanguage = String(project.game_language ?? "Hebrew").trim() || "Hebrew";
+    const isRtl = ["Hebrew", "Arabic", "Persian", "Urdu", "Yiddish"].includes(gameLanguage);
 
     const labels = playbook.envelopes.labels;
     const count = playbook.envelopes.count;
 
-    const sys = `You are a senior boxed-mystery game designer. You are designing the ${count} sealed envelopes that drive the player flow for a Hebrew murder-mystery game. The output MUST be a single JSON tool call. No prose.
+    const sys = `You are a senior boxed-mystery game designer. You are designing the ${count} sealed envelopes that drive the player flow for a ${gameLanguage} murder-mystery game. The output MUST be a single JSON tool call. No prose.
 
 ENVELOPE FLOW RULES (workspace defaults — follow):
 - There are exactly ${count} envelopes in this case, in order: ${labels.map((l, i) => `#${i} "${l}"`).join(", ")}.
 - Envelope #0 ("${labels[0]}") opens the game: mission briefing + first task. Always.
 - Envelopes #1..#${count - 1} each confirm the previous task succeeded and hand off the next task.
-- Tasks are SHORT, BOLD, in Hebrew, RTL. Never spoiler-heavy. Each envelope ends with the closing line: "${playbook.envelopes.closing_line_he}" (do NOT include this in the task field — the UI appends it automatically).
+- Tasks are SHORT, BOLD, in ${gameLanguage}, ${isRtl ? "RTL" : "LTR"}. Never spoiler-heavy. Each envelope ends with the closing line: "${playbook.envelopes.closing_line_he}" when it matches the game language (do NOT include this in the task field — the UI appends it automatically).
 
 ${renderEnvelopeDesignTemplate(playbook)}
 
 For each envelope you generate:
-- "label": short Hebrew name shown on the envelope front (e.g. "פתחו תחילה", "מעטפה 1"). RTL, grammatical.
-- "task": short, bold Hebrew task instruction the player reads when they open it. 1–2 short sentences. Never reveal the solution.
-- "design_instructions": a long structured visual brief for the image generator, customised from the workspace template above. Include the envelope's number, the Hebrew label verbatim, and at least one detail tied to this case (era, genre, setting). 8–20 lines.`;
+- "label": short ${gameLanguage} name shown on the envelope front. ${isRtl ? "RTL" : "LTR"}, grammatical.
+- "task": short, bold ${gameLanguage} task instruction the player reads when they open it. 1–2 short sentences. Never reveal the solution.
+- "design_instructions": a long structured visual brief for the image generator, customised from the workspace template above. Include the envelope's number, the ${gameLanguage} label verbatim, and at least one detail tied to this case (era, genre, setting). 8–20 lines.`;
 
     const userPrompt = `CASE CONTEXT
 Title: ${project.title}
+Game language: ${gameLanguage}
 Subtitle: ${project.subtitle ?? "—"}
 Year/Setting: ${project.year ?? "—"} · ${project.setting ?? "—"}
 Genre: ${project.genre ?? "mystery"} · Type: ${project.mystery_type ?? "—"} · Difficulty: ${project.difficulty ?? "—"}

@@ -78,7 +78,7 @@ Deno.serve(async (req) => {
     const supa = createClient(SUPABASE_URL, SERVICE);
 
     const [{ data: project }, { data: suspects }, docsRes, envRes, companyRes] = await Promise.all([
-      supa.from("projects").select("title, subtitle, genre, mystery_type, setting, year, player_role, case_goal, selling_point, difficulty, owner_id, ai_provider_planning, target_doc_count").eq("id", projectId).single(),
+      supa.from("projects").select("title, subtitle, genre, mystery_type, setting, year, player_role, case_goal, selling_point, difficulty, game_language, owner_id, ai_provider_planning, target_doc_count").eq("id", projectId).single(),
       supa.from("suspects").select("name, role_in_case").eq("project_id", projectId).order("position"),
       supa.from("documents").select("id", { count: "exact", head: true }).eq("project_id", projectId),
       supa.from("envelopes").select("id", { count: "exact", head: true }).eq("project_id", projectId),
@@ -107,6 +107,7 @@ Deno.serve(async (req) => {
 
     const docCount = docsRes.count ?? 0;
     const envCount = envRes.count ?? playbook.envelopes.count;
+    const gameLanguage = String(project.game_language ?? "Hebrew").trim() || "Hebrew";
 
     const ctx = [
       project.title && `Title: ${project.title}`,
@@ -116,6 +117,7 @@ Deno.serve(async (req) => {
       project.setting && `Setting: ${project.setting}`,
       project.year && `Year: ${project.year}`,
       project.difficulty && `Difficulty: ${project.difficulty}`,
+      `Game language: ${gameLanguage}`,
       project.player_role && `Player role: ${project.player_role}`,
       project.case_goal && `Case goal: ${project.case_goal}`,
       project.selling_point && `Selling point: ${project.selling_point}`,
@@ -157,7 +159,7 @@ Rules for "selling_point":
 - Do NOT spoil the solution.
 
 Voice: ${playbook.identity.brand_voice}
-Final language: ${playbook.identity.final_content_language} — but write the selling point in English (it's a planning field, not in-game text).`
+Final language: ${gameLanguage} — but write the selling point in English (it's a planning field, not in-game text).`
       : `
 Each field must follow these rules:
 FRONT COVER TEXT
@@ -180,7 +182,7 @@ BACK COVER TEXT
 - "back_footer_text": company/legal/support footer text, using company profile details when available.
 
 Voice: ${playbook.identity.brand_voice}
-Final language: ${playbook.identity.final_content_language} (output Hebrew when the project's final content language is Hebrew, otherwise match the project's planning language).`;
+Final language: ${gameLanguage}.`;
 
     const system = `You are a senior copywriter for premium boxed murder-mystery games. You write tight, evocative marketing copy. You return ONLY a JSON object — no preamble, no markdown fences. Keys must match the requested fields exactly.`;
 

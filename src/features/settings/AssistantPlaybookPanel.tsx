@@ -22,6 +22,7 @@ import {
   renderDocModeButtonsBlock,
   renderLogicGateRefusal,
   renderCatalogsBlock,
+  renderLanguagesBlock,
   renderPhaseEnumComment,
   renderExplanationLengthLine,
   type Playbook,
@@ -274,6 +275,9 @@ export function AssistantPlaybookPanel({}: Props = {}) {
         promptText={renderPhase1OrderSentence(playbook)}
       >
         <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            The default setup includes Game language. Older saved playbooks will automatically get this step added back.
+          </p>
           <div className="space-y-2">
             {playbook.phase1_setup.order.map((step, i) => (
               <div key={step.key} className="flex items-center gap-2 rounded-md border bg-surface px-2 py-1.5">
@@ -638,6 +642,25 @@ export function AssistantPlaybookPanel({}: Props = {}) {
       </Card>
 
       {/* 13. Phase definitions */}
+      <Card
+        id="languages"
+        title="Game languages"
+        hint="Languages the assistant can offer as per-case final in-game content options during setup."
+        open={open.languages}
+        onToggle={() => toggle("languages")}
+        onReset={() => reset("languages")}
+        showPrompt={showPrompt.languages}
+        onTogglePrompt={() => togglePrompt("languages")}
+        promptText={renderLanguagesBlock(playbook)}
+      >
+        <StringListEditor
+          values={playbook.languages.options}
+          onChange={(next) => update("languages", { options: next })}
+          placeholder="e.g. Italian"
+        />
+      </Card>
+
+      {/* 14. Phase definitions */}
       <Card
         id="phases"
         title="Phase definitions"
