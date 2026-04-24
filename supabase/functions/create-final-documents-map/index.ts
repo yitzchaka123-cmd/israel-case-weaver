@@ -9,231 +9,132 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-type DocumentRow = {
-  id: string;
-  doc_number: number | null;
-  title: string;
-  doc_type: string | null;
-  print_size: string | null;
-  status: string;
-  envelope_number: number | null;
-  linked_node_ids: string[] | null;
-  generated_asset_url: string | null;
-  generated_document_url: string | null;
-  generated_pdf_url: string | null;
-  document_preview_url: string | null;
-  created_at: string;
+type DbNode = { id: string; title: string; node_type: string; description: string | null; color: string | null; data: Record<string, unknown> | null; position_x: number; position_y: number };
+type DbEdge = { source_id: string; target_id: string; label: string | null };
+type DocumentRow = { id: string; doc_number: number | null; title: string; doc_type: string | null; print_size: string | null; envelope_number: number | null; linked_node_ids: string[] | null; generated_asset_url: string | null; generated_document_url: string | null; generated_pdf_url: string | null; document_preview_url: string | null; created_at: string };
+type EnvelopeRow = { number: number; label: string | null; task: string | null };
+type PlannedDoc = { docNumber: number; title: string; docType: string; printSize: string; envelopeNumber: number | null; purpose: string; sourceDocumentId?: string; sourceLogicNodeId?: string; generationStatus: string };
+
+const COLORS: Record<string, string> = {
+  clue: "oklch(0.68 0.15 155)", suspect: "oklch(0.62 0.20 30)", deduction: "oklch(0.65 0.18 285)", contradiction: "oklch(0.58 0.22 27)", red_herring: "oklch(0.78 0.16 75)", envelope: "oklch(0.55 0.18 220)", document: "oklch(0.50 0.05 260)", solution: "oklch(0.45 0.15 285)", hint: "oklch(0.78 0.16 75)", note: "oklch(0.70 0.02 260)",
 };
 
-type PlannedDoc = {
-  docNumber: number;
-  title: string;
-  docType: string;
-  printSize: string;
-  envelopeNumber: number | null;
-  purpose: string;
-  sourceDocumentId?: string;
-  generationStatus: string;
-};
-
-const NODE_COLOR = "oklch(0.50 0.05 260)";
-
-function asNumber(value: unknown, fallback: number) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-function docStatus(doc?: DocumentRow) {
-  if (!doc) return "ungenerated";
-  if (doc.generated_pdf_url || doc.generated_document_url) return "file generated";
-  if (doc.generated_asset_url || doc.document_preview_url) return "image generated";
-  return "draft row created";
-}
+const n = (value: unknown, fallback: number) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+const statusFor = (doc?: DocumentRow) => !doc ? "ungenerated" : doc.generated_pdf_url || doc.generated_document_url ? "file generated" : doc.generated_asset_url || doc.document_preview_url ? "image generated" : "draft row created";
 
 function uniqueLatestDocuments(docs: DocumentRow[]) {
   const sorted = [...docs].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   const seen = new Set<string>();
-  const out: DocumentRow[] = [];
-  for (const doc of sorted) {
+  return sorted.filter((doc) => {
     const key = doc.doc_number != null ? `n:${doc.doc_number}` : `t:${doc.title.trim().toLowerCase()}`;
-    if (seen.has(key)) continue;
+    if (seen.has(key)) return false;
     seen.add(key);
-    out.push(doc);
-  }
-  return out.sort((a, b) => (a.doc_number ?? 9999) - (b.doc_number ?? 9999));
+    return true;
+  }).sort((a, b) => (a.doc_number ?? 9999) - (b.doc_number ?? 9999));
 }
 
-function makeDescription(doc: PlannedDoc) {
+function docDescription(doc: PlannedDoc) {
   return [
     `Status: ${doc.generationStatus === "ungenerated" ? "Ungenerated — to be generated in the future" : doc.generationStatus}`,
     `Type: ${doc.docType}`,
     `Print size: ${doc.printSize}`,
     doc.envelopeNumber ? `Envelope: ${doc.envelopeNumber}` : null,
-    doc.sourceDocumentId ? `Linked document row: yes` : `Linked document row: no`,
+    doc.sourceDocumentId ? "Linked document row: yes" : "Linked document row: no",
     `Purpose: ${doc.purpose}`,
   ].filter(Boolean).join("\n");
 }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
-
   try {
-    const { projectId, replace = true } = await req.json();
-    if (!projectId) {
-      return new Response(JSON.stringify({ error: "projectId required" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const { projectId, replace = true, createdByMessageId = null } = await req.json();
+    if (!projectId) return new Response(JSON.stringify({ error: "projectId required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
     const supa = createClient(SUPABASE_URL, SERVICE);
-    const { data: project, error: projectError } = await supa
-      .from("projects")
-      .select("id, title, target_doc_count, solution_summary, logic_approved_at")
-      .eq("id", projectId)
-      .single();
+    const { data: project } = await supa.from("projects").select("id, target_doc_count, solution_summary, logic_approved_at").eq("id", projectId).single();
+    if (!project) return new Response(JSON.stringify({ error: "Project not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    if (!project.logic_approved_at || !project.solution_summary) return new Response(JSON.stringify({ error: "Approve the Logic Flow and save a solution summary before creating the Final Flow." }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
-    if (projectError || !project) {
-      return new Response(JSON.stringify({ error: "Project not found" }), {
-        status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    if (!project.logic_approved_at || !project.solution_summary) {
-      return new Response(JSON.stringify({ error: "Approve the Logic Flow and save a solution summary before creating the Final Documents Map." }), {
-        status: 409,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const [{ data: logicNodes }, { data: envelopes }, { data: documents }] = await Promise.all([
-      supa.from("canvas_nodes").select("id, title, node_type, description, data").eq("project_id", projectId).eq("board", "logic").order("created_at", { ascending: true }),
-      supa.from("envelopes").select("number, label, task, design_instructions").eq("project_id", projectId).order("number", { ascending: true }),
-      supa.from("documents").select("id, doc_number, title, doc_type, print_size, status, envelope_number, linked_node_ids, generated_asset_url, generated_document_url, generated_pdf_url, document_preview_url, created_at").eq("project_id", projectId).order("created_at", { ascending: true }),
+    const [{ data: logicNodes }, { data: logicEdges }, { data: envelopes }, { data: documents }] = await Promise.all([
+      supa.from("canvas_nodes").select("id, title, node_type, description, color, data, position_x, position_y").eq("project_id", projectId).eq("board", "logic").order("created_at", { ascending: true }),
+      supa.from("canvas_edges").select("source_id, target_id, label").eq("project_id", projectId).eq("board", "logic"),
+      supa.from("envelopes").select("number, label, task").eq("project_id", projectId).order("number", { ascending: true }),
+      supa.from("documents").select("id, doc_number, title, doc_type, print_size, envelope_number, linked_node_ids, generated_asset_url, generated_document_url, generated_pdf_url, document_preview_url, created_at").eq("project_id", projectId).order("created_at", { ascending: true }),
     ]);
 
+    const logic = (logicNodes ?? []) as DbNode[];
     const existingDocs = uniqueLatestDocuments((documents ?? []) as DocumentRow[]);
-    const docsByNumber = new Map<number, DocumentRow>();
-    existingDocs.forEach((doc) => {
-      if (doc.doc_number != null) docsByNumber.set(doc.doc_number, doc);
-    });
+    const byNumber = new Map<number, DocumentRow>();
+    existingDocs.forEach((doc) => { if (doc.doc_number != null) byNumber.set(doc.doc_number, doc); });
 
-    const targetCount = Math.max(1, Math.min(100, asNumber(project.target_doc_count, Math.max(existingDocs.length, 40))));
     const planned: PlannedDoc[] = [];
+    const doc0 = byNumber.get(0);
+    planned.push({ docNumber: 0, title: doc0?.title || "Doc 0 — Contents / Case File Inventory", docType: doc0?.doc_type || "contents checklist", printSize: doc0?.print_size || "A4", envelopeNumber: doc0?.envelope_number ?? null, purpose: "Player-facing box contents checklist for all planned documents and physical pieces, without solution spoilers.", sourceDocumentId: doc0?.id, generationStatus: statusFor(doc0) });
+    existingDocs.filter((doc) => doc.doc_number !== 0).forEach((doc) => planned.push({ docNumber: doc.doc_number ?? 100 + planned.length, title: doc.title, docType: doc.doc_type || "document", printSize: doc.print_size || "A4", envelopeNumber: doc.envelope_number ?? null, purpose: "Existing document row already created for this case.", sourceDocumentId: doc.id, generationStatus: statusFor(doc) }));
 
-    const doc0 = docsByNumber.get(0);
-    planned.push({
-      docNumber: 0,
-      title: doc0?.title || "Doc 0 — Contents / Case File Inventory",
-      docType: doc0?.doc_type || "contents checklist",
-      printSize: doc0?.print_size || "A4",
-      envelopeNumber: doc0?.envelope_number ?? null,
-      purpose: "Player-facing box contents checklist listing all planned documents and physical pieces, without solution spoilers.",
-      sourceDocumentId: doc0?.id,
-      generationStatus: docStatus(doc0),
-    });
-
-    existingDocs
-      .filter((doc) => doc.doc_number !== 0)
-      .forEach((doc) => planned.push({
-        docNumber: doc.doc_number ?? 100 + planned.length,
-        title: doc.title,
-        docType: doc.doc_type || "document",
-        printSize: doc.print_size || "A4",
-        envelopeNumber: doc.envelope_number ?? null,
-        purpose: "Existing document row already created for this case.",
-        sourceDocumentId: doc.id,
-        generationStatus: docStatus(doc),
-      }));
-
-    const seeds = [
-      ...((envelopes ?? []) as Array<{ number: number; label?: string | null; task?: string | null }>).map((e) => ({
-        title: e.label || `Envelope ${e.number} evidence`,
-        type: "envelope evidence packet",
-        envelopeNumber: e.number,
-        purpose: e.task || `Evidence planned for envelope ${e.number}.`,
-      })),
-      ...((logicNodes ?? []) as Array<{ title: string; node_type: string; description?: string | null }>).map((n) => ({
-        title: n.title,
-        type: n.node_type === "suspect" ? "suspect file" : n.node_type === "red_herring" ? "red herring evidence" : "case evidence",
-        envelopeNumber: null,
-        purpose: n.description || `Supports the ${n.node_type.replaceAll("_", " ")} node in the approved logic flow.`,
-      })),
-    ];
-
+    const targetCount = Math.max(planned.length, Math.min(100, n(project.target_doc_count, 40)));
+    const envs = (envelopes ?? []) as EnvelopeRow[];
     let nextNumber = Math.max(100, ...planned.map((d) => d.docNumber + 1));
-    for (const seed of seeds) {
+    for (const env of envs) {
       if (planned.length >= targetCount) break;
-      planned.push({
-        docNumber: nextNumber++,
-        title: seed.title.length > 90 ? seed.title.slice(0, 87) + "…" : seed.title,
-        docType: seed.type,
-        printSize: "A4",
-        envelopeNumber: seed.envelopeNumber,
-        purpose: seed.purpose,
-        generationStatus: "ungenerated",
-      });
+      const source = logic.find((node) => node.node_type === "envelope" && Number(node.data?.envelopeNumber) === env.number);
+      planned.push({ docNumber: nextNumber++, title: env.label || `Envelope ${env.number} evidence packet`, docType: "envelope evidence packet", printSize: "A4", envelopeNumber: env.number, purpose: env.task || `Evidence planned for envelope ${env.number}.`, sourceLogicNodeId: source?.id, generationStatus: "ungenerated" });
     }
-
-    while (planned.length < targetCount) {
-      planned.push({
-        docNumber: nextNumber++,
-        title: `Planned case document ${planned.length}`,
-        docType: "case evidence",
-        printSize: "A4",
-        envelopeNumber: null,
-        purpose: "Reserved slot from the target document count. Define this document before generation.",
-        generationStatus: "ungenerated",
-      });
+    for (const node of logic) {
+      if (planned.length >= targetCount) break;
+      if (["solution", "envelope"].includes(node.node_type)) continue;
+      planned.push({ docNumber: nextNumber++, title: node.title.length > 90 ? `${node.title.slice(0, 87)}…` : node.title, docType: node.node_type === "suspect" ? "suspect file" : node.node_type === "red_herring" ? "red herring evidence" : "case evidence", printSize: "A4", envelopeNumber: null, purpose: node.description || `Supports the ${node.node_type.replaceAll("_", " ")} node in the approved logic flow.`, sourceLogicNodeId: node.id, generationStatus: "ungenerated" });
     }
+    while (planned.length < targetCount) planned.push({ docNumber: nextNumber++, title: `Planned case document ${planned.length}`, docType: "case evidence", printSize: "A4", envelopeNumber: null, purpose: "Reserved slot from the target document count. Define before generation.", generationStatus: "ungenerated" });
 
     if (replace) {
-      await supa.from("canvas_nodes").delete().eq("project_id", projectId).eq("board", "final").eq("node_type", "document");
+      await supa.from("canvas_edges").delete().eq("project_id", projectId).eq("board", "final");
+      await supa.from("canvas_nodes").delete().eq("project_id", projectId).eq("board", "final");
     }
 
-    const rows = planned.map((doc, i) => ({
-      project_id: projectId,
-      board: "final",
-      node_type: "document",
-      title: doc.docNumber === 0 && !/^doc\s*0/i.test(doc.title) ? `Doc 0 — ${doc.title}` : doc.title,
-      description: makeDescription(doc),
-      color: NODE_COLOR,
-      position_x: 80 + (i % 4) * 260,
-      position_y: 80 + Math.floor(i / 4) * 170,
-      data: {
-        generationStatus: doc.generationStatus,
-        docNumber: doc.docNumber,
-        docType: doc.docType,
-        printSize: doc.printSize,
-        envelopeNumber: doc.envelopeNumber,
-        purpose: doc.purpose,
-        documentId: doc.sourceDocumentId ?? null,
-      },
-    }));
+    const logicRows = logic.map((node, i) => ({ project_id: projectId, board: "final", node_type: node.node_type, title: node.title, description: node.description, color: node.color || COLORS[node.node_type] || null, position_x: 60 + (i % 3) * 260, position_y: 70 + Math.floor(i / 3) * 150, data: { ...(node.data ?? {}), sourceLogicNodeId: node.id, finalMapRole: "logic" }, ...(createdByMessageId ? { created_by_message_id: createdByMessageId } : {}) }));
+    const docRows = planned.map((doc, i) => ({ project_id: projectId, board: "final", node_type: "document", title: doc.docNumber === 0 && !/^doc\s*0/i.test(doc.title) ? `Doc 0 — ${doc.title}` : doc.title, description: docDescription(doc), color: COLORS.document, position_x: 940 + (i % 3) * 270, position_y: 70 + Math.floor(i / 3) * 155, data: { generationStatus: doc.generationStatus, docNumber: doc.docNumber, docType: doc.docType, printSize: doc.printSize, envelopeNumber: doc.envelopeNumber, purpose: doc.purpose, documentId: doc.sourceDocumentId ?? null, sourceLogicNodeId: doc.sourceLogicNodeId ?? null, finalMapRole: "document" }, ...(createdByMessageId ? { created_by_message_id: createdByMessageId } : {}) }));
 
-    const { data: inserted, error: insertError } = await supa.from("canvas_nodes").insert(rows).select("id, data");
+    const { data: inserted, error: insertError } = await supa.from("canvas_nodes").insert([...logicRows, ...docRows]).select("id, node_type, data");
     if (insertError) throw insertError;
+    const sourceToFinal = new Map<string, string>();
+    const docNodeByIndex: string[] = [];
+    (inserted ?? []).forEach((row: { id: string; node_type: string; data: Record<string, unknown> }) => {
+      if (row.data?.sourceLogicNodeId) sourceToFinal.set(String(row.data.sourceLogicNodeId), row.id);
+      if (row.node_type === "document") docNodeByIndex.push(row.id);
+    });
 
-    const updates = (inserted ?? [])
-      .map((node: { id: string; data: { documentId?: string | null } }) => ({ nodeId: node.id, documentId: node.data?.documentId }))
-      .filter((x) => x.documentId);
+    const finalEdges: Array<{ project_id: string; board: string; source_id: string; target_id: string; label?: string | null }> = [];
+    ((logicEdges ?? []) as DbEdge[]).forEach((edge) => {
+      const s = sourceToFinal.get(edge.source_id), t = sourceToFinal.get(edge.target_id);
+      if (s && t) finalEdges.push({ project_id: projectId, board: "final", source_id: s, target_id: t, label: edge.label });
+    });
+    const doc0Node = docNodeByIndex[0];
+    planned.forEach((doc, i) => {
+      const docNode = docNodeByIndex[i];
+      if (!docNode) return;
+      const source = doc.sourceLogicNodeId ? sourceToFinal.get(doc.sourceLogicNodeId) : null;
+      if (source) finalEdges.push({ project_id: projectId, board: "final", source_id: source, target_id: docNode, label: "becomes document" });
+      if (doc.envelopeNumber) {
+        const envLogic = logic.find((node) => node.node_type === "envelope" && Number(node.data?.envelopeNumber) === doc.envelopeNumber);
+        const envNode = envLogic ? sourceToFinal.get(envLogic.id) : null;
+        if (envNode) finalEdges.push({ project_id: projectId, board: "final", source_id: docNode, target_id: envNode, label: `inside envelope ${doc.envelopeNumber}` });
+      }
+      if (doc0Node && i > 0) finalEdges.push({ project_id: projectId, board: "final", source_id: doc0Node, target_id: docNode, label: "listed in contents" });
+    });
+    if (finalEdges.length) await supa.from("canvas_edges").insert(finalEdges);
 
-    for (const update of updates) {
-      const doc = existingDocs.find((d) => d.id === update.documentId);
-      const nextLinked = Array.from(new Set([...(doc?.linked_node_ids ?? []), update.nodeId]));
-      await supa.from("documents").update({ linked_node_ids: nextLinked }).eq("id", update.documentId);
+    for (let i = 0; i < planned.length; i += 1) {
+      const doc = planned[i];
+      if (!doc.sourceDocumentId) continue;
+      const existing = existingDocs.find((d) => d.id === doc.sourceDocumentId);
+      const nextLinked = Array.from(new Set([...(existing?.linked_node_ids ?? []), docNodeByIndex[i]]));
+      await supa.from("documents").update({ linked_node_ids: nextLinked }).eq("id", doc.sourceDocumentId);
     }
 
-    return new Response(JSON.stringify({ ok: true, nodeCount: rows.length, linkedCount: updates.length }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(JSON.stringify({ ok: true, nodeCount: logicRows.length + docRows.length, documentNodeCount: docRows.length, edgeCount: finalEdges.length }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (err) {
     console.error("create-final-documents-map failed", err);
-    const message = err instanceof Error ? err.message : "Failed to create Final Documents Map";
-    return new Response(JSON.stringify({ error: message }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(JSON.stringify({ error: err instanceof Error ? err.message : "Failed to create Final Flow" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 });
