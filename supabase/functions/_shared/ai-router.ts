@@ -284,8 +284,10 @@ async function callAnthropic(body: Record<string, unknown>, model: string): Prom
   if (systemText) anthropicBody.system = systemText;
   if (body.temperature !== undefined) anthropicBody.temperature = body.temperature;
 
-  // Translate OpenAI-style tools → Anthropic tools
+  // Translate OpenAI-style tools → Anthropic tools, then append optional
+  // Anthropic-native tools/container settings such as code execution + Skills.
   const tools = body.tools as Array<{ type: string; function: { name: string; description?: string; parameters: unknown } }> | undefined;
+  const anthropicNativeTools = body.anthropicTools as Array<Record<string, unknown>> | undefined;
   if (tools?.length) {
     anthropicBody.tools = tools.map((t) => ({
       name: t.function.name,
@@ -293,6 +295,10 @@ async function callAnthropic(body: Record<string, unknown>, model: string): Prom
       input_schema: t.function.parameters,
     }));
   }
+  if (anthropicNativeTools?.length) {
+    anthropicBody.tools = [...((anthropicBody.tools as Array<Record<string, unknown>> | undefined) ?? []), ...anthropicNativeTools];
+  }
+  if (body.anthropicContainer) anthropicBody.container = body.anthropicContainer;
 
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -300,6 +306,7 @@ async function callAnthropic(body: Record<string, unknown>, model: string): Prom
       "x-api-key": ANTHROPIC_API_KEY,
       "anthropic-version": "2023-06-01",
       "Content-Type": "application/json",
+      ...(body.anthropicBeta ? { "anthropic-beta": String(body.anthropicBeta) } : {}),
     },
     body: JSON.stringify(anthropicBody),
   });
