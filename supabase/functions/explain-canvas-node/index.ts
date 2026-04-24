@@ -3,6 +3,7 @@
 // and how it relates to the overall solution.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { chatCompletions, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
+import { resolvePlaybook, renderExplanationLengthLine } from "../_shared/assistant-playbook.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -63,9 +64,19 @@ Deno.serve(async (req) => {
 
     const { data: project } = await supa
       .from("projects")
-      .select("title, subtitle, year, setting, genre, mystery_type, player_role, case_goal, solution_summary, ai_provider_planning")
+      .select("title, subtitle, year, setting, genre, mystery_type, player_role, case_goal, solution_summary, ai_provider_planning, owner_id")
       .eq("id", node.project_id)
       .single();
+
+    const { data: profile } = project?.owner_id
+      ? await supa
+        .from("profiles")
+        .select("assistant_playbook")
+        .eq("id", project.owner_id)
+        .maybeSingle()
+      : { data: null };
+    const playbook = resolvePlaybook((profile as { assistant_playbook?: unknown } | null)?.assistant_playbook);
+    const explanationLength = renderExplanationLengthLine(playbook);
 
     // Pull connected edges + sibling nodes for context
     const { data: edges } = await supa
@@ -99,7 +110,7 @@ Deno.serve(async (req) => {
     const modelKey = (modelOverride as string) || (project?.ai_provider_planning as string) || "openai-5.2";
     const model = PROVIDER_MODEL[modelKey] ?? PROVIDER_MODEL["openai-5.2"];
 
-    const sys = `You are a senior mystery game designer explaining a single node in a case logic flow to the game's author. Be concrete, brief (3-5 short paragraphs max), and reference how this node connects to the wider solution. No fluff, no bullet lists unless genuinely needed.`;
+    const sys = `You are a senior mystery game designer explaining a single node in a case logic flow to the game's author. Be concrete and reference how this node connects to the wider solution. ${explanationLength} No fluff, no bullet lists unless genuinely needed.`;
 
     const userPrompt = `CASE:
 Title: ${project?.title ?? "—"}${project?.subtitle ? ` · ${project.subtitle}` : ""}
@@ -125,7 +136,7 @@ EXPLAIN, for the author:
 1. What role this node plays in the case (1 short paragraph).
 2. How it connects to its neighbors and the overall solution (1 short paragraph).
 3. If it's a clue or red herring: how the player is meant to encounter and interpret it (1 short paragraph).
-4. Any concrete suggestion to strengthen this node (1 short paragraph, optional).`;
+${playbook.explanations.include_suggestion ? "4. Any concrete suggestion to strengthen this node (optional, one short sentence)." : "Do not add a strengthening suggestion unless it is essential."}`;
 
     const startedAt = Date.now();
     const callerUserId = await getUserIdFromAuth(req);

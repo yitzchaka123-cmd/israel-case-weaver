@@ -64,6 +64,11 @@ export type Playbook = {
     default_mode: "drafts" | "auto" | "ask" | "unset";
     ask_each_new_project: boolean;
   };
+  explanations: {
+    paragraphs: number;
+    max_words: number;
+    include_suggestion: boolean;
+  };
   // ---- v2 additions ----
   identity: {
     planning_language: string;
@@ -173,6 +178,11 @@ Looks like an actual archival envelope from the case era — NOT a modern Canva 
   doc_generation: {
     default_mode: "unset",
     ask_each_new_project: true,
+  },
+  explanations: {
+    paragraphs: 2,
+    max_words: 120,
+    include_suggestion: false,
   },
   identity: {
     planning_language: "English",
@@ -400,6 +410,12 @@ export function resolvePlaybook(override: unknown): Playbook {
     ask_each_new_project: o.doc_generation?.ask_each_new_project !== false,
   };
 
+  const explanations = {
+    paragraphs: clamp(Number(o.explanations?.paragraphs ?? d.explanations.paragraphs), 1, 5),
+    max_words: clamp(Number(o.explanations?.max_words ?? d.explanations.max_words), 40, 300),
+    include_suggestion: o.explanations?.include_suggestion === true,
+  };
+
   const identity = {
     planning_language: cleanString(o.identity?.planning_language, d.identity.planning_language),
     final_content_language: cleanString(o.identity?.final_content_language, d.identity.final_content_language),
@@ -436,6 +452,7 @@ export function resolvePlaybook(override: unknown): Playbook {
     vocab,
     realism,
     doc_generation,
+    explanations,
     identity,
     content_rules,
     design_skeleton,
@@ -513,6 +530,10 @@ export function renderRealismParagraphs(p: Playbook): string {
   return `Realism floor — MANDATORY MINIMUM ${p.realism.realworld_min_details} concrete realism details under "ADDITIONAL REALISM DETAILS" for any document type that exists in the real world (memos, letters, reports, transcripts, newspapers, photos, ID cards, receipts, telegrams, police forms, bank statements, medical records, ticket stubs, business cards, etc.). Examples of valid realism details: paper aging tone, fold lines, punch holes, staples/paperclips, coffee/water stains, smudged ink, typewriter offset, photocopy shadowing, intake/filing stamps with date format of the era, handwritten marginalia, signature scribbles, classification banners, reference codes, distribution lists, period-correct phone/address formats, ribbon impressions, carbon-copy bleed-through, edge wear, dog-eared corners, perforation marks, redaction bars, tape residue, fingerprint smudges, etc. Each item must be concrete (not "looks aged").
 
 Creative / unusual props (maps, hand-drawn diagrams, ciphers, blueprints, matchbook covers, napkin sketches, ransom notes, tarot/playing cards, photo collages, surveillance polaroids, evidence bag tags, ship/building maps, treasure-style charts, anything non-standard): the realism floor does NOT apply. Instead, add ${p.realism.creative_min_details}–${p.realism.creative_max_details} CREATIVE / UNUSUAL DETAILS that make the prop feel hand-made, in-world, and surprising — e.g. a smudged compass rose with a personal initial, a coded margin doodle, a torn corner taped back on, a coffee-ring obscuring one room on the map, a crayon arrow added by a child, a misspelling crossed out by hand, a hidden symbol only visible at an angle, a fictitious printer mark, an unusual aspect ratio, an inserted Polaroid, etc. State clearly that this prop trades photorealistic bureaucracy for tactile, creative, prop-style authenticity.`;
+}
+
+export function renderExplanationLengthLine(p: Playbook): string {
+  return `Canvas node AI explanations: ${p.explanations.paragraphs} short paragraph(s), maximum ${p.explanations.max_words} words total${p.explanations.include_suggestion ? ", include one concrete strengthening suggestion when useful" : ", do not add a strengthening suggestion unless essential"}.`;
 }
 
 // ---------- v2 renderers ----------
