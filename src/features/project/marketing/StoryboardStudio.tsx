@@ -610,17 +610,18 @@ function ShotPromptCard({ shot, busy, onChange, onGenerate, onPush }: { shot: Sh
 
 function ShotBoardCard({ shot, busy, onGenerate }: { shot: Shot; busy: boolean; onGenerate: () => void }) {
   return (
-    <div className="rounded-lg border bg-card overflow-hidden">
+    <div className="rounded-xl border bg-card overflow-hidden">
       <div className="group aspect-video bg-muted relative">
         {shot.image_url ? (
           <img src={shot.image_url} alt={`Shot ${shot.n}`} className="w-full h-full object-cover" />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
-            <ImageIcon className="h-6 w-6" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+            <ImageIcon className="h-8 w-8" />
+            <span className="text-sm font-medium">No keyframe yet</span>
           </div>
         )}
-        <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/60 text-white text-[10px] font-mono">#{shot.n} · {shot.duration_s}s</div>
-        <div className={`absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded text-[10px] font-medium ${shot.engine === "sora" ? "bg-purple-500/90 text-white" : "bg-teal-500/90 text-white"}`}>
+        <div className="absolute top-2 left-2 px-2 py-1 rounded bg-card/90 text-foreground text-xs font-mono border">#{shot.n} · {shot.duration_s}s</div>
+        <div className="absolute top-2 right-2 px-2 py-1 rounded text-xs font-medium bg-accent text-accent-foreground">
           {shot.engine.toUpperCase()}
         </div>
         {shot.image_url && (shot.image_effective_model || shot.image_requested_model) && (
@@ -637,10 +638,14 @@ function ShotBoardCard({ shot, busy, onGenerate }: { shot: Shot; busy: boolean; 
           </div>
         )}
       </div>
-      <div className="p-2 space-y-1.5">
-        <div className="text-[10px] text-muted-foreground line-clamp-3 font-mono leading-relaxed">{shot.prompt || "—"}</div>
-        <Button size="sm" variant="ghost" className="w-full gap-1.5 text-[11px] h-7" onClick={onGenerate} disabled={busy || !shot.prompt}>
-          {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : shot.image_url ? <FileText className="h-3 w-3" /> : <Wand2 className="h-3 w-3" />}
+      <div className="p-4 space-y-3">
+        <div>
+          <div className="font-display text-lg">Shot {shot.n}</div>
+          <div className="text-sm text-muted-foreground line-clamp-2 mt-1">{shot.action}</div>
+        </div>
+        <div className="rounded-lg border bg-surface p-3 text-xs text-muted-foreground line-clamp-4 font-mono leading-relaxed">{shot.prompt || "No prompt yet"}</div>
+        <Button size="sm" variant="outline" className="w-full gap-1.5" onClick={onGenerate} disabled={busy || !shot.prompt}>
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : shot.image_url ? <FileText className="h-3.5 w-3.5" /> : <Wand2 className="h-3.5 w-3.5" />}
           {shot.image_url ? "Regenerate keyframe" : "Generate keyframe"}
         </Button>
       </div>
