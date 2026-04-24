@@ -255,6 +255,11 @@ body[data-ui-background="aurora"] {
     background: color-mix(in oklab, var(--color-surface) 75%, transparent);
     backdrop-filter: blur(12px);
   }
+  .bg-preview-bubblegum { background: radial-gradient(circle at 12% 10%, oklch(0.63 0.27 350), transparent 42%), radial-gradient(circle at 90% 90%, oklch(0.83 0.16 205), transparent 42%), oklch(0.94 0.055 350); }
+  .bg-preview-paper { background: linear-gradient(120deg, oklch(0.91 0.035 86), transparent 55%), linear-gradient(315deg, oklch(0.88 0.035 235), transparent 50%), oklch(0.98 0.009 88); }
+  .bg-preview-noir { background: radial-gradient(circle at 18% 18%, oklch(0.42 0.12 285), transparent 40%), radial-gradient(circle at 90% 80%, oklch(0.34 0.08 190), transparent 42%), oklch(0.2 0.02 270); }
+  .bg-preview-blueprint { background: linear-gradient(135deg, oklch(0.78 0.1 235), transparent 50%), radial-gradient(circle at 90% 20%, oklch(0.75 0.12 190), transparent 38%), oklch(0.94 0.025 240); }
+  .bg-preview-aurora { background: radial-gradient(circle at 20% 20%, oklch(0.75 0.18 165), transparent 40%), radial-gradient(circle at 85% 30%, oklch(0.78 0.18 310), transparent 42%), radial-gradient(circle at 55% 95%, oklch(0.84 0.15 78), transparent 42%), oklch(0.96 0.018 175); }
 }
 
 /* React Flow theming */
