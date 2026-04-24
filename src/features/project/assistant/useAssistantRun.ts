@@ -19,6 +19,7 @@ type Msg = { role: "user" | "assistant"; content: string };
 
 type RunState = {
   isRunning: boolean;
+  runId?: string;
   // Local in-flight fetch (only set when this tab kicked off the run). Lets us
   // cancel mid-flight if the user explicitly aborts. We do NOT abort on tab
   // unmount — the whole point is to keep going.
@@ -34,6 +35,15 @@ function setRunState(qc: QueryClient, projectId: string, next: RunState) {
 
 function readRunState(projectId: string): RunState {
   return projectRuns.get(projectId) ?? { isRunning: false };
+}
+
+async function writeAssistantError(projectId: string, error: string) {
+  await supabase.from("chat_messages").insert({
+    project_id: projectId,
+    role: "assistant",
+    content: `⚠️ ${error}`,
+    metadata: { error, in_progress: false },
+  });
 }
 
 export function useAssistantRun(projectId: string) {
@@ -81,7 +91,8 @@ export function useAssistantRun(projectId: string) {
           const row = (payload.new ?? payload.old) as { status?: string } | null;
           const status = row?.status;
           if (status === "running") {
-            setRunState(qc, projectId, { ...readRunState(projectId), isRunning: true });
+            const id = (payload.new as { id?: string } | null)?.id;
+            setRunState(qc, projectId, { ...readRunState(projectId), isRunning: true, runId: id });
           } else if (status === "done" || status === "error") {
             const cur = readRunState(projectId);
             setRunState(qc, projectId, { isRunning: false, controller: cur.controller });
@@ -98,7 +109,9 @@ export function useAssistantRun(projectId: string) {
             qc.invalidateQueries({ queryKey: ["phase-bar-counts", projectId] });
             if (status === "done") toast.success("Assistant updated your case");
             else if ((payload.new as { error?: string } | null)?.error) {
-              toast.error((payload.new as { error: string }).error);
+              const error = (payload.new as { error: string }).error;
+              toast.error(error, { duration: 9000 });
+              void writeAssistantError(projectId, error).then(() => qc.invalidateQueries({ queryKey: ["chat", projectId] }));
             }
           }
         },
@@ -122,7 +135,8 @@ export function useAssistantRun(projectId: string) {
       return;
     }
     sendingRef.current = true;
-    setRunState(qc, projectId, { isRunning: true });
+    const controller = new AbortController();
+    setRunState(qc, projectId, { isRunning: true, controller });
 
     try {
       const convo = [...(baseMessages ?? []), { role: "user" as const, content }];
@@ -135,23 +149,32 @@ export function useAssistantRun(projectId: string) {
           Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
         body: JSON.stringify({ projectId, messages: convo, mode: "background" }),
+        signal: controller.signal,
       });
 
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({ error: "Request failed" }));
-        if (resp.status === 429) toast.error("Rate limit — please wait a moment.");
-        else if (resp.status === 402) toast.error("Out of AI credits. Top up in Settings → Workspace → Usage.");
-        else toast.error(err.error ?? "Assistant error");
+        const message = resp.status === 429
+          ? "Rate limit — please wait a moment."
+          : resp.status === 402
+            ? "Out of AI credits. Top up in Settings → Workspace → Usage."
+            : (err.error ?? "Assistant error");
+        toast.error(message, { duration: 9000 });
+        await writeAssistantError(projectId, message);
+        qc.invalidateQueries({ queryKey: ["chat", projectId] });
         // Server failed before kicking off background work — clear local flag.
         setRunState(qc, projectId, { isRunning: false });
         return;
       }
+      const accepted = await resp.json().catch(() => ({}));
+      if (accepted?.runId) setRunState(qc, projectId, { isRunning: true, runId: accepted.runId, controller });
       // Background mode: server accepted the run and will write the assistant
       // message asynchronously. The realtime subscription on assistant_runs
       // will flip isRunning back to false when it finishes. We immediately
       // refresh the chat query so the user's message appears right away.
       qc.invalidateQueries({ queryKey: ["chat", projectId] });
     } catch (e) {
+      if ((e as Error)?.name === "AbortError") return;
       toast.error(e instanceof Error ? e.message : "Assistant error");
       setRunState(qc, projectId, { isRunning: false });
     } finally {
@@ -170,6 +193,12 @@ export function useAssistantRun(projectId: string) {
     cur.controller?.abort();
     sendingRef.current = false;
     setRunState(qc, projectId, { isRunning: false });
+    if (cur.runId) {
+      void supabase
+        .from("assistant_runs")
+        .update({ status: "error", error: "Cancelled for edit and re-run", finished_at: new Date().toISOString() })
+        .eq("id", cur.runId);
+    }
   };
 
   return {
