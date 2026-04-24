@@ -947,8 +947,8 @@ async function executeTool(
       const friendly = mode === "drafts"
         ? "Drafts only — I'll write the rows, you press Generate"
         : mode === "auto"
-          ? "Full auto — I'll generate text + image after every doc"
-          : "Ask each time — I'll check before generating";
+          ? "Full auto — after each doc I'll ask Image, PDF, or Both before generating"
+          : "Ask each time — I'll check Image, PDF, Both, or draft before generating";
       return { ok: true, message: `Document workflow set: ${friendly}` };
     }
     if (name === "generate_document_assets") {
