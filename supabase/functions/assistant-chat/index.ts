@@ -1007,17 +1007,21 @@ async function executeTool(
       };
 
       const errors: string[] = [];
+      const completed: string[] = [];
       if (requestedMode === "text" || requestedMode === "both") {
         const r = await callGenerate("text");
-        if (!r.ok) errors.push(`text: ${r.body?.error ?? r.status}`);
+        if (!r.ok) errors.push(`body text failed: ${r.body?.error ?? r.status}`);
+        else completed.push("body text");
       }
       if (requestedMode === "document" || requestedMode === "both") {
         const r = await callGenerate("document");
-        if (!r.ok) errors.push(`document: ${r.body?.error ?? r.status}`);
+        if (!r.ok) errors.push(`direct ${documentFormat.toUpperCase()} file failed: ${r.body?.error ?? r.status}`);
+        else completed.push(`${documentFormat.toUpperCase()} file`);
       }
       if (requestedMode === "image" || requestedMode === "both") {
         const r = await callGenerate("image");
-        if (!r.ok) errors.push(`image: ${r.body?.error ?? r.status}`);
+        if (!r.ok) errors.push(`image preview failed: ${r.body?.error ?? r.status}`);
+        else completed.push("image preview");
       }
 
       // Re-read row to grab whatever made it through.
@@ -1032,12 +1036,13 @@ async function executeTool(
       const documentUrl = finalDoc?.generated_document_url ?? finalDoc?.generated_pdf_url ?? null;
 
       if (errors.length > 0 && !imageUrl && !hebrew && !documentUrl) {
-        return { ok: false, message: `Generation failed — ${errors.join("; ")}`, id: documentId };
+        return { ok: false, message: `Generation failed for "${finalDoc?.title ?? "document"}" — ${errors.join("; ")}. You can retry this same document safely.`, id: documentId };
       }
-      const partial = errors.length > 0 ? ` (partial: ${errors.join("; ")})` : "";
+      const done = completed.length > 0 ? ` Completed: ${completed.join(", ")}.` : "";
+      const partial = errors.length > 0 ? ` Partial issues: ${errors.join("; ")}. You can retry failed parts from this same document.` : "";
       return {
         ok: true,
-        message: `Generated assets for "${finalDoc?.title ?? "document"}"${partial}`,
+        message: `Generated assets for "${finalDoc?.title ?? "document"}".${done}${partial}`,
         id: documentId,
         hebrew_preview: preview || undefined,
         image_url: imageUrl || undefined,
