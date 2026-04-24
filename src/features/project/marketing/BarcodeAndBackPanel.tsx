@@ -12,6 +12,14 @@ import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/
 import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { useProjectNotifications } from "@/features/project/notifications/useProjectNotifications";
 
+type OutputType = "image" | "document" | "both";
+
+const OUTPUT_TYPES: { value: OutputType; label: string }[] = [
+  { value: "image", label: "Image" },
+  { value: "document", label: "Document/file" },
+  { value: "both", label: "Both" },
+];
+
 interface Marketing {
   project_id: string;
   front_subtext: string | null;
@@ -62,6 +70,7 @@ export function BarcodeAndBackPanel({ projectId }: { projectId: string }) {
   const [generatingBarcode, setGeneratingBarcode] = useState(false);
   const [generatingBack, setGeneratingBack] = useState(false);
   const [generateCount, setGenerateCount] = useState<1 | 2 | 4>(4);
+  const [backOutputType, setBackOutputType] = useState<OutputType>("image");
   const [backOrigin, setBackOrigin] = useState<{ requested: string | null; effective: string | null; fallback: string | null } | null>(null);
   const seenBarcode = useRef<string | null>(null);
   const { create: createNotif } = useProjectNotifications(projectId);
@@ -202,46 +211,53 @@ LAYOUT REQUIREMENTS:
 - Reserve clean negative space across the central body region for paragraph copy.
 - No text rendered into the artwork itself — typography will be added later.`;
 
-      const modelOverride = getStoredImageModel("marketing-back", "chatgpt-image-2");
-      const quality = getStoredImageQuality("marketing-back", "medium");
       let firstUrl: string | null = null;
       let lastOrigin: typeof backOrigin = null;
-      for (let i = 0; i < generateCount; i += 1) {
-        const resp = await callEdge("generate-image", {
-          projectId,
-          category: "marketing-back",
-          prompt: `${composedPrompt}\n\nVariation ${i + 1}: use a distinct composition, color balance, and focal image while preserving the reserved copy and barcode areas.`,
-          title: `Back of box option ${i + 1}`,
-          modelOverride,
-          quality,
-          aspect: "portrait",
-        });
-        const json = await resp.json().catch(() => ({}));
-        if (!resp.ok) {
-          toast.error(json.error ?? "Back-cover generation failed", { duration: 10000 });
-          return;
-        }
-        const baseUrl: string | undefined = json.url;
-        if (!baseUrl) {
-          toast.error("No image returned");
-          return;
-        }
-        lastOrigin = {
-          requested: (json.requestedModel as string) ?? null,
-          effective: (json.effectiveModel as string) ?? null,
-          fallback: (json.fallback as string) ?? "none",
-        };
+      if (backOutputType === "image" || backOutputType === "both") {
+        const modelOverride = getStoredImageModel("marketing-back", "chatgpt-image-2");
+        const quality = getStoredImageQuality("marketing-back", "medium");
+        for (let i = 0; i < generateCount; i += 1) {
+          const resp = await callEdge("generate-image", {
+            projectId,
+            category: "marketing-back",
+            prompt: `${composedPrompt}\n\nVariation ${i + 1}: use a distinct composition, color balance, and focal image while preserving the reserved copy and barcode areas.`,
+            title: `Back of box option ${i + 1}`,
+            modelOverride,
+            quality,
+            aspect: "portrait",
+          });
+          const json = await resp.json().catch(() => ({}));
+          if (!resp.ok) {
+            toast.error(json.error ?? "Back-cover generation failed", { duration: 10000 });
+            if (backOutputType === "image") return;
+            break;
+          }
+          const baseUrl: string | undefined = json.url;
+          if (!baseUrl) {
+            toast.error("No image returned");
+            if (backOutputType === "image") return;
+            break;
+          }
+          lastOrigin = {
+            requested: (json.requestedModel as string) ?? null,
+            effective: (json.effectiveModel as string) ?? null,
+            fallback: (json.fallback as string) ?? "none",
+          };
 
-        let finalUrl = baseUrl;
-        try {
-          finalUrl = await bakeBarcodeIntoImage(baseUrl, data.barcode_url);
-        } catch (e) {
-          toast.error("Generated, but barcode overlay failed: " + (e instanceof Error ? e.message : "unknown"));
+          let finalUrl = baseUrl;
+          try {
+            finalUrl = await bakeBarcodeIntoImage(baseUrl, data.barcode_url);
+          } catch (e) {
+            toast.error("Generated, but barcode overlay failed: " + (e instanceof Error ? e.message : "unknown"));
+          }
+          if (json.asset?.id) {
+            await supabase.from("media_assets").update({ url: finalUrl, title: `Back of box option ${i + 1}` }).eq("id", json.asset.id);
+          }
+          firstUrl ??= finalUrl;
         }
-        if (json.asset?.id) {
-          await supabase.from("media_assets").update({ url: finalUrl, title: `Back of box option ${i + 1}` }).eq("id", json.asset.id);
-        }
-        firstUrl ??= finalUrl;
+      }
+      if (backOutputType === "document" || backOutputType === "both") {
+        await supabase.from("media_assets").insert({ project_id: projectId, category: "marketing-back", title: "Back of box document prompt", prompt: composedPrompt, provider: "direct-model-file", asset_type: "document", document_format: "pdf", generation_mode: "direct_model_file", status: "failed", error_message: "Create a document row to generate a real file directly with the selected document model." } as never);
       }
       if (firstUrl) {
         setBackOrigin(lastOrigin);
@@ -249,7 +265,9 @@ LAYOUT REQUIREMENTS:
           project_id: projectId,
           back_cover_url: firstUrl,
         } as never, { onConflict: "project_id" });
-        toast.success(`${generateCount} back-cover option${generateCount === 1 ? "" : "s"} ready`);
+        toast.success(backOutputType === "both" ? `${generateCount} back-cover option${generateCount === 1 ? "" : "s"} ready; document prompt saved` : `${generateCount} back-cover option${generateCount === 1 ? "" : "s"} ready`);
+      } else if (backOutputType === "document") {
+        toast.success("Back-cover document prompt saved");
       }
     } finally {
       setGeneratingBack(false);
