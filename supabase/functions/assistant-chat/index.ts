@@ -74,6 +74,27 @@ type Rosters = {
   hints: RosterRow[];
   canvas_nodes: RosterRow[];
 };
+type ClaudeSkillRow = { skill_id: string; skill_type: string; version: string; name?: string | null; usage_scope: string[] };
+
+async function loadClaudeSkillsForSurface(supa: ReturnType<typeof createClient>, surface: string): Promise<ClaudeSkillRow[]> {
+  const { data } = await supa
+    .from("claude_skills")
+    .select("skill_id, skill_type, version, name, usage_scope")
+    .eq("enabled", true)
+    .eq("install_status", "installed");
+  return ((data ?? []) as ClaudeSkillRow[]).filter((s) => (s.usage_scope ?? []).includes(surface));
+}
+
+function claudeSkillRequestShape(skills: ClaudeSkillRow[]) {
+  if (!skills.length) return {};
+  return {
+    anthropicBeta: "code-execution-2025-05-22,files-api-2025-04-14,skills-2025-10-02",
+    anthropicTools: [{ type: "code_execution_20250522", name: "code_execution" }],
+    anthropicContainer: {
+      skills: skills.map((s) => ({ type: s.skill_type === "anthropic" ? "anthropic" : "custom", skill_id: s.skill_id, version: s.version || "latest" })),
+    },
+  };
+}
 function truncate(s: unknown, n = 60): string {
   const str = String(s ?? "").replace(/\s+/g, " ").trim();
   if (!str) return "—";
@@ -157,6 +178,7 @@ ${renderDocModeButtonsBlock(playbook)}
 5. Document/file generation is strict: the selected document model gets the honest first chance to create the actual file directly. Do not ask for or imply hidden fallback to another provider.
 6. generate_document_assets is gated server-side: it will refuse if the Logic Flow is not approved, or if the document_id doesn't belong to this project. Trust the receipt.
 7. The Hebrew body produced by generate_document_assets MAY differ slightly from the hebrew_content you wrote in add_document — that's expected. The receipt shows the final stored version.
+8. If the user asks to install/add a Claude Skill from chat and there is no attached installable package, call explain_claude_skill_install. Claude can automatically choose among enabled installed skills passed to it, but the app must manage installation.
 ${renderEnvelopesLine(playbook)}
 ${renderHintsLine(playbook)}
 
@@ -582,6 +604,23 @@ const BASE_TOOLS = [
           document_format: { type: "string", enum: ["pdf", "docx", "pptx", "xlsx"], description: "Document file format when mode is document/both. Default pdf." },
         },
         required: ["document_id"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "explain_claude_skill_install",
+      description:
+        "Use when the user asks to install/add/use a new Claude Skill from chat but no installable skill package/file is available in the current message. This records a clear assistant receipt explaining that a Claude Skill package must be uploaded/installed from Settings or attached for installation.",
+      parameters: {
+        type: "object",
+        properties: {
+          requested_skill: { type: "string", description: "Short name/description of the skill the user asked for." },
+          intended_use: { type: "string", description: "Where the skill should be used, e.g. documents, marketing, logic analysis." },
+        },
+        required: ["requested_skill"],
         additionalProperties: false,
       },
     },
@@ -1023,6 +1062,14 @@ async function executeTool(
         document_skill_id: finalDoc?.document_skill_id || undefined,
       };
     }
+    if (name === "explain_claude_skill_install") {
+      const requested = String((args as { requested_skill?: string }).requested_skill ?? "Claude Skill").trim() || "Claude Skill";
+      const intendedUse = String((args as { intended_use?: string }).intended_use ?? "relevant Claude tasks").trim() || "relevant Claude tasks";
+      return {
+        ok: true,
+        message: `Claude Skill install request noted: ${requested}. To install it, upload a Claude Skill package/file in Settings → Assistant Rules → Claude Skills, then enable it for ${intendedUse}. Once installed, Claude requests will receive the enabled skill list automatically.`,
+      };
+    }
     // ---------- Update tools ----------
     // Helper that strips undefined/null/empty-string keys, runs the update,
     // and verifies the row belongs to this project. Returns a uniform receipt.
@@ -1293,10 +1340,11 @@ async function processConversation(
   const TOOLS = buildTools(playbook);
   const MAX_ROUNDS = 8;
   let lastFb: { effectiveModel: string; fallback: string } = { effectiveModel: model, fallback: "none" };
+  const claudeChatSkills = model.startsWith("anthropic/") ? await loadClaudeSkillsForSurface(supa, "chat") : [];
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const isFinalRound = round === MAX_ROUNDS - 1;
-    const body: Record<string, unknown> = { model, messages: convo, stream: false };
+    const body: Record<string, unknown> = { model, messages: convo, stream: false, ...claudeSkillRequestShape(claudeChatSkills) };
     if (!isFinalRound) body.tools = TOOLS;
 
     const roundStartedAt = Date.now();

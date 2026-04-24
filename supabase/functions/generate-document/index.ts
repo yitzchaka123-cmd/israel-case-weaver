@@ -72,6 +72,45 @@ function findFileIds(value: unknown): string[] {
   return [...found];
 }
 
+type ClaudeSkillRow = { skill_id: string; name?: string | null; skill_type: string; version: string; usage_scope: string[] };
+
+async function recordDocumentAttempt(supa: ReturnType<typeof createClient>, opts: {
+  projectId: string;
+  documentId: string;
+  title: string;
+  documentFormat: string;
+  prompt: string;
+  provider: string;
+  model: string;
+  effectiveModel?: string;
+  status: "generated" | "failed";
+  errorMessage?: string;
+  url?: string;
+  mime?: string;
+  skill?: ClaudeSkillRow | null;
+}) {
+  await supa.from("media_assets").insert({
+    project_id: opts.projectId,
+    category: "document",
+    title: opts.title,
+    url: opts.url ?? null,
+    mime_type: opts.mime ?? MIME_BY_FORMAT[opts.documentFormat] ?? null,
+    prompt: opts.prompt,
+    provider: opts.provider,
+    model: opts.model,
+    effective_model: opts.effectiveModel ?? opts.model,
+    asset_type: "document",
+    document_format: opts.documentFormat,
+    skill_id: opts.skill?.skill_id ?? null,
+    skill_source: opts.skill ? (opts.skill.skill_type === "anthropic" ? "anthropic" : "custom") : "none",
+    skill_name: opts.skill?.name ?? null,
+    source_document_id: opts.documentId,
+    generation_mode: opts.skill ? "direct_model_file_claude_skill" : "direct_model_file",
+    status: opts.status,
+    error_message: opts.errorMessage ?? null,
+  } as never);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -172,10 +211,11 @@ Deno.serve(async (req) => {
 
       if (model.startsWith("anthropic/")) {
         if (!ANTHROPIC_API_KEY) return new Response(JSON.stringify({ error: "Anthropic API key not configured" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        const { data: skills } = await supa.from("claude_skills").select("skill_id, skill_type, version, enabled, usage_scope").eq("enabled", true);
-        const enabledSkills = ((skills ?? []) as Array<{ skill_id: string; skill_type: string; version: string; usage_scope: string[] }>).filter((s) => (s.usage_scope ?? []).includes("documents"));
+        const { data: skills } = await supa.from("claude_skills").select("skill_id, name, skill_type, version, enabled, usage_scope").eq("enabled", true);
+        const enabledSkills = ((skills ?? []) as ClaudeSkillRow[]).filter((s) => (s.usage_scope ?? []).includes("documents"));
         const wanted = enabledSkills.find((s) => s.skill_id === documentFormat) ?? enabledSkills[0];
         const skillPayload = wanted ? [{ type: wanted.skill_type === "anthropic" ? "anthropic" : "custom", skill_id: wanted.skill_id, version: wanted.version || "latest" }] : [{ type: "anthropic", skill_id: documentFormat, version: "latest" }];
+        const skillUsed = wanted ?? { skill_id: documentFormat, name: `Claude ${documentFormat.toUpperCase()} Skill`, skill_type: "anthropic", version: "latest", usage_scope: ["documents"] };
         const anthropicResp = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: {
@@ -194,8 +234,10 @@ Deno.serve(async (req) => {
         });
         const anthropicData = await anthropicResp.json().catch(() => ({}));
         if (!anthropicResp.ok) {
-          await saveDocumentPrompt("error", JSON.stringify(anthropicData));
-          await logAiRun({ userId: callerUserId, projectId: doc.project_id, surface: "generate-document-file", requestedModel: model, effectiveModel: model, fallback: "none", status: "error", latencyMs: Date.now() - startedAt, errorMessage: JSON.stringify(anthropicData).slice(0, 200), targetId: documentId, promptExcerpt: directFilePrompt });
+          const err = JSON.stringify(anthropicData).slice(0, 500);
+          await saveDocumentPrompt("error", err);
+          await recordDocumentAttempt(supa, { projectId: doc.project_id, documentId, title: doc.title, documentFormat, prompt: directFilePrompt, provider: "anthropic-direct", model, status: "failed", errorMessage: err, skill: skillUsed });
+          await logAiRun({ userId: callerUserId, projectId: doc.project_id, surface: "generate-document-file", requestedModel: model, effectiveModel: model, fallback: "none", status: "error", latencyMs: Date.now() - startedAt, errorMessage: err.slice(0, 200), targetId: documentId, promptExcerpt: directFilePrompt });
           return new Response(JSON.stringify({ error: `Claude could not create the ${documentFormat.toUpperCase()} (${anthropicResp.status})` }), { status: anthropicResp.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
         const fileId = findFileIds(anthropicData)[0];
@@ -207,13 +249,17 @@ Deno.serve(async (req) => {
             const path = `${doc.project_id}/${documentId}-${Date.now()}.${documentFormat}`;
             await supa.storage.from("documents").upload(path, bytes, { contentType: mime, upsert: true });
             const { data: pub } = supa.storage.from("documents").getPublicUrl(path);
-            await supa.from("documents").update({ generated_document_url: pub.publicUrl, generated_pdf_url: documentFormat === "pdf" ? pub.publicUrl : doc.generated_pdf_url, document_format: documentFormat, document_provider: "anthropic-direct", document_model: model, document_skill_id: String((skillPayload[0] as Record<string, unknown>).skill_id), status: "review" }).eq("id", documentId);
-            await supa.from("media_assets").insert({ project_id: doc.project_id, category: "document", title: doc.title, url: pub.publicUrl, mime_type: mime, prompt: directFilePrompt, provider: "anthropic-direct", model, effective_model: model, asset_type: "document", document_format: documentFormat, skill_id: String((skillPayload[0] as Record<string, unknown>).skill_id), source_document_id: documentId, generation_mode: "claude-skill" } as never);
+            await supa.from("documents").update({ generated_document_url: pub.publicUrl, generated_pdf_url: documentFormat === "pdf" ? pub.publicUrl : doc.generated_pdf_url, document_format: documentFormat, document_provider: "anthropic-direct", document_model: model, document_skill_id: skillUsed.skill_id, status: "review" }).eq("id", documentId);
+            await recordDocumentAttempt(supa, { projectId: doc.project_id, documentId, title: doc.title, documentFormat, prompt: directFilePrompt, provider: "anthropic-direct", model, status: "generated", url: pub.publicUrl, mime, skill: skillUsed });
             await saveDocumentPrompt("ok");
             await logAiRun({ userId: callerUserId, projectId: doc.project_id, surface: "generate-document-file", requestedModel: model, effectiveModel: model, fallback: "none", status: "ok", latencyMs: Date.now() - startedAt, targetId: documentId, promptExcerpt: directFilePrompt });
             return new Response(JSON.stringify({ ok: true, documentUrl: pub.publicUrl, documentFormat, model, skillId: (skillPayload[0] as Record<string, unknown>).skill_id }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
           }
         }
+        await saveDocumentPrompt("error", "Claude did not return a downloadable file");
+        await recordDocumentAttempt(supa, { projectId: doc.project_id, documentId, title: doc.title, documentFormat, prompt: directFilePrompt, provider: "anthropic-direct", model, status: "failed", errorMessage: "Claude did not return a downloadable file", skill: skillUsed });
+        await logAiRun({ userId: callerUserId, projectId: doc.project_id, surface: "generate-document-file", requestedModel: model, effectiveModel: model, fallback: "none", status: "error", latencyMs: Date.now() - startedAt, errorMessage: "Claude did not return a downloadable file", targetId: documentId, promptExcerpt: directFilePrompt });
+        return new Response(JSON.stringify({ error: `Claude was not able to create a downloadable ${documentFormat.toUpperCase()} directly.` }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
       const resp = await chatCompletions({ model, disableFallback: true, messages: [{ role: "user", content: directFilePrompt }] });
@@ -221,12 +267,14 @@ Deno.serve(async (req) => {
       if (!resp.ok) {
         const t = await resp.text().catch(() => "");
         await saveDocumentPrompt("error", t);
+        await recordDocumentAttempt(supa, { projectId: doc.project_id, documentId, title: doc.title, documentFormat, prompt: directFilePrompt, provider, model, effectiveModel: fb.effectiveModel, status: "failed", errorMessage: t.slice(0, 500), skill: null });
         await logAiRun({ userId: callerUserId, projectId: doc.project_id, surface: "generate-document-file", requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback, status: "error", latencyMs: Date.now() - startedAt, errorMessage: t.slice(0, 200), targetId: documentId, promptExcerpt: directFilePrompt });
         return new Response(JSON.stringify({ error: `${provider} could not create the ${documentFormat.toUpperCase()} (${resp.status})` }), { status: resp.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       const data = await resp.json();
       const content = String(data.choices?.[0]?.message?.content ?? "").trim();
       await saveDocumentPrompt("error", "Model did not return a downloadable file");
+      await recordDocumentAttempt(supa, { projectId: doc.project_id, documentId, title: doc.title, documentFormat, prompt: directFilePrompt, provider, model, effectiveModel: fb.effectiveModel, status: "failed", errorMessage: "Model did not return a downloadable file", skill: null });
       await logAiRun({ userId: callerUserId, projectId: doc.project_id, surface: "generate-document-file", requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback, status: "error", latencyMs: Date.now() - startedAt, errorMessage: "Model did not return a downloadable file", targetId: documentId, promptExcerpt: directFilePrompt });
       return new Response(JSON.stringify({ error: content.includes("UNABLE_TO_CREATE_FILE") ? `${provider} was not able to create a downloadable ${documentFormat.toUpperCase()} directly.` : `${provider} responded, but did not return a downloadable ${documentFormat.toUpperCase()} file.` }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }

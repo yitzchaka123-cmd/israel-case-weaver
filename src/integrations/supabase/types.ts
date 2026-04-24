@@ -254,9 +254,15 @@ export type Database = {
       claude_skills: {
         Row: {
           created_at: string
+          description: string | null
           enabled: boolean
           id: string
+          install_error: string | null
           install_source: string
+          install_status: string
+          installed_at: string
+          installed_by: string | null
+          metadata: Json
           name: string
           notes: string | null
           skill_id: string
@@ -268,9 +274,15 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          description?: string | null
           enabled?: boolean
           id?: string
+          install_error?: string | null
           install_source?: string
+          install_status?: string
+          installed_at?: string
+          installed_by?: string | null
+          metadata?: Json
           name: string
           notes?: string | null
           skill_id: string
@@ -282,9 +294,15 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          description?: string | null
           enabled?: boolean
           id?: string
+          install_error?: string | null
           install_source?: string
+          install_status?: string
+          installed_at?: string
+          installed_by?: string | null
+          metadata?: Json
           name?: string
           notes?: string | null
           skill_id?: string
@@ -641,8 +659,10 @@ export type Database = {
           asset_type: string
           category: string
           created_at: string
+          created_by_message_id: string | null
           document_format: string | null
           effective_model: string | null
+          error_message: string | null
           fallback: string | null
           generation_mode: string | null
           id: string
@@ -654,7 +674,10 @@ export type Database = {
           prompt_history: Json
           provider: string | null
           skill_id: string | null
+          skill_name: string | null
+          skill_source: string | null
           source_document_id: string | null
+          status: string
           title: string | null
           url: string | null
         }
@@ -662,8 +685,10 @@ export type Database = {
           asset_type?: string
           category?: string
           created_at?: string
+          created_by_message_id?: string | null
           document_format?: string | null
           effective_model?: string | null
+          error_message?: string | null
           fallback?: string | null
           generation_mode?: string | null
           id?: string
@@ -675,7 +700,10 @@ export type Database = {
           prompt_history?: Json
           provider?: string | null
           skill_id?: string | null
+          skill_name?: string | null
+          skill_source?: string | null
           source_document_id?: string | null
+          status?: string
           title?: string | null
           url?: string | null
         }
@@ -683,8 +711,10 @@ export type Database = {
           asset_type?: string
           category?: string
           created_at?: string
+          created_by_message_id?: string | null
           document_format?: string | null
           effective_model?: string | null
+          error_message?: string | null
           fallback?: string | null
           generation_mode?: string | null
           id?: string
@@ -696,7 +726,10 @@ export type Database = {
           prompt_history?: Json
           provider?: string | null
           skill_id?: string | null
+          skill_name?: string | null
+          skill_source?: string | null
           source_document_id?: string | null
+          status?: string
           title?: string | null
           url?: string | null
         }
