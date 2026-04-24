@@ -789,6 +789,9 @@ async function executeTool(
     const withMessage = (payload: Record<string, unknown>) => (
       messageId ? { ...payload, created_by_message_id: messageId } : payload
     );
+    if (!messageId && ["add_document", "update_document", "add_suspect", "update_suspect", "add_canvas_node", "update_canvas_node"].includes(name)) {
+      return { ok: false, message: "Assistant message could not be saved, so I did not create linked project rows. Please retry this step." };
+    }
     if (name === "update_project") {
       // Merge per-field origins so each updated field points to this message.
       const { data: current } = await supa
@@ -927,9 +930,13 @@ async function executeTool(
     if (name === "generate_document_assets") {
       const documentId = String((args as { document_id?: string }).document_id ?? "").trim();
       const requestedMode = String((args as { mode?: string }).mode ?? "both").trim();
+      const documentFormat = String((args as { document_format?: string }).document_format ?? "pdf").trim();
       if (!documentId) return { ok: false, message: "document_id is required" };
-      if (!["text", "image", "both"].includes(requestedMode)) {
-        return { ok: false, message: "mode must be 'text', 'image', or 'both'" };
+      if (!["text", "image", "document", "both"].includes(requestedMode)) {
+        return { ok: false, message: "mode must be 'text', 'image', 'document', or 'both'" };
+      }
+      if (!["pdf", "docx", "pptx", "xlsx"].includes(documentFormat)) {
+        return { ok: false, message: "document_format must be 'pdf', 'docx', 'pptx', or 'xlsx'" };
       }
       // Gate: logic flow must be approved + document must belong to project.
       const { data: proj } = await supa
@@ -952,7 +959,7 @@ async function executeTool(
         return { ok: false, message: "Document not found in this project." };
       }
 
-      const callGenerate = async (m: "text" | "image") => {
+      const callGenerate = async (m: "text" | "image" | "document") => {
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), 120_000);
         try {
@@ -962,7 +969,7 @@ async function executeTool(
               Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ documentId, mode: m }),
+            body: JSON.stringify({ documentId, mode: m, documentFormat }),
             signal: ctrl.signal,
           });
           const body = await r.json().catch(() => ({}));
@@ -980,6 +987,10 @@ async function executeTool(
         const r = await callGenerate("text");
         if (!r.ok) errors.push(`text: ${r.body?.error ?? r.status}`);
       }
+      if (requestedMode === "document" || requestedMode === "both") {
+        const r = await callGenerate("document");
+        if (!r.ok) errors.push(`document: ${r.body?.error ?? r.status}`);
+      }
       if (requestedMode === "image" || requestedMode === "both") {
         const r = await callGenerate("image");
         if (!r.ok) errors.push(`image: ${r.body?.error ?? r.status}`);
@@ -988,14 +999,15 @@ async function executeTool(
       // Re-read row to grab whatever made it through.
       const { data: finalDoc } = await supa
         .from("documents")
-        .select("hebrew_content, generated_asset_url, title")
+        .select("hebrew_content, generated_asset_url, generated_document_url, generated_pdf_url, document_format, document_model, document_provider, document_skill_id, title")
         .eq("id", documentId)
         .single();
       const hebrew = (finalDoc?.hebrew_content ?? "").toString();
       const preview = hebrew.length > 240 ? `${hebrew.slice(0, 240)}…` : hebrew;
       const imageUrl = finalDoc?.generated_asset_url ?? null;
+      const documentUrl = finalDoc?.generated_document_url ?? finalDoc?.generated_pdf_url ?? null;
 
-      if (errors.length > 0 && !imageUrl && !hebrew) {
+      if (errors.length > 0 && !imageUrl && !hebrew && !documentUrl) {
         return { ok: false, message: `Generation failed — ${errors.join("; ")}`, id: documentId };
       }
       const partial = errors.length > 0 ? ` (partial: ${errors.join("; ")})` : "";
@@ -1005,6 +1017,10 @@ async function executeTool(
         id: documentId,
         hebrew_preview: preview || undefined,
         image_url: imageUrl || undefined,
+        document_url: documentUrl || undefined,
+        document_format: finalDoc?.document_format || documentFormat,
+        document_model: finalDoc?.document_model || finalDoc?.document_provider || undefined,
+        document_skill_id: finalDoc?.document_skill_id || undefined,
       };
     }
     // ---------- Update tools ----------
