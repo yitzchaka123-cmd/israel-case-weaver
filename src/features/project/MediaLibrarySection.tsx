@@ -109,18 +109,22 @@ export function MediaLibrarySection({ projectId }: { projectId: string }) {
       });
     }
     for (const doc of data?.documents ?? []) {
-      const url = doc.active_version === "uploaded" ? doc.uploaded_asset_url : doc.generated_asset_url;
-      if (!url) continue;
       const isDocumentFile = Boolean(doc.generated_document_url || doc.generated_pdf_url) && doc.active_version !== "uploaded";
+      const url = doc.active_version === "uploaded"
+        ? doc.uploaded_asset_url
+        : isDocumentFile
+          ? (doc.generated_document_url ?? doc.generated_pdf_url ?? null)
+          : doc.generated_asset_url;
+      if (!url) continue;
       list.push({
         id: doc.id,
         title: doc.title,
         type: isDocumentFile ? (doc.document_format ?? "document") : (doc.doc_type ?? "document"),
         status: doc.active_version === "uploaded" ? "uploaded" : "selected",
         source: "Document",
-        url: isDocumentFile ? (doc.generated_document_url ?? doc.generated_pdf_url) : url,
+        url,
         mime: isDocumentFile && (doc.document_format ?? "pdf") === "pdf" ? "application/pdf" : "image/*",
-        model: doc.document_skill_id ? `${doc.document_model ?? doc.document_provider ?? "Claude"} + ${doc.document_skill_id}` : doc.document_model ?? doc.document_provider,
+        model: doc.document_skill_id ? `${doc.document_model ?? doc.document_provider ?? "Claude"} + ${doc.document_skill_id}` : (doc.document_model ?? doc.document_provider ?? null),
         previewUrl: doc.document_preview_url ?? doc.generated_asset_url,
         createdAt: doc.updated_at,
       });
