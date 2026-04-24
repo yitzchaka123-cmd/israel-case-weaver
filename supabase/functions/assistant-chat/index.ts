@@ -962,9 +962,28 @@ async function executeTool(
       delete insertArgs.final_node_id;
       const docNumber = insertArgs.doc_number ?? Math.floor(100 + Math.random() * 900);
       const linkedNodeIds = finalNodeId ? [finalNodeId] : undefined;
+      const isDoc0 = Number(docNumber) === 0 || /\bdoc\s*0\b|document\s*0|contents|inventory|תוכן עניינים|רשימת תכולה/i.test(String(insertArgs.title ?? "")) || String(insertArgs.doc_type ?? "").toLowerCase() === "contents checklist";
+      if (isDoc0) {
+        const { data: existingDoc0 } = await supa
+          .from("documents")
+          .select("id, title")
+          .eq("project_id", projectId)
+          .eq("doc_number", 0)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (existingDoc0) {
+          await supa
+            .from("documents")
+            .update(withMessage({ ...insertArgs, doc_number: 0, doc_type: insertArgs.doc_type ?? "contents checklist", ...(linkedNodeIds ? { linked_node_ids: linkedNodeIds } : {}) }))
+            .eq("id", existingDoc0.id);
+          if (finalNodeId) await supa.from("canvas_nodes").update({ data: { documentId: existingDoc0.id, generationStatus: "draft row created" } }).eq("id", finalNodeId).eq("project_id", projectId);
+          return { ok: true, message: `Doc 0 updated: ${insertArgs.title ?? existingDoc0.title} (#0)`, id: existingDoc0.id };
+        }
+      }
       const { data, error } = await supa
         .from("documents")
-        .insert(withMessage({ ...insertArgs, doc_number: docNumber, project_id: projectId, ...(linkedNodeIds ? { linked_node_ids: linkedNodeIds } : {}) }))
+        .insert(withMessage({ ...insertArgs, doc_number: isDoc0 ? 0 : docNumber, project_id: projectId, doc_type: isDoc0 ? (insertArgs.doc_type ?? "contents checklist") : insertArgs.doc_type, ...(linkedNodeIds ? { linked_node_ids: linkedNodeIds } : {}) }))
         .select("id, title")
         .single();
       if (error) throw error;
