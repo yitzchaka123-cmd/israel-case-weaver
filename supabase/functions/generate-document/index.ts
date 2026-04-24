@@ -12,6 +12,7 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OpenAi") ?? Deno.env.get("OPENAI_API_KEY") ?? "";
+const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
 
 // Planning/document text models — see ai-router.ts for prefix routing rules.
 const PROVIDER_MODEL: Record<string, string> = {
@@ -47,6 +48,29 @@ const IMAGE_MODEL: Record<string, string> = {
 };
 
 const OPENAI_IMAGE_KEYS = new Set(["chatgpt-image-2", "chatgpt-image"]);
+
+const MIME_BY_FORMAT: Record<string, string> = {
+  pdf: "application/pdf",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+};
+
+function findFileIds(value: unknown): string[] {
+  const found = new Set<string>();
+  const walk = (node: unknown) => {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) return node.forEach(walk);
+    const rec = node as Record<string, unknown>;
+    for (const key of ["file_id", "fileId", "id"]) {
+      const v = rec[key];
+      if (typeof v === "string" && /^file_/.test(v)) found.add(v);
+    }
+    Object.values(rec).forEach(walk);
+  };
+  walk(value);
+  return [...found];
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
