@@ -1210,7 +1210,7 @@ function ToolReceipts({ tools, onOpenAsset }: { tools: ToolCall[]; onOpenAsset?:
 
             // Special-case generate_document_assets: render an inline preview
             // card with the Hebrew snippet (RTL) and a clickable image thumbnail.
-            if (t.name === "generate_document_assets" && t.result.ok && (t.result.hebrew_preview || t.result.image_url)) {
+            if (t.name === "generate_document_assets" && t.result.ok && (t.result.hebrew_preview || t.result.image_url || t.result.document_url)) {
               return (
                 <li key={i} className="flex items-start gap-2">
                   <span className="mt-1 text-accent-foreground/80">
@@ -1221,6 +1221,10 @@ function ToolReceipts({ tools, onOpenAsset }: { tools: ToolCall[]; onOpenAsset?:
                       message={t.result.message}
                       hebrewPreview={t.result.hebrew_preview}
                       imageUrl={t.result.image_url}
+                      documentUrl={t.result.document_url}
+                      documentFormat={t.result.document_format}
+                      documentModel={t.result.document_model}
+                      documentSkillId={t.result.document_skill_id}
                       documentId={t.result.id}
                       onOpenAsset={onOpenAsset}
                     />
