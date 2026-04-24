@@ -166,15 +166,21 @@ Deno.serve(async (req) => {
         if (!fileResp.ok) throw new Error(`Could not download uploaded skill package (${fileResp.status})`);
         const blob = await fileResp.blob();
         const arrayBuffer = await blob.arrayBuffer();
-        const bytesText = new TextDecoder("utf-8", { fatal: false }).decode(arrayBuffer.slice(0, Math.min(arrayBuffer.byteLength, 250_000)));
-        const isValidSkillPackage = packageContainsSkillEntrypoint(body.fileName ?? "", bytesText);
-        const frontmatter = textLooksLikeSkillMarkdown(body.fileName ?? "", bytesText) ? parseSkillMarkdown(bytesText) : {};
+        const inspection = inspectSkillPackage(body.fileName ?? "", arrayBuffer);
+        const isValidSkillPackage = inspection.hasSkill;
+        const frontmatter = inspection.skillText ? parseSkillMarkdown(inspection.skillText) : {};
         const frontmatterName = typeof frontmatter.name === "string" ? sanitizeSkillId(frontmatter.name) : "";
         const frontmatterDescription = typeof frontmatter.description === "string" ? frontmatter.description.slice(0, 800) : "";
         remoteSkillId = frontmatterName || localSkillId;
         skillName = frontmatterName || requestedName;
         description = frontmatterDescription || description;
-        metadata = { ...metadata, validation: isValidSkillPackage ? "valid_skill_package" : "missing_skill_md", frontmatter };
+        metadata = {
+          ...metadata,
+          validation: isValidSkillPackage ? (inspection.skillText ? "valid_skill_package" : "valid_package_needs_review") : "missing_skill_md",
+          packageFormat: inspection.format,
+          manifest: { files: inspection.files.slice(0, 80), fileCount: inspection.files.length, skillMdExtracted: !!inspection.skillText },
+          frontmatter,
+        };
         if (!isValidSkillPackage) {
           installStatus = "invalid_package";
           installError = "Claude Skills must be uploaded as a SKILL.md file or a package/archive containing SKILL.md.";
