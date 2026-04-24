@@ -1222,6 +1222,12 @@ function ToolReceipts({ tools, onOpenAsset }: { tools: ToolCall[]; onOpenAsset?:
                       documentFormat={t.result.document_format}
                       documentModel={t.result.document_model}
                       documentSkillId={t.result.document_skill_id}
+                      imageOrigin={{
+                        requested: t.result.image_requested_model ?? null,
+                        effective: t.result.image_effective_model ?? t.result.image_requested_model ?? null,
+                        provider: t.result.image_provider ?? null,
+                        fallback: t.result.image_fallback ?? "none",
+                      }}
                       documentId={t.result.id}
                       onOpenAsset={onOpenAsset}
                     />
