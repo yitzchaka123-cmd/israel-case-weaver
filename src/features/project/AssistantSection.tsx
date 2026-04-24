@@ -986,12 +986,20 @@ function GeneratedDocReceipt({
   message,
   hebrewPreview,
   imageUrl,
+  documentUrl,
+  documentFormat,
+  documentModel,
+  documentSkillId,
   documentId,
   onOpenAsset,
 }: {
   message: string;
   hebrewPreview?: string;
   imageUrl?: string;
+  documentUrl?: string;
+  documentFormat?: string;
+  documentModel?: string;
+  documentSkillId?: string;
   documentId?: string;
   onOpenAsset?: (asset: LightboxAsset) => void;
 }) {
@@ -1011,11 +1019,23 @@ function GeneratedDocReceipt({
         className="flex w-full items-center justify-between gap-2 text-left text-foreground/90 font-medium hover:text-accent-foreground"
       >
         <span className="inline-flex items-center gap-1.5">
-          <ImageIcon className="h-3.5 w-3.5 opacity-70" />
+          {documentUrl ? <FileText className="h-3.5 w-3.5 opacity-70" /> : <ImageIcon className="h-3.5 w-3.5 opacity-70" />}
           {message}
         </span>
         <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
       </button>
+      {documentUrl && (
+        <button
+          type="button"
+          onClick={() => onOpenAsset?.({ url: documentUrl, title: message, mimeType: documentFormat === "pdf" ? "application/pdf" : undefined, previewUrl: imageUrl, openInTab: { tab: "documents", targetId: documentId, label: "Open in Documents" } })}
+          className="flex w-full items-center justify-between gap-2 rounded-md border border-border/50 bg-background/70 px-2.5 py-2 text-left text-xs hover:ring-2 hover:ring-accent/30 transition"
+        >
+          <span className="min-w-0 truncate">
+            {(documentFormat ?? "file").toUpperCase()} • {documentModel ?? "Selected model"}{documentSkillId ? ` • Skill ${documentSkillId}` : ""}
+          </span>
+          <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" />
+        </button>
+      )}
       <div className="flex gap-3">
         {imageUrl && (
           <button
