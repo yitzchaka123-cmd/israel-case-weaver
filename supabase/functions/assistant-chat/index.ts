@@ -981,6 +981,16 @@ async function executeTool(
       if (!resp.ok) return { ok: false, message: payload.error ?? "Final Flow creation failed" };
       return { ok: true, message: `Final Flow created with ${payload.nodeCount ?? 0} nodes, including ${payload.documentNodeCount ?? 0} planned documents and ${payload.edgeCount ?? 0} connecting lines. Review the Final board before creating document rows.` };
     }
+    if (name === "generate_logic_flow") {
+      const resp = await fetch(`${SUPABASE_URL}/functions/v1/generate-logic-flow`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+        body: JSON.stringify({ projectId, replace: true, useExistingSummary: (args as { use_existing_summary?: boolean }).use_existing_summary !== false }),
+      });
+      const payload = await resp.json().catch(() => ({}));
+      if (!resp.ok) return { ok: false, message: payload.error ?? "Logic Flow generation failed" };
+      return { ok: true, message: `Logic Flow generated with ${payload.nodeCount ?? 0} nodes and ${payload.edgeCount ?? 0} connections. The user must review and approve it on the Canvas before documents or Final Flow generation.` };
+    }
     if (name === "add_canvas_node") {
       const { data, error } = await supa
         .from("canvas_nodes")
