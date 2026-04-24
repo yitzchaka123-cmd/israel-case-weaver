@@ -867,6 +867,7 @@ async function executeTool(
   name: string,
   args: Record<string, unknown>,
   messageId: string | null,
+  playbook: Playbook = PLAYBOOK_DEFAULTS,
 ) {
   try {
     const withMessage = (payload: Record<string, unknown>) => (
