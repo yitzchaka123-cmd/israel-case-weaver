@@ -1,5 +1,4 @@
-// Panel B — Box copy: front_subtext, back_headline, back_body, tagline.
-// Each field has Generate / Regenerate via the new generate-marketing-copy edge fn.
+// Professional box text planner for front/back packaging copy and mini movie QR.
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -7,26 +6,94 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Sparkles, Loader2, Save } from "lucide-react";
+import { createQrPngBlob } from "./qr";
+import { ImageIcon, Loader2, QrCode, Save, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
-type CopyField = "front_subtext" | "back_headline" | "back_body" | "tagline";
+type CopyField =
+  | "front_title_note"
+  | "tagline"
+  | "front_subtext"
+  | "front_bottom_explanation"
+  | "front_company_slogan"
+  | "front_logo_note"
+  | "back_headline"
+  | "back_teaser"
+  | "back_body"
+  | "back_whats_in_box"
+  | "back_how_to_play"
+  | "back_feature_bullets"
+  | "back_specs"
+  | "back_content_note"
+  | "back_footer_text"
+  | "mini_movie_url"
+  | "qr_label"
+  | "qr_helper_text"
+  | "qr_code_url";
+
+type GenerateTarget = CopyField | "front" | "back" | "all";
 
 interface Marketing {
   project_id: string;
-  front_subtext: string | null;
-  back_headline: string | null;
-  back_body: string | null;
-  tagline: string | null;
-  copy_origins: Record<string, string>;
+  copy_origins: Record<string, string> | null;
+  [key: string]: string | Record<string, string> | null;
 }
 
-const FIELD_META: Array<{ key: CopyField; label: string; helper: string; rows: number; multiline: boolean }> = [
-  { key: "tagline", label: "Tagline", helper: "One-liner for ads & social — under 9 words.", rows: 2, multiline: false },
-  { key: "front_subtext", label: "Front subtext", helper: "1–2 lines under the title on the front of the box.", rows: 2, multiline: true },
-  { key: "back_headline", label: "Back headline", helper: "Punchy stake-setting line for the back of the box.", rows: 2, multiline: false },
-  { key: "back_body", label: "Back body", helper: "60–90 words. Mentions player role, doc/envelope counts, age. No spoilers.", rows: 6, multiline: true },
+interface CompanyProfile {
+  company_name: string | null;
+  tagline: string | null;
+  legal_text: string | null;
+  logo_url: string | null;
+}
+
+const FRONT_FIELDS: Array<{ key: CopyField; label: string; helper: string; rows: number; multiline: boolean }> = [
+  { key: "front_title_note", label: "Game title lockup note", helper: "How the title should feel visually on the box front.", rows: 2, multiline: true },
+  { key: "tagline", label: "Tagline under title", helper: "Short line directly under the game name — under 9 words.", rows: 1, multiline: false },
+  { key: "front_subtext", label: "Front hook / subtext", helper: "1–2 lines selling the case premise.", rows: 3, multiline: true },
+  { key: "front_bottom_explanation", label: "Bottom explanation", helper: "Short bottom-front explanation of what the boxed game is.", rows: 3, multiline: true },
+  { key: "front_company_slogan", label: "Company slogan", helper: "Brand slogan for the cover; can use the company profile tagline.", rows: 1, multiline: false },
+  { key: "front_logo_note", label: "Logo / brand note", helper: "Instruction for including the company logo on the front layout.", rows: 2, multiline: true },
 ];
+
+const BACK_FIELDS: Array<{ key: CopyField; label: string; helper: string; rows: number; multiline: boolean }> = [
+  { key: "back_headline", label: "Back headline", helper: "Big hook at the top of the back box.", rows: 1, multiline: false },
+  { key: "back_teaser", label: "Short teaser", helper: "1–2 sentence cinematic setup.", rows: 3, multiline: true },
+  { key: "back_body", label: "Main back description", helper: "Longer sales copy explaining the game without spoilers.", rows: 6, multiline: true },
+  { key: "back_whats_in_box", label: "What’s in the box", helper: "Line-based list of documents, envelopes, evidence, props, QR preview, etc.", rows: 5, multiline: true },
+  { key: "back_how_to_play", label: "How to play", helper: "Short explanation of the player experience.", rows: 4, multiline: true },
+  { key: "back_feature_bullets", label: "Feature bullets", helper: "3–5 selling points, one per line.", rows: 5, multiline: true },
+  { key: "back_specs", label: "Age / duration / players", helper: "Packaging metadata such as Ages 14+, 60–120 minutes, 1–6 players.", rows: 2, multiline: true },
+  { key: "back_content_note", label: "Spoiler-safe warning / content note", helper: "Optional caution, tone note, or content warning.", rows: 2, multiline: true },
+  { key: "back_footer_text", label: "Company/legal/footer text", helper: "Footer, legal, support, and brand text for the back cover.", rows: 4, multiline: true },
+];
+
+const QR_FIELDS: Array<{ key: CopyField; label: string; helper: string }> = [
+  { key: "mini_movie_url", label: "Mini movie preview URL", helper: "Paste the preview link to generate a QR code." },
+  { key: "qr_label", label: "QR label", helper: "Watch the mini movie preview" },
+  { key: "qr_helper_text", label: "QR helper text", helper: "Scan to watch the cinematic case teaser." },
+];
+
+const EMPTY_FORM: Record<CopyField, string> = {
+  front_title_note: "",
+  tagline: "",
+  front_subtext: "",
+  front_bottom_explanation: "",
+  front_company_slogan: "",
+  front_logo_note: "",
+  back_headline: "",
+  back_teaser: "",
+  back_body: "",
+  back_whats_in_box: "",
+  back_how_to_play: "",
+  back_feature_bullets: "",
+  back_specs: "",
+  back_content_note: "",
+  back_footer_text: "",
+  mini_movie_url: "",
+  qr_label: "",
+  qr_helper_text: "",
+  qr_code_url: "",
+};
 
 async function callEdge(name: string, body: unknown) {
   const { data: { session } } = await supabase.auth.getSession();
@@ -42,12 +109,11 @@ async function callEdge(name: string, body: unknown) {
 
 export function BoxCopyPanel({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
-  const [form, setForm] = useState<Record<CopyField, string>>({
-    front_subtext: "", back_headline: "", back_body: "", tagline: "",
-  });
+  const [form, setForm] = useState<Record<CopyField, string>>(EMPTY_FORM);
   const [origins, setOrigins] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
+  const [qrBusy, setQrBusy] = useState(false);
 
   const { data } = useQuery({
     queryKey: ["project-marketing", projectId],
@@ -58,27 +124,36 @@ export function BoxCopyPanel({ projectId }: { projectId: string }) {
     },
   });
 
+  const { data: company } = useQuery({
+    queryKey: ["box-text-company", projectId],
+    queryFn: async (): Promise<CompanyProfile | null> => {
+      const { data: project } = await supabase.from("projects").select("owner_id").eq("id", projectId).maybeSingle();
+      const { data } = await supabase.from("company_profiles").select("company_name, tagline, legal_text, logo_url").eq("owner_id", project?.owner_id ?? "").maybeSingle();
+      return (data as CompanyProfile) ?? null;
+    },
+  });
+
   useEffect(() => {
-    if (data) {
-      setForm({
-        front_subtext: data.front_subtext ?? "",
-        back_headline: data.back_headline ?? "",
-        back_body: data.back_body ?? "",
-        tagline: data.tagline ?? "",
-      });
-      setOrigins((data.copy_origins ?? {}) as Record<string, string>);
-    }
+    if (!data) return;
+    setForm((current) => {
+      const next = { ...current };
+      for (const key of Object.keys(EMPTY_FORM) as CopyField[]) {
+        next[key] = typeof data[key] === "string" ? data[key] as string : "";
+      }
+      return next;
+    });
+    setOrigins((data.copy_origins ?? {}) as Record<string, string>);
   }, [data]);
 
   const update = (k: CopyField, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
-  const generateField = async (field: CopyField | "all") => {
+  const generateField = async (field: GenerateTarget) => {
     setBusy((b) => ({ ...b, [field]: true }));
     try {
       const resp = await callEdge("generate-marketing-copy", { projectId, field });
       const json = await resp.json().catch(() => ({}));
       if (!resp.ok) {
-        toast.error(json.error ?? "Failed to generate copy", { duration: 10000 });
+        toast.error(json.error ?? "Failed to generate box text", { duration: 10000 });
         return;
       }
       const copy = (json.copy ?? {}) as Partial<Record<CopyField, string>>;
@@ -86,26 +161,47 @@ export function BoxCopyPanel({ projectId }: { projectId: string }) {
       const newOrigins = { ...origins };
       for (const k of Object.keys(copy)) newOrigins[k] = "ai";
       setOrigins(newOrigins);
-      toast.success(field === "all" ? "Box copy drafted" : `${FIELD_META.find((m) => m.key === field)?.label ?? field} drafted`);
+      toast.success(field === "all" ? "Box text drafted" : field === "front" ? "Front cover text drafted" : field === "back" ? "Back cover text drafted" : "Box text field drafted");
     } finally {
       setBusy((b) => ({ ...b, [field]: false }));
     }
   };
 
-  const save = async () => {
+  const save = async (override?: Partial<Record<CopyField, string>>) => {
     setSaving(true);
+    const payload = { ...form, ...override };
     const { error } = await supabase
       .from("project_marketing")
-      .upsert({
-        project_id: projectId,
-        ...form,
-        copy_origins: origins,
-      } as never, { onConflict: "project_id" });
+      .upsert({ project_id: projectId, ...payload, copy_origins: origins } as never, { onConflict: "project_id" });
     setSaving(false);
     if (error) toast.error(error.message);
     else {
       qc.invalidateQueries({ queryKey: ["project-marketing", projectId] });
-      toast.success("Box copy saved");
+      toast.success("Box text saved");
+    }
+  };
+
+  const generateQr = async () => {
+    const url = form.mini_movie_url.trim();
+    if (!url) {
+      toast.error("Add a mini movie preview URL first");
+      return;
+    }
+    setQrBusy(true);
+    try {
+      const blob = await createQrPngBlob(url);
+      const path = `${projectId}/marketing/qr/mini-movie-preview.png`;
+      const { error } = await supabase.storage.from("media").upload(path, blob, { contentType: "image/png", upsert: true });
+      if (error) throw error;
+      const { data } = supabase.storage.from("media").getPublicUrl(path);
+      const publicUrl = `${data.publicUrl}?v=${Date.now()}`;
+      setForm((f) => ({ ...f, qr_code_url: publicUrl }));
+      await save({ qr_code_url: publicUrl });
+      toast.success("Mini movie QR saved");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "QR generation failed");
+    } finally {
+      setQrBusy(false);
     }
   };
 
@@ -113,68 +209,109 @@ export function BoxCopyPanel({ projectId }: { projectId: string }) {
     <section className="rounded-2xl border bg-card p-6 shadow-soft space-y-5">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h3 className="font-display text-xl">Box copy</h3>
+          <h3 className="font-display text-xl">Box Text</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Tagline, front subtext, and back-of-box headline + body. Editable; AI-drafted on demand.
+            Professional front and back game-box copy, logo guidance, packaging details, and mini movie QR text.
           </p>
         </div>
-        <Button
-          variant="default"
-          size="sm"
-          className="gap-1.5"
-          onClick={() => generateField("all")}
-          disabled={!!busy.all}
-        >
+        <Button variant="default" size="sm" className="gap-1.5" onClick={() => generateField("all")} disabled={!!busy.all}>
           {busy.all ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-          Draft all with assistant
+          Draft all box text
         </Button>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-4">
-        {FIELD_META.map((m) => (
-          <div key={m.key} className={m.key === "back_body" ? "md:col-span-2" : ""}>
-            <div className="flex items-center justify-between mb-1.5">
-              <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-                {m.label} {origins[m.key] === "ai" && <span className="ml-1.5 text-accent normal-case tracking-normal">· AI draft</span>}
-              </Label>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 gap-1 text-[11px]"
-                onClick={() => generateField(m.key)}
-                disabled={!!busy[m.key]}
-              >
-                {busy[m.key] ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                {form[m.key]?.trim() ? "Regenerate" : "Generate"}
+      <div className="grid lg:grid-cols-2 gap-5">
+        <TextSection title="Front cover text" onDraft={() => generateField("front")} busy={!!busy.front}>
+          {company?.logo_url && (
+            <div className="flex items-center gap-3 rounded-xl border bg-muted/30 p-3">
+              <img src={company.logo_url} alt="Company logo" className="h-12 w-12 rounded-lg border bg-background object-contain" />
+              <div className="min-w-0">
+                <div className="text-xs font-medium flex items-center gap-1.5"><ImageIcon className="h-3.5 w-3.5" /> Company logo available</div>
+                <p className="text-[11px] text-muted-foreground truncate">{company.company_name ?? "Company profile"}</p>
+              </div>
+            </div>
+          )}
+          {FRONT_FIELDS.map((field) => (
+            <FieldEditor key={field.key} meta={field} value={form[field.key]} origin={origins[field.key]} busy={!!busy[field.key]} onChange={(v) => update(field.key, v)} onGenerate={() => generateField(field.key)} />
+          ))}
+        </TextSection>
+
+        <TextSection title="Back cover text + QR" onDraft={() => generateField("back")} busy={!!busy.back}>
+          {BACK_FIELDS.map((field) => (
+            <FieldEditor key={field.key} meta={field} value={form[field.key]} origin={origins[field.key]} busy={!!busy[field.key]} onChange={(v) => update(field.key, v)} onGenerate={() => generateField(field.key)} />
+          ))}
+
+          <div className="rounded-xl border bg-muted/20 p-4 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-semibold">Mini movie preview QR</h4>
+                <p className="text-[11px] text-muted-foreground">Saved for back-cover artwork and project export.</p>
+              </div>
+              <Button variant="secondary" size="sm" className="gap-1.5" onClick={generateQr} disabled={qrBusy}>
+                {qrBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <QrCode className="h-3.5 w-3.5" />}
+                Generate QR
               </Button>
             </div>
-            {m.multiline ? (
-              <Textarea
-                rows={m.rows}
-                value={form[m.key]}
-                onChange={(e) => update(m.key, e.target.value)}
-                placeholder={m.helper}
-                className="text-sm"
-              />
+            {QR_FIELDS.map((field) => (
+              <div key={field.key} className="space-y-1.5">
+                <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">{field.label}</Label>
+                <Input value={form[field.key]} onChange={(e) => update(field.key, e.target.value)} placeholder={field.helper} className="text-sm" />
+              </div>
+            ))}
+            {form.qr_code_url ? (
+              <img src={form.qr_code_url} alt="Mini movie preview QR code" className="h-28 w-28 rounded-lg border bg-background object-contain p-2" />
             ) : (
-              <Input
-                value={form[m.key]}
-                onChange={(e) => update(m.key, e.target.value)}
-                placeholder={m.helper}
-                className="text-sm"
-              />
+              <div className="flex h-28 w-28 items-center justify-center rounded-lg border border-dashed bg-background text-muted-foreground">
+                <QrCode className="h-7 w-7" />
+              </div>
             )}
-            <p className="text-[10px] text-muted-foreground mt-1">{m.helper}</p>
           </div>
-        ))}
+        </TextSection>
       </div>
 
       <div className="flex justify-end">
-        <Button onClick={save} disabled={saving} className="gap-2">
+        <Button onClick={() => save()} disabled={saving} className="gap-2">
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          Save copy
+          Save box text
         </Button>
       </div>
     </section>
+  );
+}
+
+function TextSection({ title, busy, onDraft, children }: { title: string; busy: boolean; onDraft: () => void; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border bg-background/60 p-4 space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <h4 className="font-display text-lg">{title}</h4>
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={onDraft} disabled={busy}>
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+          Draft section
+        </Button>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function FieldEditor({ meta, value, origin, busy, onChange, onGenerate }: { meta: { key: CopyField; label: string; helper: string; rows: number; multiline: boolean }; value: string; origin?: string; busy: boolean; onChange: (value: string) => void; onGenerate: () => void }) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-3">
+        <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+          {meta.label} {origin === "ai" && <span className="ml-1.5 text-accent normal-case tracking-normal">· AI draft</span>}
+        </Label>
+        <Button variant="ghost" size="sm" className="h-6 gap-1 text-[11px]" onClick={onGenerate} disabled={busy}>
+          {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+          {value?.trim() ? "Regenerate" : "Generate"}
+        </Button>
+      </div>
+      {meta.multiline ? (
+        <Textarea rows={meta.rows} value={value} onChange={(e) => onChange(e.target.value)} placeholder={meta.helper} className="text-sm" />
+      ) : (
+        <Input value={value} onChange={(e) => onChange(e.target.value)} placeholder={meta.helper} className="text-sm" />
+      )}
+      <p className="text-[10px] text-muted-foreground">{meta.helper}</p>
+    </div>
   );
 }
