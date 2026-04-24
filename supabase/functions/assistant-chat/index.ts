@@ -1061,6 +1061,14 @@ async function executeTool(
         document_skill_id: finalDoc?.document_skill_id || undefined,
       };
     }
+    if (name === "explain_claude_skill_install") {
+      const requested = String((args as { requested_skill?: string }).requested_skill ?? "Claude Skill").trim() || "Claude Skill";
+      const intendedUse = String((args as { intended_use?: string }).intended_use ?? "relevant Claude tasks").trim() || "relevant Claude tasks";
+      return {
+        ok: true,
+        message: `Claude Skill install request noted: ${requested}. To install it, upload a Claude Skill package/file in Settings → Assistant Rules → Claude Skills, then enable it for ${intendedUse}. Once installed, Claude requests will receive the enabled skill list automatically.`,
+      };
+    }
     // ---------- Update tools ----------
     // Helper that strips undefined/null/empty-string keys, runs the update,
     // and verifies the row belongs to this project. Returns a uniform receipt.
