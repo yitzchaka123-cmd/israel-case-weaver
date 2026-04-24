@@ -12,13 +12,7 @@ export function claudeSkillPromptBlock(skills: ClaudeSkillRow[], surface: string
   return `AVAILABLE CLAUDE SKILLS FOR ${surface.toUpperCase()}\n${renderClaudeSkillCatalog(skills)}\nIf a listed Skill is relevant, follow its description. Do not mention unavailable, disabled, review-needed, or manual-only skills.`;
 }
 
-type SupabaseLike = {
-  from: (table: string) => {
-    select: (columns: string) => {
-      eq: (column: string, value: unknown) => { eq: (column: string, value: unknown) => Promise<{ data: unknown[] | null }> };
-    };
-  };
-};
+type SupabaseLike = { from: (table: string) => any };
 
 export async function loadClaudeSkillsForSurface(supa: SupabaseLike, surface: string): Promise<ClaudeSkillRow[]> {
   const { data } = await supa
