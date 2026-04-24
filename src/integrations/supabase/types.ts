@@ -531,33 +531,39 @@ export type Database = {
       invite_codes: {
         Row: {
           code: string
+          code_user_id: string | null
           created_at: string
           created_by: string | null
           expires_at: string | null
           id: string
           label: string | null
+          last_login_at: string | null
           max_uses: number | null
           revoked_at: string | null
           uses: number
         }
         Insert: {
           code: string
+          code_user_id?: string | null
           created_at?: string
           created_by?: string | null
           expires_at?: string | null
           id?: string
           label?: string | null
+          last_login_at?: string | null
           max_uses?: number | null
           revoked_at?: string | null
           uses?: number
         }
         Update: {
           code?: string
+          code_user_id?: string | null
           created_at?: string
           created_by?: string | null
           expires_at?: string | null
           id?: string
           label?: string | null
+          last_login_at?: string | null
           max_uses?: number | null
           revoked_at?: string | null
           uses?: number

@@ -17,6 +17,8 @@ type InviteCode = {
   uses: number;
   expires_at: string | null;
   revoked_at: string | null;
+  code_user_id: string | null;
+  last_login_at: string | null;
   created_at: string;
 };
 
@@ -126,7 +128,7 @@ export function TeamAccessPanel() {
     <Tabs defaultValue="members">
       <TabsList>
         <TabsTrigger value="members">Members ({members.length})</TabsTrigger>
-        <TabsTrigger value="codes">Invite codes ({codes.filter((c) => !c.revoked_at).length})</TabsTrigger>
+        <TabsTrigger value="codes">Code logins ({codes.filter((c) => !c.revoked_at).length})</TabsTrigger>
       </TabsList>
 
       <TabsContent value="members" className="mt-4 space-y-2">
@@ -174,7 +176,10 @@ export function TeamAccessPanel() {
 
       <TabsContent value="codes" className="mt-4 space-y-4">
         <div className="border rounded-xl p-4 bg-muted/30">
-          <div className="text-sm font-medium mb-3">Create new code</div>
+          <div className="text-sm font-medium mb-1">Create code login</div>
+          <p className="text-xs text-muted-foreground mb-3">
+            A valid code signs in directly and saves work to that code’s own account.
+          </p>
           <div className="grid grid-cols-1 sm:grid-cols-[1fr,140px,auto] gap-2">
             <div>
               <Label className="text-xs">Label (optional)</Label>
@@ -186,7 +191,7 @@ export function TeamAccessPanel() {
               />
             </div>
             <div>
-              <Label className="text-xs">Max uses</Label>
+              <Label className="text-xs">Max logins</Label>
               <Input
                 type="number"
                 min={1}
@@ -198,7 +203,7 @@ export function TeamAccessPanel() {
             </div>
             <div className="flex items-end">
               <Button onClick={createCode} disabled={creating} className="w-full sm:w-auto">
-                <Plus className="h-4 w-4 mr-1" /> Create
+                <Plus className="h-4 w-4 mr-1" /> Create code
               </Button>
             </div>
           </div>
@@ -206,7 +211,7 @@ export function TeamAccessPanel() {
 
         <div className="space-y-2">
           {codes.length === 0 && (
-            <p className="text-sm text-muted-foreground">No codes yet — create one above.</p>
+            <p className="text-sm text-muted-foreground">No code logins yet — create one above.</p>
           )}
           {codes.map((c) => {
             const exhausted = c.max_uses != null && c.uses >= c.max_uses;
@@ -217,8 +222,14 @@ export function TeamAccessPanel() {
                 <div className="font-mono text-sm font-semibold">{c.code}</div>
                 {c.label && <div className="text-xs text-muted-foreground">{c.label}</div>}
                 <div className="text-xs text-muted-foreground">
-                  {c.uses}{c.max_uses ? ` / ${c.max_uses}` : ""} uses
+                  {c.uses}{c.max_uses ? ` / ${c.max_uses}` : ""} logins
                 </div>
+                {c.code_user_id && <Badge variant="outline">Account linked</Badge>}
+                {c.last_login_at && (
+                  <div className="text-xs text-muted-foreground">
+                    Last login {new Date(c.last_login_at).toLocaleDateString()}
+                  </div>
+                )}
                 {c.revoked_at && <Badge variant="destructive">Revoked</Badge>}
                 {!c.revoked_at && expired && <Badge variant="destructive">Expired</Badge>}
                 {!c.revoked_at && !expired && exhausted && <Badge variant="destructive">Used up</Badge>}

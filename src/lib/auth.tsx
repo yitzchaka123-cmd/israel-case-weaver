@@ -12,13 +12,12 @@ interface AuthContextValue {
   accessStatus: AccessStatus;
   isAdmin: boolean;
   refreshAccess: () => Promise<void>;
+  signInWithInviteCode: (code: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-
-const INVITE_CODE_KEY = "mystudio:pending-invite-code";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -51,7 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  // After session loads, redeem any pending invite code, then fetch access + subscribe to changes.
+  // After session loads, fetch access + subscribe to changes.
   useEffect(() => {
     if (!session?.user) {
       setAccessStatus("unknown");
@@ -60,18 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const uid = session.user.id;
 
-    (async () => {
-      const code = typeof window !== "undefined" ? sessionStorage.getItem(INVITE_CODE_KEY) : null;
-      if (code) {
-        sessionStorage.removeItem(INVITE_CODE_KEY);
-        try {
-          await supabase.rpc("redeem_invite_code", { p_code: code });
-        } catch {
-          /* swallow — UI will show pending */
-        }
-      }
-      await fetchAccess(uid);
-    })();
+    fetchAccess(uid);
 
     const channel = supabase
       .channel(`user-access-${uid}`)
@@ -95,6 +83,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await lovable.auth.signInWithOAuth("google", { redirect_uri: `${window.location.origin}/` });
   };
 
+  const signInWithInviteCode = async (code: string) => {
+    const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/invite-code-login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok || json.error) throw new Error(json.error ?? "Code login failed");
+    const { error } = await supabase.auth.setSession(json.session);
+    if (error) throw error;
+  };
+
   const signOut = async () => {
     await supabase.auth.signOut();
   };
@@ -108,6 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         accessStatus,
         isAdmin,
         refreshAccess,
+        signInWithInviteCode,
         signInWithGoogle,
         signOut,
       }}
@@ -121,10 +122,4 @@ export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");
   return ctx;
-}
-
-export function stashInviteCode(code: string) {
-  if (typeof window !== "undefined") {
-    sessionStorage.setItem(INVITE_CODE_KEY, code.trim().toUpperCase());
-  }
 }

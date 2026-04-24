@@ -12,5 +12,8 @@ verify_jwt = false
 [functions.generate-document]
 verify_jwt = false
 
+[functions.invite-code-login]
+verify_jwt = false
+
 [functions.drive-oauth-callback]
 verify_jwt = false
