@@ -409,6 +409,9 @@ export function AssistantPlaybookPanel({}: Props = {}) {
         promptText={`Doc-generation default: ${playbook.doc_generation.default_mode}${playbook.doc_generation.ask_each_new_project ? " (still ask in each new project)" : " (apply silently to new projects)"}`}
       >
         <div className="space-y-3">
+          <div className="rounded-lg border bg-muted/20 p-3 text-xs text-muted-foreground leading-relaxed">
+            Selected document models must get the first honest chance to create downloadable files. Failures are saved as failed assets, prompts are saved to prompts/run logs/media metadata, and Claude can use enabled Skills for chat, documents, marketing, analysis, and media planning.
+          </div>
           <div className="flex flex-wrap gap-2">
             {(["unset", "drafts", "auto", "ask"] as const).map((m) => (
               <button
