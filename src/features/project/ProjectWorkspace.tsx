@@ -14,6 +14,7 @@ import { AssistantSection } from "./AssistantSection";
 import { EnvelopesSection } from "./EnvelopesSection";
 import { HintsSection } from "./HintsSection";
 import { MediaSection } from "./MediaSection";
+import { MediaLibrarySection } from "./MediaLibrarySection";
 import { MarketingSection } from "./MarketingSection";
 import { ExportMenu } from "./ExportMenu";
 import { PhaseStatusBar } from "./PhaseStatusBar";
@@ -202,6 +203,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
                 { v: "envelopes", l: "Envelopes", icon: Mail },
                 { v: "hints", l: "Hints", icon: Lightbulb },
                 { v: "marketing", l: "Marketing", icon: Megaphone },
+                { v: "generation", l: "Generation", icon: Sparkles },
                 { v: "media", l: "Media", icon: ImageIcon },
               ].map((t) => {
                 const Icon = t.icon;
@@ -258,8 +260,11 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
           <TabsContent value="marketing" className="h-full overflow-auto m-0">
             <MarketingSection projectId={projectId} />
           </TabsContent>
-          <TabsContent value="media" className="h-full overflow-auto m-0">
+          <TabsContent value="generation" className="h-full overflow-auto m-0">
             <MediaSection projectId={projectId} />
+          </TabsContent>
+          <TabsContent value="media" className="h-full overflow-auto m-0">
+            <MediaLibrarySection projectId={projectId} />
           </TabsContent>
         </Tabs>
       </div>
