@@ -1108,3 +1108,12 @@ function PhaseListEditor({
   );
 }
 
+function ToggleRow({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <label className="flex items-center justify-between gap-3 rounded-md border bg-surface p-2">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <Switch checked={checked} onCheckedChange={onChange} />
+    </label>
+  );
+}
+
