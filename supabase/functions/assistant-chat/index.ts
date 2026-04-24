@@ -23,7 +23,7 @@ import {
   getPhaseEnum,
   type Playbook,
 } from "../_shared/assistant-playbook.ts";
-import { claudeSkillRequestShape, loadClaudeSkillsForSurface } from "../_shared/claude-skills.ts";
+import { claudeSkillRequestShape, loadClaudeSkillsForSurface, renderClaudeSkillCatalog, type ClaudeSkillRow } from "../_shared/claude-skills.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -89,6 +89,7 @@ function buildSystemPrompt(
   rosters: Rosters,
   tweaks: Tweak[] = [],
   playbook: Playbook = PLAYBOOK_DEFAULTS,
+  claudeSkills: ClaudeSkillRow[] = [],
 ) {
   const suspectCount = rosters.suspects.length;
   const docCount = rosters.documents.length;
