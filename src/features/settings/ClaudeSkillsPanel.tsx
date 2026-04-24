@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Upload, Plus, Loader2 } from "lucide-react";
+import { Upload, Plus, Loader2, FileArchive } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -22,9 +22,20 @@ type ClaudeSkill = {
   install_source: string;
   uploaded_file_url: string | null;
   notes: string | null;
+  description: string | null;
+  metadata: Record<string, unknown> | null;
+  installed_at: string | null;
+  install_status: string | null;
+  install_error: string | null;
 };
 
-const SCOPE_OPTIONS = ["chat", "documents", "marketing", "media"];
+const SCOPE_OPTIONS = ["chat", "documents", "marketing", "analysis", "media"];
+const BUILT_IN_DESCRIPTIONS: Record<string, string> = {
+  pdf: "Create and edit printable PDF documents with Claude code execution.",
+  docx: "Create Word/DOCX documents for evidence files and editable print assets.",
+  pptx: "Create PowerPoint/PPTX decks for presentations and pitch materials.",
+  xlsx: "Create Excel/XLSX spreadsheets for tables, logs, and data-heavy analysis.",
+};
 
 export function ClaudeSkillsPanel() {
   const { isAdmin } = useAuth();
@@ -39,7 +50,7 @@ export function ClaudeSkillsPanel() {
     queryFn: async () => {
       const { data, error } = await (supabase as any)
         .from("claude_skills")
-        .select("id, skill_id, name, skill_type, version, enabled, usage_scope, install_source, uploaded_file_url, notes")
+        .select("id, skill_id, name, skill_type, version, enabled, usage_scope, install_source, uploaded_file_url, notes, description, metadata, installed_at, install_status, install_error")
         .order("skill_type", { ascending: true })
         .order("name", { ascending: true });
       if (error) throw error;
@@ -87,18 +98,17 @@ export function ClaudeSkillsPanel() {
       const { error: uploadError } = await supabase.storage.from("documents").upload(path, file, { upsert: true });
       if (uploadError) throw uploadError;
       const { data } = supabase.storage.from("documents").getPublicUrl(path);
-      const { error } = await (supabase as any).from("claude_skills").insert({
-        name: inferredName,
-        skill_id: inferredId,
-        skill_type: "custom",
-        version: "latest",
-        enabled: true,
-        usage_scope: ["chat", "documents"],
-        install_source: "upload",
-        uploaded_file_url: data.publicUrl,
-        notes: `Uploaded file: ${file.name}`,
+      const { data: { session } } = await supabase.auth.getSession();
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/install-claude-skill`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({ name: inferredName, skillId: inferredId, fileUrl: data.publicUrl, fileName: file.name, usageScope: ["chat", "documents"] }),
       });
-      if (error) throw error;
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(body.error ?? "Skill install failed");
       setSkillName("");
       setSkillId("");
       toast.success("Claude Skill uploaded");
@@ -152,8 +162,26 @@ export function ClaudeSkillsPanel() {
       {isLoading ? (
         <div className="text-sm text-muted-foreground">Loading Claude Skills…</div>
       ) : (
+        <div className="space-y-5">
+          <SkillSection title="Claude built-in skills" skills={skills.filter((s) => s.skill_type === "anthropic")} isAdmin={isAdmin} updateSkill={updateSkill} toggleScope={toggleScope} />
+          <SkillSection title="Custom Claude Skills" skills={skills.filter((s) => s.skill_type !== "anthropic")} isAdmin={isAdmin} updateSkill={updateSkill} toggleScope={toggleScope} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SkillSection({ title, skills, isAdmin, updateSkill, toggleScope }: { title: string; skills: ClaudeSkill[]; isAdmin: boolean; updateSkill: (id: string, patch: Partial<ClaudeSkill>) => void; toggleScope: (skill: ClaudeSkill, scope: string) => void }) {
+  return (
+    <section className="space-y-3">
+      <h4 className="text-sm font-medium">{title}</h4>
+      {skills.length === 0 ? (
+        <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">No skills installed here yet.</div>
+      ) : (
         <div className="grid gap-3">
-          {skills.map((skill) => (
+          {skills.map((skill) => {
+            const description = skill.description ?? BUILT_IN_DESCRIPTIONS[skill.skill_id] ?? skill.notes;
+            return (
             <div key={skill.id} className="rounded-xl border bg-card p-4 space-y-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -161,8 +189,10 @@ export function ClaudeSkillsPanel() {
                     <h4 className="font-medium truncate">{skill.name}</h4>
                     <Badge variant="secondary">{skill.skill_type === "anthropic" ? "Built-in" : "Custom"}</Badge>
                     <Badge variant="outline">{skill.skill_id}</Badge>
+                    {skill.install_status && skill.install_status !== "installed" && <Badge variant="destructive">{skill.install_status}</Badge>}
                   </div>
-                  <p className="text-xs text-muted-foreground mt-1">Version {skill.version} · installed from {skill.install_source}</p>
+                  <p className="text-xs text-muted-foreground mt-1">Version {skill.version} · source {skill.install_source}{skill.installed_at ? ` · installed ${new Date(skill.installed_at).toLocaleDateString()}` : ""}</p>
+                  {description && <p className="text-xs text-muted-foreground mt-2 leading-relaxed">{description}</p>}
                 </div>
                 <Switch checked={skill.enabled} disabled={!isAdmin} onCheckedChange={(checked) => updateSkill(skill.id, { enabled: checked })} />
               </div>
@@ -178,14 +208,15 @@ export function ClaudeSkillsPanel() {
               </div>
               {skill.uploaded_file_url && (
                 <a href={skill.uploaded_file_url} target="_blank" rel="noreferrer" className="text-xs text-accent underline">
-                  Open uploaded skill file
+                  <FileArchive className="mr-1 inline h-3 w-3" /> Open uploaded skill file
                 </a>
               )}
+              {skill.install_error && <p className="text-xs text-destructive">{skill.install_error}</p>}
             </div>
-          ))}
+          );})}
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
