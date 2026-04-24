@@ -195,7 +195,34 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
           </div>
         </div>
 
-        <div className="space-y-3">
+        <div className="rounded-xl border bg-surface/60 p-4 space-y-3">
+          <div>
+            <h4 className="font-display text-lg">Generate front cover</h4>
+            <p className="text-xs text-muted-foreground mt-0.5">Updates the real project cover used across the app.</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Image model</Label>
+            <ImageModelPicker surface="marketing-cover" defaultModel="chatgpt-image-2" />
+          </div>
+          <PromptPanel
+            projectId={projectId}
+            surface="cover"
+            category="cover"
+            initialPrompt={project?.cover_prompt ?? undefined}
+            onGenerate={handleGenerateCover}
+            generating={generatingCover}
+            mode="inline"
+          />
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h4 className="font-display text-lg">Marketing asset gallery</h4>
+            <p className="text-xs text-muted-foreground mt-0.5">Supporting visuals, back-cover candidates, and promo art.</p>
+          </div>
+        </div>
           {extras.length === 0 ? (
             <div className="border-2 border-dashed rounded-xl p-8 text-center text-sm text-muted-foreground">
               No extra marketing images yet. Click <em>Add marketing image</em> to generate one.
@@ -241,7 +268,6 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
               ))}
             </div>
           )}
-        </div>
       </div>
 
       {adding && (
