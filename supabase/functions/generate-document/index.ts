@@ -149,7 +149,9 @@ Deno.serve(async (req) => {
     const isRtl = ["Hebrew", "Arabic", "Persian", "Urdu", "Yiddish"].includes(gameLanguage);
 
     if (mode === "text") {
-      const model = PROVIDER_MODEL[project?.ai_provider_documents ?? "lovable"] ?? PROVIDER_MODEL.lovable;
+      const model = resolveDocumentModel(project);
+      const blocked = directProviderBlock(model, "document text");
+      if (blocked) return blocked;
       const sys = `You write in-game evidence documents for premium printable mystery games. Output ONLY the document body in ${gameLanguage}, ${isRtl ? "RTL-ready" : "properly formatted"}, realistic and immersive, tailored to the document type. No meta-commentary. No disclaimers. For interrogation transcripts include pauses, body language and back-and-forth. Do not reveal the full solution.`;
       const userPrompt = `Case: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nPlayer role: ${project?.player_role ?? ""}\nCase goal: ${project?.case_goal ?? ""}\nYear: ${project?.year ?? ""}\nSetting: ${project?.setting ?? ""}\n\nDocument to produce:\nTitle: ${doc.title}\nType: ${doc.doc_type ?? "generic"}\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\n\nWrite the full ${gameLanguage} body now.`;
 
@@ -157,6 +159,7 @@ Deno.serve(async (req) => {
       const callerUserId = await getUserIdFromAuth(req);
       const resp = await chatCompletions({
         model,
+        disableFallback: true,
         messages: [{ role: "system", content: sys }, { role: "user", content: userPrompt }],
       });
       const fb = extractFallback(resp, model);
@@ -206,7 +209,9 @@ Deno.serve(async (req) => {
     }
 
     if (mode === "document") {
-      const model = PROVIDER_MODEL[project?.ai_provider_documents ?? "lovable"] ?? PROVIDER_MODEL.lovable;
+      const model = resolveDocumentModel(project);
+      const blocked = directProviderBlock(model, documentFormat.toUpperCase());
+      if (blocked) return blocked;
       const provider = providerLabel(model);
       const directFilePrompt = `Create the final ${documentFormat.toUpperCase()} document directly if your API supports returning generated files. If you cannot return an actual file, say exactly: UNABLE_TO_CREATE_FILE.\n\nCase: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nDocument title: ${doc.title}\nType: ${doc.doc_type ?? "generic"}\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\nContent:\n${doc.hebrew_content ?? ""}`;
       const startedAt = Date.now();
