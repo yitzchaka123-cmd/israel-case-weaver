@@ -15,13 +15,10 @@ const settingsSections = [
   { id: "display", label: "Display" },
   { id: "profile", label: "Profile" },
   { id: "image-prompt-assistant", label: "Image prompt assistant" },
-  { id: "assistant-playbook", label: "Assistant playbook" },
-  { id: "assistant-tweaks", label: "Assistant tweaks" },
+  { id: "assistant-rules", label: "Assistant rules" },
   { id: "ai-routing", label: "AI routing" },
   { id: "ai-connections", label: "AI connections" },
-  { id: "usage-credits", label: "Usage & credits" },
-  { id: "ai-activity-log", label: "AI activity log" },
-  { id: "api-keys", label: "API keys" },
+  { id: "ai-ops", label: "Usage, credits, API keys & activity" },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
