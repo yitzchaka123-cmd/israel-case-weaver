@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Sparkles, ArrowRight, Wand2, Image as ImageIcon, Save, FileText, Copy, Trash2, ChevronRight } from "lucide-react";
+import { Loader2, Sparkles, ArrowRight, Wand2, Image as ImageIcon, Save, FileText, Copy, Trash2, ChevronRight, Clapperboard } from "lucide-react";
 import { toast } from "sonner";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
@@ -75,6 +75,7 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
   const [klingInstr, setKlingInstr] = useState("");
   const [shots, setShots] = useState<Shot[]>([]);
   const [rowId, setRowId] = useState<string | null>(null);
+  const [activeStep, setActiveStep] = useState<"script" | "prompts" | "board">("script");
 
   const [generatingScript, setGeneratingScript] = useState(false);
   const [busyShot, setBusyShot] = useState<Record<string, "prompt" | "image" | undefined>>({});
@@ -122,6 +123,16 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
 
   const promptShots = useMemo(() => shots.filter((s) => s.in_prompts), [shots]);
   const boardShots = useMemo(() => shots.filter((s) => s.in_storyboard), [shots]);
+  const promptsReady = useMemo(() => promptShots.filter((s) => s.prompt.trim()).length, [promptShots]);
+  const keyframesReady = useMemo(() => boardShots.filter((s) => s.image_url).length, [boardShots]);
+  const nextStep = useMemo(() => {
+    if (shots.length === 0) return "Generate a script to create your shot list.";
+    if (promptShots.length < shots.length) return "Review the shots, then send them to Prompts.";
+    if (promptsReady < promptShots.length) return `Generate prompts for ${promptShots.length - promptsReady} remaining shot${promptShots.length - promptsReady === 1 ? "" : "s"}.`;
+    if (boardShots.length < promptShots.length) return "Send prompt-ready shots to the Storyboard.";
+    if (keyframesReady < boardShots.length) return `Generate keyframes for ${boardShots.length - keyframesReady} remaining shot${boardShots.length - keyframesReady === 1 ? "" : "s"}.`;
+    return "Storyboard is ready. Save it or copy the prompts for video production.";
+  }, [boardShots.length, keyframesReady, promptShots.length, promptsReady, shots.length]);
 
   const updateShot = (id: string, patch: Partial<Shot>) => {
     setShots((s) => s.map((sh) => (sh.id === id ? { ...sh, ...patch } : sh)));
