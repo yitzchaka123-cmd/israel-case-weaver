@@ -220,6 +220,8 @@ Deno.serve(async (req) => {
       const model = resolveDocumentModel(project);
       const blocked = directProviderBlock(model, documentFormat.toUpperCase());
       if (blocked) return blocked;
+      const capabilityBlocked = directFileCapabilityBlock(model, documentFormat);
+      if (capabilityBlocked) return capabilityBlocked;
       const provider = providerLabel(model);
       const directFilePrompt = `Create the final ${documentFormat.toUpperCase()} document directly if your API supports returning generated files. If you cannot return an actual file, say exactly: UNABLE_TO_CREATE_FILE.\n\nCase: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nDocument title: ${doc.title}\nType: ${doc.doc_type ?? "generic"}\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\nContent:\n${doc.hebrew_content ?? ""}`;
       const startedAt = Date.now();
