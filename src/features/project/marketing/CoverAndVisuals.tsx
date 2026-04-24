@@ -46,11 +46,12 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const [newTitle, setNewTitle] = useState("");
   const [newHint, setNewHint] = useState("");
   const [generating, setGenerating] = useState(false);
+  const [generatingCover, setGeneratingCover] = useState(false);
 
   const { data: project } = useQuery({
     queryKey: ["project-cover-only", projectId],
     queryFn: async () => {
-      const { data } = await supabase.from("projects").select("title, cover_image_url, cover_effective_model, cover_fallback, ai_provider_images").eq("id", projectId).maybeSingle();
+      const { data } = await supabase.from("projects").select("title, cover_image_url, cover_prompt, cover_effective_model, cover_fallback, ai_provider_images").eq("id", projectId).maybeSingle();
       return data;
     },
   });
@@ -84,6 +85,32 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
 
   const cover = project?.cover_image_url;
   const extras = (assets ?? []).filter((a) => a.category === "marketing-extra" || a.category === "back" || a.category === "marketing-back");
+
+  const handleGenerateCover = async (prompt: string) => {
+    setGeneratingCover(true);
+    try {
+      const modelOverride = getStoredImageModel("marketing-cover", "chatgpt-image-2");
+      const quality = getStoredImageQuality("marketing-cover", "medium");
+      const resp = await callEdge("generate-image", {
+        projectId,
+        category: "cover",
+        target: "project-cover",
+        prompt,
+        modelOverride,
+        aspect: "portrait",
+        quality,
+      });
+      if (!resp.ok) {
+        const e = await resp.json().catch(() => ({}));
+        toast.error(e.error ?? "Cover generation failed", { duration: 10000 });
+        return;
+      }
+      toast.success("Cover visual generated");
+      qc.invalidateQueries({ queryKey: ["project-cover-only", projectId] });
+    } finally {
+      setGeneratingCover(false);
+    }
+  };
 
   const handleGenerate = async (prompt: string) => {
     setGenerating(true);
@@ -168,7 +195,34 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
           </div>
         </div>
 
-        <div className="space-y-3">
+        <div className="rounded-xl border bg-surface/60 p-4 space-y-3">
+          <div>
+            <h4 className="font-display text-lg">Generate front cover</h4>
+            <p className="text-xs text-muted-foreground mt-0.5">Updates the real project cover used across the app.</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Image model</Label>
+            <ImageModelPicker surface="marketing-cover" defaultModel="chatgpt-image-2" />
+          </div>
+          <PromptPanel
+            projectId={projectId}
+            surface="cover"
+            category="cover"
+            initialPrompt={project?.cover_prompt ?? undefined}
+            onGenerate={handleGenerateCover}
+            generating={generatingCover}
+            mode="inline"
+          />
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h4 className="font-display text-lg">Marketing asset gallery</h4>
+            <p className="text-xs text-muted-foreground mt-0.5">Supporting visuals, back-cover candidates, and promo art.</p>
+          </div>
+        </div>
           {extras.length === 0 ? (
             <div className="border-2 border-dashed rounded-xl p-8 text-center text-sm text-muted-foreground">
               No extra marketing images yet. Click <em>Add marketing image</em> to generate one.
@@ -214,7 +268,6 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
               ))}
             </div>
           )}
-        </div>
       </div>
 
       {adding && (

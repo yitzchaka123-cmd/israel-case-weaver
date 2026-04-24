@@ -208,9 +208,10 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
     }
   };
 
-  const pushToPrompts = (id: string) => updateShot(id, { in_prompts: true });
+  const togglePrompts = (shot: Shot) => updateShot(shot.id, shot.in_prompts ? { in_prompts: false, in_storyboard: false } : { in_prompts: true });
   const pushAllToPrompts = () => setShots((s) => s.map((sh) => ({ ...sh, in_prompts: true })));
-  const pushToBoard = (id: string) => updateShot(id, { in_storyboard: true });
+  const toggleBoard = (shot: Shot) => updateShot(shot.id, { in_storyboard: !shot.in_storyboard });
+  const removeFromBoard = (id: string) => updateShot(id, { in_storyboard: false });
 
   const handleGeneratePrompt = async (shot: Shot) => {
     setBusyShot((b) => ({ ...b, [shot.id]: "prompt" }));
@@ -323,9 +324,10 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 md:gap-3">
         <ProgressTile label="Shots drafted" value={`${shots.length}`} />
-        <ProgressTile label="Prompts ready" value={`${promptsReady} / ${promptShots.length || shots.length}`} />
+        <ProgressTile label="Prompts queue" value={`${promptShots.length} / ${shots.length}`} />
+        <ProgressTile label="Prompt text ready" value={`${promptsReady} / ${promptShots.length || shots.length}`} />
         <ProgressTile label="On storyboard" value={`${boardShots.length} / ${shots.length}`} />
         <ProgressTile label="Keyframes generated" value={`${keyframesReady} / ${boardShots.length}`} />
       </div>
@@ -396,7 +398,7 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
                 key={shot.id}
                 shot={shot}
                 onChange={(patch) => updateShot(shot.id, patch)}
-                onPush={() => pushToPrompts(shot.id)}
+                onTogglePrompts={() => togglePrompts(shot)}
                 onDelete={() => setShots((s) => s.filter((x) => x.id !== shot.id))}
               />
             ))}
@@ -427,7 +429,7 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
                 busy={busyShot[shot.id] === "prompt"}
                 onChange={(patch) => updateShot(shot.id, patch)}
                 onGenerate={() => handleGeneratePrompt(shot)}
-                onPush={() => pushToBoard(shot.id)}
+                onToggleBoard={() => toggleBoard(shot)}
               />
             ))}
             {promptShots.length === 0 && (
@@ -465,6 +467,7 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
                 shot={shot}
                 busy={busyShot[shot.id] === "image"}
                 onGenerate={() => handleGenerateKeyframe(shot)}
+                onRemove={() => removeFromBoard(shot.id)}
               />
             ))}
             {boardShots.length === 0 && (
@@ -531,7 +534,7 @@ function EngineInstrInput({ label, value, onChange, engine }: { label: string; v
   );
 }
 
-function ShotScriptCard({ shot, onChange, onPush, onDelete }: { shot: Shot; onChange: (p: Partial<Shot>) => void; onPush: () => void; onDelete: () => void }) {
+function ShotScriptCard({ shot, onChange, onTogglePrompts, onDelete }: { shot: Shot; onChange: (p: Partial<Shot>) => void; onTogglePrompts: () => void; onDelete: () => void }) {
   return (
     <div className="rounded-xl border bg-card p-4 space-y-3 group">
       <div className="flex items-start justify-between gap-3">
@@ -543,8 +546,8 @@ function ShotScriptCard({ shot, onChange, onPush, onDelete }: { shot: Shot; onCh
           <Button size="sm" variant="ghost" className="gap-1.5 text-muted-foreground hover:text-destructive" onClick={onDelete}>
             <Trash2 className="h-3.5 w-3.5" /> Delete
           </Button>
-          <Button size="sm" variant={shot.in_prompts ? "ghost" : "outline"} className="gap-1.5" onClick={onPush}>
-            {shot.in_prompts ? "In Prompts" : "Send to Prompts"} <ArrowRight className="h-3.5 w-3.5" />
+          <Button size="sm" variant={shot.in_prompts ? "ghost" : "outline"} className="gap-1.5" onClick={onTogglePrompts}>
+            {shot.in_prompts ? "Remove from Prompts" : "Send to Prompts"} <ArrowRight className="h-3.5 w-3.5" />
           </Button>
         </div>
       </div>
@@ -560,7 +563,7 @@ function ShotScriptCard({ shot, onChange, onPush, onDelete }: { shot: Shot; onCh
   );
 }
 
-function ShotPromptCard({ shot, busy, onChange, onGenerate, onPush }: { shot: Shot; busy: boolean; onChange: (p: Partial<Shot>) => void; onGenerate: () => void; onPush: () => void }) {
+function ShotPromptCard({ shot, busy, onChange, onGenerate, onToggleBoard }: { shot: Shot; busy: boolean; onChange: (p: Partial<Shot>) => void; onGenerate: () => void; onToggleBoard: () => void }) {
   return (
     <div className="rounded-xl border bg-card p-4 space-y-3">
       <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -600,15 +603,15 @@ function ShotPromptCard({ shot, busy, onChange, onGenerate, onPush }: { shot: Sh
           {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
           {shot.prompt.trim() ? "Regenerate prompt" : "Generate prompt"}
         </Button>
-        <Button size="sm" variant={shot.in_storyboard ? "ghost" : "default"} className="w-full gap-1.5" onClick={onPush} disabled={!shot.prompt.trim()}>
-          {shot.in_storyboard ? "On Storyboard" : "Send to Storyboard"} <ArrowRight className="h-3.5 w-3.5" />
+        <Button size="sm" variant={shot.in_storyboard ? "ghost" : "default"} className="w-full gap-1.5" onClick={onToggleBoard} disabled={!shot.prompt.trim()}>
+          {shot.in_storyboard ? "Remove from Storyboard" : "Send to Storyboard"} <ArrowRight className="h-3.5 w-3.5" />
         </Button>
       </div>
     </div>
   );
 }
 
-function ShotBoardCard({ shot, busy, onGenerate }: { shot: Shot; busy: boolean; onGenerate: () => void }) {
+function ShotBoardCard({ shot, busy, onGenerate, onRemove }: { shot: Shot; busy: boolean; onGenerate: () => void; onRemove: () => void }) {
   return (
     <div className="rounded-xl border bg-card overflow-hidden">
       <div className="group aspect-video bg-muted relative">
@@ -644,10 +647,13 @@ function ShotBoardCard({ shot, busy, onGenerate }: { shot: Shot; busy: boolean; 
           <div className="text-sm text-muted-foreground line-clamp-2 mt-1">{shot.action}</div>
         </div>
         <div className="rounded-lg border bg-surface p-3 text-xs text-muted-foreground line-clamp-4 font-mono leading-relaxed">{shot.prompt || "No prompt yet"}</div>
-        <Button size="sm" variant="outline" className="w-full gap-1.5" onClick={onGenerate} disabled={busy || !shot.prompt}>
-          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : shot.image_url ? <FileText className="h-3.5 w-3.5" /> : <Wand2 className="h-3.5 w-3.5" />}
-          {shot.image_url ? "Regenerate keyframe" : "Generate keyframe"}
-        </Button>
+        <div className="grid grid-cols-2 gap-2">
+          <Button size="sm" variant="outline" className="w-full gap-1.5" onClick={onGenerate} disabled={busy || !shot.prompt}>
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : shot.image_url ? <FileText className="h-3.5 w-3.5" /> : <Wand2 className="h-3.5 w-3.5" />}
+            {shot.image_url ? "Regenerate" : "Generate"}
+          </Button>
+          <Button size="sm" variant="ghost" className="w-full" onClick={onRemove}>Remove from board</Button>
+        </div>
       </div>
     </div>
   );
