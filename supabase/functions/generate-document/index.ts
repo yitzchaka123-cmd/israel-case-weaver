@@ -1,5 +1,5 @@
-// Generate document content + optional image. Routes through the shared
-// AI router so OpenAI / Anthropic / Gemini direct keys are used when configured.
+// Generate document content + optional image. Routes through direct provider
+// keys only for document work; no hidden Lovable AI fallback.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { chatCompletions, providerLabel, generateImage, ImageGenError, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
 import { loadClaudeSkillsForSurface, preferredClaudeDocumentSkill, type ClaudeSkillRow } from "../_shared/claude-skills.ts";
@@ -49,6 +49,20 @@ const IMAGE_MODEL: Record<string, string> = {
 };
 
 const OPENAI_IMAGE_KEYS = new Set(["chatgpt-image-2", "chatgpt-image"]);
+
+function resolveDocumentModel(project: Record<string, unknown> | null): string {
+  const pref = String(project?.ai_provider_documents ?? project?.ai_provider_planning ?? "").trim();
+  return PROVIDER_MODEL[pref] ?? "";
+}
+
+function directProviderBlock(model: string, output: string): Response | null {
+  if (!model || providerLabel(model) === "lovable-ai") {
+    return new Response(JSON.stringify({
+      error: `No direct ${output} model is selected. Switch Documents to ChatGPT 5.2/OpenAI, Claude, or Gemini Direct in Settings, then retry.`,
+    }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  }
+  return null;
+}
 
 const MIME_BY_FORMAT: Record<string, string> = {
   pdf: "application/pdf",
@@ -135,7 +149,9 @@ Deno.serve(async (req) => {
     const isRtl = ["Hebrew", "Arabic", "Persian", "Urdu", "Yiddish"].includes(gameLanguage);
 
     if (mode === "text") {
-      const model = PROVIDER_MODEL[project?.ai_provider_documents ?? "lovable"] ?? PROVIDER_MODEL.lovable;
+      const model = resolveDocumentModel(project);
+      const blocked = directProviderBlock(model, "document text");
+      if (blocked) return blocked;
       const sys = `You write in-game evidence documents for premium printable mystery games. Output ONLY the document body in ${gameLanguage}, ${isRtl ? "RTL-ready" : "properly formatted"}, realistic and immersive, tailored to the document type. No meta-commentary. No disclaimers. For interrogation transcripts include pauses, body language and back-and-forth. Do not reveal the full solution.`;
       const userPrompt = `Case: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nPlayer role: ${project?.player_role ?? ""}\nCase goal: ${project?.case_goal ?? ""}\nYear: ${project?.year ?? ""}\nSetting: ${project?.setting ?? ""}\n\nDocument to produce:\nTitle: ${doc.title}\nType: ${doc.doc_type ?? "generic"}\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\n\nWrite the full ${gameLanguage} body now.`;
 
@@ -143,6 +159,7 @@ Deno.serve(async (req) => {
       const callerUserId = await getUserIdFromAuth(req);
       const resp = await chatCompletions({
         model,
+        disableFallback: true,
         messages: [{ role: "system", content: sys }, { role: "user", content: userPrompt }],
       });
       const fb = extractFallback(resp, model);
@@ -192,7 +209,9 @@ Deno.serve(async (req) => {
     }
 
     if (mode === "document") {
-      const model = PROVIDER_MODEL[project?.ai_provider_documents ?? "lovable"] ?? PROVIDER_MODEL.lovable;
+      const model = resolveDocumentModel(project);
+      const blocked = directProviderBlock(model, documentFormat.toUpperCase());
+      if (blocked) return blocked;
       const provider = providerLabel(model);
       const directFilePrompt = `Create the final ${documentFormat.toUpperCase()} document directly if your API supports returning generated files. If you cannot return an actual file, say exactly: UNABLE_TO_CREATE_FILE.\n\nCase: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nDocument title: ${doc.title}\nType: ${doc.doc_type ?? "generic"}\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\nContent:\n${doc.hebrew_content ?? ""}`;
       const startedAt = Date.now();
@@ -321,16 +340,16 @@ Deno.serve(async (req) => {
           return new Response(JSON.stringify({ error: "OpenAI API key not configured" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
         // Map print size → model-appropriate dimensions.
-        // gpt-image-2 accepts arbitrary sizes (edges multiples of 16, ratio ≤ 3:1,
-        // total pixels 0.6M–8.3M) so we use a truer A4 (1:√2) ratio at 1448x2048.
+        // gpt-image-2 accepts arbitrary sizes when edges are multiples of 16,
+        // so use a near-A4 1440x2048 instead of invalid 1448x2048.
         // gpt-image-1 only accepts a fixed set, so it keeps 1024x1536 / 1536x1024.
         const ps = (doc.print_size ?? "A4").toLowerCase();
         const portraitSizes = ["a3", "a4", "a5", "a6"];
         const isGptImage2 = model === "gpt-image-2";
         const size = isGptImage2
-          ? (portraitSizes.includes(ps) ? "1448x2048"
-            : ps === "business card" ? "2048x1448"
-            : "1448x2048")
+          ? (portraitSizes.includes(ps) ? "1440x2048"
+            : ps === "business card" ? "2048x1440"
+            : "1440x2048")
           : (portraitSizes.includes(ps) ? "1024x1536"
             : ps === "business card" ? "1536x1024"
             : "1024x1536");
@@ -420,7 +439,7 @@ Deno.serve(async (req) => {
           mime = result.mime;
         } catch (e) {
           if (e instanceof ImageGenError) {
-            const provider = e.provider === "gemini-direct" ? "Google Gemini" : "Lovable AI";
+            const provider = e.provider === "gemini-direct" ? "Google Gemini" : "direct image provider";
             console.error(`${provider} image error`, e.status, e.message);
             if (e.status === 429) return new Response(JSON.stringify({ error: `${provider} rate limit` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
             if (e.status === 402) return new Response(JSON.stringify({ error: `${provider} credits/key issue` }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });

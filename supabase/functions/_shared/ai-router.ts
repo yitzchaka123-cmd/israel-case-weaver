@@ -416,9 +416,9 @@ export interface ImageResult { bytes: Uint8Array; mime: string; provider: "gemin
  * (e.g. google/gemini-2.5-flash-image, google/gemini-3.1-flash-image-preview,
  * google/gemini-3-pro-image-preview).
  *
- * Routes directly to Google when GEMINI_API_KEY is set, otherwise falls back
- * to Lovable AI Gateway. The model id you pass here is the gateway-style id;
- * the Google direct call strips the "google/" prefix automatically.
+ * Routes directly to Google when GEMINI_API_KEY is set. The model id you pass
+ * here is the gateway-style id; the Google direct call strips the "google/"
+ * prefix automatically. No Lovable fallback is used for document assets.
  */
 export async function generateImage(opts: { prompt: string; model: string }): Promise<ImageResult> {
   const { prompt, model } = opts;
@@ -437,12 +437,7 @@ export async function generateImage(opts: { prompt: string; model: string }): Pr
     });
     if (!resp.ok) {
       const t = await resp.text();
-      // On quota / auth / server errors, fall back to Lovable AI Gateway instead of throwing
-      if (resp.status === 429 || resp.status === 403 || resp.status >= 500) {
-        console.warn(`Gemini direct image ${resp.status} for ${directModel} — falling back to Lovable AI Gateway`);
-      } else {
-        throw new ImageGenError(`Gemini direct image error ${resp.status}: ${t}`, resp.status, "gemini-direct");
-      }
+      throw new ImageGenError(`Gemini direct image error ${resp.status}: ${t}`, resp.status, "gemini-direct");
     } else {
       const data = await resp.json();
       const parts = data.candidates?.[0]?.content?.parts ?? [];
@@ -458,25 +453,7 @@ export async function generateImage(opts: { prompt: string; model: string }): Pr
     }
   }
 
-  // Lovable AI Gateway fallback
-  const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model, messages: [{ role: "user", content: prompt }], modalities: ["image", "text"] }),
-  });
-  if (!resp.ok) {
-    const t = await resp.text();
-    throw new ImageGenError(`Lovable AI image error ${resp.status}: ${t}`, resp.status, "lovable-ai");
-  }
-  const data = await resp.json();
-  const imageUrl: string | undefined = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-  const m = imageUrl?.match(/^data:([^;]+);base64,(.*)$/);
-  if (!m) throw new ImageGenError("No image returned (Lovable AI)", 500, "lovable-ai");
-  return {
-    bytes: Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0)),
-    mime: m[1],
-    provider: "lovable-ai",
-  };
+  throw new ImageGenError("Google Gemini API key is not configured for direct image generation. Switch image generation to ChatGPT Image or configure Gemini Direct.", 401, "gemini-direct");
 }
 
 export class ImageGenError extends Error {

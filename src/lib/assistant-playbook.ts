@@ -229,7 +229,7 @@ Looks like an actual archival envelope from the case era — NOT a modern Canva 
   ],
   doc_mode_copy: {
     drafts_label: "Drafts only — I'll generate myself",
-    auto_label: "Full auto — generate text + image now",
+    auto_label: "Full auto — ask Image/PDF/Both per doc",
     ask_label: "Ask me each time",
     logic_gate_refusal:
       "Before we generate documents, jump to the Canvas → Logic Flow board and click 'Generate logic flow'. Review the clues, red herrings and final solution it proposes, edit anything you want, then click 'Approve logic'. Once that solution summary is locked in, every document I write will be consistent with it.",
