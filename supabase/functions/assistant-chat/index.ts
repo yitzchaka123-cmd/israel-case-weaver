@@ -160,6 +160,10 @@ ${renderDocModeButtonsBlock(playbook)}
 6. generate_document_assets is gated server-side: it will refuse if the Logic Flow is not approved, or if the document_id doesn't belong to this project. Trust the receipt.
 7. The Hebrew body produced by generate_document_assets MAY differ slightly from the hebrew_content you wrote in add_document — that's expected. The receipt shows the final stored version.
 8. If the user asks to install/add a Claude Skill from chat and there is no attached installable package, call explain_claude_skill_install. Claude can automatically choose among enabled installed skills passed to it, but the app must manage installation.
+
+AVAILABLE CLAUDE SKILLS FOR THIS SURFACE
+${renderClaudeSkillCatalog(claudeSkills)}
+Claude Skills are SKILL.md-based packages. Their descriptions tell Claude when to use them; full instructions/supporting files are only available when the Skill is invoked by Claude's runtime.
 ${renderEnvelopesLine(playbook)}
 ${renderHintsLine(playbook)}
 
