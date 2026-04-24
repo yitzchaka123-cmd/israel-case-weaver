@@ -263,12 +263,14 @@ Deno.serve(async (req) => {
       if (!resp.ok) {
         const t = await resp.text().catch(() => "");
         await saveDocumentPrompt("error", t);
+        await recordDocumentAttempt(supa, { projectId: doc.project_id, documentId, title: doc.title, documentFormat, prompt: directFilePrompt, provider, model, effectiveModel: fb.effectiveModel, status: "failed", errorMessage: t.slice(0, 500), skill: null });
         await logAiRun({ userId: callerUserId, projectId: doc.project_id, surface: "generate-document-file", requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback, status: "error", latencyMs: Date.now() - startedAt, errorMessage: t.slice(0, 200), targetId: documentId, promptExcerpt: directFilePrompt });
         return new Response(JSON.stringify({ error: `${provider} could not create the ${documentFormat.toUpperCase()} (${resp.status})` }), { status: resp.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       const data = await resp.json();
       const content = String(data.choices?.[0]?.message?.content ?? "").trim();
       await saveDocumentPrompt("error", "Model did not return a downloadable file");
+      await recordDocumentAttempt(supa, { projectId: doc.project_id, documentId, title: doc.title, documentFormat, prompt: directFilePrompt, provider, model, effectiveModel: fb.effectiveModel, status: "failed", errorMessage: "Model did not return a downloadable file", skill: null });
       await logAiRun({ userId: callerUserId, projectId: doc.project_id, surface: "generate-document-file", requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback, status: "error", latencyMs: Date.now() - startedAt, errorMessage: "Model did not return a downloadable file", targetId: documentId, promptExcerpt: directFilePrompt });
       return new Response(JSON.stringify({ error: content.includes("UNABLE_TO_CREATE_FILE") ? `${provider} was not able to create a downloadable ${documentFormat.toUpperCase()} directly.` : `${provider} responded, but did not return a downloadable ${documentFormat.toUpperCase()} file.` }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
