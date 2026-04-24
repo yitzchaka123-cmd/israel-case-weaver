@@ -1259,13 +1259,15 @@ async function processConversation(
   // BEFORE the row exists in its final form. We update content+metadata at
   // the end. Client hides bubbles where in_progress=true && content===""
   // until the realtime UPDATE arrives.
-  await supa.from("chat_messages").insert({
+  const { error: assistantPlaceholderError } = await supa.from("chat_messages").insert({
     id: assistantMessageId,
     project_id: projectId,
     role: "assistant",
     content: "",
     metadata: { in_progress: true, model },
   });
+  const toolMessageId = assistantPlaceholderError ? null : assistantMessageId;
+  if (assistantPlaceholderError) console.error("assistant placeholder insert failed", assistantPlaceholderError);
 
   const convo: Array<Record<string, unknown>> = [{ role: "system", content: systemPrompt }, ...messages];
   const executedTools: Array<{ name: string; args?: Record<string, unknown>; result: unknown }> = [];
@@ -1327,7 +1329,7 @@ async function processConversation(
       for (const call of toolCalls) {
         let args: Record<string, unknown> = {};
         try { args = JSON.parse(call.function.arguments || "{}"); } catch { /* ignore */ }
-        const result = await executeTool(supa, projectId, call.function.name, args, assistantMessageId);
+        const result = await executeTool(supa, projectId, call.function.name, args, toolMessageId);
         const argsForUi = call.function.name === "propose_options" ? undefined : args;
         executedTools.push({ name: call.function.name, args: argsForUi, result });
         convo.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
