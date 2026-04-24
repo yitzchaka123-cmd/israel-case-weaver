@@ -2,6 +2,7 @@
 // AI router so OpenAI / Anthropic / Gemini direct keys are used when configured.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { chatCompletions, providerLabel, generateImage, ImageGenError, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
+import { loadClaudeSkillsForSurface, preferredClaudeDocumentSkill, type ClaudeSkillRow } from "../_shared/claude-skills.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -71,8 +72,6 @@ function findFileIds(value: unknown): string[] {
   walk(value);
   return [...found];
 }
-
-type ClaudeSkillRow = { skill_id: string; name?: string | null; skill_type: string; version: string; usage_scope: string[] };
 
 async function recordDocumentAttempt(supa: ReturnType<typeof createClient>, opts: {
   projectId: string;
@@ -211,11 +210,9 @@ Deno.serve(async (req) => {
 
       if (model.startsWith("anthropic/")) {
         if (!ANTHROPIC_API_KEY) return new Response(JSON.stringify({ error: "Anthropic API key not configured" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        const { data: skills } = await supa.from("claude_skills").select("skill_id, name, skill_type, version, enabled, usage_scope").eq("enabled", true);
-        const enabledSkills = ((skills ?? []) as ClaudeSkillRow[]).filter((s) => (s.usage_scope ?? []).includes("documents"));
-        const wanted = enabledSkills.find((s) => s.skill_id === documentFormat) ?? enabledSkills[0];
-        const skillPayload = wanted ? [{ type: wanted.skill_type === "anthropic" ? "anthropic" : "custom", skill_id: wanted.skill_id, version: wanted.version || "latest" }] : [{ type: "anthropic", skill_id: documentFormat, version: "latest" }];
-        const skillUsed = wanted ?? { skill_id: documentFormat, name: `Claude ${documentFormat.toUpperCase()} Skill`, skill_type: "anthropic", version: "latest", usage_scope: ["documents"] };
+        const enabledSkills = await loadClaudeSkillsForSurface(supa, "documents");
+        const skillUsed = preferredClaudeDocumentSkill(enabledSkills, documentFormat);
+        const skillPayload = [{ type: skillUsed.skill_type === "anthropic" ? "anthropic" : "custom", skill_id: skillUsed.skill_id, version: skillUsed.version || "latest" }];
         const anthropicResp = await fetch("https://api.anthropic.com/v1/messages", {
           method: "POST",
           headers: {

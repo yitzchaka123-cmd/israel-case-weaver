@@ -30,6 +30,13 @@ type ClaudeSkill = {
 };
 
 const SCOPE_OPTIONS = ["chat", "documents", "marketing", "analysis", "media"];
+const SCOPE_LABELS: Record<string, string> = {
+  chat: "Assistant chat",
+  documents: "Documents",
+  marketing: "Marketing",
+  analysis: "Logic analysis",
+  media: "Media planning",
+};
 const BUILT_IN_DESCRIPTIONS: Record<string, string> = {
   pdf: "Create and edit printable PDF documents with Claude code execution.",
   docx: "Create Word/DOCX documents for evidence files and editable print assets.",
@@ -192,6 +199,7 @@ function SkillSection({ title, skills, isAdmin, updateSkill, toggleScope }: { ti
                     {skill.install_status && skill.install_status !== "installed" && <Badge variant="destructive">{skill.install_status}</Badge>}
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">Version {skill.version} · source {skill.install_source}{skill.installed_at ? ` · installed ${new Date(skill.installed_at).toLocaleDateString()}` : ""}</p>
+                  <p className="text-[11px] text-muted-foreground mt-1">Surfaces: {(skill.usage_scope ?? []).map((scope) => SCOPE_LABELS[scope] ?? scope).join(" · ") || "None"}</p>
                   {description && <p className="text-xs text-muted-foreground mt-2 leading-relaxed">{description}</p>}
                 </div>
                 <Switch checked={skill.enabled} disabled={!isAdmin} onCheckedChange={(checked) => updateSkill(skill.id, { enabled: checked })} />
@@ -200,12 +208,18 @@ function SkillSection({ title, skills, isAdmin, updateSkill, toggleScope }: { ti
                 {SCOPE_OPTIONS.map((scope) => {
                   const active = skill.usage_scope?.includes(scope);
                   return (
-                    <Button key={scope} type="button" size="sm" variant={active ? "default" : "outline"} disabled={!isAdmin} onClick={() => toggleScope(skill, scope)} className="h-7 capitalize">
-                      {scope}
+                    <Button key={scope} type="button" size="sm" variant={active ? "default" : "outline"} disabled={!isAdmin} onClick={() => toggleScope(skill, scope)} className="h-7">
+                      {SCOPE_LABELS[scope] ?? scope}
                     </Button>
                   );
                 })}
               </div>
+              {skill.metadata && Object.keys(skill.metadata).length > 0 && (
+                <details className="rounded-lg border bg-muted/20 px-3 py-2 text-xs">
+                  <summary className="cursor-pointer text-muted-foreground">Install metadata</summary>
+                  <pre className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap text-[11px] text-muted-foreground">{JSON.stringify(skill.metadata, null, 2)}</pre>
+                </details>
+              )}
               {skill.uploaded_file_url && (
                 <a href={skill.uploaded_file_url} target="_blank" rel="noreferrer" className="text-xs text-accent underline">
                   <FileArchive className="mr-1 inline h-3 w-3" /> Open uploaded skill file
