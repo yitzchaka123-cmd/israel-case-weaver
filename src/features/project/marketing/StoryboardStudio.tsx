@@ -562,37 +562,48 @@ function ShotScriptCard({ shot, onChange, onPush, onDelete }: { shot: Shot; onCh
 
 function ShotPromptCard({ shot, busy, onChange, onGenerate, onPush }: { shot: Shot; busy: boolean; onChange: (p: Partial<Shot>) => void; onGenerate: () => void; onPush: () => void }) {
   return (
-    <div className="rounded-lg border bg-card p-3 space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-[11px] text-muted-foreground flex items-center gap-2">
-          <span className="font-mono text-foreground">#{shot.n}</span>
-          <span className={`inline-block h-1.5 w-1.5 rounded-full ${shot.engine === "sora" ? "bg-purple-500" : "bg-teal-500"}`} />
+    <div className="rounded-xl border bg-card p-4 space-y-3">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <div className="font-display text-lg">Shot {shot.n}</div>
+          <div className="text-xs text-muted-foreground">Source action</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={[
+            "inline-block h-2 w-2 rounded-full",
+            shot.engine === "sora" ? "bg-primary" : "bg-accent",
+          ].join(" ")} />
           <Select value={shot.engine} onValueChange={(v) => onChange({ engine: v as Engine })}>
-            <SelectTrigger className="h-6 w-[88px] text-[10px]">
+            <SelectTrigger className="h-9 w-[116px] text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="sora" className="text-xs">Sora 2</SelectItem>
-              <SelectItem value="kling" className="text-xs">Kling 3</SelectItem>
+              <SelectItem value="sora">Sora 2</SelectItem>
+              <SelectItem value="kling">Kling 3</SelectItem>
             </SelectContent>
           </Select>
         </div>
-        <Button size="sm" variant={shot.in_storyboard ? "ghost" : "outline"} className="h-6 px-2 gap-1 text-[10px]" onClick={onPush} disabled={!shot.prompt.trim()}>
-          {shot.in_storyboard ? "On board" : "To board"} <ArrowRight className="h-2.5 w-2.5" />
+      </div>
+      <div className="rounded-lg border bg-surface p-3 text-sm text-muted-foreground">{shot.action}</div>
+      <div className="space-y-1.5">
+        <Label className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Video prompt</Label>
+        <Textarea
+          rows={6}
+          value={shot.prompt}
+          onChange={(e) => onChange({ prompt: e.target.value })}
+          placeholder="Generate or write the engine prompt here"
+          className="text-sm font-mono leading-relaxed"
+        />
+      </div>
+      <div className="grid sm:grid-cols-2 gap-2">
+        <Button size="sm" variant="outline" className="w-full gap-1.5" onClick={onGenerate} disabled={busy}>
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+          {shot.prompt.trim() ? "Regenerate prompt" : "Generate prompt"}
+        </Button>
+        <Button size="sm" variant={shot.in_storyboard ? "ghost" : "default"} className="w-full gap-1.5" onClick={onPush} disabled={!shot.prompt.trim()}>
+          {shot.in_storyboard ? "On Storyboard" : "Send to Storyboard"} <ArrowRight className="h-3.5 w-3.5" />
         </Button>
       </div>
-      <div className="text-[11px] text-muted-foreground italic line-clamp-2">{shot.action}</div>
-      <Textarea
-        rows={3}
-        value={shot.prompt}
-        onChange={(e) => onChange({ prompt: e.target.value })}
-        placeholder="Click Generate to draft the engine prompt"
-        className="text-[11px] font-mono leading-relaxed"
-      />
-      <Button size="sm" variant="ghost" className="w-full gap-1.5 text-[11px] h-7" onClick={onGenerate} disabled={busy}>
-        {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-        {shot.prompt.trim() ? "Regenerate prompt" : "Generate prompt"}
-      </Button>
     </div>
   );
 }
