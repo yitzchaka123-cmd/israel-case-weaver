@@ -101,6 +101,47 @@ function findFileIds(value: unknown): string[] {
   return [...found];
 }
 
+function isDoc0(doc: Record<string, unknown>): boolean {
+  const title = String(doc.title ?? "").toLowerCase();
+  const type = String(doc.doc_type ?? "").toLowerCase();
+  return Number(doc.doc_number) === 0 || /\bdoc\s*0\b|document\s*0|contents|inventory|תוכן עניינים|רשימת תכולה/.test(title) || type === "contents checklist";
+}
+
+async function loadDoc0InventoryContext(supa: any, projectId: string) {
+  const [{ data: finalDocs }, { data: envelopes }, { data: suspects }, { data: existingDocs }] = await Promise.all([
+    supa.from("canvas_nodes").select("id, title, description, data, created_at").eq("project_id", projectId).eq("board", "final").eq("node_type", "document").order("position_y", { ascending: true }),
+    supa.from("envelopes").select("number, label, task").eq("project_id", projectId).order("number", { ascending: true }),
+    supa.from("suspects").select("name, role_in_case").eq("project_id", projectId).order("position", { ascending: true }),
+    supa.from("documents").select("id, doc_number, title, doc_type, print_size, envelope_number, status, created_at").eq("project_id", projectId).order("doc_number", { ascending: true, nullsFirst: false }),
+  ]);
+
+  const docNodes = (finalDocs ?? [])
+    .filter((node: any) => Number(node.data?.docNumber) !== 0 && !/^doc\s*0\b/i.test(String(node.title ?? "")))
+    .map((node: any) => ({
+      docNumber: node.data?.docNumber ?? "?",
+      title: node.title ?? "Untitled document",
+      docType: node.data?.docType ?? "document",
+      printSize: node.data?.printSize ?? "A4",
+      envelopeNumber: node.data?.envelopeNumber ?? null,
+      purpose: node.data?.purpose ?? node.description ?? "Planned case document.",
+      generationStatus: node.data?.generationStatus ?? "planned",
+    }));
+
+  return {
+    hasFinalMap: docNodes.length > 0,
+    text: [
+      `FINAL FLOW DOCUMENT NODES (authoritative list for Doc 0):`,
+      docNodes.map((d: any) => `- #${d.docNumber} ${d.title} (${d.docType}, ${d.printSize})${d.envelopeNumber ? ` — envelope ${d.envelopeNumber}` : ""}. Purpose: ${d.purpose}`).join("\n") || "(none)",
+      `\nENVELOPES:`,
+      (envelopes ?? []).map((e: any) => `- Envelope ${e.number}: ${e.label ?? ""}${e.task ? ` — ${e.task}` : ""}`).join("\n") || "(none)",
+      `\nSUSPECTS / CAST INSERTS:`,
+      (suspects ?? []).map((s: any) => `- ${s.name}${s.role_in_case ? ` — ${s.role_in_case}` : ""}`).join("\n") || "(none)",
+      `\nEXISTING DOCUMENT ROWS (for status only; do not invent missing inventory from these if Final Flow differs):`,
+      (existingDocs ?? []).map((d: any) => `- #${d.doc_number ?? "?"} ${d.title} (${d.doc_type ?? "document"}, ${d.print_size ?? "A4"})${d.envelope_number ? ` — envelope ${d.envelope_number}` : ""}`).join("\n") || "(none)",
+    ].join("\n"),
+  };
+}
+
 async function recordDocumentAttempt(supa: any, opts: {
   projectId: string;
   documentId: string;
