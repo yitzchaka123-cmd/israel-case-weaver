@@ -1318,8 +1318,11 @@ async function processConversation(
     content: "",
     metadata: { in_progress: true, model },
   });
-  const toolMessageId = assistantPlaceholderError ? null : assistantMessageId;
-  if (assistantPlaceholderError) console.error("assistant placeholder insert failed", assistantPlaceholderError);
+  if (assistantPlaceholderError) {
+    console.error("assistant placeholder insert failed", assistantPlaceholderError);
+    throw new Error("I couldn't start a safe assistant message for this run. Please retry; no document rows were created with broken assistant links.");
+  }
+  const toolMessageId = assistantMessageId;
 
   const convo: Array<Record<string, unknown>> = [{ role: "system", content: systemPrompt }, ...messages];
   const executedTools: Array<{ name: string; args?: Record<string, unknown>; result: unknown }> = [];
