@@ -1541,7 +1541,7 @@ async function processConversation(
       for (const call of toolCalls) {
         let args: Record<string, unknown> = {};
         try { args = JSON.parse(call.function.arguments || "{}"); } catch { /* ignore */ }
-        const result = await executeTool(supa, projectId, call.function.name, args, toolMessageId);
+        const result = await executeTool(supa, projectId, call.function.name, args, toolMessageId, playbook);
         const argsForUi = call.function.name === "propose_options" ? undefined : args;
         executedTools.push({ name: call.function.name, args: argsForUi, result });
         convo.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
@@ -1858,7 +1858,7 @@ Deno.serve(async (req) => {
         for (const call of toolCalls) {
           let args: Record<string, unknown> = {};
           try { args = JSON.parse(call.function.arguments || "{}"); } catch { /* ignore */ }
-          const result = await executeTool(supa, projectId, call.function.name, args, toolMessageId);
+          const result = await executeTool(supa, projectId, call.function.name, args, toolMessageId, playbook);
           // Persist args alongside name+result so the UI receipt can render the
           // exact field values that changed (e.g. project field updates).
           // Strip propose_options args — they're already echoed via result.options.
