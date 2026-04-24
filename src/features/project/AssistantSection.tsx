@@ -250,7 +250,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
   }, [projectId, messages, sending]);
   const send = async (text: string, baseMessages?: Msg[]) => {
     const content = text.trim();
-    if (!content || sending) return;
+    if (!content) return;
     setInput("");
     const source = baseMessages ?? messages;
     const convo = source.map((m) => ({ role: m.role, content: m.content }));
