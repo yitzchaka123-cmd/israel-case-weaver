@@ -33,7 +33,7 @@ export function MarketingSection({ projectId }: { projectId: string }) {
         <div className="text-[10px] font-medium tracking-widest uppercase text-muted-foreground mb-1">Marketing</div>
         <h2 className="font-display text-3xl">Box, copy & promo</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Cover art, box copy, barcode & back-of-box, company info, and a Script → Prompts → Storyboard mini-movie pipeline.
+          Cover art, professional box text, barcode, company info, and a Script → Prompts → Storyboard mini-movie pipeline.
         </p>
       </div>
 
