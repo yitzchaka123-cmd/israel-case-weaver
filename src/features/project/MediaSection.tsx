@@ -97,9 +97,10 @@ export function MediaSection({ projectId }: { projectId: string }) {
   return (
     <div className="max-w-6xl mx-auto px-6 md:px-10 py-8 space-y-6">
       <div>
-        <h2 className="font-display text-3xl">Promotions & Media</h2>
+        <div className="text-[10px] font-medium tracking-widest uppercase text-muted-foreground mb-1">Generation</div>
+        <h2 className="font-display text-3xl">Create media assets</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Cover art, back-of-box, televised news report, promo videos, and any external uploads.
+          Generate cover art, back-of-box visuals, news reports, promo videos, and upload external files.
         </p>
       </div>
 
