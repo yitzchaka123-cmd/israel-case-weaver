@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { X, Copy, ExternalLink, FileText, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
+import { AiOriginBadge, type AiOriginInfo } from "@/components/AiOriginBadge";
 
 export type LightboxAsset = {
   url: string;
@@ -9,6 +10,7 @@ export type LightboxAsset = {
   mimeType?: string | null;
   previewUrl?: string | null;
   openInTab?: { tab: string; targetId?: string; label?: string } | null;
+  origin?: AiOriginInfo | null;
 };
 
 export function AssetLightbox({ asset, onClose }: { asset: LightboxAsset | null; onClose: () => void }) {
@@ -63,7 +65,10 @@ export function AssetLightbox({ asset, onClose }: { asset: LightboxAsset | null;
         {isPdf && viewMode === "file" ? (
           <iframe title={asset.title ?? "PDF preview"} src={asset.url} className="h-[72vh] w-[86vw] rounded-lg border border-white/10 bg-background shadow-2xl" />
         ) : (
-          <img src={displayedUrl} alt={asset.title ?? "Asset preview"} className="max-w-full max-h-[72vh] object-contain rounded-lg shadow-2xl bg-background" />
+          <div className="relative">
+            <AiOriginBadge info={asset.origin} />
+            <img src={displayedUrl} alt={asset.title ?? "Asset preview"} className="max-w-full max-h-[72vh] object-contain rounded-lg shadow-2xl bg-background" />
+          </div>
         )}
         <div className="flex flex-wrap items-center gap-2 text-white">
           {asset.title && <div className="text-sm font-medium mr-auto truncate max-w-md">{asset.title}</div>}

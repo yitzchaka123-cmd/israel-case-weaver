@@ -54,6 +54,10 @@ type ToolCall = {
     document_format?: string;
     document_model?: string;
     document_skill_id?: string;
+    image_requested_model?: string;
+    image_effective_model?: string;
+    image_provider?: string;
+    image_fallback?: string;
     thumbnail_url?: string;
     alt_thumbnail_url?: string;
     cover_image_url?: string;
@@ -980,6 +984,7 @@ function GeneratedDocReceipt({
   documentFormat,
   documentModel,
   documentSkillId,
+  imageOrigin,
   documentId,
   onOpenAsset,
 }: {
@@ -990,6 +995,7 @@ function GeneratedDocReceipt({
   documentFormat?: string;
   documentModel?: string;
   documentSkillId?: string;
+  imageOrigin?: { requested?: string | null; effective?: string | null; provider?: string | null; fallback?: string | null } | null;
   documentId?: string;
   onOpenAsset?: (asset: LightboxAsset) => void;
 }) {
@@ -1030,10 +1036,11 @@ function GeneratedDocReceipt({
         {imageUrl && (
           <button
             type="button"
-            onClick={() => onOpenAsset?.({ url: imageUrl, title: message, openInTab: { tab: "documents", targetId: documentId, label: "Open in Documents" } })}
-            className="shrink-0 block rounded-md overflow-hidden border border-border/60 bg-background hover:ring-2 hover:ring-accent/40 transition"
+            onClick={() => onOpenAsset?.({ url: imageUrl, title: message, origin: imageOrigin, openInTab: { tab: "documents", targetId: documentId, label: "Open in Documents" } })}
+            className="group relative shrink-0 block rounded-md overflow-hidden border border-border/60 bg-background hover:ring-2 hover:ring-accent/40 transition"
             title="View full size"
           >
+            <AiOriginBadge info={imageOrigin} hoverOnly />
             <img src={imageUrl} alt="Generated document preview" className="h-32 w-auto object-cover" loading="lazy" />
           </button>
         )}
@@ -1215,6 +1222,12 @@ function ToolReceipts({ tools, onOpenAsset }: { tools: ToolCall[]; onOpenAsset?:
                       documentFormat={t.result.document_format}
                       documentModel={t.result.document_model}
                       documentSkillId={t.result.document_skill_id}
+                      imageOrigin={{
+                        requested: t.result.image_requested_model ?? null,
+                        effective: t.result.image_effective_model ?? t.result.image_requested_model ?? null,
+                        provider: t.result.image_provider ?? null,
+                        fallback: t.result.image_fallback ?? "none",
+                      }}
                       documentId={t.result.id}
                       onOpenAsset={onOpenAsset}
                     />
