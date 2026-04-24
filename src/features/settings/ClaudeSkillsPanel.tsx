@@ -254,3 +254,22 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
     </label>
   );
 }
+
+function SkillMetadata({ skill }: { skill: ClaudeSkill }) {
+  const frontmatter = frontmatterOf(skill);
+  const visible = Object.entries(frontmatter).filter(([, value]) => value !== undefined && value !== "");
+  if (!visible.length) return null;
+  return (
+    <div className="rounded-lg border bg-muted/20 p-3 text-xs">
+      <div className="mb-2 font-medium">SKILL.md metadata</div>
+      <div className="grid gap-1 sm:grid-cols-2">
+        {visible.map(([key, value]) => (
+          <div key={key} className="min-w-0">
+            <span className="text-muted-foreground">{key}: </span>
+            <span className="break-words">{Array.isArray(value) ? value.join(", ") : String(value)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
