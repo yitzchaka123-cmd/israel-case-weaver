@@ -116,6 +116,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
   const [nodes, setNodes] = useNodesState([]);
   const [edges, setEdges] = useEdgesState([]);
   const [generatingFlow, setGeneratingFlow] = useState(false);
+  const [creatingFinalMap, setCreatingFinalMap] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [summaryDraft, setSummaryDraft] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -152,6 +153,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
           description: n.description,
           createdByMessageId: (n as { created_by_message_id?: string | null }).created_by_message_id ?? null,
           envelopeNumber: (n.data as { envelopeNumber?: number } | null)?.envelopeNumber,
+          generationStatus: (n.data as { generationStatus?: string } | null)?.generationStatus,
         },
         type: "case",
         draggable: !n.locked,
@@ -406,6 +408,30 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
     setBoard("final");
   };
 
+  const createFinalDocumentsMap = async () => {
+    if (!approved) return toast.error("Approve the Logic Flow first");
+    if (nodes.length > 0 && !confirm("This will replace the current Final board document map. Continue?")) return;
+    setCreatingFinalMap(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-final-documents-map`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({ projectId, replace: true }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) return toast.error(data.error ?? "Could not create Final Documents Map");
+      toast.success(`Final Documents Map created · ${data.nodeCount ?? 0} planned nodes`);
+      qc.invalidateQueries({ queryKey: ["nodes", projectId, "final"] });
+      qc.invalidateQueries({ queryKey: ["edges", projectId, "final"] });
+    } finally {
+      setCreatingFinalMap(false);
+    }
+  };
+
   const approved = !!project?.logic_approved_at;
 
   return (
@@ -549,6 +575,18 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
             </Button>
           </>
         )}
+
+        {board === "final" && approved && (
+          <Button
+            variant={nodes.length === 0 ? "default" : "outline"}
+            className="gap-2 h-9"
+            onClick={createFinalDocumentsMap}
+            disabled={creatingFinalMap}
+          >
+            {creatingFinalMap ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+            {nodes.length === 0 ? "Create Final Documents Map" : "Rebuild Final Map"}
+          </Button>
+        )}
       </div>
 
       {board === "logic" && !approved && (
@@ -597,6 +635,26 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
         <div className="absolute top-4 right-4 z-10 max-w-sm">
           <div className="bg-muted border rounded-lg px-3 py-2 text-xs shadow-soft text-muted-foreground">
             Logic flow not yet approved. Approve it to lock the case design before producing the final board.
+          </div>
+        </div>
+      )}
+
+      {board === "final" && approved && nodes.length === 0 && (
+        <div className="absolute inset-x-4 top-20 z-10 mx-auto max-w-md rounded-lg border bg-card p-4 shadow-pop">
+          <div className="flex items-start gap-3">
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary shrink-0">
+              <FileText className="h-4 w-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="font-display text-base text-foreground">Final Documents Map not created yet</div>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                Create planned document nodes from the approved logic flow. This maps the production checklist only; it does not generate files.
+              </p>
+              <Button className="mt-3 gap-2 h-9" onClick={createFinalDocumentsMap} disabled={creatingFinalMap}>
+                {creatingFinalMap ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                Create map from approved logic
+              </Button>
+            </div>
           </div>
         </div>
       )}
