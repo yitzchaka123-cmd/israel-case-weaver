@@ -384,6 +384,30 @@ const cleanPhaseList = (a: unknown, fallback: PhaseDefinition[]): PhaseDefinitio
   return out.length > 0 ? out : fallback;
 };
 
+const cleanUniversalDocs = (a: unknown, fallback: UniversalDocumentDefinition[]): UniversalDocumentDefinition[] => {
+  if (!Array.isArray(a)) return fallback;
+  const out = a
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const e = entry as Partial<UniversalDocumentDefinition>;
+      const key = String(e.key ?? slug(String(e.title_template ?? "universal_doc"))).trim();
+      const title_template = String(e.title_template ?? "").trim();
+      if (!key || !title_template) return null;
+      return {
+        key,
+        enabled: e.enabled !== false,
+        title_template,
+        purpose: String(e.purpose ?? "").trim(),
+        doc_type: String(e.doc_type ?? "contents checklist").trim() || "contents checklist",
+        print_size: String(e.print_size ?? "A4").trim() || "A4",
+        list_scope: e.list_scope === "generated" ? "generated" : "planned",
+      };
+    })
+    .filter((x): x is UniversalDocumentDefinition => !!x)
+    .slice(0, 12);
+  return out.length > 0 ? out : fallback;
+};
+
 /**
  * Deep-merge a (possibly partial / malformed) override onto PLAYBOOK_DEFAULTS.
  * Unknown keys are silently dropped; numbers are clamped to safe ranges.
@@ -504,6 +528,11 @@ export function resolvePlaybook(override: unknown): Playbook {
     options: cleanStringArray(o.languages?.options, d.languages.options).slice(0, 24),
   };
 
+  const universal_documents = {
+    doc0_enabled: o.universal_documents?.doc0_enabled !== false,
+    docs: cleanUniversalDocs(o.universal_documents?.docs, d.universal_documents.docs),
+  };
+
   const phases = cleanPhaseList(o.phases, d.phases);
 
   return {
@@ -521,6 +550,7 @@ export function resolvePlaybook(override: unknown): Playbook {
     doc_mode_copy,
     catalogs,
     languages,
+    universal_documents,
     phases,
   };
 }
