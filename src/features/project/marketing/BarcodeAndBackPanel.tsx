@@ -336,6 +336,21 @@ LAYOUT REQUIREMENTS:
             )}
           </div>
           <ImageModelPicker surface="marketing-back" defaultModel="chatgpt-image-2" />
+          <div className="flex items-center justify-between gap-2 rounded-lg border bg-surface/70 p-2">
+            <span className="text-xs font-medium text-muted-foreground">Generate options</span>
+            <div className="inline-flex rounded-md border bg-muted/40 p-0.5">
+              {([1, 2, 4] as const).map((count) => (
+                <button
+                  key={count}
+                  type="button"
+                  onClick={() => setGenerateCount(count)}
+                  className={`h-7 min-w-8 rounded px-2 text-xs font-medium transition ${generateCount === count ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  {count}
+                </button>
+              ))}
+            </div>
+          </div>
           <Button
             onClick={handleGenerateBack}
             disabled={generatingBack || !barcodeReady || !copyReady}
@@ -343,9 +358,65 @@ LAYOUT REQUIREMENTS:
             className="w-full gap-1.5"
           >
             {generatingBack ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-            {data?.back_cover_url ? "Regenerate back cover" : "Generate back cover"}
+            {data?.back_cover_url ? "Generate more back-cover options" : "Generate back-cover options"}
           </Button>
         </div>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <h4 className="text-sm font-medium">Back-cover candidates</h4>
+          <span className="text-xs text-muted-foreground">{candidates.length} saved</span>
+        </div>
+        {candidates.length === 0 ? (
+          <div className="rounded-xl border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">
+            Generated back-cover options will appear here.
+          </div>
+        ) : (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {candidates.map((asset) => {
+              const active = !!asset.url && asset.url === data?.back_cover_url;
+              return (
+                <div key={asset.id} className="rounded-xl border bg-surface overflow-hidden">
+                  <div className="group aspect-[3/4] bg-muted relative">
+                    {asset.url ? (
+                      <img src={asset.url} alt={asset.title ?? "Back-cover candidate"} className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground">No image</div>
+                    )}
+                    {active && (
+                      <div className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-accent px-2 py-1 text-[10px] font-medium text-accent-foreground">
+                        <CheckCircle2 className="h-3 w-3" /> Active
+                      </div>
+                    )}
+                    {(asset.model || asset.effective_model) && (
+                      <AiOriginBadge hoverOnly info={{ requested: asset.model, effective: asset.effective_model ?? asset.model, fallback: asset.fallback ?? "none" }} />
+                    )}
+                  </div>
+                  <div className="p-3 space-y-2">
+                    <div className="text-xs font-medium truncate">{asset.title ?? "Back of box"}</div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <Button size="sm" variant={active ? "secondary" : "outline"} className="h-8 text-xs" disabled={!asset.url || active} onClick={() => asset.url && setActiveBackCover(asset.url)}>
+                        Use
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-8 text-xs gap-1" onClick={() => copyPrompt(asset.prompt)}>
+                        <Copy className="h-3 w-3" /> Prompt
+                      </Button>
+                      {asset.url && (
+                        <Button size="sm" variant="outline" className="h-8 text-xs gap-1" asChild>
+                          <a href={asset.url} target="_blank" rel="noreferrer"><ExternalLink className="h-3 w-3" /> Open</a>
+                        </Button>
+                      )}
+                      <Button size="sm" variant="outline" className="h-8 text-xs gap-1 text-destructive hover:text-destructive" onClick={() => deleteCandidate(asset)}>
+                        <Trash2 className="h-3 w-3" /> Delete
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </section>
   );
