@@ -8,6 +8,14 @@ import { BarcodeAndBackPanel } from "./marketing/BarcodeAndBackPanel";
 import { CompanyProfileSummary } from "./marketing/CompanyProfileSummary";
 import { StoryboardStudio } from "./marketing/StoryboardStudio";
 
+const marketingNav = [
+  { id: "marketing-cover-visuals", label: "Cover & Visuals" },
+  { id: "marketing-box-text", label: "Box Text" },
+  { id: "marketing-barcode", label: "Barcode" },
+  { id: "marketing-company-profile", label: "Company Profile" },
+  { id: "marketing-storyboard", label: "Storyboard Studio" },
+];
+
 export function MarketingSection({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
 
@@ -37,11 +45,35 @@ export function MarketingSection({ projectId }: { projectId: string }) {
         </p>
       </div>
 
-      <CoverAndVisuals projectId={projectId} />
-      <BoxCopyPanel projectId={projectId} />
-      <BarcodeAndBackPanel projectId={projectId} />
-      <CompanyProfileSummary />
-      <StoryboardStudio projectId={projectId} />
+      <div className="sticky top-0 z-10 -mx-2 rounded-xl border bg-background/85 p-2 backdrop-blur supports-[backdrop-filter]:bg-background/70">
+        <div className="flex gap-2 overflow-x-auto scrollbar-none">
+          {marketingNav.map((item) => (
+            <a
+              key={item.id}
+              href={`#${item.id}`}
+              className="shrink-0 rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              {item.label}
+            </a>
+          ))}
+        </div>
+      </div>
+
+      <section id="marketing-cover-visuals" className="scroll-mt-24">
+        <CoverAndVisuals projectId={projectId} />
+      </section>
+      <section id="marketing-box-text" className="scroll-mt-24">
+        <BoxCopyPanel projectId={projectId} />
+      </section>
+      <section id="marketing-barcode" className="scroll-mt-24">
+        <BarcodeAndBackPanel projectId={projectId} />
+      </section>
+      <section id="marketing-company-profile" className="scroll-mt-24">
+        <CompanyProfileSummary />
+      </section>
+      <section id="marketing-storyboard" className="scroll-mt-24">
+        <StoryboardStudio projectId={projectId} />
+      </section>
     </div>
   );
 }
