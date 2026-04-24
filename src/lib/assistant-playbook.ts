@@ -670,6 +670,14 @@ export function renderLanguagesBlock(p: Playbook): string {
   return `Game languages available for per-case final in-game content: ${p.languages.options.join(", ")}. Ask for and save one game_language during Phase 1 unless already set.`;
 }
 
+export function renderUniversalDocumentsBlock(p: Playbook): string {
+  const docs = p.universal_documents.docs
+    .filter((d) => d.enabled)
+    .map((d, i) => `${i + 1}. ${d.title_template} (${d.doc_type}, ${d.print_size}) — ${d.purpose} List scope: ${d.list_scope}.`)
+    .join("\n");
+  return `UNIVERSAL DOCUMENTS (apply to every game)\nDoc 0 enabled: ${p.universal_documents.doc0_enabled ? "yes" : "no"}.\n${docs || "No universal documents enabled."}`;
+}
+
 export function renderPhaseEnumComment(p: Playbook): string {
   const lines = p.phases.map((ph) => `  • ${ph.key} — ${ph.label}${ph.description ? `: ${ph.description}` : ""}`).join("\n");
   return `PHASES (the \`phase\` field on update_project must be one of these keys):\n${lines}`;
