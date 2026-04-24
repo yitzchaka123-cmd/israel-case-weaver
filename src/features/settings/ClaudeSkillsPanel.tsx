@@ -261,13 +261,14 @@ function SkillMetadata({ skill }: { skill: ClaudeSkill }) {
   const visible = Object.entries(frontmatter).filter(([, value]) => value !== undefined && value !== "");
   const metadata = skill.metadata ?? {};
   const manifest = (metadata.manifest ?? {}) as Record<string, unknown>;
+  const validation = typeof metadata.validation === "string" ? metadata.validation : "";
   const badges = META_BADGES.filter((key) => frontmatter[key] !== undefined && frontmatter[key] !== "");
-  if (!visible.length && !metadata.validation && !manifest.fileCount) return null;
+  if (!visible.length && !validation && !manifest.fileCount) return null;
   return (
     <div className="rounded-lg border bg-muted/20 p-3 text-xs space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <div className="font-medium">SKILL.md metadata</div>
-        {metadata.validation && <Badge variant="outline">{String(metadata.validation).replace(/_/g, " ")}</Badge>}
+        {validation && <Badge variant="outline">{validation.replace(/_/g, " ")}</Badge>}
         {typeof manifest.fileCount === "number" && <Badge variant="secondary">{manifest.fileCount} files</Badge>}
         {badges.map((key) => <Badge key={key} variant="outline">{key}</Badge>)}
       </div>
