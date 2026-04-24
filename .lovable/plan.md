@@ -1,54 +1,69 @@
-What happened
+I found where this is coming from and why it can go wrong.
 
-Your case is approved already: the database shows `logic_approved_at` is set and the logic board has nodes. But the Final board has zero nodes.
+Right now Doc 0 instructions exist in the assistant playbook as a universal document: “Doc 0 — Contents / Case File Inventory” should list every planned document, envelope, physical insert, and generated piece, with no spoilers. The Final Flow generator also creates a Doc 0 node with that purpose.
 
-That is because the new Final Documents Map workflow was added after this case had already passed the approval point. Right now, the map is only enforced when the assistant is about to create final document rows; simply revisiting an old approved logic flow does not automatically run the new map step. You are not doing anything wrong.
+But the actual document text generator does not have special Doc 0 logic. When `generate-document` creates body text, it only sends the model this generic brief:
 
-Also, the current Canvas approval button only switches you to the Final board after approval. It does not itself create the planned document nodes. So for existing cases, you need either the assistant to run `create_final_documents_map`, or the UI needs a direct “Create Final Documents Map” action.
+```text
+Document title
+Document type
+Print size
+Design notes
+Case title / setting / goal
+Write the full body now
+```
 
-Plan to fix it
+It does not fetch the Final Flow document nodes, envelopes, suspects, or the project’s full document list. So unless the assistant already wrote a perfect checklist into `hebrew_content` or `design_instructions`, the model has to invent or approximate the Doc 0 content. That is the bug.
 
-1. Add a Final board call-to-action for approved cases
-- When Logic Flow is approved and the Final board is empty, show a clear panel:
-  - “Final Documents Map not created yet”
-  - “Create map from approved logic” button
-  - short explanation that this creates planned document nodes only, not document rows/assets.
+For your current case, I also see multiple Doc 0 rows were created. The newest one does contain a checklist-style body, but the system is not enforcing that it matches the actual final map. It is still too dependent on whatever the assistant wrote in chat.
 
-2. Add a backend function for generating the map from existing case data
-- Reuse the existing assistant map behavior, but expose it as a deterministic backend action the Canvas can call.
-- It will read the approved solution summary, logic nodes, envelopes, target document count, existing documents, and universal Doc 0 rules.
-- It will create `document` nodes on the Final board with status:
-  - `ungenerated` for planned docs not created yet
-  - `draft row created` / linked when an existing document row already exists.
+## Plan to fix it
 
-3. Backfill existing documents into the map
-- Your current case already has two Doc 0 rows with no linked node.
-- The new map generation should either:
-  - create one Doc 0 node and link the most recent Doc 0 row to it, or
-  - if duplicates exist, mark the newest as the active linked one and leave the older row untouched.
-- The node description should say whether it is already created or still ungenerated.
+1. Add a hard Doc 0 detection rule
+   - Treat any document with `doc_number = 0`, title containing Doc 0 / contents / inventory, or doc type `contents checklist` as the universal box inventory.
+   - This should override generic document generation.
 
-4. Make approval create or prompt for the Final map
-- After pressing “Approve & start producing documents,” the app should not just switch to an empty Final board.
-- It should either auto-create the map or immediately show the “Create Final Documents Map” prompt on the Final board.
-- This makes the workflow obvious for both new and existing cases.
+2. Build Doc 0 from real project data
+   - When generating Doc 0 text/image/PDF, load:
+     - Final board document nodes
+     - Existing document rows
+     - Envelopes
+     - Suspects
+     - Relevant physical pieces / inserts planned in the final map
+   - Generate the body as an actual inventory list of what is in the game, grouped by envelope/section.
+   - Include generated/ungenerated status only if useful internally; the player-facing list should not expose app workflow unless you want it.
 
-5. Improve assistant instructions for existing cases
-- If the user says “show me the final flow/map” and Logic Flow is already approved but the Final board is empty, the assistant should create the Final Documents Map first instead of staying silent or only explaining the rule.
+3. Make Final Flow the source of truth
+   - If Final Flow exists, Doc 0 lists the planned document nodes from that flow.
+   - If Final Flow does not exist, the assistant must not produce a final Doc 0 from guesses. It should ask to generate the Final Flow first.
 
-Technical notes
+4. Strengthen assistant instructions
+   - Update the assistant prompt so it knows Doc 0 is not a normal evidence document.
+   - Before generating Doc 0, it must verify the Final Flow exists and say it is using the mapped final documents.
 
-Files likely to change:
-- `src/features/project/CanvasSection.tsx`
-  - detect empty Final board after approval
-  - add the CTA and button
-  - invalidate node queries after map creation
-  - show linked/generated status in the Final board panel
+5. Add editable Universal Documents section in the Playbook
+   - Expose the existing universal document settings in Settings → Assistant Playbook.
+   - Let you edit Doc 0 title, purpose, doc type, print size, list scope, and whether it is enabled.
+   - This solves your earlier requirement: “I want to fix these things exactly from the playbook.”
+
+6. Clean up duplicate Doc 0 behavior going forward
+   - When the assistant creates Doc 0, reuse/update the existing Doc 0 row instead of creating multiple Doc 0 documents.
+   - Link the Doc 0 row to the Doc 0 node in the Final Flow.
+
+## Technical details
+
+Files to update:
+- `supabase/functions/generate-document/index.ts`
+  - Add Doc 0-specific context loading and prompt construction.
+  - Use Final Flow document nodes and envelopes as the authoritative inventory.
 - `supabase/functions/assistant-chat/index.ts`
-  - strengthen existing-case behavior in the system prompt
-  - optionally share/route the map-creation logic
-- New or updated backend function, likely under `supabase/functions/`, to create the Final Documents Map from an approved project without requiring a chat message.
+  - Enforce Doc 0 workflow in assistant tool-use rules.
+  - Prevent duplicate Doc 0 creation where possible.
+- `supabase/functions/create-final-documents-map/index.ts`
+  - Ensure Doc 0 node has enough structured data for inventory generation.
+- `src/features/settings/AssistantPlaybookPanel.tsx`
+  - Add editable Universal Documents / Doc 0 controls.
+- `src/lib/assistant-playbook.ts` and `supabase/functions/_shared/assistant-playbook.ts`
+  - Keep the universal document schema/rendering consistent.
 
-Database changes are probably not required because `canvas_nodes.data`, `documents.linked_node_ids`, and existing project/document columns already support this workflow.
-
-After this is implemented, you can open this existing case, go to Canvas → Final, click “Create Final Documents Map,” and see the final document plan laid out as nodes before generating the remaining docs.
+No new database tables are required. This uses existing `documents`, `canvas_nodes`, `canvas_edges`, `envelopes`, `suspects`, and `profiles.assistant_playbook` data.

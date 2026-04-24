@@ -101,6 +101,47 @@ function findFileIds(value: unknown): string[] {
   return [...found];
 }
 
+function isDoc0(doc: Record<string, unknown>): boolean {
+  const title = String(doc.title ?? "").toLowerCase();
+  const type = String(doc.doc_type ?? "").toLowerCase();
+  return Number(doc.doc_number) === 0 || /\bdoc\s*0\b|document\s*0|contents|inventory|תוכן עניינים|רשימת תכולה/.test(title) || type === "contents checklist";
+}
+
+async function loadDoc0InventoryContext(supa: any, projectId: string) {
+  const [{ data: finalDocs }, { data: envelopes }, { data: suspects }, { data: existingDocs }] = await Promise.all([
+    supa.from("canvas_nodes").select("id, title, description, data, created_at").eq("project_id", projectId).eq("board", "final").eq("node_type", "document").order("position_y", { ascending: true }),
+    supa.from("envelopes").select("number, label, task").eq("project_id", projectId).order("number", { ascending: true }),
+    supa.from("suspects").select("name, role_in_case").eq("project_id", projectId).order("position", { ascending: true }),
+    supa.from("documents").select("id, doc_number, title, doc_type, print_size, envelope_number, status, created_at").eq("project_id", projectId).order("doc_number", { ascending: true, nullsFirst: false }),
+  ]);
+
+  const docNodes = (finalDocs ?? [])
+    .filter((node: any) => Number(node.data?.docNumber) !== 0 && !/^doc\s*0\b/i.test(String(node.title ?? "")))
+    .map((node: any) => ({
+      docNumber: node.data?.docNumber ?? "?",
+      title: node.title ?? "Untitled document",
+      docType: node.data?.docType ?? "document",
+      printSize: node.data?.printSize ?? "A4",
+      envelopeNumber: node.data?.envelopeNumber ?? null,
+      purpose: node.data?.purpose ?? node.description ?? "Planned case document.",
+      generationStatus: node.data?.generationStatus ?? "planned",
+    }));
+
+  return {
+    hasFinalMap: docNodes.length > 0,
+    text: [
+      `FINAL FLOW DOCUMENT NODES (authoritative list for Doc 0):`,
+      docNodes.map((d: any) => `- #${d.docNumber} ${d.title} (${d.docType}, ${d.printSize})${d.envelopeNumber ? ` — envelope ${d.envelopeNumber}` : ""}. Purpose: ${d.purpose}`).join("\n") || "(none)",
+      `\nENVELOPES:`,
+      (envelopes ?? []).map((e: any) => `- Envelope ${e.number}: ${e.label ?? ""}${e.task ? ` — ${e.task}` : ""}`).join("\n") || "(none)",
+      `\nSUSPECTS / CAST INSERTS:`,
+      (suspects ?? []).map((s: any) => `- ${s.name}${s.role_in_case ? ` — ${s.role_in_case}` : ""}`).join("\n") || "(none)",
+      `\nEXISTING DOCUMENT ROWS (for status only; do not invent missing inventory from these if Final Flow differs):`,
+      (existingDocs ?? []).map((d: any) => `- #${d.doc_number ?? "?"} ${d.title} (${d.doc_type ?? "document"}, ${d.print_size ?? "A4"})${d.envelope_number ? ` — envelope ${d.envelope_number}` : ""}`).join("\n") || "(none)",
+    ].join("\n"),
+  };
+}
+
 async function recordDocumentAttempt(supa: any, opts: {
   projectId: string;
   documentId: string;
@@ -166,8 +207,17 @@ Deno.serve(async (req) => {
       const model = resolveDocumentModel(project);
       const blocked = directProviderBlock(model, "document text");
       if (blocked) return blocked;
-      const sys = `You write in-game evidence documents for premium printable mystery games. Output ONLY the document body in ${gameLanguage}, ${isRtl ? "RTL-ready" : "properly formatted"}, realistic and immersive, tailored to the document type. No meta-commentary. No disclaimers. For interrogation transcripts include pauses, body language and back-and-forth. Do not reveal the full solution.`;
-      const userPrompt = `Case: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nPlayer role: ${project?.player_role ?? ""}\nCase goal: ${project?.case_goal ?? ""}\nYear: ${project?.year ?? ""}\nSetting: ${project?.setting ?? ""}\n\nDocument to produce:\nTitle: ${doc.title}\nType: ${doc.doc_type ?? "generic"}\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\n\nWrite the full ${gameLanguage} body now.`;
+      const doc0 = isDoc0(doc);
+      const inventory = doc0 ? await loadDoc0InventoryContext(supa, doc.project_id) : null;
+      if (doc0 && !inventory?.hasFinalMap) {
+        return new Response(JSON.stringify({ error: "Doc 0 must be generated from the Final Flow. Create the Final Documents Map first, then retry Doc 0." }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const sys = doc0
+        ? `You write Doc 0 for premium printable mystery games. Doc 0 is NEVER evidence and NEVER a normal memo. It is the player-facing box contents / case-file inventory. Output ONLY the document body in ${gameLanguage}, ${isRtl ? "RTL-ready" : "properly formatted"}. Use the supplied Final Flow document nodes as the authoritative inventory. Group by envelope/section when possible. No solution spoilers. Do not invent documents not present in the Final Flow.`
+        : `You write in-game evidence documents for premium printable mystery games. Output ONLY the document body in ${gameLanguage}, ${isRtl ? "RTL-ready" : "properly formatted"}, realistic and immersive, tailored to the document type. No meta-commentary. No disclaimers. For interrogation transcripts include pauses, body language and back-and-forth. Do not reveal the full solution.`;
+      const userPrompt = doc0
+        ? `Case: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nPlayer role: ${project?.player_role ?? ""}\nCase goal: ${project?.case_goal ?? ""}\nYear: ${project?.year ?? ""}\nSetting: ${project?.setting ?? ""}\n\nDocument to produce:\nTitle: ${doc.title}\nType: contents checklist / box inventory\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\n\n${inventory?.text ?? ""}\n\nWrite Doc 0 now as a clean player-facing checklist of every planned game document and physical insert. Include Doc 0 itself, opening/instruction pieces, envelopes, suspects/cast sheets if present, and all planned document nodes. Do not reveal answers, culprits, hidden logic, or generation status.`
+        : `Case: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nPlayer role: ${project?.player_role ?? ""}\nCase goal: ${project?.case_goal ?? ""}\nYear: ${project?.year ?? ""}\nSetting: ${project?.setting ?? ""}\n\nDocument to produce:\nTitle: ${doc.title}\nType: ${doc.doc_type ?? "generic"}\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\n\nWrite the full ${gameLanguage} body now.`;
 
       const startedAt = Date.now();
       const callerUserId = await getUserIdFromAuth(req);
@@ -319,14 +369,21 @@ Deno.serve(async (req) => {
       const useOpenAI = OPENAI_IMAGE_KEYS.has(imgPref);
 
       const designNotes = (doc.design_instructions ?? "").trim();
-      const contentExcerpt = (doc.hebrew_content ?? "").trim().slice(0, 1200);
+      const doc0 = isDoc0(doc);
+      const inventory = doc0 ? await loadDoc0InventoryContext(supa, doc.project_id) : null;
+      if (doc0 && !inventory?.hasFinalMap) {
+        return new Response(JSON.stringify({ error: "Doc 0 image must be generated from the Final Flow. Create the Final Documents Map first, then retry Doc 0." }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const contentExcerpt = (doc.hebrew_content ?? "").trim().slice(0, doc0 ? 2400 : 1200);
       const userImageInstructions = (project?.image_prompt_instructions as string ?? "").trim();
 
       const imgPrompt = [
         userImageInstructions
           ? `USER GLOBAL IMAGE INSTRUCTIONS (apply to every image in this project — highest priority):\n${userImageInstructions}\n`
           : "",
-        `Create a single high-resolution, photorealistic, print-ready image of a ${doc.doc_type ?? "document"} for a premium mystery / detective game.`,
+        doc0
+          ? `Create a single high-resolution, print-ready image of Doc 0: the player-facing contents checklist / case-file inventory for a premium mystery / detective game. This is not evidence; it is the box inventory.`
+          : `Create a single high-resolution, photorealistic, print-ready image of a ${doc.doc_type ?? "document"} for a premium mystery / detective game.`,
         `Game title: "${project?.title ?? ""}"${project?.subtitle ? ` — ${project.subtitle}` : ""}.`,
         `Era / setting: ${project?.year ?? "—"}, ${project?.setting ?? "Israeli setting"}.`,
         `Genre: ${project?.genre ?? "mystery"}. Mystery type: ${project?.mystery_type ?? "—"}.`,
@@ -337,7 +394,7 @@ Deno.serve(async (req) => {
         designNotes ? designNotes : `Authentic, period-correct, high-detail. Treat as a real-world physical prop: realistic paper texture, period-correct typography, believable headers/stamps/signatures.\n\nADDITIONAL REALISM DETAILS — include AT LEAST 20 concrete, period-appropriate details visible on the document. Pick from (and add similar): slight paper yellowing, faint horizontal fold across the center, mild edge wear, punch-hole marks on the left margin, one or two intake/filing stamps with era-correct date format, a typed reference number, a distribution list at the bottom, a small handwritten marginal note in pen or pencil, a signature scribble above a typed name, slightly uneven line spacing, faint photocopy shadowing along one edge, a classification stamp in dark red ink, a smaller box stamp near the lower third, a discreet fictitious seal (never a real emblem), a paperclip or staple shadow, a coffee/ink ring, smudged ribbon impression, carbon-copy bleed-through where applicable, a tape-repaired tear, a tiny fingerprint smudge, perforation marks if it's a tear-off form. Every detail must be concrete and visible — not a vague "looks aged".\n\nIf this document is an unusual / creative prop (map, diagram, hand-drawn note, cipher, blueprint, matchbook, ransom note, photo collage, evidence tag, ship/building map, etc.) instead include 8–15 CREATIVE in-world touches: hand annotations, torn-and-taped corners, smudged compass roses, coded margin doodles, crayon arrows, crossed-out misspellings, hidden symbols, unusual aspect ratios, attached Polaroids, etc. — tactile prop-style authenticity over bureaucratic realism.\n\nNo cartoon style. No watermark text. No copyright marks. No real emblems, real names, or real signatures.`,
         ``,
         `CONTENT TO RENDER (${gameLanguage}, ${isRtl ? "RTL" : "LTR"}, grammatically correct, fully legible):`,
-        contentExcerpt ? contentExcerpt : `Use plausible ${gameLanguage} text appropriate to the document type. All ${gameLanguage} must be perfectly readable and correctly laid out ${isRtl ? "right-to-left" : "left-to-right"}.`,
+        contentExcerpt ? contentExcerpt : doc0 ? `Create a non-spoiler checklist from this authoritative inventory:\n${inventory?.text ?? ""}` : `Use plausible ${gameLanguage} text appropriate to the document type. All ${gameLanguage} must be perfectly readable and correctly laid out ${isRtl ? "right-to-left" : "left-to-right"}.`,
         ``,
         `RULES:`,
         `- Render as a real-world physical document photographed or scanned, not a UI mockup.`,

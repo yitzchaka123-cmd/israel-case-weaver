@@ -143,12 +143,13 @@ Phase 3.5 LOGIC FLOW (MANDATORY GATE before Phase 4):
 - If \`solution_summary\` is empty OR \`logic_approved_at\` is null, you MUST refuse to call \`add_document\`. Instead, instruct the user (in 2–3 sentences):
     ${renderLogicGateRefusal(playbook)}
 - After approval is in place, you may proceed to Phase 4.
-Phase 4 Documents: Doc 0 = contents; then randomized doc numbers, varied types & print sizes, bodies in the selected Game language. Interrogations must be long, realistic, with pauses & body language.
+Phase 4 Documents: Doc 0 = contents; then randomized doc numbers, varied types & print sizes, bodies in the selected Game language. Interrogations must be long, realistic, with pauses & body language. Doc 0 is a universal box inventory, not evidence: it must list the Final Flow's planned documents/envelopes/inserts and must not be guessed from the case summary alone.
 
 ${renderUniversalDocumentsBlock(playbook)}
 
 DOCUMENT GENERATION WORKFLOW (Phase 4 — read carefully)
 Before creating final document rows, you MUST create/review the Final Documents Map on the Case Board's Final board. The map contains one \`document\` node for every planned real game document, including Doc 0, marked as ungenerated until a real document row is created/generated. If the Final board does not yet contain planned document nodes, call \`create_final_documents_map\` first and ask the user to review it before calling \`add_document\`.
+Doc 0 hard rule: before creating or generating Doc 0, use the Final Flow as the source of truth. If the Final Flow has no document nodes, call \`create_final_documents_map\` first. When calling \`add_document\` for Doc 0, set doc_number=0, doc_type="contents checklist", and write hebrew_content as a non-spoiler inventory of the planned document nodes/envelopes, not a normal case memo.
 If the user asks to see/show/build the final flow, final board, production map, document map, or mapped final documents, and Logic Flow is already approved but the Final board has no \`document\` nodes, call \`create_final_documents_map\` immediately before prose. This is especially important for older existing cases that were approved before this workflow existed.
 The Final Flow is a major production artifact: it must include the approved logic nodes, suspects, envelopes, planned document nodes, and connecting lines between them. When the Final Flow already exists, acknowledge it before document generation: “I see the Final Flow is created; I’ll generate documents from those mapped nodes.” If it does not exist, ask whether to generate it now and use propose_options with Yes/No buttons. If the user answers yes, call \`create_final_documents_map\`.
 If the user asks you to generate the Logic Flow from chat, call \`generate_logic_flow\`. After it finishes, tell the user to review/edit the Canvas Logic Flow and click Approve logic before final-document generation.
@@ -961,9 +962,28 @@ async function executeTool(
       delete insertArgs.final_node_id;
       const docNumber = insertArgs.doc_number ?? Math.floor(100 + Math.random() * 900);
       const linkedNodeIds = finalNodeId ? [finalNodeId] : undefined;
+      const isDoc0 = Number(docNumber) === 0 || /\bdoc\s*0\b|document\s*0|contents|inventory|תוכן עניינים|רשימת תכולה/i.test(String(insertArgs.title ?? "")) || String(insertArgs.doc_type ?? "").toLowerCase() === "contents checklist";
+      if (isDoc0) {
+        const { data: existingDoc0 } = await supa
+          .from("documents")
+          .select("id, title")
+          .eq("project_id", projectId)
+          .eq("doc_number", 0)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (existingDoc0) {
+          await supa
+            .from("documents")
+            .update(withMessage({ ...insertArgs, doc_number: 0, doc_type: insertArgs.doc_type ?? "contents checklist", ...(linkedNodeIds ? { linked_node_ids: linkedNodeIds } : {}) }))
+            .eq("id", existingDoc0.id);
+          if (finalNodeId) await supa.from("canvas_nodes").update({ data: { documentId: existingDoc0.id, generationStatus: "draft row created" } }).eq("id", finalNodeId).eq("project_id", projectId);
+          return { ok: true, message: `Doc 0 updated: ${insertArgs.title ?? existingDoc0.title} (#0)`, id: existingDoc0.id };
+        }
+      }
       const { data, error } = await supa
         .from("documents")
-        .insert(withMessage({ ...insertArgs, doc_number: docNumber, project_id: projectId, ...(linkedNodeIds ? { linked_node_ids: linkedNodeIds } : {}) }))
+        .insert(withMessage({ ...insertArgs, doc_number: isDoc0 ? 0 : docNumber, project_id: projectId, doc_type: isDoc0 ? (insertArgs.doc_type ?? "contents checklist") : insertArgs.doc_type, ...(linkedNodeIds ? { linked_node_ids: linkedNodeIds } : {}) }))
         .select("id, title")
         .single();
       if (error) throw error;
