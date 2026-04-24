@@ -115,7 +115,7 @@ export function SettingsPage() {
       </div>
 
       <div className="space-y-8">
-        <Section title="Branding" desc="Set your studio logo that appears across the app.">
+        <Section id="branding" title="Branding" desc="Set your studio logo that appears across the app.">
           <div className="flex items-center gap-5">
             <div className="h-20 w-20 rounded-2xl border bg-muted flex items-center justify-center overflow-hidden">
               {logoUrl ? (
@@ -144,7 +144,7 @@ export function SettingsPage() {
           </div>
         </Section>
 
-        <Section title="Appearance" desc="Light or dark theme for your production workspace.">
+        <Section id="appearance" title="Appearance" desc="Light or dark theme for your production workspace.">
           <div className="grid grid-cols-2 gap-3 max-w-sm">
             {(["light", "dark"] as const).map((t) => {
               const active = theme === t;
@@ -168,7 +168,7 @@ export function SettingsPage() {
           </div>
         </Section>
 
-        <Section title="Profile" desc="Your display name in the workspace.">
+        <Section id="profile" title="Profile" desc="Your display name in the workspace.">
           <div className="space-y-2 max-w-md">
             <Label>Display name</Label>
             <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
@@ -176,6 +176,7 @@ export function SettingsPage() {
         </Section>
 
         <Section
+          id="image-prompt-assistant"
           title="Image-prompt assistant"
           desc="Global style guide for the AI assistant that drafts image prompts (cover, suspect portraits, document images, media). Applied to every project."
         >
@@ -192,6 +193,7 @@ export function SettingsPage() {
         </Section>
 
         <Section
+          id="assistant-playbook"
           title="Assistant playbook — defaults"
           desc="These are the assistant's built-in defaults (suspect counts, hint count, envelopes, phase-1 setup order, canonical vocab, realism floor, document-generation mode). Edit any value to change how it builds future cases — without losing the rest of the workflow. Empty / reset = use the system default."
         >
@@ -199,13 +201,14 @@ export function SettingsPage() {
         </Section>
 
         <Section
+          id="assistant-tweaks"
           title="Assistant tweaks"
           desc="Free-form house rules layered ON TOP of the playbook above. Use this for one-off preferences (e.g. 'never use noir genres', 'always include a coded margin doodle'). Talk to the mini-assistant in plain English to add, edit or remove rules — they're injected as USER OVERRIDES."
         >
           <AssistantTweaksPanel />
         </Section>
 
-        <Section title="AI provider routing" desc="Choose which provider handles each task. Each prefix routes to its own billing account — see API keys below.">
+        <Section id="ai-routing" title="AI provider routing" desc="Choose which provider handles each task. Each prefix routes to its own billing account — see API keys below.">
           <div className="space-y-3 max-w-xl">
             <ProviderSelectRow
               label="Planning / Game design"
@@ -270,29 +273,32 @@ export function SettingsPage() {
         </Section>
 
         <Section
+          id="ai-connections"
           title="Google Gemini (Nano Banana)"
           desc="Connect your Google AI Studio API key to call Nano Banana, Nano Banana 2, and Nano Banana Pro directly — bypassing the Lovable AI Gateway and billing to your Google account."
         >
           <GeminiConnection />
         </Section>
 
-        <Section title="Usage & credits" desc="Live spend and quick links to top up each provider. Only OpenAI publishes a usage API; the other providers open their billing dashboards in a new tab.">
+        <Section id="usage-credits" title="Usage & credits" desc="Live spend and quick links to top up each provider. Only OpenAI publishes a usage API; the other providers open their billing dashboards in a new tab.">
           <UsageDashboard />
         </Section>
 
         <Section
+          id="ai-activity-log"
           title="AI activity log"
           desc="Every AI call your workspace makes — chat, image, marketing, storyboard, etc. Color dot: green = ran on requested model, amber = a fallback fired, red = error. Click a row for details."
         >
           <AiRunLog />
         </Section>
 
-        <Section title="API keys" desc="Manage and test all API keys this workspace uses to call AI providers.">
+        <Section id="api-keys" title="API keys" desc="Manage and test all API keys this workspace uses to call AI providers.">
           <ApiKeyManager />
         </Section>
 
         {isAdmin && (
           <Section
+            id="team-access"
             title="Team access"
             desc="Control who can sign in. Create invite codes for new users, then approve them once they sign in with Google."
           >
@@ -308,9 +314,9 @@ export function SettingsPage() {
   );
 }
 
-function Section({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
+function Section({ id, title, desc, children }: { id?: string; title: string; desc?: string; children: React.ReactNode }) {
   return (
-    <section className="bg-card border rounded-2xl p-6 shadow-soft">
+    <section id={id} className="scroll-mt-6 bg-card border rounded-2xl p-6 shadow-soft">
       <h2 className="font-display text-xl">{title}</h2>
       {desc && <p className="text-sm text-muted-foreground mt-1 mb-5">{desc}</p>}
       {children}
