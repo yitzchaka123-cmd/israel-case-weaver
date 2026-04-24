@@ -52,7 +52,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { documentId, mode, imageModelOverride, quality: qualityOverride } = await req.json() as { documentId: string; mode: "text" | "image"; imageModelOverride?: string; quality?: "low" | "medium" | "high" };
+    const { documentId, mode, imageModelOverride, quality: qualityOverride, documentFormat = "pdf" } = await req.json() as { documentId: string; mode: "text" | "image" | "document"; imageModelOverride?: string; quality?: "low" | "medium" | "high"; documentFormat?: "pdf" | "docx" | "pptx" | "xlsx" };
     if (!documentId || !mode) {
       return new Response(JSON.stringify({ error: "documentId and mode required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -125,6 +125,25 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ok: true, hebrew_content: bodyText, model, effectiveModel: fb.effectiveModel, fallback: fb.fallback }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    if (mode === "document") {
+      const model = PROVIDER_MODEL[project?.ai_provider_documents ?? "lovable"] ?? PROVIDER_MODEL.lovable;
+      const provider = providerLabel(model);
+      const directFilePrompt = `Create the final ${documentFormat.toUpperCase()} document directly if your API supports returning generated files. If you cannot return an actual file, say exactly: UNABLE_TO_CREATE_FILE.\n\nCase: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nDocument title: ${doc.title}\nType: ${doc.doc_type ?? "generic"}\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\nContent:\n${doc.hebrew_content ?? ""}`;
+      const startedAt = Date.now();
+      const callerUserId = await getUserIdFromAuth(req);
+      const resp = await chatCompletions({ model, messages: [{ role: "user", content: directFilePrompt }] });
+      const fb = extractFallback(resp, model);
+      if (!resp.ok) {
+        const t = await resp.text().catch(() => "");
+        await logAiRun({ userId: callerUserId, projectId: doc.project_id, surface: "generate-document-file", requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback, status: "error", latencyMs: Date.now() - startedAt, errorMessage: t.slice(0, 200), targetId: documentId, promptExcerpt: directFilePrompt });
+        return new Response(JSON.stringify({ error: `${provider} could not create the ${documentFormat.toUpperCase()} (${resp.status})` }), { status: resp.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const data = await resp.json();
+      const content = String(data.choices?.[0]?.message?.content ?? "").trim();
+      await logAiRun({ userId: callerUserId, projectId: doc.project_id, surface: "generate-document-file", requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback, status: "error", latencyMs: Date.now() - startedAt, errorMessage: "Model did not return a downloadable file", targetId: documentId, promptExcerpt: directFilePrompt });
+      return new Response(JSON.stringify({ error: content.includes("UNABLE_TO_CREATE_FILE") ? `${provider} was not able to create a downloadable ${documentFormat.toUpperCase()} directly.` : `${provider} responded, but did not return a downloadable ${documentFormat.toUpperCase()} file.` }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     if (mode === "image") {
