@@ -1,5 +1,5 @@
-// Generate document content + optional image. Routes through the shared
-// AI router so OpenAI / Anthropic / Gemini direct keys are used when configured.
+// Generate document content + optional image. Routes through direct provider
+// keys only for document work; no hidden Lovable AI fallback.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { chatCompletions, providerLabel, generateImage, ImageGenError, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
 import { loadClaudeSkillsForSurface, preferredClaudeDocumentSkill, type ClaudeSkillRow } from "../_shared/claude-skills.ts";
@@ -49,6 +49,20 @@ const IMAGE_MODEL: Record<string, string> = {
 };
 
 const OPENAI_IMAGE_KEYS = new Set(["chatgpt-image-2", "chatgpt-image"]);
+
+function resolveDocumentModel(project: Record<string, unknown> | null): string {
+  const pref = String(project?.ai_provider_documents ?? project?.ai_provider_planning ?? "").trim();
+  return PROVIDER_MODEL[pref] ?? "";
+}
+
+function directProviderBlock(model: string, output: string): Response | null {
+  if (!model || providerLabel(model) === "lovable-ai") {
+    return new Response(JSON.stringify({
+      error: `No direct ${output} model is selected. Switch Documents to ChatGPT 5.2/OpenAI, Claude, or Gemini Direct in Settings, then retry.`,
+    }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+  }
+  return null;
+}
 
 const MIME_BY_FORMAT: Record<string, string> = {
   pdf: "application/pdf",
