@@ -63,6 +63,10 @@ export type Playbook = {
   doc_generation: {
     default_mode: "drafts" | "auto" | "ask" | "unset";
     ask_each_new_project: boolean;
+    direct_file_first: boolean;
+    strict_model_ownership: boolean;
+    save_file_prompts: boolean;
+    output_type_default: "image" | "document" | "both" | "ask";
   };
   explanations: {
     paragraphs: number;
@@ -182,6 +186,10 @@ Looks like an actual archival envelope from the case era — NOT a modern Canva 
   doc_generation: {
     default_mode: "unset",
     ask_each_new_project: true,
+    direct_file_first: true,
+    strict_model_ownership: true,
+    save_file_prompts: true,
+    output_type_default: "ask",
   },
   explanations: {
     paragraphs: 2,
@@ -199,6 +207,9 @@ Looks like an actual archival envelope from the case era — NOT a modern Canva 
     "No sexual content, no sex scandals.",
     "No real politicians or army figures by name. Institutions like Mossad / Shabak are OK.",
     "No single document may spoil the solution. Evidence must cross-reference.",
+    "For document/file output, ask the selected model to create the actual file directly first; if it cannot, report that clearly instead of silently rendering or switching models.",
+    "Claude document/file requests may use enabled built-in and custom Claude Skills with code execution; skills should grow over time through installed/enabled skills.",
+    "Save the exact prompt used for PDF/document generation in logs, prompt history, and generated asset metadata so it can be reviewed or copied later.",
   ],
   design_skeleton: [
     { key: "goal", name: "GOAL", note: "What the document is and what the player should feel.", enabled: true },
@@ -415,9 +426,14 @@ export function resolvePlaybook(override: unknown): Playbook {
 
   const modeRaw = String(o.doc_generation?.default_mode ?? d.doc_generation.default_mode);
   const default_mode = (["drafts", "auto", "ask", "unset"].includes(modeRaw) ? modeRaw : "unset") as Playbook["doc_generation"]["default_mode"];
+  const outputTypeRaw = String(o.doc_generation?.output_type_default ?? d.doc_generation.output_type_default);
   const doc_generation = {
     default_mode,
     ask_each_new_project: o.doc_generation?.ask_each_new_project !== false,
+    direct_file_first: o.doc_generation?.direct_file_first !== false,
+    strict_model_ownership: o.doc_generation?.strict_model_ownership !== false,
+    save_file_prompts: o.doc_generation?.save_file_prompts !== false,
+    output_type_default: (["image", "document", "both", "ask"].includes(outputTypeRaw) ? outputTypeRaw : "ask") as Playbook["doc_generation"]["output_type_default"],
   };
 
   const explanations = {
