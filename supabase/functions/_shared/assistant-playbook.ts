@@ -210,6 +210,8 @@ Looks like an actual archival envelope from the case era — NOT a modern Canva 
     "For document/file output, ask the selected model to create the actual file directly first; if it cannot, report that clearly instead of silently rendering or switching models.",
     "Claude document/file requests may use enabled built-in and custom Claude Skills with code execution; skills should grow over time through installed/enabled skills.",
     "Save the exact prompt used for PDF/document generation in logs, prompt history, and generated asset metadata so it can be reviewed or copied later.",
+    "When generating an asset, choose or ask for the intended output type: Image, Document/file, or Both. Evidence documents default to Document/file, visual props default to Image, and marketing/box assets may use Both.",
+    "If the user asks for a document/file from a media or marketing prompt, preserve that prompt as a first-class project asset and route real file creation through the strict document generation flow rather than silently rendering a fake fallback.",
   ],
   design_skeleton: [
     { key: "goal", name: "GOAL", note: "What the document is and what the player should feel.", enabled: true },

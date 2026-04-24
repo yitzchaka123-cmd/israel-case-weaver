@@ -13,6 +13,14 @@ import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { Copy, Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
+type OutputType = "image" | "document" | "both";
+
+const OUTPUT_TYPES: { value: OutputType; label: string }[] = [
+  { value: "image", label: "Image" },
+  { value: "document", label: "Document/file" },
+  { value: "both", label: "Both" },
+];
+
 interface MediaAsset {
   id: string;
   category: string;
@@ -47,6 +55,8 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const [newHint, setNewHint] = useState("");
   const [generating, setGenerating] = useState(false);
   const [generatingCover, setGeneratingCover] = useState(false);
+  const [coverOutputType, setCoverOutputType] = useState<OutputType>("image");
+  const [extraOutputType, setExtraOutputType] = useState<OutputType>("image");
 
   const { data: project } = useQuery({
     queryKey: ["project-cover-only", projectId],
@@ -89,23 +99,28 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const handleGenerateCover = async (prompt: string) => {
     setGeneratingCover(true);
     try {
-      const modelOverride = getStoredImageModel("marketing-cover", "chatgpt-image-2");
-      const quality = getStoredImageQuality("marketing-cover", "medium");
-      const resp = await callEdge("generate-image", {
-        projectId,
-        category: "cover",
-        target: "project-cover",
-        prompt,
-        modelOverride,
-        aspect: "portrait",
-        quality,
-      });
-      if (!resp.ok) {
-        const e = await resp.json().catch(() => ({}));
-        toast.error(e.error ?? "Cover generation failed", { duration: 10000 });
-        return;
+      if (coverOutputType === "image" || coverOutputType === "both") {
+        const modelOverride = getStoredImageModel("marketing-cover", "chatgpt-image-2");
+        const quality = getStoredImageQuality("marketing-cover", "medium");
+        const resp = await callEdge("generate-image", {
+          projectId,
+          category: "cover",
+          target: "project-cover",
+          prompt,
+          modelOverride,
+          aspect: "portrait",
+          quality,
+        });
+        if (!resp.ok) {
+          const e = await resp.json().catch(() => ({}));
+          toast.error(e.error ?? "Cover generation failed", { duration: 10000 });
+          if (coverOutputType === "image") return;
+        }
       }
-      toast.success("Cover visual generated");
+      if (coverOutputType === "document" || coverOutputType === "both") {
+        await supabase.from("media_assets").insert({ project_id: projectId, category: "cover", title: "Cover document prompt", prompt, provider: "direct-model-file", asset_type: "document", document_format: "pdf", generation_mode: "direct_model_file", status: "failed", error_message: "Create a document row to generate a real file directly with the selected document model." } as never);
+      }
+      toast.success(coverOutputType === "both" ? "Cover image generated; document prompt saved" : coverOutputType === "document" ? "Cover document prompt saved" : "Cover visual generated");
       qc.invalidateQueries({ queryKey: ["project-cover-only", projectId] });
     } finally {
       setGeneratingCover(false);
@@ -115,22 +130,27 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const handleGenerate = async (prompt: string) => {
     setGenerating(true);
     try {
-      const modelOverride = getStoredImageModel("marketing-cover", "chatgpt-image-2");
-      const quality = getStoredImageQuality("marketing-cover", "medium");
-      const resp = await callEdge("generate-image", {
-        projectId,
-        category: "marketing-extra",
-        prompt,
-        title: newTitle || "Marketing image",
-        modelOverride,
-        quality,
-      });
-      if (!resp.ok) {
-        const e = await resp.json().catch(() => ({}));
-        toast.error(e.error ?? "Image generation failed", { duration: 10000 });
-        return;
+      if (extraOutputType === "image" || extraOutputType === "both") {
+        const modelOverride = getStoredImageModel("marketing-cover", "chatgpt-image-2");
+        const quality = getStoredImageQuality("marketing-cover", "medium");
+        const resp = await callEdge("generate-image", {
+          projectId,
+          category: "marketing-extra",
+          prompt,
+          title: newTitle || "Marketing image",
+          modelOverride,
+          quality,
+        });
+        if (!resp.ok) {
+          const e = await resp.json().catch(() => ({}));
+          toast.error(e.error ?? "Image generation failed", { duration: 10000 });
+          if (extraOutputType === "image") return;
+        }
       }
-      toast.success("Marketing image generated");
+      if (extraOutputType === "document" || extraOutputType === "both") {
+        await supabase.from("media_assets").insert({ project_id: projectId, category: "marketing-extra", title: newTitle || "Marketing document prompt", prompt, provider: "direct-model-file", asset_type: "document", document_format: "pdf", generation_mode: "direct_model_file", status: "failed", error_message: "Create a document row to generate a real file directly with the selected document model." } as never);
+      }
+      toast.success(extraOutputType === "both" ? "Marketing image generated; document prompt saved" : extraOutputType === "document" ? "Marketing document prompt saved" : "Marketing image generated");
       setNewTitle("");
       setNewHint("");
       setAdding(false);
@@ -203,6 +223,16 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
           <div className="space-y-1.5">
             <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Image model</Label>
             <ImageModelPicker surface="marketing-cover" defaultModel="chatgpt-image-2" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Output type</Label>
+            <div className="inline-flex rounded-md border bg-muted/40 p-0.5">
+              {OUTPUT_TYPES.map((option) => (
+                <button key={option.value} type="button" onClick={() => setCoverOutputType(option.value)} className={`h-8 rounded px-3 text-xs font-medium transition ${coverOutputType === option.value ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                  {option.label}
+                </button>
+              ))}
+            </div>
           </div>
           <PromptPanel
             projectId={projectId}
@@ -286,6 +316,16 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
             <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Image model</Label>
             <div className="max-w-xs">
               <ImageModelPicker surface="marketing-cover" defaultModel="chatgpt-image-2" />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Output type</Label>
+            <div className="inline-flex rounded-md border bg-muted/40 p-0.5">
+              {OUTPUT_TYPES.map((option) => (
+                <button key={option.value} type="button" onClick={() => setExtraOutputType(option.value)} className={`h-8 rounded px-3 text-xs font-medium transition ${extraOutputType === option.value ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                  {option.label}
+                </button>
+              ))}
             </div>
           </div>
           <PromptPanel

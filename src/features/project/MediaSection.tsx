@@ -13,6 +13,14 @@ import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/
 import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { toast } from "sonner";
 
+type OutputType = "image" | "document" | "both";
+
+const OUTPUT_TYPES: { value: OutputType; label: string }[] = [
+  { value: "image", label: "Image" },
+  { value: "document", label: "Document/file" },
+  { value: "both", label: "Both" },
+];
+
 interface PromptHistoryEntry {
   at: string;
   prompt: string;
@@ -129,6 +137,7 @@ function CategoryPanel({ projectId, category, items }: { projectId: string; cate
   const [prompt, setPrompt] = useState("");
   const [hint, setHint] = useState("");
   const [title, setTitle] = useState("");
+  const [outputType, setOutputType] = useState<OutputType>(category === "external" ? "document" : "image");
   const [selected, setSelected] = useState<MediaAsset | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -178,22 +187,41 @@ function CategoryPanel({ projectId, category, items }: { projectId: string; cate
     }
   };
 
-  const handleGenerateImage = async () => {
+  const saveDocumentAttempt = async () => {
+    const { error } = await supabase.from("media_assets").insert({
+      project_id: projectId,
+      category,
+      title: title || "Document/file prompt",
+      prompt,
+      provider: "direct-model-file",
+      asset_type: "document",
+      document_format: "pdf",
+      generation_mode: "direct_model_file",
+      status: "failed",
+      error_message: "Create a document row to generate a real file directly with the selected document model.",
+    } as never);
+    if (error) throw error;
+  };
+
+  const handleGenerate = async () => {
     if (!prompt.trim()) return toast.error("Add a prompt first (or click Generate Prompt)");
     setGenerating(true);
     try {
-      const modelOverride = getStoredImageModel("media", "chatgpt-image-2");
-      const quality = getStoredImageQuality("media", "medium");
-      const resp = await callEdge("generate-image", { projectId, category, prompt, title, modelOverride, quality });
-      if (!resp.ok) {
-        const e = await resp.json().catch(() => ({ error: "Failed" }));
-        if (resp.status === 429) toast.error("Rate limit — try again in a moment.", { duration: 10000 });
-        else if (resp.status === 402) toast.error(e.error ?? "Out of AI credits.", { duration: 15000 });
-        else if (resp.status === 504) toast.error(e.error ?? "Image generation timed out — try Medium or Low quality.", { duration: 10000 });
-        else toast.error(e.error ?? "Generation failed", { duration: 10000 });
-        return;
+      if (outputType === "image" || outputType === "both") {
+        const modelOverride = getStoredImageModel("media", "chatgpt-image-2");
+        const quality = getStoredImageQuality("media", "medium");
+        const resp = await callEdge("generate-image", { projectId, category, prompt, title, modelOverride, quality });
+        if (!resp.ok) {
+          const e = await resp.json().catch(() => ({ error: "Failed" }));
+          if (resp.status === 429) toast.error("Rate limit — try again in a moment.", { duration: 10000 });
+          else if (resp.status === 402) toast.error(e.error ?? "Out of AI credits.", { duration: 15000 });
+          else if (resp.status === 504) toast.error(e.error ?? "Image generation timed out — try Medium or Low quality.", { duration: 10000 });
+          else toast.error(e.error ?? "Generation failed", { duration: 10000 });
+          if (outputType === "image") return;
+        }
       }
-      toast.success("Image generated");
+      if (outputType === "document" || outputType === "both") await saveDocumentAttempt();
+      toast.success(outputType === "both" ? "Image generated; document prompt saved" : outputType === "document" ? "Document prompt saved" : "Image generated");
       setPrompt("");
       setHint("");
       setTitle("");
@@ -259,6 +287,24 @@ function CategoryPanel({ projectId, category, items }: { projectId: string; cate
           </div>
         )}
 
+        {isImage && (
+          <div className="space-y-1.5">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Output type</Label>
+            <div className="inline-flex rounded-md border bg-muted/40 p-0.5">
+              {OUTPUT_TYPES.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setOutputType(option.value)}
+                  className={`h-8 rounded px-3 text-xs font-medium transition ${outputType === option.value ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {!isImage && (
           <div className="space-y-1.5">
             <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Video / news prompt</Label>
@@ -282,9 +328,9 @@ function CategoryPanel({ projectId, category, items }: { projectId: string; cate
               <div className="w-56">
                 <ImageModelPicker surface="media" defaultModel="chatgpt-image-2" />
               </div>
-              <Button className="gap-2" onClick={handleGenerateImage} disabled={generating || !prompt.trim()}>
+              <Button className="gap-2" onClick={handleGenerate} disabled={generating || !prompt.trim()}>
                 {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-                Generate image
+                Generate {outputType === "both" ? "both" : outputType}
               </Button>
             </>
           )}
