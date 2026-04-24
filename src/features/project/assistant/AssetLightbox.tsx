@@ -1,11 +1,13 @@
 import { useEffect } from "react";
-import { X, Copy, ExternalLink } from "lucide-react";
+import { X, Copy, ExternalLink, FileText, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 
 export type LightboxAsset = {
   url: string;
   title?: string | null;
   prompt?: string | null;
+  mimeType?: string | null;
+  previewUrl?: string | null;
   openInTab?: { tab: string; targetId?: string; label?: string } | null;
 };
 
@@ -18,6 +20,9 @@ export function AssetLightbox({ asset, onClose }: { asset: LightboxAsset | null;
   }, [asset, onClose]);
 
   if (!asset) return null;
+  const isPdf = asset.mimeType === "application/pdf" || asset.url.toLowerCase().includes(".pdf");
+  const canSwitchView = isPdf && Boolean(asset.previewUrl);
+  const [viewMode, setViewMode] = useEffect ? [undefined, undefined] as never : [undefined, undefined] as never;
 
   const copyPrompt = async () => {
     if (!asset.prompt) return;
