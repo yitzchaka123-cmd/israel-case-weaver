@@ -119,6 +119,10 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
   const [edges, setEdges] = useEdgesState([]);
   const [generatingFlow, setGeneratingFlow] = useState(false);
   const [creatingFinalMap, setCreatingFinalMap] = useState(false);
+  const [lineStyle, setLineStyle] = useState<LineStyle>(() => {
+    if (typeof window === "undefined") return "flow";
+    return (localStorage.getItem("canvas-line-style") as LineStyle | null) ?? "flow";
+  });
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [summaryDraft, setSummaryDraft] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -171,8 +175,8 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
         source: e.source_id,
         target: e.target_id,
         label: e.label ?? undefined,
-        type: "smoothstep",
-        animated: false,
+        type: lineStyle === "flow" ? "smoothstep" : "straight",
+        animated: lineStyle === "flow" && board === "final",
         style: { stroke: "var(--color-accent, #6366f1)", strokeWidth: 2 },
         markerEnd: { type: MarkerType.ArrowClosed, color: "var(--color-accent, #6366f1)", width: 18, height: 18 },
         labelStyle: { fontSize: 11, fontWeight: 500, fill: "var(--color-foreground)" },
@@ -181,7 +185,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
         labelBgBorderRadius: 4,
       }))
     );
-  }, [dbEdges, setEdges]);
+  }, [dbEdges, setEdges, lineStyle, board]);
 
   useEffect(() => {
     setSummaryDraft(project?.solution_summary ?? "");
