@@ -7,12 +7,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, FileText, Layers, Search, X, SlidersHorizontal } from "lucide-react";
+import { Plus, FileText, Layers, Search, X, SlidersHorizontal, Archive, RotateCcw, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { permanentlyDeleteProject, restoreTrashedProject } from "@/lib/project-versions";
 
 interface Project {
   id: string;
@@ -25,6 +26,7 @@ interface Project {
   phase: string;
   target_doc_count: number | null;
   updated_at: string;
+  deleted_at: string | null;
 }
 
 type SortKey = "updated_desc" | "updated_asc" | "title_asc" | "title_desc";
@@ -35,7 +37,7 @@ export function Dashboard() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("projects")
-        .select("id,title,subtitle,cover_image_url,mystery_type,genre,difficulty,phase,target_doc_count,updated_at")
+        .select("id,title,subtitle,cover_image_url,mystery_type,genre,difficulty,phase,target_doc_count,updated_at,deleted_at")
         .order("updated_at", { ascending: false });
       if (error) throw error;
       return data as Project[];
@@ -49,6 +51,7 @@ export function Dashboard() {
   const [phases, setPhases] = useState<string[]>([]);
   const [sort, setSort] = useState<SortKey>("updated_desc");
   const [showFilters, setShowFilters] = useState(false);
+  const [showTrash, setShowTrash] = useState(false);
 
   // Build option lists from the actual data so users only see filters that
   // can match something. Falls back gracefully when the field is null.
@@ -67,6 +70,7 @@ export function Dashboard() {
     if (!projects) return [];
     const q = query.trim().toLowerCase();
     let result = projects.filter((p) => {
+      if (showTrash ? !p.deleted_at : p.deleted_at) return false;
       if (q && !`${p.title} ${p.subtitle ?? ""}`.toLowerCase().includes(q)) return false;
       if (difficulties.length && !difficulties.includes(p.difficulty ?? "")) return false;
       if (mysteryTypes.length && !mysteryTypes.includes(p.mystery_type ?? "")) return false;
@@ -83,7 +87,7 @@ export function Dashboard() {
       }
     });
     return result;
-  }, [projects, query, difficulties, mysteryTypes, genres, phases, sort]);
+  }, [projects, query, difficulties, mysteryTypes, genres, phases, sort, showTrash]);
 
   const activeFilterCount =
     difficulties.length + mysteryTypes.length + genres.length + phases.length + (query ? 1 : 0);
@@ -145,6 +149,14 @@ export function Dashboard() {
               {activeFilterCount > 0 && (
                 <span className="ml-1 inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full bg-accent text-accent-foreground text-[10px] font-semibold">
                   {activeFilterCount}
+                </span>
+              )}
+            </Button>
+            <Button variant={showTrash ? "secondary" : "outline"} size="sm" onClick={() => setShowTrash((v) => !v)} className="gap-2">
+              <Archive className="h-3.5 w-3.5" /> Trash
+              {projects.some((p) => p.deleted_at) && (
+                <span className="ml-1 inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full bg-accent text-accent-foreground text-[10px] font-semibold">
+                  {projects.filter((p) => p.deleted_at).length}
                 </span>
               )}
             </Button>
