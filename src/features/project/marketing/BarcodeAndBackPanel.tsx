@@ -355,6 +355,21 @@ LAYOUT REQUIREMENTS:
           </div>
           <ImageModelPicker surface="marketing-back" defaultModel="chatgpt-image-2" />
           <div className="flex items-center justify-between gap-2 rounded-lg border bg-surface/70 p-2">
+            <span className="text-xs font-medium text-muted-foreground">Output type</span>
+            <div className="inline-flex rounded-md border bg-muted/40 p-0.5">
+              {OUTPUT_TYPES.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setBackOutputType(option.value)}
+                  className={`h-7 rounded px-2 text-xs font-medium transition ${backOutputType === option.value ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-2 rounded-lg border bg-surface/70 p-2">
             <span className="text-xs font-medium text-muted-foreground">Generate options</span>
             <div className="inline-flex rounded-md border bg-muted/40 p-0.5">
               {([1, 2, 4] as const).map((count) => (
