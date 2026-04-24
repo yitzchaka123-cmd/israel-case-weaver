@@ -17,6 +17,14 @@ interface MediaAsset {
   provider: string | null;
   model: string | null;
   effective_model: string | null;
+  skill_id?: string | null;
+  skill_source?: string | null;
+  skill_name?: string | null;
+  document_format?: string | null;
+  asset_type?: string | null;
+  status?: string | null;
+  error_message?: string | null;
+  preview_url?: string | null;
   created_at: string;
 }
 
@@ -54,6 +62,8 @@ type LibraryItem = {
   model: string | null;
   prompt?: string | null;
   previewUrl?: string | null;
+  skill?: string | null;
+  error?: string | null;
   createdAt: string;
 };
 
@@ -69,7 +79,7 @@ export function MediaLibrarySection({ projectId }: { projectId: string }) {
     queryFn: async () => {
       const [projectRes, mediaRes, docsRes] = await Promise.all([
         supabase.from("projects").select("title, cover_image_url, cover_effective_model").eq("id", projectId).single(),
-        supabase.from("media_assets").select("id, category, title, url, mime_type, prompt, provider, model, effective_model, created_at").eq("project_id", projectId).order("created_at", { ascending: false }),
+        supabase.from("media_assets").select("id, category, title, url, mime_type, prompt, provider, model, effective_model, skill_id, skill_source, skill_name, document_format, asset_type, status, error_message, preview_url, created_at").eq("project_id", projectId).order("created_at", { ascending: false }),
         supabase.from("documents").select("id, title, doc_type, generated_asset_url, generated_document_url, generated_pdf_url, document_format, document_provider, document_model, document_skill_id, document_preview_url, uploaded_asset_url, active_version, updated_at").eq("project_id", projectId).order("updated_at", { ascending: false }),
       ]);
       if (projectRes.error) throw projectRes.error;
@@ -102,13 +112,16 @@ export function MediaLibrarySection({ projectId }: { projectId: string }) {
       list.push({
         id: asset.id,
         title: asset.title ?? asset.category,
-        type: asset.category,
-        status: asset.provider === "upload" ? "uploaded" : asset.url ? "generated" : "prompt",
+        type: asset.document_format ?? asset.asset_type ?? asset.category,
+        status: (asset.status === "failed" ? "prompt" : asset.provider === "upload" ? "uploaded" : asset.url ? "generated" : "prompt"),
         source: "Media asset",
         url: asset.url,
         mime: asset.mime_type,
         model: asset.effective_model ?? asset.model,
         prompt: asset.prompt,
+        previewUrl: asset.preview_url,
+        skill: asset.skill_name ?? asset.skill_id,
+        error: asset.error_message,
         createdAt: asset.created_at,
       });
     }
@@ -219,6 +232,11 @@ function LibraryCard({ item }: { item: LibraryItem }) {
           <span className="text-[11px] text-muted-foreground truncate">{item.model ?? item.mime ?? "Asset"}</span>
           {item.url && <a href={item.url} target="_blank" rel="noreferrer" className="text-xs text-accent inline-flex items-center gap-1 hover:underline"><ExternalLink className="h-3 w-3" /> Open</a>}
         </div>
+        <div className="flex flex-wrap gap-1.5">
+          {item.mime && <Badge variant="outline" className="text-[10px]">{item.mime.includes("pdf") ? "PDF" : item.mime.split("/")[1] ?? item.mime}</Badge>}
+          {item.skill && <Badge variant="secondary" className="text-[10px]">{item.skill}</Badge>}
+        </div>
+        {item.error && <p className="rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 text-[11px] text-destructive line-clamp-2">{item.error}</p>}
         {item.prompt && (
           <div className="rounded-lg border bg-muted/30 p-2 space-y-1.5">
             <div className="flex items-center justify-between gap-2">
