@@ -208,9 +208,10 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
     }
   };
 
-  const pushToPrompts = (id: string) => updateShot(id, { in_prompts: true });
+  const togglePrompts = (shot: Shot) => updateShot(shot.id, shot.in_prompts ? { in_prompts: false, in_storyboard: false } : { in_prompts: true });
   const pushAllToPrompts = () => setShots((s) => s.map((sh) => ({ ...sh, in_prompts: true })));
-  const pushToBoard = (id: string) => updateShot(id, { in_storyboard: true });
+  const toggleBoard = (shot: Shot) => updateShot(shot.id, { in_storyboard: !shot.in_storyboard });
+  const removeFromBoard = (id: string) => updateShot(id, { in_storyboard: false });
 
   const handleGeneratePrompt = async (shot: Shot) => {
     setBusyShot((b) => ({ ...b, [shot.id]: "prompt" }));
@@ -325,7 +326,8 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-3">
         <ProgressTile label="Shots drafted" value={`${shots.length}`} />
-        <ProgressTile label="Prompts ready" value={`${promptsReady} / ${promptShots.length || shots.length}`} />
+        <ProgressTile label="Prompts queue" value={`${promptShots.length} / ${shots.length}`} />
+        <ProgressTile label="Prompt text ready" value={`${promptsReady} / ${promptShots.length || shots.length}`} />
         <ProgressTile label="On storyboard" value={`${boardShots.length} / ${shots.length}`} />
         <ProgressTile label="Keyframes generated" value={`${keyframesReady} / ${boardShots.length}`} />
       </div>
@@ -396,7 +398,7 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
                 key={shot.id}
                 shot={shot}
                 onChange={(patch) => updateShot(shot.id, patch)}
-                onPush={() => pushToPrompts(shot.id)}
+                onTogglePrompts={() => togglePrompts(shot)}
                 onDelete={() => setShots((s) => s.filter((x) => x.id !== shot.id))}
               />
             ))}
@@ -427,7 +429,7 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
                 busy={busyShot[shot.id] === "prompt"}
                 onChange={(patch) => updateShot(shot.id, patch)}
                 onGenerate={() => handleGeneratePrompt(shot)}
-                onPush={() => pushToBoard(shot.id)}
+                onToggleBoard={() => toggleBoard(shot)}
               />
             ))}
             {promptShots.length === 0 && (
@@ -465,6 +467,7 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
                 shot={shot}
                 busy={busyShot[shot.id] === "image"}
                 onGenerate={() => handleGenerateKeyframe(shot)}
+                onRemove={() => removeFromBoard(shot.id)}
               />
             ))}
             {boardShots.length === 0 && (
