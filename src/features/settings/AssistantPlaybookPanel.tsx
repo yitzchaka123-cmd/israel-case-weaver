@@ -23,6 +23,7 @@ import {
   renderLogicGateRefusal,
   renderCatalogsBlock,
   renderPhaseEnumComment,
+  renderExplanationLengthLine,
   type Playbook,
   type CanonicalValue,
   type DesignSkeletonSection,
@@ -430,6 +431,47 @@ export function AssistantPlaybookPanel({}: Props = {}) {
             <Label className="text-xs text-muted-foreground">
               Always ask in each new project (overrides the default mode for the first Phase 4 entry)
             </Label>
+          </div>
+        </div>
+      </Card>
+
+      {/* 8. AI explanations */}
+      <Card
+        id="explanations"
+        title="AI explanation length"
+        hint="Controls how short the AI explanation should be on Logic Flow and Final nodes."
+        open={open.explanations}
+        onToggle={() => toggle("explanations")}
+        onReset={() => reset("explanations")}
+        showPrompt={showPrompt.explanations}
+        onTogglePrompt={() => togglePrompt("explanations")}
+        promptText={renderExplanationLengthLine(playbook)}
+      >
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            <Label className="w-44">Short paragraphs</Label>
+            <NumInput
+              value={playbook.explanations.paragraphs}
+              onChange={(v) => update("explanations", { ...playbook.explanations, paragraphs: v })}
+            />
+            <span className="text-xs text-muted-foreground">default {PLAYBOOK_DEFAULTS.explanations.paragraphs}</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <Label className="w-44">Max words total</Label>
+            <NumInput
+              value={playbook.explanations.max_words}
+              onChange={(v) => update("explanations", { ...playbook.explanations, max_words: v })}
+            />
+            <span className="text-xs text-muted-foreground">default {PLAYBOOK_DEFAULTS.explanations.max_words}</span>
+          </div>
+          <div className="flex items-center gap-3 pt-1">
+            <Switch
+              checked={playbook.explanations.include_suggestion}
+              onCheckedChange={(checked) =>
+                update("explanations", { ...playbook.explanations, include_suggestion: checked })
+              }
+            />
+            <Label className="text-xs text-muted-foreground">Include a strengthening suggestion when useful</Label>
           </div>
         </div>
       </Card>
