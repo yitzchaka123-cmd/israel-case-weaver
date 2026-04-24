@@ -15,6 +15,7 @@ import { ImageModelPicker, getStoredImageModel } from "@/components/ImageModelPi
 import { PromptWriterModelPicker, getStoredWriterModel } from "@/components/PromptWriterModelPicker";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
 import { Sparkles } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 const DESIGN_PLACEHOLDER = `Describe EXACTLY how this document should look. The more specific, the better the result.
 
@@ -230,6 +231,24 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
         .maybeSingle();
       if (error) throw error;
       return data as { final_prompt: string | null; provider: string | null; model: string | null; created_at: string } | null;
+    },
+    enabled: !!doc?.id,
+  });
+
+  const { data: latestDocumentAttempt } = useQuery({
+    queryKey: ["document-file-attempt", doc?.id],
+    queryFn: async () => {
+      if (!doc) return null;
+      const { data, error } = await supabase
+        .from("media_assets")
+        .select("status, error_message, provider, model, effective_model, skill_name, skill_source, document_format, mime_type, url, preview_url, created_at")
+        .eq("source_document_id", doc.id)
+        .eq("asset_type", "document")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data as { status: string | null; error_message: string | null; provider: string | null; model: string | null; effective_model: string | null; skill_name: string | null; skill_source: string | null; document_format: string | null; mime_type: string | null; url: string | null; preview_url: string | null; created_at: string } | null;
     },
     enabled: !!doc?.id,
   });
@@ -564,12 +583,32 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
             </div>
           )}
           {(draft.generated_document_url || draft.generated_pdf_url) && (
-            <div className="md:col-span-2 rounded-lg border bg-muted/30 p-3 flex items-center justify-between gap-3">
+            <div className="md:col-span-2 rounded-lg border bg-muted/30 p-3 space-y-3">
+              <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Generated document file</Label>
                 <p className="text-sm truncate">{(draft.document_format ?? "file").toUpperCase()} • {draft.document_model ?? draft.document_provider ?? "Selected model"}</p>
               </div>
               <a href={draft.generated_document_url ?? draft.generated_pdf_url ?? "#"} target="_blank" rel="noreferrer" className="text-sm text-accent underline shrink-0">Open file</a>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {draft.document_format && <Badge variant="outline" className="text-[10px]">{draft.document_format.toUpperCase()}</Badge>}
+                {draft.document_provider && <Badge variant="outline" className="text-[10px]">{draft.document_provider}</Badge>}
+                {draft.document_model && <Badge variant="secondary" className="text-[10px]">{draft.document_model}</Badge>}
+                {draft.document_skill_id && <Badge variant="outline" className="text-[10px]">Skill {draft.document_skill_id}</Badge>}
+              </div>
+              {latestDocumentAttempt?.preview_url && <img src={latestDocumentAttempt.preview_url} alt="Document preview" className="max-h-56 w-full rounded-md border bg-background object-contain" />}
+            </div>
+          )}
+          {latestDocumentAttempt?.status === "failed" && (
+            <div className="md:col-span-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 space-y-2">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Label className="mr-auto text-xs uppercase tracking-wider text-destructive font-medium">Latest document-file attempt failed</Label>
+                {latestDocumentAttempt.document_format && <Badge variant="outline" className="text-[10px]">{latestDocumentAttempt.document_format.toUpperCase()}</Badge>}
+                {latestDocumentAttempt.provider && <Badge variant="outline" className="text-[10px]">{latestDocumentAttempt.provider}</Badge>}
+                {latestDocumentAttempt.skill_name && <Badge variant="secondary" className="text-[10px]">{latestDocumentAttempt.skill_name}</Badge>}
+              </div>
+              <p className="text-xs text-destructive">{latestDocumentAttempt.error_message ?? "The selected model did not return a downloadable document file."}</p>
             </div>
           )}
           {filePrompt?.final_prompt && (
