@@ -1,5 +1,5 @@
 // Professional box text planner for front/back packaging copy and mini movie QR.
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -279,7 +279,7 @@ export function BoxCopyPanel({ projectId }: { projectId: string }) {
   );
 }
 
-function TextSection({ title, busy, onDraft, children }: { title: string; busy: boolean; onDraft: () => void; children: React.ReactNode }) {
+function TextSection({ title, busy, onDraft, children }: { title: string; busy: boolean; onDraft: () => void; children: ReactNode }) {
   return (
     <div className="rounded-xl border bg-background/60 p-4 space-y-4">
       <div className="flex items-center justify-between gap-3">
