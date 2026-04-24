@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Sparkles, ArrowRight, Wand2, Image as ImageIcon, Save, FileText, Copy, Trash2, ChevronRight } from "lucide-react";
+import { Loader2, Sparkles, ArrowRight, Wand2, Image as ImageIcon, Save, FileText, Copy, Trash2, ChevronRight, Clapperboard } from "lucide-react";
 import { toast } from "sonner";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
@@ -75,6 +75,7 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
   const [klingInstr, setKlingInstr] = useState("");
   const [shots, setShots] = useState<Shot[]>([]);
   const [rowId, setRowId] = useState<string | null>(null);
+  const [activeStep, setActiveStep] = useState<"script" | "prompts" | "board">("script");
 
   const [generatingScript, setGeneratingScript] = useState(false);
   const [busyShot, setBusyShot] = useState<Record<string, "prompt" | "image" | undefined>>({});
@@ -122,6 +123,16 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
 
   const promptShots = useMemo(() => shots.filter((s) => s.in_prompts), [shots]);
   const boardShots = useMemo(() => shots.filter((s) => s.in_storyboard), [shots]);
+  const promptsReady = useMemo(() => promptShots.filter((s) => s.prompt.trim()).length, [promptShots]);
+  const keyframesReady = useMemo(() => boardShots.filter((s) => s.image_url).length, [boardShots]);
+  const nextStep = useMemo(() => {
+    if (shots.length === 0) return "Generate a script to create your shot list.";
+    if (promptShots.length < shots.length) return "Review the shots, then send them to Prompts.";
+    if (promptsReady < promptShots.length) return `Generate prompts for ${promptShots.length - promptsReady} remaining shot${promptShots.length - promptsReady === 1 ? "" : "s"}.`;
+    if (boardShots.length < promptShots.length) return "Send prompt-ready shots to the Storyboard.";
+    if (keyframesReady < boardShots.length) return `Generate keyframes for ${boardShots.length - keyframesReady} remaining shot${boardShots.length - keyframesReady === 1 ? "" : "s"}.`;
+    return "Storyboard is ready. Save it or copy the prompts for video production.";
+  }, [boardShots.length, keyframesReady, promptShots.length, promptsReady, shots.length]);
 
   const updateShot = (id: string, patch: Partial<Shot>) => {
     setShots((s) => s.map((sh) => (sh.id === id ? { ...sh, ...patch } : sh)));
@@ -290,26 +301,55 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
   };
 
   return (
-    <section className="rounded-2xl border bg-card p-6 shadow-soft space-y-5">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h3 className="font-display text-xl">Storyboard studio</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            Script → engine prompts (Sora 2 / Kling 3) → visual storyboard. Save the prompts now, render the videos later.
-          </p>
+    <section className="rounded-2xl border bg-card p-4 md:p-6 shadow-soft space-y-5">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="space-y-2">
+          <div className="inline-flex items-center gap-2 rounded-full border bg-surface px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            <Clapperboard className="h-3.5 w-3.5" /> Marketing video workflow
+          </div>
+          <div>
+            <h3 className="font-display text-2xl">Storyboard Studio</h3>
+            <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
+              Build a trailer-style sequence in 3 steps: draft shots, write video prompts, then generate keyframes.
+            </p>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={handleNewVersion} className="text-xs">New version</Button>
-          <Button onClick={() => persist()} size="sm" variant="outline" className="gap-1.5" disabled={saving}>
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <Button variant="ghost" size="sm" onClick={handleNewVersion} className="flex-1 sm:flex-none">New version</Button>
+          <Button onClick={() => persist()} size="sm" variant="outline" className="gap-1.5 flex-1 sm:flex-none" disabled={saving}>
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
             Save
           </Button>
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-4">
-        {/* Column 1 — Script */}
-        <ColumnFrame title="1 · Script" accent="from-indigo-500/15 to-transparent">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-3">
+        <ProgressTile label="Shots drafted" value={`${shots.length}`} />
+        <ProgressTile label="Prompts ready" value={`${promptsReady} / ${promptShots.length || shots.length}`} />
+        <ProgressTile label="On storyboard" value={`${boardShots.length} / ${shots.length}`} />
+        <ProgressTile label="Keyframes generated" value={`${keyframesReady} / ${boardShots.length}`} />
+      </div>
+
+      <div className="sticky top-2 z-10 rounded-xl border bg-card/95 p-3 shadow-soft backdrop-blur flex items-center gap-3">
+        <div className="h-8 w-8 shrink-0 rounded-full bg-accent text-accent-foreground grid place-items-center">
+          <ChevronRight className="h-4 w-4" />
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Next step</div>
+          <div className="text-sm font-medium">{nextStep}</div>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto scrollbar-none overscroll-x-contain touch-pan-x -mx-1 px-1">
+        <div className="grid grid-cols-3 min-w-[520px] gap-2 rounded-xl bg-muted p-1">
+          <StepButton active={activeStep === "script"} onClick={() => setActiveStep("script")} label="1 Script" sublabel={`${shots.length} shots`} />
+          <StepButton active={activeStep === "prompts"} onClick={() => setActiveStep("prompts")} label="2 Prompts" sublabel={`${promptsReady} ready`} />
+          <StepButton active={activeStep === "board"} onClick={() => setActiveStep("board")} label="3 Storyboard" sublabel={`${keyframesReady} frames`} />
+        </div>
+      </div>
+
+      {activeStep === "script" && (
+        <StepPanel title="Script setup" description="Create and edit the shot list before sending shots to prompt writing.">
           <div className="space-y-3">
             <div>
               <Label className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Length</Label>
@@ -343,13 +383,14 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
               {shots.length ? "Re-generate script" : "Generate script"}
             </Button>
             {shots.length > 0 && (
-              <Button onClick={pushAllToPrompts} variant="outline" size="sm" className="w-full gap-1.5 text-xs">
-                Push all shots to prompts <ChevronRight className="h-3 w-3" />
+              <Button onClick={pushAllToPrompts} variant="outline" size="sm" className="w-full gap-1.5">
+                Send all shots to Prompts <ChevronRight className="h-3 w-3" />
               </Button>
             )}
           </div>
 
-          <div className="space-y-2 mt-4 max-h-[600px] overflow-y-auto pr-1">
+          <div className="space-y-3 mt-5">
+            <div className="font-display text-lg">Shot list</div>
             {shots.map((shot) => (
               <ShotScriptCard
                 key={shot.id}
@@ -365,10 +406,11 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
               </div>
             )}
           </div>
-        </ColumnFrame>
+        </StepPanel>
+      )}
 
-        {/* Column 2 — Prompts */}
-        <ColumnFrame title="2 · Visual prompts" accent="from-purple-500/15 to-transparent">
+      {activeStep === "prompts" && (
+        <StepPanel title="Prompt settings" description="Turn approved shots into engine-specific Sora 2 or Kling 3 video prompts.">
           <div className="space-y-3">
             <div className="grid grid-cols-1 gap-2">
               <EngineInstrInput label="Sora 2 instructions" value={soraInstr} onChange={setSoraInstr} engine="sora" />
@@ -376,7 +418,8 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
             </div>
           </div>
 
-          <div className="space-y-2 mt-4 max-h-[600px] overflow-y-auto pr-1">
+          <div className="space-y-3 mt-5">
+            <div className="font-display text-lg">Prompt queue</div>
             {promptShots.map((shot) => (
               <ShotPromptCard
                 key={shot.id}
@@ -393,10 +436,11 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
               </div>
             )}
           </div>
-        </ColumnFrame>
+        </StepPanel>
+      )}
 
-        {/* Column 3 — Storyboard */}
-        <ColumnFrame title="3 · Visual storyboard" accent="from-teal-500/15 to-transparent">
+      {activeStep === "board" && (
+        <StepPanel title="Storyboard board" description="Generate and review 16:9 keyframes for each prompt-ready trailer shot.">
           <div className="space-y-2">
             <div>
               <Label className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Keyframe image model</Label>
@@ -405,16 +449,16 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button onClick={handleGenerateAllKeyframes} size="sm" variant="outline" className="flex-1 gap-1.5 text-xs" disabled={boardShots.length === 0}>
-                <Wand2 className="h-3 w-3" /> Generate all keyframes
+              <Button onClick={handleGenerateAllKeyframes} size="sm" variant="outline" className="flex-1 gap-1.5" disabled={boardShots.length === 0}>
+                <Wand2 className="h-3.5 w-3.5" /> Generate missing keyframes
               </Button>
-              <Button onClick={handleCopyAllPrompts} size="sm" variant="ghost" className="gap-1.5 text-xs" disabled={boardShots.length === 0}>
-                <Copy className="h-3 w-3" /> Copy prompts
+              <Button onClick={handleCopyAllPrompts} size="sm" variant="ghost" className="gap-1.5" disabled={boardShots.length === 0}>
+                <Copy className="h-3.5 w-3.5" /> Copy all prompts
               </Button>
             </div>
           </div>
 
-          <div className="space-y-3 mt-4 max-h-[600px] overflow-y-auto pr-1">
+          <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4 mt-5">
             {boardShots.map((shot) => (
               <ShotBoardCard
                 key={shot.id}
@@ -429,16 +473,44 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
               </div>
             )}
           </div>
-        </ColumnFrame>
-      </div>
+        </StepPanel>
+      )}
     </section>
   );
 }
 
-function ColumnFrame({ title, accent, children }: { title: string; accent: string; children: React.ReactNode }) {
+function ProgressTile({ label, value }: { label: string; value: string }) {
   return (
-    <div className={`rounded-xl border bg-gradient-to-b ${accent} bg-surface/40 p-4 space-y-3`}>
-      <div className="text-[10px] font-medium tracking-widest uppercase text-muted-foreground">{title}</div>
+    <div className="rounded-xl border bg-surface p-3 md:p-4">
+      <div className="text-[10px] font-medium tracking-widest uppercase text-muted-foreground">{label}</div>
+      <div className="mt-1 font-display text-xl md:text-2xl">{value}</div>
+    </div>
+  );
+}
+
+function StepButton({ active, onClick, label, sublabel }: { active: boolean; onClick: () => void; label: string; sublabel: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        "rounded-lg px-4 py-3 text-left transition-colors touch-pan-x",
+        active ? "bg-card text-foreground shadow-soft" : "text-muted-foreground hover:text-foreground",
+      ].join(" ")}
+    >
+      <div className="text-sm font-medium">{label}</div>
+      <div className="text-[11px] text-muted-foreground mt-0.5">{sublabel}</div>
+    </button>
+  );
+}
+
+function StepPanel({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border bg-surface/40 p-4 md:p-5 space-y-4">
+      <div>
+        <h4 className="font-display text-xl">{title}</h4>
+        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+      </div>
       {children}
     </div>
   );
@@ -448,34 +520,41 @@ function EngineInstrInput({ label, value, onChange, engine }: { label: string; v
   return (
     <div>
       <Label className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium flex items-center gap-1.5">
-        <span className={`inline-block h-1.5 w-1.5 rounded-full ${engine === "sora" ? "bg-purple-500" : "bg-teal-500"}`} />
+        <span className={[
+          "inline-block h-1.5 w-1.5 rounded-full",
+          engine === "sora" ? "bg-primary" : "bg-accent",
+        ].join(" ")} />
         {label}
       </Label>
-      <Textarea rows={2} value={value} onChange={(e) => onChange(e.target.value)} placeholder="e.g. anamorphic 35mm, low-key noir lighting, slow push-ins" className="text-xs mt-1.5" />
+      <Textarea rows={3} value={value} onChange={(e) => onChange(e.target.value)} placeholder="e.g. anamorphic 35mm, low-key noir lighting, slow push-ins" className="text-sm mt-1.5" />
     </div>
   );
 }
 
 function ShotScriptCard({ shot, onChange, onPush, onDelete }: { shot: Shot; onChange: (p: Partial<Shot>) => void; onPush: () => void; onDelete: () => void }) {
   return (
-    <div className="rounded-lg border bg-card p-3 space-y-2 group">
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-[11px] text-muted-foreground">
-          <span className="font-mono text-foreground">#{shot.n}</span> · {shot.duration_s}s
+    <div className="rounded-xl border bg-card p-4 space-y-3 group">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="font-display text-lg">Shot {shot.n}</div>
+          <div className="text-xs text-muted-foreground">{shot.duration_s}s trailer beat</div>
         </div>
-        <div className="flex items-center gap-1">
-          <Button size="sm" variant="ghost" className="h-6 px-1.5" onClick={onDelete}>
-            <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="ghost" className="gap-1.5 text-muted-foreground hover:text-destructive" onClick={onDelete}>
+            <Trash2 className="h-3.5 w-3.5" /> Delete
           </Button>
-          <Button size="sm" variant={shot.in_prompts ? "ghost" : "outline"} className="h-6 px-2 gap-1 text-[10px]" onClick={onPush}>
-            {shot.in_prompts ? "In prompts" : "Push"} <ArrowRight className="h-2.5 w-2.5" />
+          <Button size="sm" variant={shot.in_prompts ? "ghost" : "outline"} className="gap-1.5" onClick={onPush}>
+            {shot.in_prompts ? "In Prompts" : "Send to Prompts"} <ArrowRight className="h-3.5 w-3.5" />
           </Button>
         </div>
       </div>
-      <Textarea rows={2} value={shot.action} onChange={(e) => onChange({ action: e.target.value })} placeholder="Action…" className="text-xs" />
-      <div className="grid grid-cols-2 gap-1.5">
-        <Input value={shot.voiceover} onChange={(e) => onChange({ voiceover: e.target.value })} placeholder="VO" className="text-[11px] h-7" />
-        <Input value={shot.on_screen_text} onChange={(e) => onChange({ on_screen_text: e.target.value })} placeholder="On-screen text" className="text-[11px] h-7" />
+      <div className="space-y-1.5">
+        <Label className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Action</Label>
+        <Textarea rows={3} value={shot.action} onChange={(e) => onChange({ action: e.target.value })} placeholder="What we see in this shot…" className="text-sm" />
+      </div>
+      <div className="grid md:grid-cols-2 gap-2">
+        <Input value={shot.voiceover} onChange={(e) => onChange({ voiceover: e.target.value })} placeholder="Voiceover" className="text-sm h-10" />
+        <Input value={shot.on_screen_text} onChange={(e) => onChange({ on_screen_text: e.target.value })} placeholder="On-screen text" className="text-sm h-10" />
       </div>
     </div>
   );
@@ -483,54 +562,66 @@ function ShotScriptCard({ shot, onChange, onPush, onDelete }: { shot: Shot; onCh
 
 function ShotPromptCard({ shot, busy, onChange, onGenerate, onPush }: { shot: Shot; busy: boolean; onChange: (p: Partial<Shot>) => void; onGenerate: () => void; onPush: () => void }) {
   return (
-    <div className="rounded-lg border bg-card p-3 space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-[11px] text-muted-foreground flex items-center gap-2">
-          <span className="font-mono text-foreground">#{shot.n}</span>
-          <span className={`inline-block h-1.5 w-1.5 rounded-full ${shot.engine === "sora" ? "bg-purple-500" : "bg-teal-500"}`} />
+    <div className="rounded-xl border bg-card p-4 space-y-3">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <div className="font-display text-lg">Shot {shot.n}</div>
+          <div className="text-xs text-muted-foreground">Source action</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={[
+            "inline-block h-2 w-2 rounded-full",
+            shot.engine === "sora" ? "bg-primary" : "bg-accent",
+          ].join(" ")} />
           <Select value={shot.engine} onValueChange={(v) => onChange({ engine: v as Engine })}>
-            <SelectTrigger className="h-6 w-[88px] text-[10px]">
+            <SelectTrigger className="h-9 w-[116px] text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="sora" className="text-xs">Sora 2</SelectItem>
-              <SelectItem value="kling" className="text-xs">Kling 3</SelectItem>
+              <SelectItem value="sora">Sora 2</SelectItem>
+              <SelectItem value="kling">Kling 3</SelectItem>
             </SelectContent>
           </Select>
         </div>
-        <Button size="sm" variant={shot.in_storyboard ? "ghost" : "outline"} className="h-6 px-2 gap-1 text-[10px]" onClick={onPush} disabled={!shot.prompt.trim()}>
-          {shot.in_storyboard ? "On board" : "To board"} <ArrowRight className="h-2.5 w-2.5" />
+      </div>
+      <div className="rounded-lg border bg-surface p-3 text-sm text-muted-foreground">{shot.action}</div>
+      <div className="space-y-1.5">
+        <Label className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Video prompt</Label>
+        <Textarea
+          rows={6}
+          value={shot.prompt}
+          onChange={(e) => onChange({ prompt: e.target.value })}
+          placeholder="Generate or write the engine prompt here"
+          className="text-sm font-mono leading-relaxed"
+        />
+      </div>
+      <div className="grid sm:grid-cols-2 gap-2">
+        <Button size="sm" variant="outline" className="w-full gap-1.5" onClick={onGenerate} disabled={busy}>
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+          {shot.prompt.trim() ? "Regenerate prompt" : "Generate prompt"}
+        </Button>
+        <Button size="sm" variant={shot.in_storyboard ? "ghost" : "default"} className="w-full gap-1.5" onClick={onPush} disabled={!shot.prompt.trim()}>
+          {shot.in_storyboard ? "On Storyboard" : "Send to Storyboard"} <ArrowRight className="h-3.5 w-3.5" />
         </Button>
       </div>
-      <div className="text-[11px] text-muted-foreground italic line-clamp-2">{shot.action}</div>
-      <Textarea
-        rows={3}
-        value={shot.prompt}
-        onChange={(e) => onChange({ prompt: e.target.value })}
-        placeholder="Click Generate to draft the engine prompt"
-        className="text-[11px] font-mono leading-relaxed"
-      />
-      <Button size="sm" variant="ghost" className="w-full gap-1.5 text-[11px] h-7" onClick={onGenerate} disabled={busy}>
-        {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-        {shot.prompt.trim() ? "Regenerate prompt" : "Generate prompt"}
-      </Button>
     </div>
   );
 }
 
 function ShotBoardCard({ shot, busy, onGenerate }: { shot: Shot; busy: boolean; onGenerate: () => void }) {
   return (
-    <div className="rounded-lg border bg-card overflow-hidden">
+    <div className="rounded-xl border bg-card overflow-hidden">
       <div className="group aspect-video bg-muted relative">
         {shot.image_url ? (
           <img src={shot.image_url} alt={`Shot ${shot.n}`} className="w-full h-full object-cover" />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
-            <ImageIcon className="h-6 w-6" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+            <ImageIcon className="h-8 w-8" />
+            <span className="text-sm font-medium">No keyframe yet</span>
           </div>
         )}
-        <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/60 text-white text-[10px] font-mono">#{shot.n} · {shot.duration_s}s</div>
-        <div className={`absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded text-[10px] font-medium ${shot.engine === "sora" ? "bg-purple-500/90 text-white" : "bg-teal-500/90 text-white"}`}>
+        <div className="absolute top-2 left-2 px-2 py-1 rounded bg-card/90 text-foreground text-xs font-mono border">#{shot.n} · {shot.duration_s}s</div>
+        <div className="absolute top-2 right-2 px-2 py-1 rounded text-xs font-medium bg-accent text-accent-foreground">
           {shot.engine.toUpperCase()}
         </div>
         {shot.image_url && (shot.image_effective_model || shot.image_requested_model) && (
@@ -547,10 +638,14 @@ function ShotBoardCard({ shot, busy, onGenerate }: { shot: Shot; busy: boolean; 
           </div>
         )}
       </div>
-      <div className="p-2 space-y-1.5">
-        <div className="text-[10px] text-muted-foreground line-clamp-3 font-mono leading-relaxed">{shot.prompt || "—"}</div>
-        <Button size="sm" variant="ghost" className="w-full gap-1.5 text-[11px] h-7" onClick={onGenerate} disabled={busy || !shot.prompt}>
-          {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : shot.image_url ? <FileText className="h-3 w-3" /> : <Wand2 className="h-3 w-3" />}
+      <div className="p-4 space-y-3">
+        <div>
+          <div className="font-display text-lg">Shot {shot.n}</div>
+          <div className="text-sm text-muted-foreground line-clamp-2 mt-1">{shot.action}</div>
+        </div>
+        <div className="rounded-lg border bg-surface p-3 text-xs text-muted-foreground line-clamp-4 font-mono leading-relaxed">{shot.prompt || "No prompt yet"}</div>
+        <Button size="sm" variant="outline" className="w-full gap-1.5" onClick={onGenerate} disabled={busy || !shot.prompt}>
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : shot.image_url ? <FileText className="h-3.5 w-3.5" /> : <Wand2 className="h-3.5 w-3.5" />}
           {shot.image_url ? "Regenerate keyframe" : "Generate keyframe"}
         </Button>
       </div>
