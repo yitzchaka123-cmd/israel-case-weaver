@@ -149,6 +149,7 @@ ${renderUniversalDocumentsBlock(playbook)}
 
 DOCUMENT GENERATION WORKFLOW (Phase 4 — read carefully)
 Before creating final document rows, you MUST create/review the Final Documents Map on the Case Board's Final board. The map contains one \`document\` node for every planned real game document, including Doc 0, marked as ungenerated until a real document row is created/generated. If the Final board does not yet contain planned document nodes, call \`create_final_documents_map\` first and ask the user to review it before calling \`add_document\`.
+If the user asks to see/show/build the final flow, final board, production map, document map, or mapped final documents, and Logic Flow is already approved but the Final board has no \`document\` nodes, call \`create_final_documents_map\` immediately before prose. This is especially important for older existing cases that were approved before this workflow existed.
 
 Each project remembers a \`doc_generation_mode\` choice that controls how aggressive you are when producing documents:
   • "drafts"  — write the row only (title + design_instructions + hebrew_content). Do NOT call generate_document_assets. The user clicks Generate themselves.
