@@ -795,12 +795,6 @@ function synthesizeOptionsFromProse(text: string): { options: QuickOption[]; que
   const trimmed = text.trim();
   if (!trimmed) return null;
 
-  const looksLikeQuestion =
-    /\?\s*$/.test(trimmed) ||
-    /\b(pick|choose|select|which|prefer|approve|confirm)\b/i.test(trimmed) ||
-    /(בחר|בחרי|בחרו|איזה|איזו|תבחר|מעדיף|מעדיפה|לאשר)/.test(trimmed);
-  if (!looksLikeQuestion) return null;
-
   // Scan the WHOLE message line-by-line for a contiguous run of numbered
   // items (1, 2, 3, …) — list may sit anywhere, not just last paragraph.
   const lines = trimmed.split("\n");
