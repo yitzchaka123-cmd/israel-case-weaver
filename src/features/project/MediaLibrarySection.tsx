@@ -4,7 +4,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { ExternalLink, FileText, Image as ImageIcon, Package, Search, Video } from "lucide-react";
+import { Copy, ExternalLink, FileText, Image as ImageIcon, Package, Search, Video } from "lucide-react";
+import { toast } from "sonner";
 
 interface MediaAsset {
   id: string;
@@ -12,6 +13,7 @@ interface MediaAsset {
   title: string | null;
   url: string | null;
   mime_type: string | null;
+  prompt: string | null;
   provider: string | null;
   model: string | null;
   effective_model: string | null;
@@ -50,6 +52,7 @@ type LibraryItem = {
   url: string | null;
   mime: string | null;
   model: string | null;
+  prompt?: string | null;
   previewUrl?: string | null;
   createdAt: string;
 };
@@ -66,7 +69,7 @@ export function MediaLibrarySection({ projectId }: { projectId: string }) {
     queryFn: async () => {
       const [projectRes, mediaRes, docsRes] = await Promise.all([
         supabase.from("projects").select("title, cover_image_url, cover_effective_model").eq("id", projectId).single(),
-        supabase.from("media_assets").select("id, category, title, url, mime_type, provider, model, effective_model, created_at").eq("project_id", projectId).order("created_at", { ascending: false }),
+        supabase.from("media_assets").select("id, category, title, url, mime_type, prompt, provider, model, effective_model, created_at").eq("project_id", projectId).order("created_at", { ascending: false }),
         supabase.from("documents").select("id, title, doc_type, generated_asset_url, generated_document_url, generated_pdf_url, document_format, document_provider, document_model, document_skill_id, document_preview_url, uploaded_asset_url, active_version, updated_at").eq("project_id", projectId).order("updated_at", { ascending: false }),
       ]);
       if (projectRes.error) throw projectRes.error;
@@ -105,6 +108,7 @@ export function MediaLibrarySection({ projectId }: { projectId: string }) {
         url: asset.url,
         mime: asset.mime_type,
         model: asset.effective_model ?? asset.model,
+        prompt: asset.prompt,
         createdAt: asset.created_at,
       });
     }
