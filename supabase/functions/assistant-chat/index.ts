@@ -1262,7 +1262,7 @@ async function executeTool(
 // loop, persist the assistant message). Used by background mode. Throws on
 // error so the caller can flip the assistant_runs row to status='error'.
 async function processConversation(
-  supa: ReturnType<typeof createClient>,
+  supa: any,
   projectId: string,
   messages: Array<Record<string, unknown>>,
   callerUserId: string | null,
@@ -1297,7 +1297,8 @@ async function processConversation(
     if (raw) playbook = resolvePlaybook(raw.assistant_playbook);
   }
 
-  const model = PROVIDER_MODEL[project.ai_provider_planning ?? "lovable"] ?? PROVIDER_MODEL.lovable;
+  const modelKey = String(project.ai_provider_planning ?? "lovable");
+  const model = PROVIDER_MODEL[modelKey] ?? PROVIDER_MODEL.lovable;
   const claudeChatSkills = model.startsWith("anthropic/") ? await loadClaudeSkillsForSurface(supa, "chat") : [];
   const rosters: Rosters = {
     suspects: (suspectsRoster ?? []) as RosterRow[],
