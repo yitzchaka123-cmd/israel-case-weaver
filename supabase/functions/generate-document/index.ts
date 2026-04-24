@@ -340,16 +340,16 @@ Deno.serve(async (req) => {
           return new Response(JSON.stringify({ error: "OpenAI API key not configured" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
         // Map print size → model-appropriate dimensions.
-        // gpt-image-2 accepts arbitrary sizes (edges multiples of 16, ratio ≤ 3:1,
-        // total pixels 0.6M–8.3M) so we use a truer A4 (1:√2) ratio at 1448x2048.
+        // gpt-image-2 accepts arbitrary sizes when edges are multiples of 16,
+        // so use a near-A4 1440x2048 instead of invalid 1448x2048.
         // gpt-image-1 only accepts a fixed set, so it keeps 1024x1536 / 1536x1024.
         const ps = (doc.print_size ?? "A4").toLowerCase();
         const portraitSizes = ["a3", "a4", "a5", "a6"];
         const isGptImage2 = model === "gpt-image-2";
         const size = isGptImage2
-          ? (portraitSizes.includes(ps) ? "1448x2048"
-            : ps === "business card" ? "2048x1448"
-            : "1448x2048")
+          ? (portraitSizes.includes(ps) ? "1440x2048"
+            : ps === "business card" ? "2048x1440"
+            : "1440x2048")
           : (portraitSizes.includes(ps) ? "1024x1536"
             : ps === "business card" ? "1536x1024"
             : "1024x1536");
@@ -439,7 +439,7 @@ Deno.serve(async (req) => {
           mime = result.mime;
         } catch (e) {
           if (e instanceof ImageGenError) {
-            const provider = e.provider === "gemini-direct" ? "Google Gemini" : "Lovable AI";
+            const provider = e.provider === "gemini-direct" ? "Google Gemini" : "direct image provider";
             console.error(`${provider} image error`, e.status, e.message);
             if (e.status === 429) return new Response(JSON.stringify({ error: `${provider} rate limit` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
             if (e.status === 402) return new Response(JSON.stringify({ error: `${provider} credits/key issue` }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
