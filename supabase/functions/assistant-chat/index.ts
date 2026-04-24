@@ -925,6 +925,18 @@ async function executeTool(
             "Only after that can documents be generated.",
         };
       }
+      const { count: finalDocCount } = await supa
+        .from("canvas_nodes")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", projectId)
+        .eq("board", "final")
+        .eq("node_type", "document");
+      if (!finalDocCount) {
+        return {
+          ok: false,
+          message: "Cannot create final documents yet — the Final Flow is not mapped. Ask the user whether to generate the Final Flow now; if they say yes, call create_final_documents_map first, then create documents from those nodes.",
+        };
+      }
       const finalNodeId = typeof args.final_node_id === "string" ? args.final_node_id : null;
       const insertArgs = { ...args };
       delete insertArgs.final_node_id;
@@ -942,34 +954,15 @@ async function executeTool(
       return { ok: true, message: `Document created: ${data.title} (#${docNumber})`, id: data.id };
     }
     if (name === "create_final_documents_map") {
-      const docs = ((args as { documents?: Record<string, unknown>[] }).documents ?? []).filter((d) => d?.title);
-      if (docs.length === 0) return { ok: false, message: "documents array is required" };
-      if ((args as { replace?: boolean }).replace !== false) {
-        await supa.from("canvas_nodes").delete().eq("project_id", projectId).eq("board", "final").eq("node_type", "document");
-      }
-      const rows = docs.map((d, i) => {
-        const docNumber = Number(d.doc_number ?? (i === 0 ? 0 : 100 + i));
-        const title = String(d.title ?? `Document ${docNumber}`).slice(0, 200);
-        const docType = String(d.doc_type ?? (docNumber === 0 ? "contents checklist" : "document"));
-        const printSize = String(d.print_size ?? "A4");
-        const purpose = String(d.purpose ?? "Planned game document");
-        const envelopeNumber = typeof d.envelope_number === "number" ? d.envelope_number : null;
-        return {
-          project_id: projectId,
-          board: "final",
-          node_type: "document",
-          title: docNumber === 0 && !/^doc\s*0/i.test(title) ? `Doc 0 — ${title}` : title,
-          description: `Status: Ungenerated — to be generated in the future\nType: ${docType}\nPrint size: ${printSize}${envelopeNumber ? `\nEnvelope: ${envelopeNumber}` : ""}\nPurpose: ${purpose}`,
-          color: "oklch(0.50 0.05 260)",
-          position_x: 80 + (i % 4) * 260,
-          position_y: 80 + Math.floor(i / 4) * 170,
-          data: { generationStatus: "ungenerated", docNumber, docType, printSize, envelopeNumber, purpose },
-          ...(messageId ? { created_by_message_id: messageId } : {}),
-        };
+      const base = `${SUPABASE_URL}/functions/v1/create-final-documents-map`;
+      const resp = await fetch(base, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+        body: JSON.stringify({ projectId, replace: (args as { replace?: boolean }).replace !== false, createdByMessageId: messageId }),
       });
-      const { error } = await supa.from("canvas_nodes").insert(rows);
-      if (error) throw error;
-      return { ok: true, message: `Final Documents Map created with ${rows.length} planned document nodes. Review the Final board before creating document rows.` };
+      const payload = await resp.json().catch(() => ({}));
+      if (!resp.ok) return { ok: false, message: payload.error ?? "Final Flow creation failed" };
+      return { ok: true, message: `Final Flow created with ${payload.nodeCount ?? 0} nodes, including ${payload.documentNodeCount ?? 0} planned documents and ${payload.edgeCount ?? 0} connecting lines. Review the Final board before creating document rows.` };
     }
     if (name === "add_canvas_node") {
       const { data, error } = await supa
