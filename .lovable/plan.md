@@ -1,200 +1,182 @@
-## Reorder navigation: sidebar dropdowns plus a Marketing section menu
+## Plan: separate invite-code login from Google login
 
 ### Goal
 
-Make navigation easier to scan by adding collapsible menus in the left sidebar and a cleaner internal menu inside the Marketing tab.
+Make the login page support two distinct access paths:
 
 ```text
-Left sidebar
-- Dashboard
-  - Game A
-  - Game B
-  - Game C
-- Settings
-  - Branding
-  - Appearance
-  - Profile
-  - Image prompt assistant
-  - Assistant playbook
-  - Assistant tweaks
-  - AI routing
-  - API keys / usage / team access
+1. Continue with Google
+   - Creates/signs into a Google-based account
+   - New Google accounts still require admin approval
 
-Marketing tab
-- Cover & Visuals
-- Box Text
-- Barcode
-- Company Profile
-- Storyboard Studio
+2. Sign in with invite code
+   - Uses only the generated invite code
+   - Does not require a Google account
+   - Does not require admin approval after a valid code is used
+   - Saves work to that code’s own account
 ```
-
-No database migration is needed.
 
 ---
 
-## 1. Add expandable dropdowns to the left sidebar
+## 1. Change invite codes from “pending approval” to “direct access”
+
+### Current behavior
+
+A user enters a code, then signs in with Google. The code attaches to their account, but the account remains pending until an admin approves it.
+
+### New behavior
+
+A valid code becomes a direct login credential.
+
+When someone uses a valid active code:
+
+- the app signs them into an account connected to that code
+- the account is automatically marked approved
+- no admin approval is needed
+- projects they create are saved under that code account
+
+Google sign-in will remain separate and will still go through admin approval for new accounts.
+
+---
+
+## 2. Add backend support for code-based accounts
+
+### Database changes
+
+Update the invite-code/access system so each invite code can be tied to a code-login account.
+
+Add nullable fields to `invite_codes`, such as:
+
+```text
+code_user_id
+last_login_at
+```
+
+This lets a generated code behave like its own reusable account identity.
+
+### Backend function
+
+Add a secure backend function for code login, for example:
+
+```text
+login_with_invite_code(code)
+```
+
+It will:
+
+- validate the code exists
+- reject revoked, expired, or exhausted codes
+- create or reuse the account tied to that code
+- mark that account as `approved`
+- attach the invite code to the `user_access` row
+- update usage/login metadata
+- return a session so the user is actually signed in
+
+This must run server-side because creating/reusing a code account securely requires privileged backend logic.
+
+---
+
+## 3. Keep Google login approval rules unchanged
+
+Google login will no longer depend on the invite-code field.
+
+The Google path will be:
+
+```text
+Continue with Google → account created/signed in → pending approval unless already approved
+```
+
+So Google remains useful for real staff/member accounts, while invite-code login is a fast direct-access option.
+
+---
+
+## 4. Update the login page UI
 
 ### File
 
-- `src/components/AppShell.tsx`
+- `src/routes/login.tsx`
 
-### Dashboard dropdown
-
-The **Dashboard** item will become an expandable sidebar group.
-
-It will still link to the dashboard, but clicking/opening the group will show recent games underneath:
+Replace the current combined flow with two separate cards/sections:
 
 ```text
-Dashboard
-  Case Archive
-  Recent games
-    The Locket Case
-    Midnight Archive
-    ...
+Sign in with invite code
+[Invite code]
+[Continue with code]
+No Google account required. Valid codes open the studio immediately.
+
+or
+
+Sign in with Google
+[Continue with Google]
+New Google accounts require admin approval.
 ```
 
-Behavior:
-- Fetch the user’s projects from the existing `projects` table.
-- Show a compact list of recent games under Dashboard.
-- Each game links directly to `/projects/$projectId`.
-- Highlight the active project when currently inside a game.
-- Keep the list short so the sidebar does not become overwhelming, with a “View all games” link back to the dashboard.
+The code button will call the new code-login flow directly.
 
-### Settings dropdown
-
-The **Settings** item will become an expandable sidebar group with section links underneath:
-
-```text
-Settings
-  Branding
-  Appearance
-  Profile
-  Image prompt assistant
-  Assistant playbook
-  Assistant tweaks
-  AI routing
-  AI connections
-  Usage & credits
-  AI activity log
-  API keys
-  Team access
-```
-
-Behavior:
-- Main Settings link still goes to `/settings`.
-- Section links go to anchors like `/settings#branding`.
-- The Settings dropdown stays open while on the Settings page.
-- Clicking a section scrolls to that section.
-- Admin-only Team access will be shown only when the current user is an admin.
+The Google button will no longer stash/redeem the code.
 
 ---
 
-## 2. Add anchor IDs to Settings sections
+## 5. Update auth state handling
 
 ### File
 
-- `src/features/settings/SettingsPage.tsx`
+- `src/lib/auth.tsx`
 
-Each Settings section will receive a stable ID so the sidebar can jump directly to it:
+Add a new auth method:
 
 ```text
-#branding
-#appearance
-#profile
-#image-prompt-assistant
-#assistant-playbook
-#assistant-tweaks
-#ai-routing
-#ai-connections
-#usage-credits
-#ai-activity-log
-#api-keys
-#team-access
+signInWithInviteCode(code)
 ```
 
-I will keep the current settings cards and content, only making them easier to navigate.
+This will call the backend code-login function and set the returned session.
+
+Also remove the old “stash invite code then redeem after Google login” behavior because code login and Google login are now separate.
 
 ---
 
-## 3. Add an internal Marketing menu
+## 6. Update admin/team access wording
 
 ### File
 
-- `src/features/project/MarketingSection.tsx`
+- `src/features/settings/TeamAccessPanel.tsx`
 
-Add a polished section menu under the Marketing heading so users can jump between Marketing sections without scrolling through a long page.
-
-### Layout
+Adjust labels so admins understand what codes now do:
 
 ```text
-Marketing
-Box, copy & promo
-
-[Cover & Visuals] [Box Text] [Barcode] [Company Profile] [Storyboard Studio]
+Invite codes → Code logins
+Create new code → Create code login
+Max uses → Max logins / or keep Max uses if one-time access is preferred
 ```
 
-Behavior:
-- Each menu item scrolls to the matching section.
-- Use sticky/top positioning where appropriate so it stays useful while scrolling, without covering content.
-- Highlighting can be simple and clear; the priority is making the sections easy to find.
-- Add matching wrapper IDs around each panel:
-  - `marketing-cover-visuals`
-  - `marketing-box-text`
-  - `marketing-barcode`
-  - `marketing-company-profile`
-  - `marketing-storyboard`
+Show whether a code already has an attached code account, and optionally show last login time.
 
-This keeps existing Marketing components intact while making the page easier on the eyes.
+Members created by code login will appear in the members list as approved automatically.
 
 ---
 
-## 4. Clean up wording and ordering
+## 7. Ensure saved work belongs to the code account
 
-### Files
-
-- `src/components/AppShell.tsx`
-- `src/features/project/MarketingSection.tsx`
-
-Update labels so they match the current app structure:
+Existing project creation already saves using the signed-in user id:
 
 ```text
-Box Text
-not Box copy
-
-Games
-not vague project rows
+projects.owner_id = user.id
 ```
 
-The Marketing tab order will remain:
-
-```text
-Cover & Visuals
-Box Text
-Barcode
-Company Profile
-Storyboard Studio
-```
+Once code login produces a real session/user, no major project-saving changes are needed. Any project, marketing copy, storyboard, media, or export created while signed in with the code account will be saved under that code account’s identity.
 
 ---
 
-## Technical details
+## Technical notes
 
-### Files to edit
+Files to edit:
 
-- `src/components/AppShell.tsx`
-  - Add collapsible sidebar groups.
-  - Fetch recent projects for the Dashboard dropdown.
-  - Add Settings section links.
-  - Preserve theme toggle, user profile, and sign out controls.
+- `src/routes/login.tsx`
+- `src/lib/auth.tsx`
+- `src/features/settings/TeamAccessPanel.tsx`
+- a new backend function for invite-code login
+- a database migration for invite-code account metadata and secure helper logic
 
-- `src/features/settings/SettingsPage.tsx`
-  - Add IDs to settings sections.
-  - Optionally improve top spacing for anchor scrolling.
+No changes are needed to project creation logic unless testing reveals a missing owner/user id path.
 
-- `src/features/project/MarketingSection.tsx`
-  - Add the internal Marketing menu.
-  - Wrap each Marketing panel in an anchor section.
-
-### No backend changes
-
-This is a UI/navigation refactor only. It uses existing project and settings data.
+I will also verify the app builds after the changes.
