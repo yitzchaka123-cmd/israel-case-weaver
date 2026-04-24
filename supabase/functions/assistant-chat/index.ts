@@ -797,7 +797,7 @@ function buildTools(playbook: Playbook): typeof BASE_TOOLS {
   return BASE_TOOLS.map((tool) => {
     if (tool.function?.name !== "update_project") return tool;
     const cloned = JSON.parse(JSON.stringify(tool)) as typeof tool;
-    const props = (cloned.function.parameters as { properties?: Record<string, { enum?: string[] }> }).properties;
+    const props = (cloned.function.parameters as unknown as { properties?: Record<string, { enum?: string[] }> }).properties;
     if (props?.phase) props.phase.enum = phaseEnum;
     return cloned;
   });
@@ -808,7 +808,7 @@ function buildTools(playbook: Playbook): typeof BASE_TOOLS {
 // Every write stamps it so the UI can later jump back to the chat turn that
 // created or last edited the row.
 async function executeTool(
-  supa: ReturnType<typeof createClient>,
+  supa: any,
   projectId: string,
   name: string,
   args: Record<string, unknown>,
@@ -943,7 +943,7 @@ async function executeTool(
         .eq("id", projectId)
         .single();
       const origins = { ...(current?.assistant_origins as Record<string, string> ?? {}) };
-      origins.doc_generation_mode = messageId;
+      if (messageId) origins.doc_generation_mode = messageId;
       const { error } = await supa
         .from("projects")
         .update({ doc_generation_mode: mode, assistant_origins: origins })
@@ -1107,8 +1107,8 @@ async function executeTool(
         .single();
       if (error) throw error;
       const changed = Object.keys(patch).filter((k) => k !== "created_by_message_id");
-      const niceName = formatName((updated ?? {}) as Record<string, unknown>);
-      const u = (updated ?? {}) as Record<string, unknown>;
+      const niceName = formatName((updated ?? {}) as unknown as Record<string, unknown>);
+      const u = (updated ?? {}) as unknown as Record<string, unknown>;
       const extras: Record<string, unknown> = {};
       if (typeof u.thumbnail_url === "string" && u.thumbnail_url) extras.thumbnail_url = u.thumbnail_url;
       if (typeof u.alt_thumbnail_url === "string" && u.alt_thumbnail_url) extras.alt_thumbnail_url = u.alt_thumbnail_url;
