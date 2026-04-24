@@ -150,12 +150,14 @@ export async function chatCompletions(body: Record<string, unknown>): Promise<Re
 
   if (isGeminiDirectModel(model)) {
     if (!GEMINI_API_KEY) {
+      if (body.disableFallback === true) return jsonError("Google Gemini API key is not configured for strict direct generation", 401);
       // No Google key: prefer OpenAI direct fallback when available, else Lovable Gateway.
       return await fallbackFromGemini(body, model, "no-key");
     }
     const directResp = await callGeminiDirect(body, model.slice("gemini-direct/".length));
     // On quota / auth / server errors, transparently fall back
     if (!directResp.ok && shouldFallbackStatus(directResp.status)) {
+      if (body.disableFallback === true) return directResp;
       console.warn(`Gemini direct ${directResp.status} for ${model} — falling back`);
       return await fallbackFromGemini(body, model, `gemini-${directResp.status}`);
     }
