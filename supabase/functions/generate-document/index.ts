@@ -381,7 +381,9 @@ Deno.serve(async (req) => {
         userImageInstructions
           ? `USER GLOBAL IMAGE INSTRUCTIONS (apply to every image in this project — highest priority):\n${userImageInstructions}\n`
           : "",
-        `Create a single high-resolution, photorealistic, print-ready image of a ${doc.doc_type ?? "document"} for a premium mystery / detective game.`,
+        doc0
+          ? `Create a single high-resolution, print-ready image of Doc 0: the player-facing contents checklist / case-file inventory for a premium mystery / detective game. This is not evidence; it is the box inventory.`
+          : `Create a single high-resolution, photorealistic, print-ready image of a ${doc.doc_type ?? "document"} for a premium mystery / detective game.`,
         `Game title: "${project?.title ?? ""}"${project?.subtitle ? ` — ${project.subtitle}` : ""}.`,
         `Era / setting: ${project?.year ?? "—"}, ${project?.setting ?? "Israeli setting"}.`,
         `Genre: ${project?.genre ?? "mystery"}. Mystery type: ${project?.mystery_type ?? "—"}.`,
@@ -392,7 +394,7 @@ Deno.serve(async (req) => {
         designNotes ? designNotes : `Authentic, period-correct, high-detail. Treat as a real-world physical prop: realistic paper texture, period-correct typography, believable headers/stamps/signatures.\n\nADDITIONAL REALISM DETAILS — include AT LEAST 20 concrete, period-appropriate details visible on the document. Pick from (and add similar): slight paper yellowing, faint horizontal fold across the center, mild edge wear, punch-hole marks on the left margin, one or two intake/filing stamps with era-correct date format, a typed reference number, a distribution list at the bottom, a small handwritten marginal note in pen or pencil, a signature scribble above a typed name, slightly uneven line spacing, faint photocopy shadowing along one edge, a classification stamp in dark red ink, a smaller box stamp near the lower third, a discreet fictitious seal (never a real emblem), a paperclip or staple shadow, a coffee/ink ring, smudged ribbon impression, carbon-copy bleed-through where applicable, a tape-repaired tear, a tiny fingerprint smudge, perforation marks if it's a tear-off form. Every detail must be concrete and visible — not a vague "looks aged".\n\nIf this document is an unusual / creative prop (map, diagram, hand-drawn note, cipher, blueprint, matchbook, ransom note, photo collage, evidence tag, ship/building map, etc.) instead include 8–15 CREATIVE in-world touches: hand annotations, torn-and-taped corners, smudged compass roses, coded margin doodles, crayon arrows, crossed-out misspellings, hidden symbols, unusual aspect ratios, attached Polaroids, etc. — tactile prop-style authenticity over bureaucratic realism.\n\nNo cartoon style. No watermark text. No copyright marks. No real emblems, real names, or real signatures.`,
         ``,
         `CONTENT TO RENDER (${gameLanguage}, ${isRtl ? "RTL" : "LTR"}, grammatically correct, fully legible):`,
-        contentExcerpt ? contentExcerpt : `Use plausible ${gameLanguage} text appropriate to the document type. All ${gameLanguage} must be perfectly readable and correctly laid out ${isRtl ? "right-to-left" : "left-to-right"}.`,
+        contentExcerpt ? contentExcerpt : doc0 ? `Create a non-spoiler checklist from this authoritative inventory:\n${inventory?.text ?? ""}` : `Use plausible ${gameLanguage} text appropriate to the document type. All ${gameLanguage} must be perfectly readable and correctly laid out ${isRtl ? "right-to-left" : "left-to-right"}.`,
         ``,
         `RULES:`,
         `- Render as a real-world physical document photographed or scanned, not a UI mockup.`,
