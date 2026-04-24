@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Copy, ExternalLink, FileText, Image as ImageIcon, Package, Search, Video } from "lucide-react";
 import { toast } from "sonner";
+import { AssetLightbox, type LightboxAsset } from "./assistant/AssetLightbox";
 
 interface MediaAsset {
   id: string;
@@ -55,14 +56,16 @@ type LibraryItem = {
   id: string;
   title: string;
   type: string;
-  status: "selected" | "generated" | "uploaded" | "prompt";
+  status: "selected" | "generated" | "uploaded" | "prompt" | "failed";
   source: string;
   url: string | null;
   mime: string | null;
   model: string | null;
+  provider?: string | null;
   prompt?: string | null;
   previewUrl?: string | null;
   skill?: string | null;
+  skillSource?: string | null;
   error?: string | null;
   createdAt: string;
 };
@@ -73,6 +76,7 @@ export function MediaLibrarySection({ projectId }: { projectId: string }) {
   const [statusFilter, setStatusFilter] = useState(ALL);
   const [typeFilter, setTypeFilter] = useState(ALL);
   const [sourceFilter, setSourceFilter] = useState(ALL);
+  const [lightbox, setLightbox] = useState<LightboxAsset | null>(null);
 
   const { data } = useQuery({
     queryKey: ["case-media-library", projectId],
@@ -113,14 +117,16 @@ export function MediaLibrarySection({ projectId }: { projectId: string }) {
         id: asset.id,
         title: asset.title ?? asset.category,
         type: asset.document_format ?? asset.asset_type ?? asset.category,
-        status: (asset.status === "failed" ? "prompt" : asset.provider === "upload" ? "uploaded" : asset.url ? "generated" : "prompt"),
+        status: (asset.status === "failed" ? "failed" : asset.provider === "upload" ? "uploaded" : asset.url ? "generated" : "prompt"),
         source: "Media asset",
         url: asset.url,
         mime: asset.mime_type,
         model: asset.effective_model ?? asset.model,
+        provider: asset.provider,
         prompt: asset.prompt,
         previewUrl: asset.preview_url,
         skill: asset.skill_name ?? asset.skill_id,
+        skillSource: asset.skill_source,
         error: asset.error_message,
         createdAt: asset.created_at,
       });
@@ -142,6 +148,7 @@ export function MediaLibrarySection({ projectId }: { projectId: string }) {
         url,
         mime: isDocumentFile && (doc.document_format ?? "pdf") === "pdf" ? "application/pdf" : "image/*",
         model: doc.document_skill_id ? `${doc.document_model ?? doc.document_provider ?? "Claude"} + ${doc.document_skill_id}` : (doc.document_model ?? doc.document_provider ?? null),
+        provider: doc.document_provider,
         previewUrl: doc.document_preview_url ?? doc.generated_asset_url,
         createdAt: doc.updated_at,
       });
@@ -166,7 +173,7 @@ export function MediaLibrarySection({ projectId }: { projectId: string }) {
       </div>
 
       <div className="rounded-2xl border bg-card p-4 shadow-soft grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto]">
-        <FilterSelect label="Status" value={statusFilter} onValueChange={setStatusFilter} options={[ALL, "selected", "generated", "uploaded", "prompt"]} />
+        <FilterSelect label="Status" value={statusFilter} onValueChange={setStatusFilter} options={[ALL, "selected", "generated", "uploaded", "prompt", "failed"]} />
         <FilterSelect label="Type" value={typeFilter} onValueChange={setTypeFilter} options={[ALL, ...types]} />
         <FilterSelect label="Source" value={sourceFilter} onValueChange={setSourceFilter} options={[ALL, ...sources]} />
         <Button variant="outline" onClick={() => { setStatusFilter(ALL); setTypeFilter(ALL); setSourceFilter(ALL); }} className="self-end gap-2">
@@ -178,9 +185,10 @@ export function MediaLibrarySection({ projectId }: { projectId: string }) {
         <div className="border-2 border-dashed rounded-2xl p-12 text-center text-muted-foreground">No media matches these filters.</div>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((item) => <LibraryCard key={`${item.source}-${item.id}`} item={item} />)}
+          {filtered.map((item) => <LibraryCard key={`${item.source}-${item.id}`} item={item} onOpenAsset={setLightbox} />)}
         </div>
       )}
+      <AssetLightbox asset={lightbox} onClose={() => setLightbox(null)} />
     </div>
   );
 }
