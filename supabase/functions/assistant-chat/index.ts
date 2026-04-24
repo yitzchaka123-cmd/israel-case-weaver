@@ -19,6 +19,7 @@ import {
   renderLogicGateRefusal,
   renderCatalogsBlock,
   renderLanguagesBlock,
+  renderUniversalDocumentsBlock,
   renderPhaseEnumComment,
   getPhaseEnum,
   type Playbook,
@@ -144,7 +145,11 @@ Phase 3.5 LOGIC FLOW (MANDATORY GATE before Phase 4):
 - After approval is in place, you may proceed to Phase 4.
 Phase 4 Documents: Doc 0 = contents; then randomized doc numbers, varied types & print sizes, bodies in the selected Game language. Interrogations must be long, realistic, with pauses & body language.
 
+${renderUniversalDocumentsBlock(playbook)}
+
 DOCUMENT GENERATION WORKFLOW (Phase 4 — read carefully)
+Before creating final document rows, you MUST create/review the Final Documents Map on the Case Board's Final board. The map contains one \`document\` node for every planned real game document, including Doc 0, marked as ungenerated until a real document row is created/generated. If the Final board does not yet contain planned document nodes, call \`create_final_documents_map\` first and ask the user to review it before calling \`add_document\`.
+
 Each project remembers a \`doc_generation_mode\` choice that controls how aggressive you are when producing documents:
   • "drafts"  — write the row only (title + design_instructions + hebrew_content). Do NOT call generate_document_assets. The user clicks Generate themselves.
   • "auto"    — write the row, THEN ask which output to generate with propose_options (three buttons: "Image", "PDF", "Both"). Only after the user chooses, call generate_document_assets with mode "image", "document", or "both". Show one finished doc at a time so the user can react.
