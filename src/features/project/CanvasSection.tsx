@@ -135,6 +135,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
     return stored;
   });
   const posTimers = useRef<Record<string, number>>({});
+  const arrangePressRef = useRef(0);
 
   // Pick up changes made from Settings → AI provider routing → Logic Flow.
   useEffect(() => {
@@ -247,12 +248,8 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
 
   const [arranging, setArranging] = useState(false);
 
-  // Auto-arrange the current board.
-  // - If there are edges, run a directed dagre layout (left→right) so
-  //   connected nodes flow naturally and parents sit before children.
-  // - If there are no edges (e.g. final board before documents are linked,
-  //   or a fresh logic board), tile the nodes into a clean grid grouped
-  //   loosely by node_type so similar nodes cluster together.
+  // Auto-arrange the current board. Each press cycles through a different
+  // smart layout so users can quickly find the clearest map composition.
   const arrangeNodes = useCallback(async () => {
     if (arranging) return;
     if (nodes.length === 0) {
@@ -264,13 +261,21 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
       const NODE_W = 200;
       const NODE_H = 90;
       const positions = new Map<string, { x: number; y: number }>();
+      const arrangeIndex = arrangePressRef.current++;
 
       if (edges.length > 0) {
+        const flowLayouts = [
+          { rankdir: "LR", nodesep: 70, ranksep: 140, name: "left-to-right flow" },
+          { rankdir: "TB", nodesep: 85, ranksep: 120, name: "top-down flow" },
+          { rankdir: "RL", nodesep: 70, ranksep: 140, name: "right-to-left flow" },
+          { rankdir: "BT", nodesep: 85, ranksep: 120, name: "bottom-up flow" },
+        ] as const;
+        const layout = flowLayouts[arrangeIndex % flowLayouts.length];
         const g = new dagre.graphlib.Graph();
         g.setGraph({
-          rankdir: "LR",
-          nodesep: 60,
-          ranksep: 120,
+          rankdir: layout.rankdir,
+          nodesep: layout.nodesep,
+          ranksep: layout.ranksep,
           marginx: 40,
           marginy: 40,
         });
@@ -292,29 +297,46 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
           }
         }
       } else {
-        // Grid layout grouped by node type for a clean default look.
+        // Alternates between grouped grid, wide grid, and radial clusters.
         const groups = new Map<string, string[]>();
         for (const n of nodes) {
           const t = (n.data as { type?: string } | undefined)?.type ?? "note";
           if (!groups.has(t)) groups.set(t, []);
           groups.get(t)!.push(n.id);
         }
-        const COLS = Math.min(5, Math.max(3, Math.ceil(Math.sqrt(nodes.length))));
-        const STEP_X = NODE_W + 60;
-        const STEP_Y = NODE_H + 70;
-        let row = 0;
-        for (const [, ids] of groups) {
-          let col = 0;
-          for (const id of ids) {
-            positions.set(id, { x: 60 + col * STEP_X, y: 60 + row * STEP_Y });
-            col += 1;
-            if (col >= COLS) {
-              col = 0;
-              row += 1;
+        const layoutKind = arrangeIndex % 3;
+        if (layoutKind === 2) {
+          const centerX = 420;
+          const centerY = 300;
+          const radius = Math.max(260, nodes.length * 28);
+          const orderedIds = Array.from(groups.values()).flat();
+          orderedIds.forEach((id, i) => {
+            const angle = (i / orderedIds.length) * Math.PI * 2 - Math.PI / 2;
+            positions.set(id, {
+              x: centerX + Math.cos(angle) * radius - NODE_W / 2,
+              y: centerY + Math.sin(angle) * radius - NODE_H / 2,
+            });
+          });
+        } else {
+          const COLS = layoutKind === 0
+            ? Math.min(5, Math.max(3, Math.ceil(Math.sqrt(nodes.length))))
+            : Math.min(7, Math.max(4, Math.ceil(nodes.length / 2)));
+          const STEP_X = NODE_W + (layoutKind === 0 ? 60 : 90);
+          const STEP_Y = NODE_H + (layoutKind === 0 ? 70 : 95);
+          let row = 0;
+          for (const [, ids] of groups) {
+            let col = 0;
+            for (const id of ids) {
+              const visualCol = layoutKind === 1 && row % 2 === 1 ? COLS - 1 - col : col;
+              positions.set(id, { x: 60 + visualCol * STEP_X, y: 60 + row * STEP_Y });
+              col += 1;
+              if (col >= COLS) {
+                col = 0;
+                row += 1;
+              }
             }
+            if (col !== 0) row += 1;
           }
-          // Move to next row when finishing a group, so groups don't bleed together.
-          if (col !== 0) row += 1;
         }
       }
 
@@ -335,10 +357,12 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
       if (failed > 0) {
         toast.error(`Arranged, but ${failed} node${failed === 1 ? "" : "s"} failed to save position.`);
       } else {
+        const flowLabels = ["left-to-right flow", "top-down flow", "right-to-left flow", "bottom-up flow"];
+        const looseLabels = ["grouped grid", "wide staggered grid", "radial map"];
         toast.success(
           edges.length > 0
-            ? `Arranged ${nodes.length} nodes by flow.`
-            : `Arranged ${nodes.length} nodes in a grid.`,
+            ? `Arranged ${nodes.length} nodes as ${flowLabels[(arrangeIndex % flowLabels.length)]}.`
+            : `Arranged ${nodes.length} nodes as ${looseLabels[(arrangeIndex % looseLabels.length)]}.`,
         );
       }
     } finally {
