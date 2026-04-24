@@ -1007,17 +1007,21 @@ async function executeTool(
       };
 
       const errors: string[] = [];
+      const completed: string[] = [];
       if (requestedMode === "text" || requestedMode === "both") {
         const r = await callGenerate("text");
-        if (!r.ok) errors.push(`text: ${r.body?.error ?? r.status}`);
+        if (!r.ok) errors.push(`body text failed: ${r.body?.error ?? r.status}`);
+        else completed.push("body text");
       }
       if (requestedMode === "document" || requestedMode === "both") {
         const r = await callGenerate("document");
-        if (!r.ok) errors.push(`document: ${r.body?.error ?? r.status}`);
+        if (!r.ok) errors.push(`direct ${documentFormat.toUpperCase()} file failed: ${r.body?.error ?? r.status}`);
+        else completed.push(`${documentFormat.toUpperCase()} file`);
       }
       if (requestedMode === "image" || requestedMode === "both") {
         const r = await callGenerate("image");
-        if (!r.ok) errors.push(`image: ${r.body?.error ?? r.status}`);
+        if (!r.ok) errors.push(`image preview failed: ${r.body?.error ?? r.status}`);
+        else completed.push("image preview");
       }
 
       // Re-read row to grab whatever made it through.
@@ -1032,12 +1036,13 @@ async function executeTool(
       const documentUrl = finalDoc?.generated_document_url ?? finalDoc?.generated_pdf_url ?? null;
 
       if (errors.length > 0 && !imageUrl && !hebrew && !documentUrl) {
-        return { ok: false, message: `Generation failed — ${errors.join("; ")}`, id: documentId };
+        return { ok: false, message: `Generation failed for "${finalDoc?.title ?? "document"}" — ${errors.join("; ")}. You can retry this same document safely.`, id: documentId };
       }
-      const partial = errors.length > 0 ? ` (partial: ${errors.join("; ")})` : "";
+      const done = completed.length > 0 ? ` Completed: ${completed.join(", ")}.` : "";
+      const partial = errors.length > 0 ? ` Partial issues: ${errors.join("; ")}. You can retry failed parts from this same document.` : "";
       return {
         ok: true,
-        message: `Generated assets for "${finalDoc?.title ?? "document"}"${partial}`,
+        message: `Generated assets for "${finalDoc?.title ?? "document"}".${done}${partial}`,
         id: documentId,
         hebrew_preview: preview || undefined,
         image_url: imageUrl || undefined,
@@ -1318,8 +1323,11 @@ async function processConversation(
     content: "",
     metadata: { in_progress: true, model },
   });
-  const toolMessageId = assistantPlaceholderError ? null : assistantMessageId;
-  if (assistantPlaceholderError) console.error("assistant placeholder insert failed", assistantPlaceholderError);
+  if (assistantPlaceholderError) {
+    console.error("assistant placeholder insert failed", assistantPlaceholderError);
+    throw new Error("I couldn't start a safe assistant message for this run. Please retry; no document rows were created with broken assistant links.");
+  }
+  const toolMessageId = assistantMessageId;
 
   const convo: Array<Record<string, unknown>> = [{ role: "system", content: systemPrompt }, ...messages];
   const executedTools: Array<{ name: string; args?: Record<string, unknown>; result: unknown }> = [];
@@ -1554,7 +1562,8 @@ Deno.serve(async (req) => {
       hints: (hintsRoster ?? []) as RosterRow[],
       canvas_nodes: (nodesRoster ?? []) as RosterRow[],
     };
-    const systemPrompt = buildSystemPrompt(project, rosters, tweaks, playbook);
+    const claudeChatSkills = model.startsWith("anthropic/") ? await loadClaudeSkillsForSurface(supa, "chat") : [];
+    const systemPrompt = buildSystemPrompt(project, rosters, tweaks, playbook, claudeChatSkills);
 
     // Persist the last user message
     const lastUser = [...messages].reverse().find((m: { role: string }) => m.role === "user");
@@ -1581,8 +1590,14 @@ Deno.serve(async (req) => {
       content: "",
       metadata: { in_progress: true, model },
     });
-    const toolMessageId = assistantPlaceholderError ? null : assistantMessageId;
-    if (assistantPlaceholderError) console.error("assistant placeholder insert failed", assistantPlaceholderError);
+    if (assistantPlaceholderError) {
+      console.error("assistant placeholder insert failed", assistantPlaceholderError);
+      return new Response(JSON.stringify({ error: "I couldn't start a safe assistant message for this run. Please retry; no document rows were created with broken assistant links." }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const toolMessageId = assistantMessageId;
 
     // Tool-calling loop: up to 4 rounds
     const convo: Array<Record<string, unknown>> = [
@@ -1597,7 +1612,7 @@ Deno.serve(async (req) => {
     let lastFb: { effectiveModel: string; fallback: string } = { effectiveModel: model, fallback: "none" };
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const isFinalRound = round === MAX_ROUNDS - 1;
-      const body: Record<string, unknown> = { model, messages: convo, stream: false };
+      const body: Record<string, unknown> = { model, messages: convo, stream: false, ...claudeSkillRequestShape(claudeChatSkills) };
       if (!isFinalRound) body.tools = TOOLS;
 
       const roundStartedAt = Date.now();
