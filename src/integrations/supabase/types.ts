@@ -641,6 +641,7 @@ export type Database = {
           id: string
           image_prompt_assistant_instructions: string | null
           theme: string
+          ui_background: string
           updated_at: string
         }
         Insert: {
@@ -657,6 +658,7 @@ export type Database = {
           id: string
           image_prompt_assistant_instructions?: string | null
           theme?: string
+          ui_background?: string
           updated_at?: string
         }
         Update: {
@@ -673,6 +675,7 @@ export type Database = {
           id?: string
           image_prompt_assistant_instructions?: string | null
           theme?: string
+          ui_background?: string
           updated_at?: string
         }
         Relationships: []
