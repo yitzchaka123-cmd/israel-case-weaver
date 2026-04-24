@@ -147,16 +147,16 @@ Phase 4 Documents: Doc 0 = contents; then randomized doc numbers, varied types &
 DOCUMENT GENERATION WORKFLOW (Phase 4 — read carefully)
 Each project remembers a \`doc_generation_mode\` choice that controls how aggressive you are when producing documents:
   • "drafts"  — write the row only (title + design_instructions + hebrew_content). Do NOT call generate_document_assets. The user clicks Generate themselves.
-  • "auto"    — write the row, THEN immediately call generate_document_assets({document_id, mode: "both"}) to actually produce the Hebrew body + selected-model document file + image. Wait for the receipt before moving on. Show one finished doc at a time so the user can react.
-  • "ask"     — after each add_document, ask the user "Generate this one now or save as draft?" with propose_options (two buttons: "Generate now" / "Save as draft, keep going"). On "Generate now", call generate_document_assets with mode "both".
+  • "auto"    — write the row, THEN ask which output to generate with propose_options (three buttons: "Image", "PDF", "Both"). Only after the user chooses, call generate_document_assets with mode "image", "document", or "both". Show one finished doc at a time so the user can react.
+  • "ask"     — after each add_document, ask the user whether to generate Image, PDF, Both, or save as draft with propose_options. Only call generate_document_assets after the user chooses an output.
 RULES:
 1. The FIRST time you enter Phase 4 in a project where \`doc_generation_mode\` is empty, BEFORE calling add_document, ask the user (with propose_options, 3 buttons) which mode they want — using these labels exactly:
 ${renderDocModeButtonsBlock(playbook)}
    Then call set_doc_generation_mode with the chosen mode ("drafts" / "auto" / "ask"). After that, follow the rules above without re-asking.
 2. If the user already told you in their brief which mode they want (e.g. "just write the prompts, I'll click generate", "go full auto", "do everything yourself"), SKIP the question and call set_doc_generation_mode directly with the inferred mode + a one-line confirmation.
 3. The user can switch modes any time. If they say "switch to drafts only" / "go full auto" / "ask me each time", call set_doc_generation_mode and acknowledge.
-4. generate_document_assets supports mode "image", "document", or "both". Use "document" when the user asks for a file/PDF/DOCX/PPTX/XLSX, "image" for a visual prop, and "both" when full-auto should create both representations.
-5. Document/file generation is strict: the selected document model gets the honest first chance to create the actual file directly. Do not ask for or imply hidden fallback to another provider.
+4. generate_document_assets supports mode "image", "document", or "both". Before generating docs from chat, ask the output question unless the user's current message explicitly says image, PDF/file, or both.
+5. Document/file generation is strict direct-provider-only: the selected document model (or assistant planning model if no document model is set) gets the honest first chance to create the actual file directly. Never use or imply hidden Lovable fallback. If the selected model cannot make real files, say to switch Documents to Claude with document skills for PDF/DOCX, or choose Image-only with ChatGPT Image.
 6. generate_document_assets is gated server-side: it will refuse if the Logic Flow is not approved, or if the document_id doesn't belong to this project. Trust the receipt.
 7. The Hebrew body produced by generate_document_assets MAY differ slightly from the hebrew_content you wrote in add_document — that's expected. The receipt shows the final stored version.
 8. If the user asks to install/add a Claude Skill from chat and there is no attached installable package, call explain_claude_skill_install. Claude can automatically choose among enabled installed skills passed to it, but the app must manage installation.
