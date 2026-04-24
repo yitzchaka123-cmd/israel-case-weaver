@@ -92,6 +92,14 @@
 
   --gradient-brand: linear-gradient(135deg, oklch(0.65 0.18 285) 0%, oklch(0.68 0.2 320) 100%);
   --gradient-soft: linear-gradient(135deg, oklch(0.96 0.02 285) 0%, oklch(0.97 0.02 20) 100%);
+  --ui-bg-base: oklch(0.94 0.055 350);
+  --ui-bg-mesh-1: radial-gradient(circle at 10% -10%, oklch(0.63 0.27 350) 0%, transparent 45%);
+  --ui-bg-mesh-2: radial-gradient(circle at 110% 110%, oklch(0.83 0.16 205) 0%, transparent 45%);
+  --ui-bg-mesh-3: radial-gradient(circle at 60% 50%, oklch(0.93 0.24 125) 0%, transparent 35%);
+  --ui-bg-pattern: radial-gradient(oklch(0.18 0.05 300 / 0.18) 1.5px, transparent 1.5px);
+  --ui-bg-pattern-size: 24px 24px;
+  --ui-bg-pattern-opacity: 0.18;
+  --ui-bg-mesh-opacity: 0.55;
   --shadow-sm: 0 1px 2px 0 oklch(0.2 0.02 260 / 0.04);
   --shadow-md: 0 4px 12px -2px oklch(0.2 0.02 260 / 0.08), 0 2px 4px -1px oklch(0.2 0.02 260 / 0.04);
   --shadow-lg: 0 12px 32px -6px oklch(0.2 0.02 260 / 0.12), 0 4px 8px -2px oklch(0.2 0.02 260 / 0.06);
@@ -138,16 +146,63 @@
 
   --gradient-brand: linear-gradient(135deg, oklch(0.7 0.2 285) 0%, oklch(0.72 0.22 320) 100%);
   --gradient-soft: linear-gradient(135deg, oklch(0.24 0.04 285) 0%, oklch(0.22 0.04 20) 100%);
+  --ui-bg-base: var(--background);
+  --ui-bg-mesh-opacity: 0;
+  --ui-bg-pattern-opacity: 0;
   --shadow-md: 0 4px 12px -2px oklch(0 0 0 / 0.35), 0 2px 4px -1px oklch(0 0 0 / 0.2);
   --shadow-lg: 0 12px 32px -6px oklch(0 0 0 / 0.45), 0 4px 8px -2px oklch(0 0 0 / 0.25);
   --shadow-glow: 0 0 0 1px oklch(0.7 0.2 285 / 0.3), 0 8px 24px -4px oklch(0.7 0.2 285 / 0.35);
+}
+
+body[data-ui-background="paper"] {
+  --ui-bg-base: oklch(0.98 0.009 88);
+  --ui-bg-mesh-1: linear-gradient(120deg, oklch(0.91 0.035 86 / 0.7), transparent 55%);
+  --ui-bg-mesh-2: linear-gradient(315deg, oklch(0.88 0.035 235 / 0.55), transparent 50%);
+  --ui-bg-mesh-3: linear-gradient(180deg, transparent, oklch(0.94 0.012 70 / 0.7));
+  --ui-bg-pattern: linear-gradient(oklch(0.34 0.025 70 / 0.08) 1px, transparent 1px), linear-gradient(90deg, oklch(0.34 0.025 70 / 0.06) 1px, transparent 1px);
+  --ui-bg-pattern-size: 32px 32px;
+  --ui-bg-pattern-opacity: 0.7;
+  --ui-bg-mesh-opacity: 0.65;
+}
+
+body[data-ui-background="noir"] {
+  --ui-bg-base: oklch(0.2 0.02 270);
+  --ui-bg-mesh-1: radial-gradient(circle at 15% 15%, oklch(0.42 0.12 285 / 0.72), transparent 38%);
+  --ui-bg-mesh-2: radial-gradient(circle at 90% 80%, oklch(0.34 0.08 190 / 0.68), transparent 42%);
+  --ui-bg-mesh-3: linear-gradient(135deg, transparent, oklch(0.12 0.018 265 / 0.85));
+  --ui-bg-pattern: radial-gradient(oklch(1 0 0 / 0.16) 1px, transparent 1px);
+  --ui-bg-pattern-size: 26px 26px;
+  --ui-bg-pattern-opacity: 0.14;
+  --ui-bg-mesh-opacity: 0.55;
+}
+
+body[data-ui-background="blueprint"] {
+  --ui-bg-base: oklch(0.94 0.025 240);
+  --ui-bg-mesh-1: linear-gradient(135deg, oklch(0.78 0.1 235 / 0.45), transparent 48%);
+  --ui-bg-mesh-2: radial-gradient(circle at 90% 20%, oklch(0.75 0.12 190 / 0.5), transparent 36%);
+  --ui-bg-mesh-3: linear-gradient(315deg, oklch(0.96 0.025 155 / 0.6), transparent 55%);
+  --ui-bg-pattern: linear-gradient(oklch(0.45 0.08 235 / 0.12) 1px, transparent 1px), linear-gradient(90deg, oklch(0.45 0.08 235 / 0.12) 1px, transparent 1px);
+  --ui-bg-pattern-size: 28px 28px;
+  --ui-bg-pattern-opacity: 0.45;
+  --ui-bg-mesh-opacity: 0.75;
+}
+
+body[data-ui-background="aurora"] {
+  --ui-bg-base: oklch(0.96 0.018 175);
+  --ui-bg-mesh-1: radial-gradient(circle at 20% 20%, oklch(0.75 0.18 165 / 0.68), transparent 38%);
+  --ui-bg-mesh-2: radial-gradient(circle at 85% 30%, oklch(0.78 0.18 310 / 0.62), transparent 40%);
+  --ui-bg-mesh-3: radial-gradient(circle at 55% 95%, oklch(0.84 0.15 78 / 0.64), transparent 42%);
+  --ui-bg-pattern: radial-gradient(oklch(0.18 0.04 185 / 0.13) 1.25px, transparent 1.25px);
+  --ui-bg-pattern-size: 30px 30px;
+  --ui-bg-pattern-opacity: 0.16;
+  --ui-bg-mesh-opacity: 0.62;
 }
 
 @layer base {
   * { border-color: var(--color-border); }
   html, body { height: 100%; }
   body {
-    background-color: #FFE5F1;
+    background-color: var(--ui-bg-base);
     color: var(--color-foreground);
     font-family: var(--font-sans);
     font-feature-settings: "cv02","cv03","cv04","cv11";
@@ -156,7 +211,7 @@
     min-height: 100dvh;
   }
 
-  /* Bubblegum Mesh — fixed full-page background (light mode only) */
+  /* User-selectable fixed full-page background (light mode only) */
   body::before,
   body::after {
     content: "";
@@ -166,17 +221,14 @@
     z-index: -1;
   }
   body::before {
-    background:
-      radial-gradient(circle at 10% -10%, #FF007F 0%, transparent 45%),
-      radial-gradient(circle at 110% 110%, #00F0FF 0%, transparent 45%),
-      radial-gradient(circle at 60% 50%, #CCFF00 0%, transparent 35%);
+    background: var(--ui-bg-mesh-1), var(--ui-bg-mesh-2), var(--ui-bg-mesh-3);
     filter: blur(60px) saturate(1.05);
-    opacity: 0.55;
+    opacity: var(--ui-bg-mesh-opacity);
   }
   body::after {
-    background-image: radial-gradient(rgba(13, 5, 20, 0.18) 1.5px, transparent 1.5px);
-    background-size: 24px 24px;
-    opacity: 0.18;
+    background-image: var(--ui-bg-pattern);
+    background-size: var(--ui-bg-pattern-size);
+    opacity: var(--ui-bg-pattern-opacity);
   }
 
   .dark body { background-color: var(--color-background); }
