@@ -72,6 +72,45 @@ function findFileIds(value: unknown): string[] {
   return [...found];
 }
 
+type ClaudeSkillRow = { skill_id: string; name?: string | null; skill_type: string; version: string; usage_scope: string[] };
+
+async function recordDocumentAttempt(supa: ReturnType<typeof createClient>, opts: {
+  projectId: string;
+  documentId: string;
+  title: string;
+  documentFormat: string;
+  prompt: string;
+  provider: string;
+  model: string;
+  effectiveModel?: string;
+  status: "generated" | "failed";
+  errorMessage?: string;
+  url?: string;
+  mime?: string;
+  skill?: ClaudeSkillRow | null;
+}) {
+  await supa.from("media_assets").insert({
+    project_id: opts.projectId,
+    category: "document",
+    title: opts.title,
+    url: opts.url ?? null,
+    mime_type: opts.mime ?? MIME_BY_FORMAT[opts.documentFormat] ?? null,
+    prompt: opts.prompt,
+    provider: opts.provider,
+    model: opts.model,
+    effective_model: opts.effectiveModel ?? opts.model,
+    asset_type: "document",
+    document_format: opts.documentFormat,
+    skill_id: opts.skill?.skill_id ?? null,
+    skill_source: opts.skill ? (opts.skill.skill_type === "anthropic" ? "anthropic" : "custom") : "none",
+    skill_name: opts.skill?.name ?? null,
+    source_document_id: opts.documentId,
+    generation_mode: opts.skill ? "direct_model_file_claude_skill" : "direct_model_file",
+    status: opts.status,
+    error_message: opts.errorMessage ?? null,
+  } as never);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
