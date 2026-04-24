@@ -30,6 +30,7 @@ import {
   type CanonicalValue,
   type DesignSkeletonSection,
   type PhaseDefinition,
+  type UniversalDocumentDefinition,
 } from "@/lib/assistant-playbook";
 import { toast } from "sonner";
 import {
