@@ -436,6 +436,21 @@ export function AssistantPlaybookPanel({}: Props = {}) {
               Always ask in each new project (overrides the default mode for the first Phase 4 entry)
             </Label>
           </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <ToggleRow label="Ask selected model to create the file directly first" checked={playbook.doc_generation.direct_file_first} onChange={(checked) => update("doc_generation", { ...playbook.doc_generation, direct_file_first: checked })} />
+            <ToggleRow label="No silent cross-model fallback for document files" checked={playbook.doc_generation.strict_model_ownership} onChange={(checked) => update("doc_generation", { ...playbook.doc_generation, strict_model_ownership: checked })} />
+            <ToggleRow label="Save PDF/document prompts in logs and assets" checked={playbook.doc_generation.save_file_prompts} onChange={(checked) => update("doc_generation", { ...playbook.doc_generation, save_file_prompts: checked })} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Default output type</Label>
+            <div className="flex flex-wrap gap-2">
+              {(["ask", "image", "document", "both"] as const).map((value) => (
+                <Button key={value} type="button" variant={playbook.doc_generation.output_type_default === value ? "default" : "outline"} size="sm" className="h-7 capitalize" onClick={() => update("doc_generation", { ...playbook.doc_generation, output_type_default: value })}>
+                  {value}
+                </Button>
+              ))}
+            </div>
+          </div>
         </div>
       </Card>
 
