@@ -610,6 +610,23 @@ const BASE_TOOLS = [
   {
     type: "function",
     function: {
+      name: "explain_claude_skill_install",
+      description:
+        "Use when the user asks to install/add/use a new Claude Skill from chat but no installable skill package/file is available in the current message. This records a clear assistant receipt explaining that a Claude Skill package must be uploaded/installed from Settings or attached for installation.",
+      parameters: {
+        type: "object",
+        properties: {
+          requested_skill: { type: "string", description: "Short name/description of the skill the user asked for." },
+          intended_use: { type: "string", description: "Where the skill should be used, e.g. documents, marketing, logic analysis." },
+        },
+        required: ["requested_skill"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "update_suspect",
       description:
         "Edit an EXISTING suspect row by id (from the Existing suspects roster in CURRENT PROJECT STATE). Pass ONLY the fields you want to change — undefined fields are left alone. Use this instead of add_suspect any time the user references a suspect that already exists.",
