@@ -674,40 +674,85 @@ export type Database = {
       project_marketing: {
         Row: {
           back_body: string | null
+          back_content_note: string | null
           back_cover_url: string | null
+          back_feature_bullets: string | null
+          back_footer_text: string | null
           back_headline: string | null
+          back_how_to_play: string | null
+          back_specs: string | null
+          back_teaser: string | null
+          back_whats_in_box: string | null
           barcode_url: string | null
           barcode_value: string | null
           copy_origins: Json
           created_at: string
+          front_bottom_explanation: string | null
+          front_company_slogan: string | null
+          front_logo_note: string | null
           front_subtext: string | null
+          front_title_note: string | null
+          mini_movie_url: string | null
           project_id: string
+          qr_code_url: string | null
+          qr_helper_text: string | null
+          qr_label: string | null
           tagline: string | null
           updated_at: string
         }
         Insert: {
           back_body?: string | null
+          back_content_note?: string | null
           back_cover_url?: string | null
+          back_feature_bullets?: string | null
+          back_footer_text?: string | null
           back_headline?: string | null
+          back_how_to_play?: string | null
+          back_specs?: string | null
+          back_teaser?: string | null
+          back_whats_in_box?: string | null
           barcode_url?: string | null
           barcode_value?: string | null
           copy_origins?: Json
           created_at?: string
+          front_bottom_explanation?: string | null
+          front_company_slogan?: string | null
+          front_logo_note?: string | null
           front_subtext?: string | null
+          front_title_note?: string | null
+          mini_movie_url?: string | null
           project_id: string
+          qr_code_url?: string | null
+          qr_helper_text?: string | null
+          qr_label?: string | null
           tagline?: string | null
           updated_at?: string
         }
         Update: {
           back_body?: string | null
+          back_content_note?: string | null
           back_cover_url?: string | null
+          back_feature_bullets?: string | null
+          back_footer_text?: string | null
           back_headline?: string | null
+          back_how_to_play?: string | null
+          back_specs?: string | null
+          back_teaser?: string | null
+          back_whats_in_box?: string | null
           barcode_url?: string | null
           barcode_value?: string | null
           copy_origins?: Json
           created_at?: string
+          front_bottom_explanation?: string | null
+          front_company_slogan?: string | null
+          front_logo_note?: string | null
           front_subtext?: string | null
+          front_title_note?: string | null
+          mini_movie_url?: string | null
           project_id?: string
+          qr_code_url?: string | null
+          qr_helper_text?: string | null
+          qr_label?: string | null
           tagline?: string | null
           updated_at?: string
         }

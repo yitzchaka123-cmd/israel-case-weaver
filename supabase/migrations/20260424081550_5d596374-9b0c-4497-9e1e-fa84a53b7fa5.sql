@@ -1,0 +1,16 @@
+ALTER TABLE public.project_marketing
+  ADD COLUMN IF NOT EXISTS front_title_note text,
+  ADD COLUMN IF NOT EXISTS front_bottom_explanation text,
+  ADD COLUMN IF NOT EXISTS front_company_slogan text,
+  ADD COLUMN IF NOT EXISTS front_logo_note text,
+  ADD COLUMN IF NOT EXISTS back_teaser text,
+  ADD COLUMN IF NOT EXISTS back_whats_in_box text,
+  ADD COLUMN IF NOT EXISTS back_how_to_play text,
+  ADD COLUMN IF NOT EXISTS back_feature_bullets text,
+  ADD COLUMN IF NOT EXISTS back_specs text,
+  ADD COLUMN IF NOT EXISTS back_content_note text,
+  ADD COLUMN IF NOT EXISTS back_footer_text text,
+  ADD COLUMN IF NOT EXISTS mini_movie_url text,
+  ADD COLUMN IF NOT EXISTS qr_label text,
+  ADD COLUMN IF NOT EXISTS qr_helper_text text,
+  ADD COLUMN IF NOT EXISTS qr_code_url text;
