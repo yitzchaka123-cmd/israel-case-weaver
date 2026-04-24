@@ -1,247 +1,374 @@
 
-## Updated plan: keep the Marketing prompt planner simple and familiar
+## Add a richer Box Text section under Cover & Visuals
 
 ### Goal
 
-Add cover visual generation inside the Marketing tab, but make the prompt planner match the existing prompt planners already used elsewhere in the app:
+Replace the current simple “Box copy” panel with a professional packaging text planner for the front and back of the game box.
+
+The new section will be called:
 
 ```text
-[Prompt writer model selector] [Generate Prompt]
-
-[Prompt textarea]
-
-[Generate image]
+Box Text
 ```
 
-No complex form fields. No separate “purpose / mood / include / avoid” planner.
+It will sit directly under **Cover & Visuals** and will be split into:
+
+```text
+Front cover text
+Back cover text + QR
+```
+
+This focuses only on the box text/packaging copy area, not the broader cover image generation work.
 
 ---
 
-## 1. Add front cover generation to the Marketing tab
+## 1. Rename “Box copy” to “Box Text”
 
 ### File
 
-- `src/features/project/marketing/CoverAndVisuals.tsx`
+- `src/features/project/marketing/BoxCopyPanel.tsx`
 
-### What will change
+### Change
 
-The **Cover & visuals** panel will get a dedicated **Front cover** generation area.
-
-It will use the same backend path as the Overview cover generator:
-
-```ts
-target: "project-cover"
-category: "cover"
-aspect: "portrait"
-```
-
-So a cover generated from Marketing updates the real project cover used by:
-
-- Overview
-- Dashboard thumbnail
-- Marketing preview
-
-### UI
-
-The front cover area will include:
+Rename visible UI labels:
 
 ```text
-Front cover
-
-[Current cover preview]
-
-[Image model selector]
-
-[Prompt writer model selector] [Generate Prompt]
-[Prompt textarea]
-[Generate / regenerate cover]
+Box copy → Box Text
+Save copy → Save box text
+Draft all with assistant → Draft all box text
 ```
 
-This will reuse the existing `PromptPanel` pattern instead of introducing a new custom planner layout.
+The panel description will explain that this text is meant for professional front/back game box layout.
 
 ---
 
-## 2. Make the prompt planner “just like the others”
+## 2. Expand the front cover text fields
 
-### File
+### Current front fields
 
-- `src/features/project/marketing/CoverAndVisuals.tsx`
+```text
+Tagline
+Front subtext
+```
 
-### Updated approach
+### New front cover section
 
-The Marketing cover prompt planner will use the existing `PromptPanel` component, the same way the app already does for:
+```text
+Front cover text
 
-- Overview cover
-- Suspects
-- Hints
-- Media images
+Game title lockup note
+- Optional note for how the title should appear visually.
 
-It will have:
+Tagline under title
+- Short line directly under the game name.
 
-- a text area where you can write or edit the prompt
-- a model selector for the prompt-writing model
-- a **Generate Prompt** / **Revise Prompt** button
-- a final **Generate image** button
+Front hook / subtext
+- 1–2 lines selling the case premise.
 
-### Behavior
+Bottom explanation
+- Short explanation near the bottom of the front cover, e.g. “A boxed detective mystery with documents, envelopes, and hidden evidence.”
 
-The text area content becomes the prompt used for generation.
+Company slogan
+- Pulled from company profile when available, editable per project.
 
-The prompt writer model selector controls which model drafts the prompt, matching existing planner behavior.
+Logo / brand note
+- Shows the company logo from the company profile if available.
+- Includes a note that the logo should be included on the front cover layout.
+```
 
-Generated prompts and images continue to be saved through the existing prompt/image history system.
+The company logo itself already lives in the company profile, so the Box Text panel will reference it and show a small preview instead of duplicating uploads.
 
 ---
 
-## 3. Keep extra marketing image generation separate
+## 3. Expand the back cover text fields
 
-### File
-
-- `src/features/project/marketing/CoverAndVisuals.tsx`
-
-The existing **Add marketing image** flow will remain for extra promotional/supporting visuals.
-
-The panel will be clearer:
+### Current back fields
 
 ```text
-Cover & visuals
-
-A. Front cover
-- Generates/regenerates the actual project cover
-
-B. Marketing asset gallery
-- Extra generated marketing images
+Back headline
+Back body
 ```
 
-This prevents confusion between “replace the real cover” and “generate another marketing asset.”
+### New back cover section
+
+```text
+Back cover text
+
+Back headline
+- Big hook at the top of the back box.
+
+Short teaser
+- 1–2 sentence cinematic setup.
+
+Main back description
+- Longer sales copy explaining the game.
+
+What’s in the box
+- Bulleted/line-based list: documents, envelopes, evidence, props, QR preview, etc.
+
+How to play
+- Short explanation of the player experience.
+
+Feature bullets
+- 3–5 selling points for the back cover.
+
+Age / duration / players
+- Packaging metadata, editable.
+
+Spoiler-safe warning / content note
+- Optional caution or tone note.
+
+Company/legal/footer text
+- Pulled from company profile when available, editable per project.
+```
+
+This gives the back cover enough structure to feel like a real professional game box instead of one paragraph.
 
 ---
 
-## 4. Make Script → Prompts reversible in Storyboard Studio
+## 4. Add a QR code area for mini movie previews
 
 ### File
 
-- `src/features/project/marketing/StoryboardStudio.tsx`
+- `src/features/project/marketing/BoxCopyPanel.tsx`
 
-The current Script tab button will become a true toggle.
+Add a **Mini movie preview QR** block inside the back cover section.
 
-Before:
-
-```text
-Send to Prompts
-```
-
-After the shot is in the prompt queue:
+### Fields
 
 ```text
-Remove from Prompts
+Mini movie preview URL
+QR label
+QR helper text
 ```
 
-Clicking it once sends the shot in. Clicking it again removes it.
+Example:
 
-### Removal behavior
+```text
+Mini movie preview URL:
+https://...
 
-Removing a shot from Prompts will:
+QR label:
+Watch the mini movie preview
 
-- set `in_prompts: false`
-- set `in_storyboard: false`
-- keep the shot text
-- keep any drafted prompt text
-- keep any generated keyframe URL in the saved shot data, but hide it from the active board until the shot is sent back in
+QR helper text:
+Scan to watch the cinematic case teaser.
+```
 
-This makes the workflow reversible without destroying work.
+### QR behavior
+
+- If a URL is entered, the app generates a QR code preview.
+- The QR image is saved to the backend.
+- The saved QR URL is stored with the project’s marketing data.
+- The QR code is included in export.
+- The QR code can later be used by the back cover visual generator.
+
+If there is no mini movie URL yet, the UI will show a friendly placeholder asking for the preview link.
 
 ---
 
-## 5. Make Prompts → Storyboard reversible
+## 5. Add AI generation for the new fields
 
-### File
+### Files
 
-- `src/features/project/marketing/StoryboardStudio.tsx`
+- `src/features/project/marketing/BoxCopyPanel.tsx`
+- `supabase/functions/generate-marketing-copy/index.ts`
 
-The Prompt tab button will also become a true toggle.
-
-Before:
-
-```text
-Send to Storyboard
-```
-
-After the shot is on the board:
+Each new field will keep the familiar behavior:
 
 ```text
-Remove from Storyboard
+[Generate] / [Regenerate]
 ```
 
-Clicking once sends it in. Clicking again removes it.
+There will also be grouped buttons:
 
-### Removal behavior
+```text
+Draft front cover text
+Draft back cover text
+Draft all box text
+```
 
-Removing from Storyboard will:
+The generation function will be updated so it can return the expanded fields.
 
-- set `in_storyboard: false`
-- keep the video prompt
-- keep any generated keyframe URL
-- simply hide the shot from the active storyboard board
+The assistant will use:
+- project title/subtitle
+- genre, setting, difficulty, player role
+- document/envelope counts
+- selling point
+- company profile
+- age rating / legal text where available
 
 ---
 
-## 6. Add a direct remove action on storyboard cards
+## 6. Save all new Box Text fields
 
-### File
+### Database change required
 
-- `src/features/project/marketing/StoryboardStudio.tsx`
-
-Each storyboard card will include:
+The current `project_marketing` table only has:
 
 ```text
-Remove from board
+tagline
+front_subtext
+back_headline
+back_body
+barcode_url
+barcode_value
+back_cover_url
+copy_origins
 ```
 
-This gives a quick one-click way to take a shot off the storyboard without returning to the Prompts tab.
+To save the richer box text, add new nullable columns to `project_marketing`:
+
+```text
+front_title_note
+front_bottom_explanation
+front_company_slogan
+front_logo_note
+
+back_teaser
+back_whats_in_box
+back_how_to_play
+back_feature_bullets
+back_specs
+back_content_note
+back_footer_text
+
+mini_movie_url
+qr_label
+qr_helper_text
+qr_code_url
+```
+
+Existing projects will keep working because the new fields are nullable.
+
+The existing `copy_origins` JSON will continue tracking which fields were AI-generated.
 
 ---
 
-## 7. Update labels and progress text
+## 7. Generate and store the QR code
+
+### Files
+
+- `src/features/project/marketing/BoxCopyPanel.tsx`
+- Optional helper file: `src/features/project/marketing/qr.ts`
+
+Implement a lightweight QR generator for the mini movie URL.
+
+Storage path:
+
+```text
+media/{projectId}/marketing/qr/mini-movie-preview.png
+```
+
+Save the public QR image URL into:
+
+```text
+project_marketing.qr_code_url
+```
+
+This avoids needing a separate QR table.
+
+---
+
+## 8. Include Box Text and QR in export
 
 ### File
 
-- `src/features/project/marketing/StoryboardStudio.tsx`
+- `src/lib/export.ts`
 
-The progress summary and next-step helper will be adjusted so the reversible workflow is clear:
-
-```text
-Shots drafted
-Prompts queue
-Prompt text ready
-On storyboard
-Keyframes generated
-```
-
-Buttons will use plain, readable labels:
+Update full project export to include:
 
 ```text
-Send to Prompts
-Remove from Prompts
-
-Send to Storyboard
-Remove from Storyboard
+packaging/
+  box-text.json
+  box-text.txt
+  qr/
+    mini-movie-preview.png
 ```
+
+The readable `box-text.txt` will be organized like:
+
+```text
+FRONT COVER TEXT
+Title note:
+Tagline:
+Front hook:
+Bottom explanation:
+Company slogan:
+Logo note:
+
+BACK COVER TEXT
+Headline:
+Teaser:
+Main description:
+What's in the box:
+How to play:
+Feature bullets:
+Specs:
+Content note:
+Footer text:
+
+MINI MOVIE QR
+URL:
+Label:
+Helper text:
+QR image:
+```
+
+This makes the packaging copy easy to hand to a designer or print workflow.
+
+---
+
+## 9. Keep the UI clear and not overwhelming
+
+### UI layout
+
+Inside `BoxCopyPanel.tsx`, use two clear cards:
+
+```text
+Box Text
+
+[Draft all box text]
+
+Front cover text
+- fields
+- company logo preview
+- Draft front cover text
+
+Back cover text + QR
+- fields
+- QR preview/generator
+- Draft back cover text
+
+[Save box text]
+```
+
+Use larger text areas for longer back-cover fields and compact inputs for short packaging metadata.
 
 ---
 
 ## Files to edit
 
-- `src/features/project/marketing/CoverAndVisuals.tsx`
-  - Add real front-cover generation from Marketing.
-  - Reuse the existing `PromptPanel` style.
-  - Include a prompt text area, prompt-writer model selector, Generate Prompt button, image model selector, and Generate Cover button.
-  - Keep extra marketing image generation separate.
+- `src/features/project/marketing/BoxCopyPanel.tsx`
+  - Rename panel.
+  - Split into front/back sections.
+  - Add new packaging text fields.
+  - Show company logo/slogan/legal references.
+  - Add mini movie QR URL fields and QR preview.
+  - Save expanded box text.
 
-- `src/features/project/marketing/StoryboardStudio.tsx`
-  - Make Script → Prompts a one-click in/out toggle.
-  - Make Prompts → Storyboard a one-click in/out toggle.
-  - Add Remove from board on storyboard cards.
-  - Preserve existing prompt/keyframe data when toggling out.
+- `supabase/functions/generate-marketing-copy/index.ts`
+  - Support expanded front and back packaging fields.
+  - Add grouped generation: front, back, all.
 
-No database migration is required.
+- `src/lib/export.ts`
+  - Export box text as JSON and TXT.
+  - Export mini movie QR image.
+
+- New helper if needed:
+  - `src/features/project/marketing/qr.ts`
+  - Generate QR image client-side before upload.
+
+- Database migration:
+  - Add nullable columns to `project_marketing` for the new box text and QR fields.
+
