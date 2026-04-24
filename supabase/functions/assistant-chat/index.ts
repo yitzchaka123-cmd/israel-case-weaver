@@ -780,9 +780,12 @@ async function executeTool(
   projectId: string,
   name: string,
   args: Record<string, unknown>,
-  messageId: string,
+  messageId: string | null,
 ) {
   try {
+    const withMessage = (payload: Record<string, unknown>) => (
+      messageId ? { ...payload, created_by_message_id: messageId } : payload
+    );
     if (name === "update_project") {
       // Merge per-field origins so each updated field points to this message.
       const { data: current } = await supa
@@ -791,7 +794,7 @@ async function executeTool(
         .eq("id", projectId)
         .single();
       const origins = { ...(current?.assistant_origins as Record<string, string> ?? {}) };
-      for (const k of Object.keys(args)) origins[k] = messageId;
+      if (messageId) for (const k of Object.keys(args)) origins[k] = messageId;
       const { error } = await supa
         .from("projects")
         .update({ ...args, assistant_origins: origins })
@@ -809,7 +812,7 @@ async function executeTool(
         .eq("id", projectId)
         .single();
       const origins = { ...(current?.assistant_origins as Record<string, string> ?? {}) };
-      origins.solution_summary = messageId;
+      if (messageId) origins.solution_summary = messageId;
       const patch: Record<string, unknown> = { solution_summary: summary, assistant_origins: origins };
       if (markApproved) patch.logic_approved_at = new Date().toISOString();
       const { error } = await supa.from("projects").update(patch).eq("id", projectId);
@@ -825,7 +828,7 @@ async function executeTool(
     if (name === "add_suspect") {
       const { data, error } = await supa
         .from("suspects")
-        .insert({ ...args, project_id: projectId, created_by_message_id: messageId })
+        .insert(withMessage({ ...args, project_id: projectId }))
         .select("id, name, thumbnail_url, alt_thumbnail_url")
         .single();
       if (error) throw error;
@@ -856,7 +859,7 @@ async function executeTool(
       const docNumber = args.doc_number ?? Math.floor(100 + Math.random() * 900);
       const { data, error } = await supa
         .from("documents")
-        .insert({ ...args, doc_number: docNumber, project_id: projectId, created_by_message_id: messageId })
+        .insert(withMessage({ ...args, doc_number: docNumber, project_id: projectId }))
         .select("id, title")
         .single();
       if (error) throw error;
@@ -870,7 +873,7 @@ async function executeTool(
           project_id: projectId,
           position_x: Math.random() * 600,
           position_y: Math.random() * 400,
-          created_by_message_id: messageId,
+          ...(messageId ? { created_by_message_id: messageId } : {}),
         })
         .select("id, title")
         .single();
@@ -1024,7 +1027,7 @@ async function executeTool(
       if (Object.keys(patch).length === 0) {
         return { ok: false, message: `Nothing to update — pass at least one field besides id.` };
       }
-      if (stampMessage) patch.created_by_message_id = messageId;
+      if (stampMessage && messageId) patch.created_by_message_id = messageId;
       // Verify ownership first so we can return a clean error.
       const { data: existing } = await supa
         .from(table)
@@ -1256,13 +1259,15 @@ async function processConversation(
   // BEFORE the row exists in its final form. We update content+metadata at
   // the end. Client hides bubbles where in_progress=true && content===""
   // until the realtime UPDATE arrives.
-  await supa.from("chat_messages").insert({
+  const { error: assistantPlaceholderError } = await supa.from("chat_messages").insert({
     id: assistantMessageId,
     project_id: projectId,
     role: "assistant",
     content: "",
     metadata: { in_progress: true, model },
   });
+  const toolMessageId = assistantPlaceholderError ? null : assistantMessageId;
+  if (assistantPlaceholderError) console.error("assistant placeholder insert failed", assistantPlaceholderError);
 
   const convo: Array<Record<string, unknown>> = [{ role: "system", content: systemPrompt }, ...messages];
   const executedTools: Array<{ name: string; args?: Record<string, unknown>; result: unknown }> = [];
@@ -1324,7 +1329,7 @@ async function processConversation(
       for (const call of toolCalls) {
         let args: Record<string, unknown> = {};
         try { args = JSON.parse(call.function.arguments || "{}"); } catch { /* ignore */ }
-        const result = await executeTool(supa, projectId, call.function.name, args, assistantMessageId);
+        const result = await executeTool(supa, projectId, call.function.name, args, toolMessageId);
         const argsForUi = call.function.name === "propose_options" ? undefined : args;
         executedTools.push({ name: call.function.name, args: argsForUi, result });
         convo.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
@@ -1518,13 +1523,15 @@ Deno.serve(async (req) => {
     // Placeholder INSERT: satisfies FK constraints from documents/suspects/
     // canvas_nodes that stamp `created_by_message_id` mid-loop. Updated to
     // final content+metadata at the end. Client hides empty in_progress bubbles.
-    await supa.from("chat_messages").insert({
+    const { error: assistantPlaceholderError } = await supa.from("chat_messages").insert({
       id: assistantMessageId,
       project_id: projectId,
       role: "assistant",
       content: "",
       metadata: { in_progress: true, model },
     });
+    const toolMessageId = assistantPlaceholderError ? null : assistantMessageId;
+    if (assistantPlaceholderError) console.error("assistant placeholder insert failed", assistantPlaceholderError);
 
     // Tool-calling loop: up to 4 rounds
     const convo: Array<Record<string, unknown>> = [
@@ -1632,7 +1639,7 @@ Deno.serve(async (req) => {
         for (const call of toolCalls) {
           let args: Record<string, unknown> = {};
           try { args = JSON.parse(call.function.arguments || "{}"); } catch { /* ignore */ }
-          const result = await executeTool(supa, projectId, call.function.name, args, assistantMessageId);
+          const result = await executeTool(supa, projectId, call.function.name, args, toolMessageId);
           // Persist args alongside name+result so the UI receipt can render the
           // exact field values that changed (e.g. project field updates).
           // Strip propose_options args — they're already echoed via result.options.

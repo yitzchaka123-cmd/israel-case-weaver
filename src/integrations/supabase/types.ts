@@ -251,6 +251,51 @@ export type Database = {
           },
         ]
       }
+      claude_skills: {
+        Row: {
+          created_at: string
+          enabled: boolean
+          id: string
+          install_source: string
+          name: string
+          notes: string | null
+          skill_id: string
+          skill_type: string
+          updated_at: string
+          uploaded_file_url: string | null
+          usage_scope: string[]
+          version: string
+        }
+        Insert: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          install_source?: string
+          name: string
+          notes?: string | null
+          skill_id: string
+          skill_type?: string
+          updated_at?: string
+          uploaded_file_url?: string | null
+          usage_scope?: string[]
+          version?: string
+        }
+        Update: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          install_source?: string
+          name?: string
+          notes?: string | null
+          skill_id?: string
+          skill_type?: string
+          updated_at?: string
+          uploaded_file_url?: string | null
+          usage_scope?: string[]
+          version?: string
+        }
+        Relationships: []
+      }
       company_profiles: {
         Row: {
           address: string | null
@@ -310,8 +355,15 @@ export type Database = {
           design_instructions: string | null
           doc_number: number | null
           doc_type: string | null
+          document_format: string | null
+          document_model: string | null
+          document_preview_url: string | null
+          document_provider: string | null
+          document_skill_id: string | null
           envelope_number: number | null
           generated_asset_url: string | null
+          generated_document_url: string | null
+          generated_pdf_url: string | null
           hebrew_content: string | null
           id: string
           linked_node_ids: string[] | null
@@ -330,8 +382,15 @@ export type Database = {
           design_instructions?: string | null
           doc_number?: number | null
           doc_type?: string | null
+          document_format?: string | null
+          document_model?: string | null
+          document_preview_url?: string | null
+          document_provider?: string | null
+          document_skill_id?: string | null
           envelope_number?: number | null
           generated_asset_url?: string | null
+          generated_document_url?: string | null
+          generated_pdf_url?: string | null
           hebrew_content?: string | null
           id?: string
           linked_node_ids?: string[] | null
@@ -350,8 +409,15 @@ export type Database = {
           design_instructions?: string | null
           doc_number?: number | null
           doc_type?: string | null
+          document_format?: string | null
+          document_model?: string | null
+          document_preview_url?: string | null
+          document_provider?: string | null
+          document_skill_id?: string | null
           envelope_number?: number | null
           generated_asset_url?: string | null
+          generated_document_url?: string | null
+          generated_pdf_url?: string | null
           hebrew_content?: string | null
           id?: string
           linked_node_ids?: string[] | null
@@ -572,47 +638,65 @@ export type Database = {
       }
       media_assets: {
         Row: {
+          asset_type: string
           category: string
           created_at: string
+          document_format: string | null
           effective_model: string | null
           fallback: string | null
+          generation_mode: string | null
           id: string
           mime_type: string | null
           model: string | null
+          preview_url: string | null
           project_id: string
           prompt: string | null
           prompt_history: Json
           provider: string | null
+          skill_id: string | null
+          source_document_id: string | null
           title: string | null
           url: string | null
         }
         Insert: {
+          asset_type?: string
           category?: string
           created_at?: string
+          document_format?: string | null
           effective_model?: string | null
           fallback?: string | null
+          generation_mode?: string | null
           id?: string
           mime_type?: string | null
           model?: string | null
+          preview_url?: string | null
           project_id: string
           prompt?: string | null
           prompt_history?: Json
           provider?: string | null
+          skill_id?: string | null
+          source_document_id?: string | null
           title?: string | null
           url?: string | null
         }
         Update: {
+          asset_type?: string
           category?: string
           created_at?: string
+          document_format?: string | null
           effective_model?: string | null
           fallback?: string | null
+          generation_mode?: string | null
           id?: string
           mime_type?: string | null
           model?: string | null
+          preview_url?: string | null
           project_id?: string
           prompt?: string | null
           prompt_history?: Json
           provider?: string | null
+          skill_id?: string | null
+          source_document_id?: string | null
           title?: string | null
           url?: string | null
         }

@@ -1,23 +1,31 @@
-import { useEffect } from "react";
-import { X, Copy, ExternalLink } from "lucide-react";
+import { useEffect, useState } from "react";
+import { X, Copy, ExternalLink, FileText, Image as ImageIcon } from "lucide-react";
 import { toast } from "sonner";
 
 export type LightboxAsset = {
   url: string;
   title?: string | null;
   prompt?: string | null;
+  mimeType?: string | null;
+  previewUrl?: string | null;
   openInTab?: { tab: string; targetId?: string; label?: string } | null;
 };
 
 export function AssetLightbox({ asset, onClose }: { asset: LightboxAsset | null; onClose: () => void }) {
+  const [viewMode, setViewMode] = useState<"file" | "image">("file");
+
   useEffect(() => {
     if (!asset) return;
+    setViewMode("file");
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [asset, onClose]);
 
   if (!asset) return null;
+  const isPdf = asset.mimeType === "application/pdf" || asset.url.toLowerCase().includes(".pdf");
+  const canSwitchView = isPdf && Boolean(asset.previewUrl);
+  const displayedUrl = canSwitchView && viewMode === "image" ? asset.previewUrl! : asset.url;
 
   const copyPrompt = async () => {
     if (!asset.prompt) return;
@@ -52,13 +60,19 @@ export function AssetLightbox({ asset, onClose }: { asset: LightboxAsset | null;
         className="relative max-w-[92vw] max-h-[88vh] flex flex-col gap-3"
         onClick={(e) => e.stopPropagation()}
       >
-        <img
-          src={asset.url}
-          alt={asset.title ?? "Asset preview"}
-          className="max-w-full max-h-[72vh] object-contain rounded-lg shadow-2xl bg-background"
-        />
+        {isPdf && viewMode === "file" ? (
+          <iframe title={asset.title ?? "PDF preview"} src={asset.url} className="h-[72vh] w-[86vw] rounded-lg border border-white/10 bg-background shadow-2xl" />
+        ) : (
+          <img src={displayedUrl} alt={asset.title ?? "Asset preview"} className="max-w-full max-h-[72vh] object-contain rounded-lg shadow-2xl bg-background" />
+        )}
         <div className="flex flex-wrap items-center gap-2 text-white">
           {asset.title && <div className="text-sm font-medium mr-auto truncate max-w-md">{asset.title}</div>}
+          {canSwitchView && (
+            <button type="button" onClick={() => setViewMode(viewMode === "file" ? "image" : "file")} className="inline-flex items-center gap-1.5 rounded-md bg-white/10 hover:bg-white/20 px-3 py-1.5 text-xs font-medium transition">
+              {viewMode === "file" ? <ImageIcon className="h-3.5 w-3.5" /> : <FileText className="h-3.5 w-3.5" />}
+              {viewMode === "file" ? "Image view" : "PDF view"}
+            </button>
+          )}
           {asset.prompt && (
             <button
               type="button"
