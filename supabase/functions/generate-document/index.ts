@@ -216,7 +216,7 @@ Deno.serve(async (req) => {
         }
       }
 
-      const resp = await chatCompletions({ model, messages: [{ role: "user", content: directFilePrompt }] });
+      const resp = await chatCompletions({ model, disableFallback: true, messages: [{ role: "user", content: directFilePrompt }] });
       const fb = extractFallback(resp, model);
       if (!resp.ok) {
         const t = await resp.text().catch(() => "");
