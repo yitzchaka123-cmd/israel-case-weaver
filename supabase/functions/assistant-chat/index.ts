@@ -150,6 +150,8 @@ ${renderUniversalDocumentsBlock(playbook)}
 DOCUMENT GENERATION WORKFLOW (Phase 4 — read carefully)
 Before creating final document rows, you MUST create/review the Final Documents Map on the Case Board's Final board. The map contains one \`document\` node for every planned real game document, including Doc 0, marked as ungenerated until a real document row is created/generated. If the Final board does not yet contain planned document nodes, call \`create_final_documents_map\` first and ask the user to review it before calling \`add_document\`.
 If the user asks to see/show/build the final flow, final board, production map, document map, or mapped final documents, and Logic Flow is already approved but the Final board has no \`document\` nodes, call \`create_final_documents_map\` immediately before prose. This is especially important for older existing cases that were approved before this workflow existed.
+The Final Flow is a major production artifact: it must include the approved logic nodes, suspects, envelopes, planned document nodes, and connecting lines between them. When the Final Flow already exists, acknowledge it before document generation: “I see the Final Flow is created; I’ll generate documents from those mapped nodes.” If it does not exist, ask whether to generate it now and use propose_options with Yes/No buttons. If the user answers yes, call \`create_final_documents_map\`.
+If the user asks you to generate the Logic Flow from chat, call \`generate_logic_flow\`. After it finishes, tell the user to review/edit the Canvas Logic Flow and click Approve logic before final-document generation.
 
 Each project remembers a \`doc_generation_mode\` choice that controls how aggressive you are when producing documents:
   • "drafts"  — write the row only (title + design_instructions + hebrew_content). Do NOT call generate_document_assets. The user clicks Generate themselves.
@@ -218,6 +220,7 @@ When the user approves a change, you MUST persist it by calling the appropriate 
 - set_solution_summary: AS SOON as the user approves the Phase 2 case summary (or whenever they approve a revised end-to-end solution narrative), call this tool with the full summary text. This single source of truth feeds the Case Board's "Solution summary" button, the Logic Flow generator, and every future document. NEVER skip this step after an approval — without it, the Canvas summary button will be empty and document generation will refuse to run.
 - add_suspect / update_suspect: manage cast.
 - add_document / update_document: create or edit a document record.
+- generate_logic_flow: generate/replace the Canvas Logic Flow from chat when the user asks, then tell them to review and approve it on the Canvas.
 - add_canvas_node / update_canvas_node: add or edit a logic/clue/deduction/envelope/solution node.
 - add_envelope / update_envelope: manage the 5 fixed envelopes (only update_envelope exists for editing labels/tasks/notes).
 - add_hint / generate_hint_stage / update_hint: manage hints (see HINT SYSTEM block below). Prefer generate_hint_stage to scaffold a whole stage; use add_hint for single rows; use update_hint to edit existing rows.
@@ -271,6 +274,7 @@ ${hintsList}
 Existing canvas nodes (${rosters.canvas_nodes.length}):
 ${nodesList}
 Logic flow approved: ${project.logic_approved_at ? "YES (" + project.logic_approved_at + ")" : "NO — must be approved on the Canvas before generating documents"}
+Final Flow mapped: ${rosters.canvas_nodes.some((n) => n.board === "final" && n.node_type === "document") ? `YES (${rosters.canvas_nodes.filter((n) => n.board === "final").length} final-board nodes)` : "NO — ask to create the Final Flow before final documents"}
 Solution summary set: ${project.solution_summary ? "YES" : "NO"}
 Doc generation mode: ${project.doc_generation_mode ? `"${project.doc_generation_mode}"` : "NOT YET CHOSEN — ask the user with propose_options before the first add_document in Phase 4 (see DOCUMENT GENERATION WORKFLOW)"}
 
@@ -519,7 +523,7 @@ const BASE_TOOLS = [
     type: "function",
     function: {
       name: "create_final_documents_map",
-      description: "Create/replace the Final board production map with one document node per planned game document. This does NOT create document rows or assets; it marks planned documents as ungenerated for review first.",
+      description: "Create/replace the Final board production map with the approved logic nodes, envelopes, suspects, planned document nodes, and connecting lines. If documents are omitted, the app derives the full map from the approved logic flow and existing case data. This does NOT create document rows or assets.",
       parameters: {
         type: "object",
         properties: {
@@ -542,7 +546,22 @@ const BASE_TOOLS = [
             },
           },
         },
-        required: ["documents"],
+        required: [],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "generate_logic_flow",
+      description: "Generate or replace the Canvas Logic Flow board from the case brief/approved summary. The user must still review and approve it before final document generation.",
+      parameters: {
+        type: "object",
+        properties: {
+          use_existing_summary: { type: "boolean", description: "Use the saved solution_summary when present. Default true." },
+        },
+        required: [],
         additionalProperties: false,
       },
     },
@@ -925,6 +944,18 @@ async function executeTool(
             "Only after that can documents be generated.",
         };
       }
+      const { count: finalDocCount } = await supa
+        .from("canvas_nodes")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", projectId)
+        .eq("board", "final")
+        .eq("node_type", "document");
+      if (!finalDocCount) {
+        return {
+          ok: false,
+          message: "Cannot create final documents yet — the Final Flow is not mapped. Ask the user whether to generate the Final Flow now; if they say yes, call create_final_documents_map first, then create documents from those nodes.",
+        };
+      }
       const finalNodeId = typeof args.final_node_id === "string" ? args.final_node_id : null;
       const insertArgs = { ...args };
       delete insertArgs.final_node_id;
@@ -942,34 +973,25 @@ async function executeTool(
       return { ok: true, message: `Document created: ${data.title} (#${docNumber})`, id: data.id };
     }
     if (name === "create_final_documents_map") {
-      const docs = ((args as { documents?: Record<string, unknown>[] }).documents ?? []).filter((d) => d?.title);
-      if (docs.length === 0) return { ok: false, message: "documents array is required" };
-      if ((args as { replace?: boolean }).replace !== false) {
-        await supa.from("canvas_nodes").delete().eq("project_id", projectId).eq("board", "final").eq("node_type", "document");
-      }
-      const rows = docs.map((d, i) => {
-        const docNumber = Number(d.doc_number ?? (i === 0 ? 0 : 100 + i));
-        const title = String(d.title ?? `Document ${docNumber}`).slice(0, 200);
-        const docType = String(d.doc_type ?? (docNumber === 0 ? "contents checklist" : "document"));
-        const printSize = String(d.print_size ?? "A4");
-        const purpose = String(d.purpose ?? "Planned game document");
-        const envelopeNumber = typeof d.envelope_number === "number" ? d.envelope_number : null;
-        return {
-          project_id: projectId,
-          board: "final",
-          node_type: "document",
-          title: docNumber === 0 && !/^doc\s*0/i.test(title) ? `Doc 0 — ${title}` : title,
-          description: `Status: Ungenerated — to be generated in the future\nType: ${docType}\nPrint size: ${printSize}${envelopeNumber ? `\nEnvelope: ${envelopeNumber}` : ""}\nPurpose: ${purpose}`,
-          color: "oklch(0.50 0.05 260)",
-          position_x: 80 + (i % 4) * 260,
-          position_y: 80 + Math.floor(i / 4) * 170,
-          data: { generationStatus: "ungenerated", docNumber, docType, printSize, envelopeNumber, purpose },
-          ...(messageId ? { created_by_message_id: messageId } : {}),
-        };
+      const base = `${SUPABASE_URL}/functions/v1/create-final-documents-map`;
+      const resp = await fetch(base, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+        body: JSON.stringify({ projectId, replace: (args as { replace?: boolean }).replace !== false, createdByMessageId: messageId }),
       });
-      const { error } = await supa.from("canvas_nodes").insert(rows);
-      if (error) throw error;
-      return { ok: true, message: `Final Documents Map created with ${rows.length} planned document nodes. Review the Final board before creating document rows.` };
+      const payload = await resp.json().catch(() => ({}));
+      if (!resp.ok) return { ok: false, message: payload.error ?? "Final Flow creation failed" };
+      return { ok: true, message: `Final Flow created with ${payload.nodeCount ?? 0} nodes, including ${payload.documentNodeCount ?? 0} planned documents and ${payload.edgeCount ?? 0} connecting lines. Review the Final board before creating document rows.` };
+    }
+    if (name === "generate_logic_flow") {
+      const resp = await fetch(`${SUPABASE_URL}/functions/v1/generate-logic-flow`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+        body: JSON.stringify({ projectId, replace: true, useExistingSummary: (args as { use_existing_summary?: boolean }).use_existing_summary !== false }),
+      });
+      const payload = await resp.json().catch(() => ({}));
+      if (!resp.ok) return { ok: false, message: payload.error ?? "Logic Flow generation failed" };
+      return { ok: true, message: `Logic Flow generated with ${payload.nodeCount ?? 0} nodes and ${payload.edgeCount ?? 0} connections. The user must review and approve it on the Canvas before documents or Final Flow generation.` };
     }
     if (name === "add_canvas_node") {
       const { data, error } = await supa

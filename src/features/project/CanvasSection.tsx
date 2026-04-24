@@ -7,11 +7,12 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 import dagre from "dagre";
+import jsPDF from "jspdf";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Plus, Wand2, CheckCircle2, Loader2, ScrollText, Sparkles, FileText, ExternalLink, ChevronDown, AlertTriangle, X, LayoutGrid } from "lucide-react";
+import { Plus, Wand2, CheckCircle2, Loader2, ScrollText, Sparkles, FileText, ExternalLink, ChevronDown, AlertTriangle, X, LayoutGrid, Download, Image as ImageIcon, FileCode2 } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -44,6 +45,7 @@ export const LOGIC_FLOW_MODEL_KEY = "logic-flow-model";
 export const LOGIC_FLOW_MODEL_DEFAULT = "openai-5.2";
 
 type Board = "logic" | "final";
+type LineStyle = "flow" | "direct";
 
 const NODE_TYPES = (Object.entries(NODE_META) as [string, { label: string; accent: string }][])
   .map(([t, m]) => ({ t, l: m.label, c: m.accent }));
@@ -117,6 +119,10 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
   const [edges, setEdges] = useEdgesState([]);
   const [generatingFlow, setGeneratingFlow] = useState(false);
   const [creatingFinalMap, setCreatingFinalMap] = useState(false);
+  const [lineStyle, setLineStyle] = useState<LineStyle>(() => {
+    if (typeof window === "undefined") return "flow";
+    return (localStorage.getItem("canvas-line-style") as LineStyle | null) ?? "flow";
+  });
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [summaryDraft, setSummaryDraft] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -169,8 +175,8 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
         source: e.source_id,
         target: e.target_id,
         label: e.label ?? undefined,
-        type: "smoothstep",
-        animated: false,
+        type: lineStyle === "flow" ? "smoothstep" : "straight",
+        animated: lineStyle === "flow" && board === "final",
         style: { stroke: "var(--color-accent, #6366f1)", strokeWidth: 2 },
         markerEnd: { type: MarkerType.ArrowClosed, color: "var(--color-accent, #6366f1)", width: 18, height: 18 },
         labelStyle: { fontSize: 11, fontWeight: 500, fill: "var(--color-foreground)" },
@@ -179,7 +185,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
         labelBgBorderRadius: 4,
       }))
     );
-  }, [dbEdges, setEdges]);
+  }, [dbEdges, setEdges, lineStyle, board]);
 
   useEffect(() => {
     setSummaryDraft(project?.solution_summary ?? "");
@@ -432,6 +438,72 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
     }
   };
 
+  const downloadBlob = (blob: Blob, fileName: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const buildCanvasSvg = () => {
+    const rows = dbNodes ?? [];
+    const edgeRows = dbEdges ?? [];
+    const minX = Math.min(0, ...rows.map((n) => n.position_x)) - 60;
+    const minY = Math.min(0, ...rows.map((n) => n.position_y)) - 60;
+    const maxX = Math.max(1200, ...rows.map((n) => n.position_x + 260)) + 60;
+    const maxY = Math.max(800, ...rows.map((n) => n.position_y + 130)) + 60;
+    const esc = (s: unknown) => String(s ?? "").replace(/[&<>\"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[c]!));
+    const byId = new Map(rows.map((n) => [n.id, n]));
+    const edgesSvg = edgeRows.map((e) => {
+      const s = byId.get(e.source_id), t = byId.get(e.target_id);
+      if (!s || !t) return "";
+      const x1 = s.position_x - minX + 220, y1 = s.position_y - minY + 48;
+      const x2 = t.position_x - minX, y2 = t.position_y - minY + 48;
+      const path = lineStyle === "flow" ? `M ${x1} ${y1} C ${x1 + 80} ${y1}, ${x2 - 80} ${y2}, ${x2} ${y2}` : `M ${x1} ${y1} L ${x2} ${y2}`;
+      return `<path d="${path}" fill="none" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/><text x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 6}" font-size="11" fill="#475569">${esc(e.label)}</text>`;
+    }).join("");
+    const nodesSvg = rows.map((n) => {
+      const meta = getNodeMeta(n.node_type);
+      const x = n.position_x - minX, y = n.position_y - minY;
+      return `<a href="#node-${esc(n.id)}"><g><rect x="${x}" y="${y}" width="220" height="96" rx="8" fill="#ffffff" stroke="#cbd5e1"/><rect x="${x}" y="${y}" width="220" height="28" rx="8" fill="#f1f5f9"/><circle cx="${x + 18}" cy="${y + 14}" r="7" fill="${esc(n.color || meta.accent)}"/><text x="${x + 32}" y="${y + 18}" font-size="10" font-weight="700" fill="#475569">${esc(meta.label)}</text><text x="${x + 12}" y="${y + 51}" font-size="13" font-weight="700" fill="#0f172a">${esc(n.title).slice(0, 42)}</text><text x="${x + 12}" y="${y + 72}" font-size="11" fill="#64748b">${esc(n.description).slice(0, 60)}</text></g></a>`;
+    }).join("");
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${maxX - minX}" height="${maxY - minY}" viewBox="0 0 ${maxX - minX} ${maxY - minY}"><defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#64748b"/></marker></defs><rect width="100%" height="100%" fill="#f8fafc"/>${edgesSvg}${nodesSvg}</svg>`;
+  };
+
+  const exportCanvas = async (format: "jpg" | "pdf" | "html") => {
+    if (!dbNodes?.length) return toast.info("No canvas nodes to export yet.");
+    const base = `${board}-canvas-${projectId.slice(0, 8)}`;
+    const svg = buildCanvasSvg();
+    if (format === "html") {
+      const html = `<!doctype html><html><head><meta charset="utf-8"><title>${base}</title><style>body{margin:0;font-family:Inter,Arial,sans-serif;background:#f8fafc}.wrap{padding:24px}.map{overflow:auto;border:1px solid #cbd5e1;border-radius:12px;background:white}.list{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:20px}.card{border:1px solid #cbd5e1;border-radius:10px;padding:12px;background:white}.card:target{outline:3px solid #2563eb}</style></head><body><div class="wrap"><h1>${base}</h1><div class="map">${svg}</div><div class="list">${(dbNodes ?? []).map((n) => `<section class="card" id="node-${n.id}"><h2>${n.title}</h2><p><strong>${n.node_type}</strong></p><p>${n.description ?? ""}</p></section>`).join("")}</div></div></body></html>`;
+      downloadBlob(new Blob([html], { type: "text/html" }), `${base}.html`);
+      return toast.success("Interactive HTML exported");
+    }
+    const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+    const img = new Image();
+    img.src = dataUrl;
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+    const canvas = document.createElement("canvas");
+    canvas.width = img.width * 2;
+    canvas.height = img.height * 2;
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = "#f8fafc";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const jpg = canvas.toDataURL("image/jpeg", 0.92);
+    if (format === "jpg") {
+      const blob = await (await fetch(jpg)).blob();
+      downloadBlob(blob, `${base}.jpg`);
+      return toast.success("JPG exported");
+    }
+    const pdf = new jsPDF({ orientation: canvas.width > canvas.height ? "landscape" : "portrait", unit: "px", format: [canvas.width, canvas.height] });
+    pdf.addImage(jpg, "JPEG", 0, 0, canvas.width, canvas.height);
+    pdf.save(`${base}.pdf`);
+    toast.success("PDF exported");
+  };
+
   const approved = !!project?.logic_approved_at;
 
   return (
@@ -491,6 +563,38 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
             </span>
           )}
         </Button>
+
+        <div className="inline-flex rounded-lg border bg-card shadow-soft p-0.5">
+          <button
+            type="button"
+            onClick={() => { setLineStyle("flow"); localStorage.setItem("canvas-line-style", "flow"); }}
+            className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors ${lineStyle === "flow" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            title="Curved animated connector lines"
+          >
+            Flow lines
+          </button>
+          <button
+            type="button"
+            onClick={() => { setLineStyle("direct"); localStorage.setItem("canvas-line-style", "direct"); }}
+            className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors ${lineStyle === "direct" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            title="Straight direct connector lines"
+          >
+            Direct lines
+          </button>
+        </div>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" className="gap-2 h-9" disabled={nodes.length === 0}>
+              <Download className="h-4 w-4" /> Export
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-56">
+            <DropdownMenuItem onClick={() => exportCanvas("pdf")} className="gap-2"><FileText className="h-4 w-4" /> PDF map</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => exportCanvas("jpg")} className="gap-2"><ImageIcon className="h-4 w-4" /> JPG image</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => exportCanvas("html")} className="gap-2"><FileCode2 className="h-4 w-4" /> Clickable HTML</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         {board === "logic" && (
           <>
