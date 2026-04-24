@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, FileText, Trash2, Upload, Wand2, Image as ImageIcon, Loader2, FileDown } from "lucide-react";
+import { Plus, FileText, Trash2, Upload, Wand2, Image as ImageIcon, Loader2, FileDown, FileType } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
@@ -80,6 +80,13 @@ interface Doc {
   hebrew_content: string | null;
   status: string;
   generated_asset_url: string | null;
+  generated_document_url?: string | null;
+  generated_pdf_url?: string | null;
+  document_format?: string | null;
+  document_provider?: string | null;
+  document_model?: string | null;
+  document_skill_id?: string | null;
+  document_preview_url?: string | null;
   uploaded_asset_url: string | null;
   active_version: string;
   envelope_number: number | null;
@@ -199,8 +206,10 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
   const [draft, setDraft] = useState<Doc | null>(doc);
   const [genText, setGenText] = useState(false);
   const [genImage, setGenImage] = useState(false);
+  const [genDocument, setGenDocument] = useState(false);
   const [draftingPrompt, setDraftingPrompt] = useState(false);
   const [imageQuality, setImageQuality] = useState<"low" | "medium" | "high">("medium");
+  const [documentFormat, setDocumentFormat] = useState<"pdf" | "docx" | "pptx" | "xlsx">("pdf");
   const [selectedImageModel, setSelectedImageModel] = useState<string>(
     () => getStoredImageModel("document", "chatgpt-image"),
   );
@@ -242,8 +251,8 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
     toast.success("Replacement uploaded");
   };
 
-  const generate = async (mode: "text" | "image") => {
-    const setter = mode === "text" ? setGenText : setGenImage;
+  const generate = async (mode: "text" | "image" | "document") => {
+    const setter = mode === "text" ? setGenText : mode === "image" ? setGenImage : setGenDocument;
     setter(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -258,12 +267,13 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
           mode,
           imageModelOverride: mode === "image" ? getStoredImageModel("document", "chatgpt-image") : undefined,
           quality: mode === "image" ? imageQuality : undefined,
+          documentFormat: mode === "document" ? documentFormat : undefined,
         }),
       });
 
       // Try to parse JSON safely — when the worker is killed mid-response the
       // body can be malformed and would otherwise blow up the dialog.
-      let payload: { error?: string; hebrew_content?: string; url?: string } = {};
+      let payload: { error?: string; hebrew_content?: string; url?: string; documentUrl?: string } = {};
       try {
         payload = await resp.json();
       } catch {
@@ -283,7 +293,10 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
       if (mode === "image" && payload.url) {
         setDraft((d) => d ? { ...d, generated_asset_url: payload.url!, active_version: "generated", status: "review" } : d);
       }
-      toast.success(`${mode === "text" ? "Hebrew content" : "Document image"} generated`);
+      if (mode === "document" && payload.documentUrl) {
+        setDraft((d) => d ? { ...d, generated_document_url: payload.documentUrl!, document_format: documentFormat, status: "review" } : d);
+      }
+      toast.success(mode === "text" ? "Hebrew content generated" : mode === "image" ? "Document image generated" : "Document file generated");
     } catch (e) {
       console.error("generate-document call failed", e);
       toast.error(e instanceof Error ? e.message : "Generation failed", { duration: 8000 });
