@@ -224,6 +224,16 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
             <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Image model</Label>
             <ImageModelPicker surface="marketing-cover" defaultModel="chatgpt-image-2" />
           </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Output type</Label>
+            <div className="inline-flex rounded-md border bg-muted/40 p-0.5">
+              {OUTPUT_TYPES.map((option) => (
+                <button key={option.value} type="button" onClick={() => setCoverOutputType(option.value)} className={`h-8 rounded px-3 text-xs font-medium transition ${coverOutputType === option.value ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <PromptPanel
             projectId={projectId}
             surface="cover"
@@ -306,6 +316,16 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
             <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Image model</Label>
             <div className="max-w-xs">
               <ImageModelPicker surface="marketing-cover" defaultModel="chatgpt-image-2" />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Output type</Label>
+            <div className="inline-flex rounded-md border bg-muted/40 p-0.5">
+              {OUTPUT_TYPES.map((option) => (
+                <button key={option.value} type="button" onClick={() => setExtraOutputType(option.value)} className={`h-8 rounded px-3 text-xs font-medium transition ${extraOutputType === option.value ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                  {option.label}
+                </button>
+              ))}
             </div>
           </div>
           <PromptPanel
