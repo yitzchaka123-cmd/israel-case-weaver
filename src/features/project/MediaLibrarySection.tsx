@@ -23,6 +23,13 @@ interface DocumentAsset {
   title: string;
   doc_type: string | null;
   generated_asset_url: string | null;
+  generated_document_url?: string | null;
+  generated_pdf_url?: string | null;
+  document_format?: string | null;
+  document_provider?: string | null;
+  document_model?: string | null;
+  document_skill_id?: string | null;
+  document_preview_url?: string | null;
   uploaded_asset_url: string | null;
   active_version: string;
   updated_at: string;
@@ -43,6 +50,7 @@ type LibraryItem = {
   url: string | null;
   mime: string | null;
   model: string | null;
+  previewUrl?: string | null;
   createdAt: string;
 };
 
@@ -59,7 +67,7 @@ export function MediaLibrarySection({ projectId }: { projectId: string }) {
       const [projectRes, mediaRes, docsRes] = await Promise.all([
         supabase.from("projects").select("title, cover_image_url, cover_effective_model").eq("id", projectId).single(),
         supabase.from("media_assets").select("id, category, title, url, mime_type, provider, model, effective_model, created_at").eq("project_id", projectId).order("created_at", { ascending: false }),
-        supabase.from("documents").select("id, title, doc_type, generated_asset_url, uploaded_asset_url, active_version, updated_at").eq("project_id", projectId).order("updated_at", { ascending: false }),
+        supabase.from("documents").select("id, title, doc_type, generated_asset_url, generated_document_url, generated_pdf_url, document_format, document_provider, document_model, document_skill_id, document_preview_url, uploaded_asset_url, active_version, updated_at").eq("project_id", projectId).order("updated_at", { ascending: false }),
       ]);
       if (projectRes.error) throw projectRes.error;
       if (mediaRes.error) throw mediaRes.error;
@@ -103,15 +111,17 @@ export function MediaLibrarySection({ projectId }: { projectId: string }) {
     for (const doc of data?.documents ?? []) {
       const url = doc.active_version === "uploaded" ? doc.uploaded_asset_url : doc.generated_asset_url;
       if (!url) continue;
+      const isDocumentFile = Boolean(doc.generated_document_url || doc.generated_pdf_url) && doc.active_version !== "uploaded";
       list.push({
         id: doc.id,
         title: doc.title,
-        type: doc.doc_type ?? "document",
+        type: isDocumentFile ? (doc.document_format ?? "document") : (doc.doc_type ?? "document"),
         status: doc.active_version === "uploaded" ? "uploaded" : "selected",
         source: "Document",
-        url,
-        mime: "image/*",
-        model: null,
+        url: isDocumentFile ? (doc.generated_document_url ?? doc.generated_pdf_url) : url,
+        mime: isDocumentFile && (doc.document_format ?? "pdf") === "pdf" ? "application/pdf" : "image/*",
+        model: doc.document_skill_id ? `${doc.document_model ?? doc.document_provider ?? "Claude"} + ${doc.document_skill_id}` : doc.document_model ?? doc.document_provider,
+        previewUrl: doc.document_preview_url ?? doc.generated_asset_url,
         createdAt: doc.updated_at,
       });
     }
