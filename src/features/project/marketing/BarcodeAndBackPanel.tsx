@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Loader2, Barcode as BarcodeIcon, Image as ImageIcon, RefreshCw, Wand2 } from "lucide-react";
+import { CheckCircle2, Copy, ExternalLink, Loader2, Barcode as BarcodeIcon, Image as ImageIcon, RefreshCw, Trash2, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { ean13ToPngBlob, ean13ToSvg, generateEan13 } from "./ean13";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
@@ -21,6 +21,18 @@ interface Marketing {
   barcode_value: string | null;
   barcode_url: string | null;
   back_cover_url: string | null;
+}
+
+interface MediaAsset {
+  id: string;
+  category: string;
+  title: string | null;
+  url: string | null;
+  prompt: string | null;
+  created_at: string;
+  model: string | null;
+  effective_model: string | null;
+  fallback: string | null;
 }
 
 async function callEdge(name: string, body: unknown) {
@@ -49,6 +61,7 @@ export function BarcodeAndBackPanel({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
   const [generatingBarcode, setGeneratingBarcode] = useState(false);
   const [generatingBack, setGeneratingBack] = useState(false);
+  const [generateCount, setGenerateCount] = useState<1 | 2 | 4>(4);
   const [backOrigin, setBackOrigin] = useState<{ requested: string | null; effective: string | null; fallback: string | null } | null>(null);
   const seenBarcode = useRef<string | null>(null);
   const { create: createNotif } = useProjectNotifications(projectId);
@@ -62,11 +75,28 @@ export function BarcodeAndBackPanel({ projectId }: { projectId: string }) {
     },
   });
 
+  const { data: backAssets } = useQuery({
+    queryKey: ["marketing-back-assets", projectId],
+    queryFn: async (): Promise<MediaAsset[]> => {
+      const { data, error } = await supabase
+        .from("media_assets")
+        .select("id, category, title, url, prompt, created_at, model, effective_model, fallback")
+        .eq("project_id", projectId)
+        .eq("category", "marketing-back")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as MediaAsset[];
+    },
+  });
+
   useEffect(() => {
     const ch = supabase
       .channel(`marketing-barcode-${projectId}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "project_marketing", filter: `project_id=eq.${projectId}` }, () =>
         qc.invalidateQueries({ queryKey: ["project-marketing-barcode", projectId] }),
+      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "media_assets", filter: `project_id=eq.${projectId}` }, () =>
+        qc.invalidateQueries({ queryKey: ["marketing-back-assets", projectId] }),
       )
       .subscribe();
     return () => { supabase.removeChannel(ch); };
@@ -118,6 +148,35 @@ export function BarcodeAndBackPanel({ projectId }: { projectId: string }) {
     }
   };
 
+  const bakeBarcodeIntoImage = async (baseUrl: string, barcodeUrl: string) => {
+    const [base, code] = await Promise.all([fetchAsImage(baseUrl), fetchAsImage(barcodeUrl)]);
+    const canvas = document.createElement("canvas");
+    canvas.width = base.naturalWidth;
+    canvas.height = base.naturalHeight;
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(base, 0, 0);
+    const targetW = Math.round(canvas.width * 0.22);
+    const targetH = Math.round((targetW / code.naturalWidth) * code.naturalHeight);
+    const pad = Math.round(canvas.width * 0.025);
+    const x = canvas.width - targetW - pad;
+    const y = canvas.height - targetH - pad;
+    const cardPad = Math.round(targetW * 0.06);
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(x - cardPad, y - cardPad, targetW + cardPad * 2, targetH + cardPad * 2);
+    ctx.drawImage(code, x, y, targetW, targetH);
+    const composedBlob = await new Promise<Blob>((res, rej) =>
+      canvas.toBlob((b) => (b ? res(b) : rej(new Error("toBlob failed"))), "image/jpeg", 0.92),
+    );
+    const finalPath = `${projectId}/marketing/back-final-${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
+    const { error: upErr } = await supabase.storage.from("media").upload(finalPath, composedBlob, {
+      upsert: true,
+      contentType: "image/jpeg",
+    });
+    if (upErr) throw upErr;
+    const { data: pub } = supabase.storage.from("media").getPublicUrl(finalPath);
+    return pub.publicUrl;
+  };
+
   const handleGenerateBack = async () => {
     if (!data?.barcode_url || !data?.back_body) {
       toast.error("Generate the barcode + write back-cover copy first.");
@@ -145,73 +204,52 @@ LAYOUT REQUIREMENTS:
 
       const modelOverride = getStoredImageModel("marketing-back", "chatgpt-image-2");
       const quality = getStoredImageQuality("marketing-back", "medium");
-      const resp = await callEdge("generate-image", {
-        projectId,
-        category: "marketing-back",
-        prompt: composedPrompt,
-        title: "Back of box",
-        modelOverride,
-        quality,
-        aspect: "portrait",
-      });
-      const json = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        toast.error(json.error ?? "Back-cover generation failed", { duration: 10000 });
-        return;
-      }
-      const baseUrl: string | undefined = json.url;
-      if (!baseUrl) {
-        toast.error("No image returned");
-        return;
-      }
-      setBackOrigin({
-        requested: (json.requestedModel as string) ?? null,
-        effective: (json.effectiveModel as string) ?? null,
-        fallback: (json.fallback as string) ?? "none",
-      });
-
-      try {
-        const [base, code] = await Promise.all([fetchAsImage(baseUrl), fetchAsImage(data.barcode_url)]);
-        const canvas = document.createElement("canvas");
-        canvas.width = base.naturalWidth;
-        canvas.height = base.naturalHeight;
-        const ctx = canvas.getContext("2d")!;
-        ctx.drawImage(base, 0, 0);
-        const targetW = Math.round(canvas.width * 0.22);
-        const targetH = Math.round((targetW / code.naturalWidth) * code.naturalHeight);
-        const pad = Math.round(canvas.width * 0.025);
-        const x = canvas.width - targetW - pad;
-        const y = canvas.height - targetH - pad;
-        const cardPad = Math.round(targetW * 0.06);
-        ctx.fillStyle = "#fff";
-        ctx.fillRect(x - cardPad, y - cardPad, targetW + cardPad * 2, targetH + cardPad * 2);
-        ctx.drawImage(code, x, y, targetW, targetH);
-        const composedBlob = await new Promise<Blob>((res, rej) =>
-          canvas.toBlob((b) => (b ? res(b) : rej(new Error("toBlob failed"))), "image/jpeg", 0.92),
-        );
-        const finalPath = `${projectId}/marketing/back-final-${Date.now()}.jpg`;
-        const { error: upErr } = await supabase.storage.from("media").upload(finalPath, composedBlob, {
-          upsert: true,
-          contentType: "image/jpeg",
+      let firstUrl: string | null = null;
+      let lastOrigin: typeof backOrigin = null;
+      for (let i = 0; i < generateCount; i += 1) {
+        const resp = await callEdge("generate-image", {
+          projectId,
+          category: "marketing-back",
+          prompt: `${composedPrompt}\n\nVariation ${i + 1}: use a distinct composition, color balance, and focal image while preserving the reserved copy and barcode areas.`,
+          title: `Back of box option ${i + 1}`,
+          modelOverride,
+          quality,
+          aspect: "portrait",
         });
-        if (upErr) {
-          toast.error(upErr.message);
+        const json = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          toast.error(json.error ?? "Back-cover generation failed", { duration: 10000 });
           return;
         }
-        const { data: pub } = supabase.storage.from("media").getPublicUrl(finalPath);
+        const baseUrl: string | undefined = json.url;
+        if (!baseUrl) {
+          toast.error("No image returned");
+          return;
+        }
+        lastOrigin = {
+          requested: (json.requestedModel as string) ?? null,
+          effective: (json.effectiveModel as string) ?? null,
+          fallback: (json.fallback as string) ?? "none",
+        };
 
-        await supabase.from("media_assets").update({ url: pub.publicUrl, title: "Back of box (with barcode)" }).eq("id", json.asset?.id);
+        let finalUrl = baseUrl;
+        try {
+          finalUrl = await bakeBarcodeIntoImage(baseUrl, data.barcode_url);
+        } catch (e) {
+          toast.error("Generated, but barcode overlay failed: " + (e instanceof Error ? e.message : "unknown"));
+        }
+        if (json.asset?.id) {
+          await supabase.from("media_assets").update({ url: finalUrl, title: `Back of box option ${i + 1}` }).eq("id", json.asset.id);
+        }
+        firstUrl ??= finalUrl;
+      }
+      if (firstUrl) {
+        setBackOrigin(lastOrigin);
         await supabase.from("project_marketing").upsert({
           project_id: projectId,
-          back_cover_url: pub.publicUrl,
+          back_cover_url: firstUrl,
         } as never, { onConflict: "project_id" });
-        toast.success("Back cover ready with barcode baked in");
-      } catch (e) {
-        await supabase.from("project_marketing").upsert({
-          project_id: projectId,
-          back_cover_url: baseUrl,
-        } as never, { onConflict: "project_id" });
-        toast.error("Generated, but barcode overlay failed: " + (e instanceof Error ? e.message : "unknown"));
+        toast.success(`${generateCount} back-cover option${generateCount === 1 ? "" : "s"} ready`);
       }
     } finally {
       setGeneratingBack(false);
@@ -220,6 +258,30 @@ LAYOUT REQUIREMENTS:
 
   const barcodeReady = !!data?.barcode_url;
   const copyReady = !!data?.back_body && !!data?.back_headline;
+  const candidates = backAssets ?? [];
+
+  const setActiveBackCover = async (url: string) => {
+    const { error } = await supabase.from("project_marketing").upsert({ project_id: projectId, back_cover_url: url } as never, { onConflict: "project_id" });
+    if (error) return toast.error(error.message);
+    toast.success("Back cover selected");
+  };
+
+  const deleteCandidate = async (asset: MediaAsset) => {
+    if (!confirm("Delete this back-cover candidate?")) return;
+    const { error } = await supabase.from("media_assets").delete().eq("id", asset.id);
+    if (error) return toast.error(error.message);
+    if (asset.url && asset.url === data?.back_cover_url) {
+      const next = candidates.find((a) => a.id !== asset.id && a.url)?.url ?? null;
+      await supabase.from("project_marketing").upsert({ project_id: projectId, back_cover_url: next } as never, { onConflict: "project_id" });
+    }
+    toast.success("Candidate deleted");
+  };
+
+  const copyPrompt = async (prompt: string | null) => {
+    if (!prompt) return toast.error("No prompt saved for this image");
+    await navigator.clipboard.writeText(prompt);
+    toast.success("Prompt copied");
+  };
 
   return (
     <section className="rounded-2xl border bg-card p-6 shadow-soft space-y-5">
@@ -274,6 +336,21 @@ LAYOUT REQUIREMENTS:
             )}
           </div>
           <ImageModelPicker surface="marketing-back" defaultModel="chatgpt-image-2" />
+          <div className="flex items-center justify-between gap-2 rounded-lg border bg-surface/70 p-2">
+            <span className="text-xs font-medium text-muted-foreground">Generate options</span>
+            <div className="inline-flex rounded-md border bg-muted/40 p-0.5">
+              {([1, 2, 4] as const).map((count) => (
+                <button
+                  key={count}
+                  type="button"
+                  onClick={() => setGenerateCount(count)}
+                  className={`h-7 min-w-8 rounded px-2 text-xs font-medium transition ${generateCount === count ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  {count}
+                </button>
+              ))}
+            </div>
+          </div>
           <Button
             onClick={handleGenerateBack}
             disabled={generatingBack || !barcodeReady || !copyReady}
@@ -281,9 +358,65 @@ LAYOUT REQUIREMENTS:
             className="w-full gap-1.5"
           >
             {generatingBack ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-            {data?.back_cover_url ? "Regenerate back cover" : "Generate back cover"}
+            {data?.back_cover_url ? "Generate more back-cover options" : "Generate back-cover options"}
           </Button>
         </div>
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <h4 className="text-sm font-medium">Back-cover candidates</h4>
+          <span className="text-xs text-muted-foreground">{candidates.length} saved</span>
+        </div>
+        {candidates.length === 0 ? (
+          <div className="rounded-xl border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">
+            Generated back-cover options will appear here.
+          </div>
+        ) : (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {candidates.map((asset) => {
+              const active = !!asset.url && asset.url === data?.back_cover_url;
+              return (
+                <div key={asset.id} className="rounded-xl border bg-surface overflow-hidden">
+                  <div className="group aspect-[3/4] bg-muted relative">
+                    {asset.url ? (
+                      <img src={asset.url} alt={asset.title ?? "Back-cover candidate"} className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground">No image</div>
+                    )}
+                    {active && (
+                      <div className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-accent px-2 py-1 text-[10px] font-medium text-accent-foreground">
+                        <CheckCircle2 className="h-3 w-3" /> Active
+                      </div>
+                    )}
+                    {(asset.model || asset.effective_model) && (
+                      <AiOriginBadge hoverOnly info={{ requested: asset.model, effective: asset.effective_model ?? asset.model, fallback: asset.fallback ?? "none" }} />
+                    )}
+                  </div>
+                  <div className="p-3 space-y-2">
+                    <div className="text-xs font-medium truncate">{asset.title ?? "Back of box"}</div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <Button size="sm" variant={active ? "secondary" : "outline"} className="h-8 text-xs" disabled={!asset.url || active} onClick={() => asset.url && setActiveBackCover(asset.url)}>
+                        Use
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-8 text-xs gap-1" onClick={() => copyPrompt(asset.prompt)}>
+                        <Copy className="h-3 w-3" /> Prompt
+                      </Button>
+                      {asset.url && (
+                        <Button size="sm" variant="outline" className="h-8 text-xs gap-1" asChild>
+                          <a href={asset.url} target="_blank" rel="noreferrer"><ExternalLink className="h-3 w-3" /> Open</a>
+                        </Button>
+                      )}
+                      <Button size="sm" variant="outline" className="h-8 text-xs gap-1 text-destructive hover:text-destructive" onClick={() => deleteCandidate(asset)}>
+                        <Trash2 className="h-3 w-3" /> Delete
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </section>
   );

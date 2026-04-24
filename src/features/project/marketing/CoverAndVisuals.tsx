@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { PromptPanel } from "@/components/PromptPanel";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
-import { Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2 } from "lucide-react";
+import { Copy, Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 interface MediaAsset {
@@ -26,7 +26,7 @@ interface MediaAsset {
   fallback: string | null;
 }
 
-const MARKETING_CATEGORIES = ["cover", "back", "marketing-extra"];
+const MARKETING_CATEGORIES = ["cover", "back", "marketing-back", "marketing-extra"];
 
 async function callEdge(name: string, body: unknown) {
   const { data: { session } } = await supabase.auth.getSession();
@@ -83,7 +83,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   }, [projectId, qc]);
 
   const cover = project?.cover_image_url;
-  const extras = (assets ?? []).filter((a) => a.category === "marketing-extra" || a.category === "back");
+  const extras = (assets ?? []).filter((a) => a.category === "marketing-extra" || a.category === "back" || a.category === "marketing-back");
 
   const handleGenerate = async (prompt: string) => {
     setGenerating(true);
@@ -116,6 +116,12 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
     if (!confirm("Delete this marketing image?")) return;
     const { error } = await supabase.from("media_assets").delete().eq("id", id);
     if (error) toast.error(error.message);
+  };
+
+  const handleCopyPrompt = async (prompt: string | null) => {
+    if (!prompt) return toast.error("No prompt saved for this image");
+    await navigator.clipboard.writeText(prompt);
+    toast.success("Prompt copied");
   };
 
   return (
@@ -189,7 +195,12 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
                     />
                   )}
                   <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-between gap-2">
-                    <span className="text-[10px] text-white truncate flex-1">{a.title ?? a.category}</span>
+                    <span className="text-[10px] text-white truncate flex-1">
+                      {a.category === "marketing-back" ? "Back-cover candidate" : (a.title ?? a.category)}
+                    </span>
+                    <button onClick={() => handleCopyPrompt(a.prompt)} className="text-white/90 hover:text-white" aria-label="Copy prompt">
+                      <Copy className="h-3 w-3" />
+                    </button>
                     {a.url && (
                       <a href={a.url} target="_blank" rel="noreferrer" className="text-white/90 hover:text-white">
                         <ExternalLink className="h-3 w-3" />
