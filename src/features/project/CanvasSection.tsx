@@ -564,6 +564,38 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
           )}
         </Button>
 
+        <div className="inline-flex rounded-lg border bg-card shadow-soft p-0.5">
+          <button
+            type="button"
+            onClick={() => { setLineStyle("flow"); localStorage.setItem("canvas-line-style", "flow"); }}
+            className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors ${lineStyle === "flow" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            title="Curved animated connector lines"
+          >
+            Flow lines
+          </button>
+          <button
+            type="button"
+            onClick={() => { setLineStyle("direct"); localStorage.setItem("canvas-line-style", "direct"); }}
+            className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors ${lineStyle === "direct" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+            title="Straight direct connector lines"
+          >
+            Direct lines
+          </button>
+        </div>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" className="gap-2 h-9" disabled={nodes.length === 0}>
+              <Download className="h-4 w-4" /> Export
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-56">
+            <DropdownMenuItem onClick={() => exportCanvas("pdf")} className="gap-2"><FileText className="h-4 w-4" /> PDF map</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => exportCanvas("jpg")} className="gap-2"><ImageIcon className="h-4 w-4" /> JPG image</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => exportCanvas("html")} className="gap-2"><FileCode2 className="h-4 w-4" /> Clickable HTML</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
         {board === "logic" && (
           <>
             <Select
