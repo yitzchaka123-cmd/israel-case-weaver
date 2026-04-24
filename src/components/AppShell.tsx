@@ -7,10 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { normalizeDisplayBackground } from "@/lib/display-background";
 
 const settingsSections = [
   { id: "branding", label: "Branding" },
   { id: "appearance", label: "Appearance" },
+  { id: "display", label: "Display" },
   { id: "profile", label: "Profile" },
   { id: "image-prompt-assistant", label: "Image prompt assistant" },
   { id: "assistant-playbook", label: "Assistant playbook" },
@@ -52,6 +54,18 @@ export function AppShell({ children }: { children: ReactNode }) {
       if (!user) return null;
       const { data } = await supabase.from("profiles").select("app_logo_url").eq("id", user.id).maybeSingle();
       return (data as { app_logo_url?: string | null } | null)?.app_logo_url ?? null;
+    },
+    enabled: !!user,
+  });
+
+  useQuery({
+    queryKey: ["display-background", user?.id],
+    queryFn: async () => {
+      if (!user) return "bubblegum";
+      const { data } = await supabase.from("profiles").select("ui_background").eq("id", user.id).maybeSingle();
+      const background = normalizeDisplayBackground((data as { ui_background?: unknown } | null)?.ui_background);
+      document.body.dataset.uiBackground = background;
+      return background;
     },
     enabled: !!user,
   });

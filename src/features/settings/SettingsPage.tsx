@@ -18,6 +18,7 @@ import { AiRunLog } from "./AiRunLog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LOGIC_FLOW_MODELS, LOGIC_FLOW_MODEL_KEY, LOGIC_FLOW_MODEL_DEFAULT } from "@/features/project/CanvasSection";
 import { Textarea } from "@/components/ui/textarea";
+import { DISPLAY_BACKGROUNDS, DEFAULT_DISPLAY_BACKGROUND, normalizeDisplayBackground } from "@/lib/display-background";
 
 export function SettingsPage() {
   const { user, isAdmin } = useAuth();
@@ -30,6 +31,7 @@ export function SettingsPage() {
   const [documents, setDocuments] = useState("lovable");
   const [images, setImages] = useState("lovable");
   const [promptWriter, setPromptWriter] = useState("lovable");
+  const [uiBackground, setUiBackground] = useState(DEFAULT_DISPLAY_BACKGROUND);
   const [imgAssistantInstructions, setImgAssistantInstructions] = useState("");
   const [logicFlowModel, setLogicFlowModel] = useState<string>(() => {
     if (typeof window === "undefined") return LOGIC_FLOW_MODEL_DEFAULT;
@@ -54,9 +56,14 @@ export function SettingsPage() {
       setDocuments(profile.ai_provider_documents);
       setImages(profile.ai_provider_images);
       setPromptWriter((profile as any).ai_provider_prompt_writer ?? "lovable");
+      setUiBackground(normalizeDisplayBackground((profile as any).ui_background));
       setImgAssistantInstructions((profile as any).image_prompt_assistant_instructions ?? "");
     }
   }, [profile]);
+
+  useEffect(() => {
+    document.body.dataset.uiBackground = uiBackground;
+  }, [uiBackground]);
 
   const save = async () => {
     if (!user) return;
@@ -69,6 +76,7 @@ export function SettingsPage() {
       ai_provider_documents: documents,
       ai_provider_images: images,
       ai_provider_prompt_writer: promptWriter,
+      ui_background: uiBackground,
       image_prompt_assistant_instructions: imgAssistantInstructions,
     } as any);
     if (error) toast.error(error.message);
@@ -162,6 +170,29 @@ export function SettingsPage() {
                 >
                   <Icon className="h-5 w-5 mb-2" />
                   <div className="font-medium capitalize">{t}</div>
+                </button>
+              );
+            })}
+          </div>
+        </Section>
+
+        <Section id="display" title="Display" desc="Choose the workspace background saved to your user profile.">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {DISPLAY_BACKGROUNDS.map((bg) => {
+              const active = uiBackground === bg.value;
+              return (
+                <button
+                  key={bg.value}
+                  type="button"
+                  onClick={() => setUiBackground(bg.value)}
+                  className={[
+                    "rounded-xl border bg-card p-2 text-left transition-all",
+                    active ? "border-accent ring-2 ring-accent/30" : "hover:border-foreground/30",
+                  ].join(" ")}
+                >
+                  <div className={["h-16 rounded-lg border", bg.previewClass].join(" ")} />
+                  <div className="mt-2 text-sm font-medium">{bg.label}</div>
+                  <div className="text-[11px] text-muted-foreground leading-snug">{bg.desc}</div>
                 </button>
               );
             })}
