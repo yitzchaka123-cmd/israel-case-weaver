@@ -1523,13 +1523,15 @@ Deno.serve(async (req) => {
     // Placeholder INSERT: satisfies FK constraints from documents/suspects/
     // canvas_nodes that stamp `created_by_message_id` mid-loop. Updated to
     // final content+metadata at the end. Client hides empty in_progress bubbles.
-    await supa.from("chat_messages").insert({
+    const { error: assistantPlaceholderError } = await supa.from("chat_messages").insert({
       id: assistantMessageId,
       project_id: projectId,
       role: "assistant",
       content: "",
       metadata: { in_progress: true, model },
     });
+    const toolMessageId = assistantPlaceholderError ? null : assistantMessageId;
+    if (assistantPlaceholderError) console.error("assistant placeholder insert failed", assistantPlaceholderError);
 
     // Tool-calling loop: up to 4 rounds
     const convo: Array<Record<string, unknown>> = [
@@ -1637,7 +1639,7 @@ Deno.serve(async (req) => {
         for (const call of toolCalls) {
           let args: Record<string, unknown> = {};
           try { args = JSON.parse(call.function.arguments || "{}"); } catch { /* ignore */ }
-          const result = await executeTool(supa, projectId, call.function.name, args, assistantMessageId);
+          const result = await executeTool(supa, projectId, call.function.name, args, toolMessageId);
           // Persist args alongside name+result so the UI receipt can render the
           // exact field values that changed (e.g. project field updates).
           // Strip propose_options args — they're already echoed via result.options.
