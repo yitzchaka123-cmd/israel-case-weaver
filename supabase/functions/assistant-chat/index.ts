@@ -1081,6 +1081,7 @@ async function executeTool(
         return { ok: false, message: "Document not found in this project." };
       }
 
+      const imageOrigins: Array<{ requested?: string | null; effective?: string | null; provider?: string | null; fallback?: string | null }> = [];
       const callGenerate = async (m: "text" | "image" | "document") => {
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), 120_000);
@@ -1095,6 +1096,14 @@ async function executeTool(
             signal: ctrl.signal,
           });
           const body = await r.json().catch(() => ({}));
+          if (m === "image" && r.ok) {
+            imageOrigins.push({
+              requested: body?.requestedModel ?? null,
+              effective: body?.effectiveModel ?? body?.requestedModel ?? null,
+              provider: body?.provider ?? null,
+              fallback: body?.fallback ?? "none",
+            });
+          }
           return { ok: r.ok, status: r.status, body };
         } catch (e) {
           const aborted = (e as Error)?.name === "AbortError";
@@ -1148,6 +1157,10 @@ async function executeTool(
         document_format: finalDoc?.document_format || documentFormat,
         document_model: finalDoc?.document_model || finalDoc?.document_provider || undefined,
         document_skill_id: finalDoc?.document_skill_id || undefined,
+        image_requested_model: imageOrigins[0]?.requested || finalDoc?.document_model || undefined,
+        image_effective_model: imageOrigins[0]?.effective || finalDoc?.document_model || undefined,
+        image_provider: imageOrigins[0]?.provider || finalDoc?.document_provider || undefined,
+        image_fallback: imageOrigins[0]?.fallback || "none",
       };
     }
     if (name === "explain_claude_skill_install") {
