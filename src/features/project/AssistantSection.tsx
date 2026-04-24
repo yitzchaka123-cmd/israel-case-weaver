@@ -423,21 +423,14 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
             )}
 
             {messages.map((m, idx) => {
-              // Hide empty in-progress assistant bubbles — the placeholder
-              // row exists only to satisfy FK constraints; client shows the
-              // global "Thinking…" indicator instead.
-              if (
-                m.role === "assistant" &&
-                !m.content?.trim() &&
-                (m.metadata?.in_progress || (m.metadata?.tools ?? []).length === 0)
-              ) {
-                return null;
-              }
+              const hidden = isHiddenAssistantPlaceholder(m);
+              if (hidden) return null;
+              const isLastVisible = messages.slice(idx + 1).every(isHiddenAssistantPlaceholder);
               return (
                 <MessageBubble
                   key={m.id}
                   msg={m}
-                  isLast={idx === messages.length - 1}
+                  isLast={isLastVisible}
                   onPickOption={(text) => send(text)}
                   onEdit={(newText) => editAndResend(m.id, newText)}
                   disabled={sending}
@@ -508,6 +501,14 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
       </div>
       <AssetLightbox asset={lightbox} onClose={() => setLightbox(null)} />
     </div>
+  );
+}
+
+function isHiddenAssistantPlaceholder(m: Msg) {
+  return (
+    m.role === "assistant" &&
+    !m.content?.trim() &&
+    (m.metadata?.in_progress || (m.metadata?.tools ?? []).length === 0)
   );
 }
 
