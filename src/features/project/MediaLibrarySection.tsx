@@ -184,11 +184,12 @@ function FilterSelect({ label, value, onValueChange, options }: { label: string;
 
 function LibraryCard({ item }: { item: LibraryItem }) {
   const isVideo = item.mime?.startsWith("video");
+  const isPdf = item.mime === "application/pdf";
   const Icon = item.source === "Document" ? FileText : item.type.includes("cover") || item.type.includes("back") ? Package : isVideo ? Video : ImageIcon;
   return (
     <article className="rounded-2xl border bg-card overflow-hidden shadow-soft">
       <div className="aspect-[4/3] bg-muted relative overflow-hidden">
-        {item.url && isVideo ? <video src={item.url} className="h-full w-full object-cover" /> : item.url ? <img src={item.url} alt={item.title} className="h-full w-full object-cover" /> : (
+        {item.url && isVideo ? <video src={item.url} className="h-full w-full object-cover" /> : item.url && !isPdf ? <img src={item.previewUrl ?? item.url} alt={item.title} className="h-full w-full object-cover" /> : (
           <div className="h-full w-full flex items-center justify-center text-muted-foreground"><Icon className="h-8 w-8" /></div>
         )}
         <Badge variant="secondary" className="absolute left-2 top-2 capitalize">{item.status}</Badge>
