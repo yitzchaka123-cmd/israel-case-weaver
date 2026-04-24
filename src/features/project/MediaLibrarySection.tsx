@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Copy, ExternalLink, FileText, Image as ImageIcon, Package, Search, Video } from "lucide-react";
 import { toast } from "sonner";
+import { AssetLightbox, type LightboxAsset } from "./assistant/AssetLightbox";
 
 interface MediaAsset {
   id: string;
@@ -55,14 +56,16 @@ type LibraryItem = {
   id: string;
   title: string;
   type: string;
-  status: "selected" | "generated" | "uploaded" | "prompt";
+  status: "selected" | "generated" | "uploaded" | "prompt" | "failed";
   source: string;
   url: string | null;
   mime: string | null;
   model: string | null;
+  provider?: string | null;
   prompt?: string | null;
   previewUrl?: string | null;
   skill?: string | null;
+  skillSource?: string | null;
   error?: string | null;
   createdAt: string;
 };
@@ -73,6 +76,7 @@ export function MediaLibrarySection({ projectId }: { projectId: string }) {
   const [statusFilter, setStatusFilter] = useState(ALL);
   const [typeFilter, setTypeFilter] = useState(ALL);
   const [sourceFilter, setSourceFilter] = useState(ALL);
+  const [lightbox, setLightbox] = useState<LightboxAsset | null>(null);
 
   const { data } = useQuery({
     queryKey: ["case-media-library", projectId],
@@ -113,14 +117,16 @@ export function MediaLibrarySection({ projectId }: { projectId: string }) {
         id: asset.id,
         title: asset.title ?? asset.category,
         type: asset.document_format ?? asset.asset_type ?? asset.category,
-        status: (asset.status === "failed" ? "prompt" : asset.provider === "upload" ? "uploaded" : asset.url ? "generated" : "prompt"),
+        status: (asset.status === "failed" ? "failed" : asset.provider === "upload" ? "uploaded" : asset.url ? "generated" : "prompt"),
         source: "Media asset",
         url: asset.url,
         mime: asset.mime_type,
         model: asset.effective_model ?? asset.model,
+        provider: asset.provider,
         prompt: asset.prompt,
         previewUrl: asset.preview_url,
         skill: asset.skill_name ?? asset.skill_id,
+        skillSource: asset.skill_source,
         error: asset.error_message,
         createdAt: asset.created_at,
       });
@@ -142,6 +148,7 @@ export function MediaLibrarySection({ projectId }: { projectId: string }) {
         url,
         mime: isDocumentFile && (doc.document_format ?? "pdf") === "pdf" ? "application/pdf" : "image/*",
         model: doc.document_skill_id ? `${doc.document_model ?? doc.document_provider ?? "Claude"} + ${doc.document_skill_id}` : (doc.document_model ?? doc.document_provider ?? null),
+        provider: doc.document_provider,
         previewUrl: doc.document_preview_url ?? doc.generated_asset_url,
         createdAt: doc.updated_at,
       });
@@ -166,7 +173,7 @@ export function MediaLibrarySection({ projectId }: { projectId: string }) {
       </div>
 
       <div className="rounded-2xl border bg-card p-4 shadow-soft grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto]">
-        <FilterSelect label="Status" value={statusFilter} onValueChange={setStatusFilter} options={[ALL, "selected", "generated", "uploaded", "prompt"]} />
+        <FilterSelect label="Status" value={statusFilter} onValueChange={setStatusFilter} options={[ALL, "selected", "generated", "uploaded", "prompt", "failed"]} />
         <FilterSelect label="Type" value={typeFilter} onValueChange={setTypeFilter} options={[ALL, ...types]} />
         <FilterSelect label="Source" value={sourceFilter} onValueChange={setSourceFilter} options={[ALL, ...sources]} />
         <Button variant="outline" onClick={() => { setStatusFilter(ALL); setTypeFilter(ALL); setSourceFilter(ALL); }} className="self-end gap-2">
@@ -178,9 +185,10 @@ export function MediaLibrarySection({ projectId }: { projectId: string }) {
         <div className="border-2 border-dashed rounded-2xl p-12 text-center text-muted-foreground">No media matches these filters.</div>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((item) => <LibraryCard key={`${item.source}-${item.id}`} item={item} />)}
+          {filtered.map((item) => <LibraryCard key={`${item.source}-${item.id}`} item={item} onOpenAsset={setLightbox} />)}
         </div>
       )}
+      <AssetLightbox asset={lightbox} onClose={() => setLightbox(null)} />
     </div>
   );
 }
@@ -199,9 +207,10 @@ function FilterSelect({ label, value, onValueChange, options }: { label: string;
   );
 }
 
-function LibraryCard({ item }: { item: LibraryItem }) {
+function LibraryCard({ item, onOpenAsset }: { item: LibraryItem; onOpenAsset: (asset: LightboxAsset) => void }) {
   const isVideo = item.mime?.startsWith("video");
   const isPdf = item.mime === "application/pdf";
+  const isDocumentFile = item.mime?.includes("pdf") || ["docx", "pptx", "xlsx"].includes(item.type.toLowerCase());
   const Icon = item.source === "Document" ? FileText : item.type.includes("cover") || item.type.includes("back") ? Package : isVideo ? Video : ImageIcon;
   const copyPrompt = async () => {
     if (!item.prompt) return;
@@ -212,14 +221,20 @@ function LibraryCard({ item }: { item: LibraryItem }) {
       toast.error("Failed to copy prompt");
     }
   };
+  const openAsset = () => {
+    if (!item.url) return;
+    onOpenAsset({ url: item.url, title: item.title, prompt: item.prompt, mimeType: item.mime, previewUrl: item.previewUrl });
+  };
+
   return (
     <article className="rounded-2xl border bg-card overflow-hidden shadow-soft">
-      <div className="aspect-[4/3] bg-muted relative overflow-hidden">
+      <button type="button" onClick={openAsset} disabled={!item.url} className="aspect-[4/3] bg-muted relative overflow-hidden block w-full text-left disabled:cursor-default">
         {item.url && isVideo ? <video src={item.url} className="h-full w-full object-cover" /> : item.url && !isPdf ? <img src={item.previewUrl ?? item.url} alt={item.title} className="h-full w-full object-cover" /> : (
           <div className="h-full w-full flex items-center justify-center text-muted-foreground"><Icon className="h-8 w-8" /></div>
         )}
-        <Badge variant="secondary" className="absolute left-2 top-2 capitalize">{item.status}</Badge>
-      </div>
+        <Badge variant={item.status === "failed" ? "destructive" : "secondary"} className="absolute left-2 top-2 capitalize">{item.status}</Badge>
+        {isDocumentFile && <Badge variant="outline" className="absolute right-2 top-2 bg-background/85">{item.type.toUpperCase()}</Badge>}
+      </button>
       <div className="p-3 space-y-2">
         <div className="flex items-start gap-2">
           <Icon className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
@@ -229,12 +244,14 @@ function LibraryCard({ item }: { item: LibraryItem }) {
           </div>
         </div>
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[11px] text-muted-foreground truncate">{item.model ?? item.mime ?? "Asset"}</span>
-          {item.url && <a href={item.url} target="_blank" rel="noreferrer" className="text-xs text-accent inline-flex items-center gap-1 hover:underline"><ExternalLink className="h-3 w-3" /> Open</a>}
+          <span className="text-[11px] text-muted-foreground truncate">{[item.provider, item.model].filter(Boolean).join(" · ") || item.mime || "Asset"}</span>
+          {item.url && <button type="button" onClick={openAsset} className="text-xs text-accent inline-flex items-center gap-1 hover:underline"><ExternalLink className="h-3 w-3" /> Preview</button>}
         </div>
         <div className="flex flex-wrap gap-1.5">
           {item.mime && <Badge variant="outline" className="text-[10px]">{item.mime.includes("pdf") ? "PDF" : item.mime.split("/")[1] ?? item.mime}</Badge>}
+          {item.provider && <Badge variant="outline" className="text-[10px]">{item.provider}</Badge>}
           {item.skill && <Badge variant="secondary" className="text-[10px]">{item.skill}</Badge>}
+          {item.skillSource && item.skillSource !== "none" && <Badge variant="outline" className="text-[10px]">{item.skillSource}</Badge>}
         </div>
         {item.error && <p className="rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 text-[11px] text-destructive line-clamp-2">{item.error}</p>}
         {item.prompt && (
