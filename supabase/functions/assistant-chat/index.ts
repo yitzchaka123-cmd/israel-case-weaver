@@ -780,9 +780,12 @@ async function executeTool(
   projectId: string,
   name: string,
   args: Record<string, unknown>,
-  messageId: string,
+  messageId: string | null,
 ) {
   try {
+    const withMessage = (payload: Record<string, unknown>) => (
+      messageId ? { ...payload, created_by_message_id: messageId } : payload
+    );
     if (name === "update_project") {
       // Merge per-field origins so each updated field points to this message.
       const { data: current } = await supa
@@ -791,7 +794,7 @@ async function executeTool(
         .eq("id", projectId)
         .single();
       const origins = { ...(current?.assistant_origins as Record<string, string> ?? {}) };
-      for (const k of Object.keys(args)) origins[k] = messageId;
+      if (messageId) for (const k of Object.keys(args)) origins[k] = messageId;
       const { error } = await supa
         .from("projects")
         .update({ ...args, assistant_origins: origins })
@@ -809,7 +812,7 @@ async function executeTool(
         .eq("id", projectId)
         .single();
       const origins = { ...(current?.assistant_origins as Record<string, string> ?? {}) };
-      origins.solution_summary = messageId;
+      if (messageId) origins.solution_summary = messageId;
       const patch: Record<string, unknown> = { solution_summary: summary, assistant_origins: origins };
       if (markApproved) patch.logic_approved_at = new Date().toISOString();
       const { error } = await supa.from("projects").update(patch).eq("id", projectId);
@@ -825,7 +828,7 @@ async function executeTool(
     if (name === "add_suspect") {
       const { data, error } = await supa
         .from("suspects")
-        .insert({ ...args, project_id: projectId, created_by_message_id: messageId })
+        .insert(withMessage({ ...args, project_id: projectId }))
         .select("id, name, thumbnail_url, alt_thumbnail_url")
         .single();
       if (error) throw error;
@@ -856,7 +859,7 @@ async function executeTool(
       const docNumber = args.doc_number ?? Math.floor(100 + Math.random() * 900);
       const { data, error } = await supa
         .from("documents")
-        .insert({ ...args, doc_number: docNumber, project_id: projectId, created_by_message_id: messageId })
+        .insert(withMessage({ ...args, doc_number: docNumber, project_id: projectId }))
         .select("id, title")
         .single();
       if (error) throw error;
