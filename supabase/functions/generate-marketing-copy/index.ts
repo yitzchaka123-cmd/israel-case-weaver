@@ -1,12 +1,6 @@
-// Generate marketing box copy (front_subtext, back_headline, back_body, tagline)
-// for a project. Pulls project + suspects + envelope/doc counts + the
-// workspace company profile + the playbook's "marketing" rules.
-//
-// Body shape:
-//   { projectId: string, field?: "front_subtext" | "back_headline" | "back_body" | "tagline" | "all" }
-//
-// Returns:
-//   { copy: { front_subtext?, back_headline?, back_body?, tagline? }, model: string }
+// Generate professional packaging copy for the Marketing Box Text panel.
+// Pulls project + counts + company profile + playbook marketing rules.
+// Body shape: { projectId: string, field?: packaging field | "front" | "back" | "all" }
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { chatCompletions, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
 import { resolvePlaybook } from "../_shared/assistant-playbook.ts";
@@ -42,10 +36,23 @@ const PLANNING_MODEL: Record<string, string> = {
 };
 
 type Field =
-  | "front_subtext"
-  | "back_headline"
-  | "back_body"
+  | "front_title_note"
   | "tagline"
+  | "front_subtext"
+  | "front_bottom_explanation"
+  | "front_company_slogan"
+  | "front_logo_note"
+  | "back_headline"
+  | "back_teaser"
+  | "back_body"
+  | "back_whats_in_box"
+  | "back_how_to_play"
+  | "back_feature_bullets"
+  | "back_specs"
+  | "back_content_note"
+  | "back_footer_text"
+  | "front"
+  | "back"
   | "selling_point"
   | "all";
 
@@ -126,9 +133,15 @@ Deno.serve(async (req) => {
 - Age rating: ${company.age_rating ?? ""}`
       : "(No company profile set yet — write generic copy.)";
 
+    const frontFields = ["front_title_note", "tagline", "front_subtext", "front_bottom_explanation", "front_company_slogan", "front_logo_note"];
+    const backFields = ["back_headline", "back_teaser", "back_body", "back_whats_in_box", "back_how_to_play", "back_feature_bullets", "back_specs", "back_content_note", "back_footer_text"];
     const fieldsRequested = field === "all"
-      ? ["front_subtext", "back_headline", "back_body", "tagline"]
-      : [field];
+      ? [...frontFields, ...backFields]
+      : field === "front"
+        ? frontFields
+        : field === "back"
+          ? backFields
+          : [field];
 
     const isSellingPoint = field === "selling_point";
 
@@ -147,10 +160,24 @@ Voice: ${playbook.identity.brand_voice}
 Final language: ${playbook.identity.final_content_language} — but write the selling point in English (it's a planning field, not in-game text).`
       : `
 Each field must follow these rules:
-- "tagline": 1 line, max 9 words, evocative, ad-friendly.
-- "front_subtext": 1–2 short lines, hook for the front of the box, under the title.
+FRONT COVER TEXT
+- "front_title_note": 1–2 short sentences describing a professional title lockup treatment.
+- "tagline": 1 line, max 9 words, directly under the game name.
+- "front_subtext": 1–2 short lines selling the case premise.
+- "front_bottom_explanation": 1 concise sentence explaining the boxed game near the bottom of the cover.
+- "front_company_slogan": use/adapt the company tagline when available; otherwise write a short brand slogan.
+- "front_logo_note": short instruction for placing the company logo/brand mark on the front cover.
+
+BACK COVER TEXT
 - "back_headline": 1 punchy sentence, max 14 words, sets the stakes.
-- "back_body": 60–90 words, paragraph form, must subtly mention player role, that the box contains ${docCount} documents and ${envCount} envelopes, age rating if known, but NEVER spoil the solution.
+- "back_teaser": 1–2 cinematic setup sentences.
+- "back_body": 80–130 words, paragraph form, mentions player role, ${docCount} documents and ${envCount} envelopes, age rating if known, but NEVER spoils the solution.
+- "back_whats_in_box": line-separated list of physical contents, including documents, envelopes, evidence, props, and mini movie QR when appropriate.
+- "back_how_to_play": 2–4 clear sentences explaining the player experience.
+- "back_feature_bullets": 3–5 line-separated selling bullets.
+- "back_specs": packaging metadata, e.g. Ages, duration, players, difficulty.
+- "back_content_note": optional spoiler-safe warning or tone note.
+- "back_footer_text": company/legal/support footer text, using company profile details when available.
 
 Voice: ${playbook.identity.brand_voice}
 Final language: ${playbook.identity.final_content_language} (output Hebrew when the project's final content language is Hebrew, otherwise match the project's planning language).`;
@@ -169,7 +196,7 @@ ${hint ? `\nEXTRA STEERING: ${hint}` : ""}
 
 ${isSellingPoint
   ? `Return JSON like {"selling_point": "..."} — single key, single 1–2 sentence value.`
-  : `Return JSON like {"front_subtext": "...", "back_headline": "...", "back_body": "...", "tagline": "..."} (only include the requested keys).`}
+  : `Return ONLY a JSON object with the requested keys. Each value must be a string.`}
 `;
 
     const startedAt = Date.now();
