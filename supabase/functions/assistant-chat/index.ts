@@ -23,6 +23,7 @@ import {
   getPhaseEnum,
   type Playbook,
 } from "../_shared/assistant-playbook.ts";
+import { claudeSkillRequestShape, loadClaudeSkillsForSurface } from "../_shared/claude-skills.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -74,27 +75,6 @@ type Rosters = {
   hints: RosterRow[];
   canvas_nodes: RosterRow[];
 };
-type ClaudeSkillRow = { skill_id: string; skill_type: string; version: string; name?: string | null; usage_scope: string[] };
-
-async function loadClaudeSkillsForSurface(supa: ReturnType<typeof createClient>, surface: string): Promise<ClaudeSkillRow[]> {
-  const { data } = await supa
-    .from("claude_skills")
-    .select("skill_id, skill_type, version, name, usage_scope")
-    .eq("enabled", true)
-    .eq("install_status", "installed");
-  return ((data ?? []) as ClaudeSkillRow[]).filter((s) => (s.usage_scope ?? []).includes(surface));
-}
-
-function claudeSkillRequestShape(skills: ClaudeSkillRow[]) {
-  if (!skills.length) return {};
-  return {
-    anthropicBeta: "code-execution-2025-05-22,files-api-2025-04-14,skills-2025-10-02",
-    anthropicTools: [{ type: "code_execution_20250522", name: "code_execution" }],
-    anthropicContainer: {
-      skills: skills.map((s) => ({ type: s.skill_type === "anthropic" ? "anthropic" : "custom", skill_id: s.skill_id, version: s.version || "latest" })),
-    },
-  };
-}
 function truncate(s: unknown, n = 60): string {
   const str = String(s ?? "").replace(/\s+/g, " ").trim();
   if (!str) return "—";
