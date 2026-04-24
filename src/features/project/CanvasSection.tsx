@@ -575,6 +575,18 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
             </Button>
           </>
         )}
+
+        {board === "final" && approved && (
+          <Button
+            variant={nodes.length === 0 ? "default" : "outline"}
+            className="gap-2 h-9"
+            onClick={createFinalDocumentsMap}
+            disabled={creatingFinalMap}
+          >
+            {creatingFinalMap ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+            {nodes.length === 0 ? "Create Final Documents Map" : "Rebuild Final Map"}
+          </Button>
+        )}
       </div>
 
       {board === "logic" && !approved && (
@@ -623,6 +635,26 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
         <div className="absolute top-4 right-4 z-10 max-w-sm">
           <div className="bg-muted border rounded-lg px-3 py-2 text-xs shadow-soft text-muted-foreground">
             Logic flow not yet approved. Approve it to lock the case design before producing the final board.
+          </div>
+        </div>
+      )}
+
+      {board === "final" && approved && nodes.length === 0 && (
+        <div className="absolute inset-x-4 top-20 z-10 mx-auto max-w-md rounded-lg border bg-card p-4 shadow-pop">
+          <div className="flex items-start gap-3">
+            <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary shrink-0">
+              <FileText className="h-4 w-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="font-display text-base text-foreground">Final Documents Map not created yet</div>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                Create planned document nodes from the approved logic flow. This maps the production checklist only; it does not generate files.
+              </p>
+              <Button className="mt-3 gap-2 h-9" onClick={createFinalDocumentsMap} disabled={creatingFinalMap}>
+                {creatingFinalMap ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                Create map from approved logic
+              </Button>
+            </div>
           </div>
         </div>
       )}
