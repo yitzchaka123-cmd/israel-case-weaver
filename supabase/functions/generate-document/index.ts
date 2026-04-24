@@ -64,6 +64,14 @@ function directProviderBlock(model: string, output: string): Response | null {
   return null;
 }
 
+function directFileCapabilityBlock(model: string, format: string): Response | null {
+  if (model.startsWith("anthropic/")) return null;
+  const label = model.startsWith("openai/") ? "ChatGPT 5.2 / OpenAI" : model.startsWith("gemini-direct/") ? "Gemini Direct" : providerLabel(model);
+  return new Response(JSON.stringify({
+    error: `${label} in this app can write document content, but this route cannot return a downloadable ${format.toUpperCase()} file. Switch Documents to Claude with document skills for PDF/DOCX/PPTX/XLSX, or choose Image-only for a visual preview.`,
+  }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+}
+
 const MIME_BY_FORMAT: Record<string, string> = {
   pdf: "application/pdf",
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -87,7 +95,7 @@ function findFileIds(value: unknown): string[] {
   return [...found];
 }
 
-async function recordDocumentAttempt(supa: ReturnType<typeof createClient>, opts: {
+async function recordDocumentAttempt(supa: any, opts: {
   projectId: string;
   documentId: string;
   createdByMessageId?: string | null;
