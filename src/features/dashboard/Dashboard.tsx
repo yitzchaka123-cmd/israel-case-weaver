@@ -230,7 +230,7 @@ export function Dashboard() {
           {filtered.map((p) => (
             <ProjectCard key={p.id} project={p} />
           ))}
-          {activeFilterCount === 0 && <NewCard />}
+          {activeFilterCount === 0 && !showTrash && <NewCard />}
         </div>
       )}
     </div>
@@ -286,12 +286,28 @@ function FilterGroup({
 
 function ProjectCard({ project }: { project: Project }) {
   const nav = useNavigate();
+  const qc = useQueryClient();
+  const restore = useMutation({
+    mutationFn: () => restoreTrashedProject(project.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      toast.success("Case restored");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const remove = useMutation({
+    mutationFn: () => permanentlyDeleteProject(project.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      toast.success("Case permanently deleted");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   return (
-    <button
-      onClick={() => nav({ to: "/projects/$projectId", params: { projectId: project.id } })}
-      className="group text-left bg-card border rounded-2xl overflow-hidden shadow-soft hover:shadow-pop hover:-translate-y-0.5 transition-all"
-    >
-      <div className="aspect-[4/3] bg-gradient-soft relative overflow-hidden">
+    <div className="group text-left bg-card border rounded-2xl overflow-hidden shadow-soft hover:shadow-pop hover:-translate-y-0.5 transition-all">
+      <button onClick={() => !project.deleted_at && nav({ to: "/projects/$projectId", params: { projectId: project.id } })} className="block w-full text-left disabled:cursor-default" disabled={!!project.deleted_at}>
+        <div className="aspect-[4/3] bg-gradient-soft relative overflow-hidden">
         {project.cover_image_url ? (
           <img
             src={project.cover_image_url}
@@ -304,6 +320,11 @@ function ProjectCard({ project }: { project: Project }) {
           </div>
         )}
         <div className="absolute top-3 left-3 flex gap-1.5">
+          {project.deleted_at && (
+            <span className="text-[10px] font-medium uppercase tracking-wider px-2 py-1 rounded-md bg-destructive text-destructive-foreground">
+              Trash
+            </span>
+          )}
           {project.mystery_type && (
             <span className="text-[10px] font-medium uppercase tracking-wider px-2 py-1 rounded-md bg-surface/90 backdrop-blur">
               {project.mystery_type}
@@ -315,8 +336,8 @@ function ProjectCard({ project }: { project: Project }) {
             </span>
           )}
         </div>
-      </div>
-      <div className="p-5">
+        </div>
+        <div className="p-5">
         <div className="font-display text-xl leading-tight truncate">{project.title}</div>
         {project.subtitle && (
           <div className="text-sm text-muted-foreground mt-0.5 line-clamp-1">{project.subtitle}</div>
@@ -325,8 +346,19 @@ function ProjectCard({ project }: { project: Project }) {
           <span className="capitalize">Phase · {project.phase}</span>
           <span>{formatDistanceToNow(new Date(project.updated_at), { addSuffix: true })}</span>
         </div>
-      </div>
-    </button>
+        </div>
+      </button>
+      {project.deleted_at && (
+        <div className="px-5 pb-5 flex gap-2">
+          <Button size="sm" variant="outline" onClick={() => restore.mutate()} disabled={restore.isPending} className="gap-1.5 flex-1">
+            <RotateCcw className="h-3.5 w-3.5" /> Restore
+          </Button>
+          <Button size="sm" variant="destructive" onClick={() => confirm("Permanently delete this case and its history?") && remove.mutate()} disabled={remove.isPending} className="gap-1.5 flex-1">
+            <Trash2 className="h-3.5 w-3.5" /> Delete forever
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 
