@@ -1,28 +1,41 @@
 import { createFileRoute, Navigate } from "@tanstack/react-router";
-import { useAuth, stashInviteCode } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sparkles } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/login")({
   component: LoginPage,
 });
 
 function LoginPage() {
-  const { session, signInWithGoogle, loading } = useAuth();
+  const { session, signInWithGoogle, signInWithInviteCode, loading } = useAuth();
   const [code, setCode] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [codeSubmitting, setCodeSubmitting] = useState(false);
+  const [googleSubmitting, setGoogleSubmitting] = useState(false);
   if (!loading && session) return <Navigate to="/" />;
 
-  const handleSignIn = async () => {
-    if (code.trim()) stashInviteCode(code);
-    setSubmitting(true);
+  const handleCodeSignIn = async () => {
+    if (!code.trim()) return toast.error("Enter an invite code");
+    setCodeSubmitting(true);
+    try {
+      await signInWithInviteCode(code);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Code login failed");
+    } finally {
+      setCodeSubmitting(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setGoogleSubmitting(true);
     try {
       await signInWithGoogle();
     } finally {
-      setSubmitting(false);
+      setGoogleSubmitting(false);
     }
   };
 
@@ -69,9 +82,15 @@ function LoginPage() {
             Sign in to continue your investigations.
           </p>
 
-          <div className="mt-8 space-y-2">
+          <div className="mt-8 rounded-2xl border bg-card p-4 space-y-3">
+            <div>
+              <h3 className="font-display text-lg">Sign in with invite code</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                No Google account required. Valid codes open the studio immediately.
+              </p>
+            </div>
             <Label htmlFor="invite-code" className="text-xs">
-              Invite code <span className="text-muted-foreground font-normal">(new users only)</span>
+              Invite code
             </Label>
             <Input
               id="invite-code"
@@ -81,23 +100,34 @@ function LoginPage() {
               className="font-mono tracking-wider"
               autoComplete="off"
             />
-            <p className="text-[11px] text-muted-foreground">
-              Got an invite from your admin? Enter it here. Existing members can leave it blank.
-            </p>
+            <Button onClick={handleCodeSignIn} disabled={codeSubmitting} className="w-full h-11">
+              {codeSubmitting ? "Checking code…" : "Continue with code"}
+            </Button>
           </div>
 
-          <Button
-            onClick={handleSignIn}
-            disabled={submitting}
-            className="mt-5 w-full h-11 gap-3"
-            variant="outline"
-          >
-            <GoogleIcon />
-            Continue with Google
-          </Button>
-          <p className="mt-6 text-xs text-muted-foreground text-center">
-            New accounts need admin approval before they can use the studio.
-          </p>
+          <div className="my-5 flex items-center gap-3 text-xs text-muted-foreground">
+            <div className="h-px flex-1 bg-border" />
+            or
+            <div className="h-px flex-1 bg-border" />
+          </div>
+
+          <div className="rounded-2xl border bg-card p-4 space-y-3">
+            <div>
+              <h3 className="font-display text-lg">Sign in with Google</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                New Google accounts need admin approval before they can use the studio.
+              </p>
+            </div>
+            <Button
+              onClick={handleGoogleSignIn}
+              disabled={googleSubmitting}
+              className="w-full h-11 gap-3"
+              variant="outline"
+            >
+              <GoogleIcon />
+              Continue with Google
+            </Button>
+          </div>
         </div>
       </div>
     </div>
