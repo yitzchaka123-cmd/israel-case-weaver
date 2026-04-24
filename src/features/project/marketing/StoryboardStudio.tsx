@@ -520,34 +520,41 @@ function EngineInstrInput({ label, value, onChange, engine }: { label: string; v
   return (
     <div>
       <Label className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium flex items-center gap-1.5">
-        <span className={`inline-block h-1.5 w-1.5 rounded-full ${engine === "sora" ? "bg-purple-500" : "bg-teal-500"}`} />
+        <span className={[
+          "inline-block h-1.5 w-1.5 rounded-full",
+          engine === "sora" ? "bg-primary" : "bg-accent",
+        ].join(" ")} />
         {label}
       </Label>
-      <Textarea rows={2} value={value} onChange={(e) => onChange(e.target.value)} placeholder="e.g. anamorphic 35mm, low-key noir lighting, slow push-ins" className="text-xs mt-1.5" />
+      <Textarea rows={3} value={value} onChange={(e) => onChange(e.target.value)} placeholder="e.g. anamorphic 35mm, low-key noir lighting, slow push-ins" className="text-sm mt-1.5" />
     </div>
   );
 }
 
 function ShotScriptCard({ shot, onChange, onPush, onDelete }: { shot: Shot; onChange: (p: Partial<Shot>) => void; onPush: () => void; onDelete: () => void }) {
   return (
-    <div className="rounded-lg border bg-card p-3 space-y-2 group">
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-[11px] text-muted-foreground">
-          <span className="font-mono text-foreground">#{shot.n}</span> · {shot.duration_s}s
+    <div className="rounded-xl border bg-card p-4 space-y-3 group">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="font-display text-lg">Shot {shot.n}</div>
+          <div className="text-xs text-muted-foreground">{shot.duration_s}s trailer beat</div>
         </div>
-        <div className="flex items-center gap-1">
-          <Button size="sm" variant="ghost" className="h-6 px-1.5" onClick={onDelete}>
-            <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="ghost" className="gap-1.5 text-muted-foreground hover:text-destructive" onClick={onDelete}>
+            <Trash2 className="h-3.5 w-3.5" /> Delete
           </Button>
-          <Button size="sm" variant={shot.in_prompts ? "ghost" : "outline"} className="h-6 px-2 gap-1 text-[10px]" onClick={onPush}>
-            {shot.in_prompts ? "In prompts" : "Push"} <ArrowRight className="h-2.5 w-2.5" />
+          <Button size="sm" variant={shot.in_prompts ? "ghost" : "outline"} className="gap-1.5" onClick={onPush}>
+            {shot.in_prompts ? "In Prompts" : "Send to Prompts"} <ArrowRight className="h-3.5 w-3.5" />
           </Button>
         </div>
       </div>
-      <Textarea rows={2} value={shot.action} onChange={(e) => onChange({ action: e.target.value })} placeholder="Action…" className="text-xs" />
-      <div className="grid grid-cols-2 gap-1.5">
-        <Input value={shot.voiceover} onChange={(e) => onChange({ voiceover: e.target.value })} placeholder="VO" className="text-[11px] h-7" />
-        <Input value={shot.on_screen_text} onChange={(e) => onChange({ on_screen_text: e.target.value })} placeholder="On-screen text" className="text-[11px] h-7" />
+      <div className="space-y-1.5">
+        <Label className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Action</Label>
+        <Textarea rows={3} value={shot.action} onChange={(e) => onChange({ action: e.target.value })} placeholder="What we see in this shot…" className="text-sm" />
+      </div>
+      <div className="grid md:grid-cols-2 gap-2">
+        <Input value={shot.voiceover} onChange={(e) => onChange({ voiceover: e.target.value })} placeholder="Voiceover" className="text-sm h-10" />
+        <Input value={shot.on_screen_text} onChange={(e) => onChange({ on_screen_text: e.target.value })} placeholder="On-screen text" className="text-sm h-10" />
       </div>
     </div>
   );
