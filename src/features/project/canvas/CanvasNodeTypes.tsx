@@ -58,6 +58,7 @@ export type CaseNodeData = {
   color?: string | null;
   description?: string | null;
   createdByMessageId?: string | null;
+  generationStatus?: string | null;
 };
 
 /**
@@ -139,6 +140,11 @@ export function CaseNode({ data, selected }: NodeProps<CaseNodeData>) {
             }`}
           >
             {data.description}
+          </div>
+        )}
+        {data.type === "document" && data.generationStatus && (
+          <div className="mt-2 inline-flex items-center rounded-md border bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+            {data.generationStatus === "ungenerated" ? "Ungenerated" : data.generationStatus}
           </div>
         )}
       </div>
