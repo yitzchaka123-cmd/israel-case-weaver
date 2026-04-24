@@ -13,6 +13,7 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const OPENAI_API_KEY = Deno.env.get("OpenAi") ?? Deno.env.get("OPENAI_API_KEY") ?? "";
+const OPENAI_API_KEY_IMAGE2 = Deno.env.get("OPENAI_IMAGE2_API_KEY") ?? "";
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
 
 // Planning/document text models — see ai-router.ts for prefix routing rules.
@@ -49,6 +50,11 @@ const IMAGE_MODEL: Record<string, string> = {
 };
 
 const OPENAI_IMAGE_KEYS = new Set(["chatgpt-image-2", "chatgpt-image"]);
+
+function pickOpenAIImageKey(pref: string): string {
+  if (pref === "chatgpt-image-2" && OPENAI_API_KEY_IMAGE2) return OPENAI_API_KEY_IMAGE2;
+  return OPENAI_API_KEY;
+}
 
 function resolveDocumentModel(project: Record<string, unknown> | null): string {
   const pref = String(project?.ai_provider_documents ?? project?.ai_provider_planning ?? "").trim();
@@ -344,9 +350,11 @@ Deno.serve(async (req) => {
 
       let mime = "image/png";
       let bytes: Uint8Array;
+      const imageProvider = useOpenAI ? (imgPref === "chatgpt-image-2" ? "openai-image2" : "openai") : (Deno.env.get("GEMINI_API_KEY") ? "gemini-direct" : "lovable-ai");
 
       if (useOpenAI) {
-        if (!OPENAI_API_KEY) {
+        const openAiImageKey = pickOpenAIImageKey(imgPref);
+        if (!openAiImageKey) {
           return new Response(JSON.stringify({ error: "OpenAI API key not configured" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
         // Map print size → model-appropriate dimensions.
@@ -396,7 +404,7 @@ Deno.serve(async (req) => {
         try {
           oResp = await fetch("https://api.openai.com/v1/images/generations", {
             method: "POST",
-            headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
+            headers: { Authorization: `Bearer ${openAiImageKey}`, "Content-Type": "application/json" },
             body: JSON.stringify(openaiBody),
             signal: controller.signal,
           });
@@ -465,11 +473,11 @@ Deno.serve(async (req) => {
       await supa.storage.from("documents").upload(path, bytes, { contentType: mime, upsert: true });
       const { data: pub } = supa.storage.from("documents").getPublicUrl(path);
 
-      await supa.from("documents").update({ generated_asset_url: pub.publicUrl, active_version: "generated", status: "review" }).eq("id", documentId);
+      await supa.from("documents").update({ generated_asset_url: pub.publicUrl, active_version: "generated", status: "review", document_model: model, document_provider: imageProvider }).eq("id", documentId);
       await supa.from("prompts").insert({
         project_id: doc.project_id, scope: "document-image", target_id: documentId,
         original_prompt: imgPrompt, final_prompt: imgPrompt,
-        provider: useOpenAI ? "openai" : (Deno.env.get("GEMINI_API_KEY") ? "gemini-direct" : "lovable-ai"),
+        provider: imageProvider,
         model,
       });
       await supa.from("media_assets").insert({
@@ -479,7 +487,7 @@ Deno.serve(async (req) => {
         url: pub.publicUrl,
         mime_type: mime,
         prompt: imgPrompt,
-        provider: useOpenAI ? "openai" : (Deno.env.get("GEMINI_API_KEY") ? "gemini-direct" : "lovable-ai"),
+        provider: imageProvider,
         model,
         effective_model: model,
         asset_type: "image",
@@ -491,7 +499,7 @@ Deno.serve(async (req) => {
         error_message: null,
       } as never);
 
-      return new Response(JSON.stringify({ ok: true, url: pub.publicUrl }), {
+      return new Response(JSON.stringify({ ok: true, url: pub.publicUrl, requestedModel: model, effectiveModel: model, provider: imageProvider, fallback: "none" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
