@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
-import { Sparkles, Send, Loader2, Bot, User, Wand2, CheckCircle2, Cpu, Image as ImageIcon, Settings2, Video, ChevronRight, ExternalLink, AlertCircle, Mic, MicOff, Sliders, Pencil, X, Check, Copy } from "lucide-react";
+import { Sparkles, Send, Loader2, Bot, User, Wand2, CheckCircle2, Cpu, Image as ImageIcon, FileText, Settings2, Video, ChevronRight, ExternalLink, AlertCircle, Mic, MicOff, Sliders, Pencil, X, Check, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { useVoiceInput } from "@/hooks/use-voice-input";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
@@ -55,6 +55,10 @@ type ToolCall = {
     id?: string;
     hebrew_preview?: string;
     image_url?: string;
+    document_url?: string;
+    document_format?: string;
+    document_model?: string;
+    document_skill_id?: string;
     thumbnail_url?: string;
     alt_thumbnail_url?: string;
     cover_image_url?: string;
@@ -982,12 +986,20 @@ function GeneratedDocReceipt({
   message,
   hebrewPreview,
   imageUrl,
+  documentUrl,
+  documentFormat,
+  documentModel,
+  documentSkillId,
   documentId,
   onOpenAsset,
 }: {
   message: string;
   hebrewPreview?: string;
   imageUrl?: string;
+  documentUrl?: string;
+  documentFormat?: string;
+  documentModel?: string;
+  documentSkillId?: string;
   documentId?: string;
   onOpenAsset?: (asset: LightboxAsset) => void;
 }) {
@@ -1007,11 +1019,23 @@ function GeneratedDocReceipt({
         className="flex w-full items-center justify-between gap-2 text-left text-foreground/90 font-medium hover:text-accent-foreground"
       >
         <span className="inline-flex items-center gap-1.5">
-          <ImageIcon className="h-3.5 w-3.5 opacity-70" />
+          {documentUrl ? <FileText className="h-3.5 w-3.5 opacity-70" /> : <ImageIcon className="h-3.5 w-3.5 opacity-70" />}
           {message}
         </span>
         <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
       </button>
+      {documentUrl && (
+        <button
+          type="button"
+          onClick={() => onOpenAsset?.({ url: documentUrl, title: message, mimeType: documentFormat === "pdf" ? "application/pdf" : undefined, previewUrl: imageUrl, openInTab: { tab: "documents", targetId: documentId, label: "Open in Documents" } })}
+          className="flex w-full items-center justify-between gap-2 rounded-md border border-border/50 bg-background/70 px-2.5 py-2 text-left text-xs hover:ring-2 hover:ring-accent/30 transition"
+        >
+          <span className="min-w-0 truncate">
+            {(documentFormat ?? "file").toUpperCase()} • {documentModel ?? "Selected model"}{documentSkillId ? ` • Skill ${documentSkillId}` : ""}
+          </span>
+          <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" />
+        </button>
+      )}
       <div className="flex gap-3">
         {imageUrl && (
           <button
@@ -1095,11 +1119,12 @@ function ImageReceipt({
 
 // Aggregates every image generated in this turn into one horizontal strip.
 function GeneratedAssetsStrip({ tools, onOpenAsset }: { tools: ToolCall[]; onOpenAsset: (asset: LightboxAsset) => void }) {
-  const items: Array<{ key: string; url: string; title: string; tab: string; targetId?: string; label: string }> = [];
+  const items: Array<{ key: string; url: string; title: string; tab: string; targetId?: string; label: string; mimeType?: string; previewUrl?: string }> = [];
   tools.forEach((t, i) => {
     if (!t.result?.ok) return;
     const id = t.result.id;
     if (t.result.image_url) items.push({ key: `${i}-img`, url: t.result.image_url, title: t.result.message || "Document", tab: "documents", targetId: id, label: "Open in Documents" });
+    if (t.result.document_url) items.push({ key: `${i}-doc`, url: t.result.document_url, title: t.result.message || "Document file", tab: "documents", targetId: id, label: "Open in Documents", mimeType: t.result.document_format === "pdf" ? "application/pdf" : undefined, previewUrl: t.result.image_url });
     if (t.result.thumbnail_url) items.push({ key: `${i}-th`, url: t.result.thumbnail_url, title: t.result.message || "Suspect", tab: "suspects", targetId: id, label: "Open in Suspects" });
     if (t.result.alt_thumbnail_url) items.push({ key: `${i}-alt`, url: t.result.alt_thumbnail_url, title: `${t.result.message || "Suspect"} (alt)`, tab: "suspects", targetId: id, label: "Open in Suspects" });
     if (t.result.cover_image_url) items.push({ key: `${i}-cov`, url: t.result.cover_image_url, title: t.result.message || "Envelope cover", tab: "envelopes", targetId: id, label: "Open in Envelopes" });
@@ -1115,11 +1140,11 @@ function GeneratedAssetsStrip({ tools, onOpenAsset }: { tools: ToolCall[]; onOpe
           <button
             key={it.key}
             type="button"
-            onClick={() => onOpenAsset({ url: it.url, title: it.title, openInTab: { tab: it.tab, targetId: it.targetId, label: it.label } })}
+            onClick={() => onOpenAsset({ url: it.url, title: it.title, mimeType: it.mimeType, previewUrl: it.previewUrl, openInTab: { tab: it.tab, targetId: it.targetId, label: it.label } })}
             className="group relative shrink-0 rounded-md overflow-hidden border border-border/60 hover:ring-2 hover:ring-accent/40 transition"
             title={it.title}
           >
-            <img src={it.url} alt={it.title} className="h-20 w-20 object-cover" loading="lazy" />
+            {it.mimeType === "application/pdf" && !it.previewUrl ? <FileText className="h-20 w-20 p-6 text-muted-foreground bg-background" /> : <img src={it.previewUrl ?? it.url} alt={it.title} className="h-20 w-20 object-cover" loading="lazy" />}
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition flex items-end justify-end p-1">
               <ExternalLink className="h-3 w-3 text-white opacity-0 group-hover:opacity-100 transition" />
             </div>
@@ -1185,7 +1210,7 @@ function ToolReceipts({ tools, onOpenAsset }: { tools: ToolCall[]; onOpenAsset?:
 
             // Special-case generate_document_assets: render an inline preview
             // card with the Hebrew snippet (RTL) and a clickable image thumbnail.
-            if (t.name === "generate_document_assets" && t.result.ok && (t.result.hebrew_preview || t.result.image_url)) {
+            if (t.name === "generate_document_assets" && t.result.ok && (t.result.hebrew_preview || t.result.image_url || t.result.document_url)) {
               return (
                 <li key={i} className="flex items-start gap-2">
                   <span className="mt-1 text-accent-foreground/80">
@@ -1196,6 +1221,10 @@ function ToolReceipts({ tools, onOpenAsset }: { tools: ToolCall[]; onOpenAsset?:
                       message={t.result.message}
                       hebrewPreview={t.result.hebrew_preview}
                       imageUrl={t.result.image_url}
+                      documentUrl={t.result.document_url}
+                      documentFormat={t.result.document_format}
+                      documentModel={t.result.document_model}
+                      documentSkillId={t.result.document_skill_id}
                       documentId={t.result.id}
                       onOpenAsset={onOpenAsset}
                     />

@@ -145,7 +145,7 @@ Phase 4 Documents: Doc 0 = contents; then randomized doc numbers, varied types &
 DOCUMENT GENERATION WORKFLOW (Phase 4 — read carefully)
 Each project remembers a \`doc_generation_mode\` choice that controls how aggressive you are when producing documents:
   • "drafts"  — write the row only (title + design_instructions + hebrew_content). Do NOT call generate_document_assets. The user clicks Generate themselves.
-  • "auto"    — write the row, THEN immediately call generate_document_assets({document_id, mode: "both"}) to actually produce the Hebrew body + image. Wait for the receipt before moving on. Show one finished doc at a time so the user can react.
+  • "auto"    — write the row, THEN immediately call generate_document_assets({document_id, mode: "both"}) to actually produce the Hebrew body + selected-model document file + image. Wait for the receipt before moving on. Show one finished doc at a time so the user can react.
   • "ask"     — after each add_document, ask the user "Generate this one now or save as draft?" with propose_options (two buttons: "Generate now" / "Save as draft, keep going"). On "Generate now", call generate_document_assets with mode "both".
 RULES:
 1. The FIRST time you enter Phase 4 in a project where \`doc_generation_mode\` is empty, BEFORE calling add_document, ask the user (with propose_options, 3 buttons) which mode they want — using these labels exactly:
@@ -153,8 +153,10 @@ ${renderDocModeButtonsBlock(playbook)}
    Then call set_doc_generation_mode with the chosen mode ("drafts" / "auto" / "ask"). After that, follow the rules above without re-asking.
 2. If the user already told you in their brief which mode they want (e.g. "just write the prompts, I'll click generate", "go full auto", "do everything yourself"), SKIP the question and call set_doc_generation_mode directly with the inferred mode + a one-line confirmation.
 3. The user can switch modes any time. If they say "switch to drafts only" / "go full auto" / "ask me each time", call set_doc_generation_mode and acknowledge.
-4. generate_document_assets is gated server-side: it will refuse if the Logic Flow is not approved, or if the document_id doesn't belong to this project. Trust the receipt.
-5. The Hebrew body produced by generate_document_assets MAY differ slightly from the hebrew_content you wrote in add_document — that's expected. The receipt shows the final stored version.
+4. generate_document_assets supports mode "image", "document", or "both". Use "document" when the user asks for a file/PDF/DOCX/PPTX/XLSX, "image" for a visual prop, and "both" when full-auto should create both representations.
+5. Document/file generation is strict: the selected document model gets the honest first chance to create the actual file directly. Do not ask for or imply hidden fallback to another provider.
+6. generate_document_assets is gated server-side: it will refuse if the Logic Flow is not approved, or if the document_id doesn't belong to this project. Trust the receipt.
+7. The Hebrew body produced by generate_document_assets MAY differ slightly from the hebrew_content you wrote in add_document — that's expected. The receipt shows the final stored version.
 ${renderEnvelopesLine(playbook)}
 ${renderHintsLine(playbook)}
 
@@ -571,12 +573,13 @@ const BASE_TOOLS = [
     function: {
       name: "generate_document_assets",
       description:
-        "Actually trigger generation of the Hebrew body and/or image for an existing document row (the same pipeline as the Documents tab's Generate buttons). Use ONLY in 'auto' mode after add_document, or in 'ask' mode after the user confirms 'Generate now'. The receipt returns a Hebrew preview snippet and the image URL so the user can review the result inline in chat.",
+        "Actually trigger generation for an existing document row (the same pipeline as the Documents tab's Generate buttons). Use ONLY in 'auto' mode after add_document, or in 'ask' mode after the user confirms 'Generate now'. Mode 'image' creates the visual prop, 'document' asks the selected model to create an actual PDF/DOCX/PPTX/XLSX file directly, and 'both' creates both. The receipt returns previews, file URL, model, skill, and saved prompt metadata.",
       parameters: {
         type: "object",
         properties: {
           document_id: { type: "string", description: "ID returned by the most recent add_document call." },
-          mode: { type: "string", enum: ["text", "image", "both"], description: "Which assets to generate. Default 'both'." },
+          mode: { type: "string", enum: ["text", "image", "document", "both"], description: "Which assets to generate. Default 'both'." },
+          document_format: { type: "string", enum: ["pdf", "docx", "pptx", "xlsx"], description: "Document file format when mode is document/both. Default pdf." },
         },
         required: ["document_id"],
         additionalProperties: false,
@@ -786,6 +789,9 @@ async function executeTool(
     const withMessage = (payload: Record<string, unknown>) => (
       messageId ? { ...payload, created_by_message_id: messageId } : payload
     );
+    if (!messageId && ["add_document", "update_document", "add_suspect", "update_suspect", "add_canvas_node", "update_canvas_node"].includes(name)) {
+      return { ok: false, message: "Assistant message could not be saved, so I did not create linked project rows. Please retry this step." };
+    }
     if (name === "update_project") {
       // Merge per-field origins so each updated field points to this message.
       const { data: current } = await supa
@@ -924,9 +930,13 @@ async function executeTool(
     if (name === "generate_document_assets") {
       const documentId = String((args as { document_id?: string }).document_id ?? "").trim();
       const requestedMode = String((args as { mode?: string }).mode ?? "both").trim();
+      const documentFormat = String((args as { document_format?: string }).document_format ?? "pdf").trim();
       if (!documentId) return { ok: false, message: "document_id is required" };
-      if (!["text", "image", "both"].includes(requestedMode)) {
-        return { ok: false, message: "mode must be 'text', 'image', or 'both'" };
+      if (!["text", "image", "document", "both"].includes(requestedMode)) {
+        return { ok: false, message: "mode must be 'text', 'image', 'document', or 'both'" };
+      }
+      if (!["pdf", "docx", "pptx", "xlsx"].includes(documentFormat)) {
+        return { ok: false, message: "document_format must be 'pdf', 'docx', 'pptx', or 'xlsx'" };
       }
       // Gate: logic flow must be approved + document must belong to project.
       const { data: proj } = await supa
@@ -949,7 +959,7 @@ async function executeTool(
         return { ok: false, message: "Document not found in this project." };
       }
 
-      const callGenerate = async (m: "text" | "image") => {
+      const callGenerate = async (m: "text" | "image" | "document") => {
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), 120_000);
         try {
@@ -959,7 +969,7 @@ async function executeTool(
               Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ documentId, mode: m }),
+            body: JSON.stringify({ documentId, mode: m, documentFormat }),
             signal: ctrl.signal,
           });
           const body = await r.json().catch(() => ({}));
@@ -977,6 +987,10 @@ async function executeTool(
         const r = await callGenerate("text");
         if (!r.ok) errors.push(`text: ${r.body?.error ?? r.status}`);
       }
+      if (requestedMode === "document" || requestedMode === "both") {
+        const r = await callGenerate("document");
+        if (!r.ok) errors.push(`document: ${r.body?.error ?? r.status}`);
+      }
       if (requestedMode === "image" || requestedMode === "both") {
         const r = await callGenerate("image");
         if (!r.ok) errors.push(`image: ${r.body?.error ?? r.status}`);
@@ -985,14 +999,15 @@ async function executeTool(
       // Re-read row to grab whatever made it through.
       const { data: finalDoc } = await supa
         .from("documents")
-        .select("hebrew_content, generated_asset_url, title")
+        .select("hebrew_content, generated_asset_url, generated_document_url, generated_pdf_url, document_format, document_model, document_provider, document_skill_id, title")
         .eq("id", documentId)
         .single();
       const hebrew = (finalDoc?.hebrew_content ?? "").toString();
       const preview = hebrew.length > 240 ? `${hebrew.slice(0, 240)}…` : hebrew;
       const imageUrl = finalDoc?.generated_asset_url ?? null;
+      const documentUrl = finalDoc?.generated_document_url ?? finalDoc?.generated_pdf_url ?? null;
 
-      if (errors.length > 0 && !imageUrl && !hebrew) {
+      if (errors.length > 0 && !imageUrl && !hebrew && !documentUrl) {
         return { ok: false, message: `Generation failed — ${errors.join("; ")}`, id: documentId };
       }
       const partial = errors.length > 0 ? ` (partial: ${errors.join("; ")})` : "";
@@ -1002,6 +1017,10 @@ async function executeTool(
         id: documentId,
         hebrew_preview: preview || undefined,
         image_url: imageUrl || undefined,
+        document_url: documentUrl || undefined,
+        document_format: finalDoc?.document_format || documentFormat,
+        document_model: finalDoc?.document_model || finalDoc?.document_provider || undefined,
+        document_skill_id: finalDoc?.document_skill_id || undefined,
       };
     }
     // ---------- Update tools ----------
