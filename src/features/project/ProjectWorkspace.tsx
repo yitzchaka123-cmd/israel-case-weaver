@@ -19,6 +19,8 @@ import { ExportMenu } from "./ExportMenu";
 import { PhaseStatusBar } from "./PhaseStatusBar";
 import { NotificationBell } from "./notifications/NotificationBell";
 import { useAssistantRunStatus } from "./assistant/useAssistantRun";
+import { ProjectHistoryPanel } from "./ProjectHistoryPanel";
+import { trashProject } from "@/lib/project-versions";
 
 export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
@@ -121,11 +123,14 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
   }, [projectId, qc]);
 
   const deleteProject = async () => {
-    if (!confirm("Delete this case permanently? This cannot be undone.")) return;
-    const { error } = await supabase.from("projects").delete().eq("id", projectId);
-    if (error) return toast.error(error.message);
-    toast.success("Case deleted");
-    nav({ to: "/" });
+    if (!confirm("Move this case to trash? A restorable version will be saved first.")) return;
+    try {
+      await trashProject(projectId);
+      toast.success("Case moved to trash");
+      nav({ to: "/" });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not move case to trash");
+    }
   };
 
   if (isLoading || !project) {
@@ -175,6 +180,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
                 }, 50);
               }}
             />
+            <ProjectHistoryPanel projectId={projectId} />
             <ExportMenu projectId={projectId} />
             <Button size="icon" variant="ghost" onClick={deleteProject} className="text-muted-foreground hover:text-destructive">
               <Trash2 className="h-4 w-4" />
