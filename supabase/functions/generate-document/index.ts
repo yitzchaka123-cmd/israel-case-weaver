@@ -3,6 +3,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { chatCompletions, providerLabel, generateImage, ImageGenError, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
 import { loadClaudeSkillsForSurface, preferredClaudeDocumentSkill, type ClaudeSkillRow } from "../_shared/claude-skills.ts";
+import { PLAYBOOK_DEFAULTS, resolvePlaybook } from "../_shared/assistant-playbook.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -108,12 +109,18 @@ function isDoc0(doc: Record<string, unknown>): boolean {
 }
 
 async function loadDoc0InventoryContext(supa: any, projectId: string) {
-  const [{ data: finalDocs }, { data: envelopes }, { data: suspects }, { data: existingDocs }] = await Promise.all([
+  const [{ data: project }, { data: finalDocs }, { data: envelopes }, { data: suspects }, { data: existingDocs }] = await Promise.all([
+    supa.from("projects").select("owner_id").eq("id", projectId).single(),
     supa.from("canvas_nodes").select("id, title, description, data, created_at").eq("project_id", projectId).eq("board", "final").eq("node_type", "document").order("position_y", { ascending: true }),
     supa.from("envelopes").select("number, label, task").eq("project_id", projectId).order("number", { ascending: true }),
     supa.from("suspects").select("name, role_in_case").eq("project_id", projectId).order("position", { ascending: true }),
     supa.from("documents").select("id, doc_number, title, doc_type, print_size, envelope_number, status, created_at").eq("project_id", projectId).order("doc_number", { ascending: true, nullsFirst: false }),
   ]);
+  const { data: ownerProfile } = project?.owner_id
+    ? await supa.from("profiles").select("assistant_playbook").eq("id", project.owner_id).maybeSingle()
+    : { data: null };
+  const playbook = resolvePlaybook((ownerProfile as { assistant_playbook?: unknown } | null)?.assistant_playbook);
+  const doc0Def = playbook.universal_documents.docs.find((doc) => doc.key === "doc0_contents") ?? PLAYBOOK_DEFAULTS.universal_documents.docs[0];
 
   const docNodes = (finalDocs ?? [])
     .filter((node: any) => Number(node.data?.docNumber) !== 0 && !/^doc\s*0\b/i.test(String(node.title ?? "")))
@@ -129,7 +136,10 @@ async function loadDoc0InventoryContext(supa: any, projectId: string) {
 
   return {
     hasFinalMap: docNodes.length > 0,
+    doc0: doc0Def,
     text: [
+      `DOC 0 PLAYBOOK RULE: ${doc0Def.title_template} (${doc0Def.doc_type}, ${doc0Def.print_size}). Purpose: ${doc0Def.purpose}. List scope: ${doc0Def.list_scope}.`,
+      ``,
       `FINAL FLOW DOCUMENT NODES (authoritative list for Doc 0):`,
       docNodes.map((d: any) => `- #${d.docNumber} ${d.title} (${d.docType}, ${d.printSize})${d.envelopeNumber ? ` — envelope ${d.envelopeNumber}` : ""}. Purpose: ${d.purpose}`).join("\n") || "(none)",
       `\nENVELOPES:`,
@@ -279,7 +289,14 @@ Deno.serve(async (req) => {
       const capabilityBlocked = directFileCapabilityBlock(model, documentFormat);
       if (capabilityBlocked) return capabilityBlocked;
       const provider = providerLabel(model);
-      const directFilePrompt = `Create the final ${documentFormat.toUpperCase()} document directly if your API supports returning generated files. If you cannot return an actual file, say exactly: UNABLE_TO_CREATE_FILE.\n\nCase: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nDocument title: ${doc.title}\nType: ${doc.doc_type ?? "generic"}\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\nContent:\n${doc.hebrew_content ?? ""}`;
+      const doc0 = isDoc0(doc);
+      const inventory = doc0 ? await loadDoc0InventoryContext(supa, doc.project_id) : null;
+      if (doc0 && !inventory?.hasFinalMap) {
+        return new Response(JSON.stringify({ error: "Doc 0 file must be generated from the Final Flow. Create the Final Documents Map first, then retry Doc 0." }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const directFilePrompt = doc0
+        ? `Create the final ${documentFormat.toUpperCase()} document directly if your API supports returning generated files. If you cannot return an actual file, say exactly: UNABLE_TO_CREATE_FILE.\n\nThis is Doc 0 for a premium mystery game. Doc 0 is a player-facing box contents / case-file inventory, not evidence and not a case memo. Use the Final Flow inventory below as the source of truth. Do not invent documents and do not reveal solution spoilers.\n\nCase: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nDocument title: ${doc.title}\nType: contents checklist / box inventory\nPrint size: ${doc.print_size ?? inventory?.doc0?.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\n\n${inventory?.text ?? ""}\n\nPlayer-facing content to place in the file:\n${doc.hebrew_content ?? ""}`
+        : `Create the final ${documentFormat.toUpperCase()} document directly if your API supports returning generated files. If you cannot return an actual file, say exactly: UNABLE_TO_CREATE_FILE.\n\nCase: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nDocument title: ${doc.title}\nType: ${doc.doc_type ?? "generic"}\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\nContent:\n${doc.hebrew_content ?? ""}`;
       const startedAt = Date.now();
       const callerUserId = await getUserIdFromAuth(req);
       const saveDocumentPrompt = async (status: "ok" | "error", errorMessage?: string) => {
