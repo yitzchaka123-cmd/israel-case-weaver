@@ -30,6 +30,16 @@ export type PhaseDefinition = {
   description: string; // short one-liner
 };
 
+export type UniversalDocumentDefinition = {
+  key: string;
+  enabled: boolean;
+  title_template: string;
+  purpose: string;
+  doc_type: string;
+  print_size: string;
+  list_scope: "planned" | "generated";
+};
+
 export type Playbook = {
   suspect_counts: {
     easy: CountRange;
@@ -95,6 +105,10 @@ export type Playbook = {
   };
   languages: {
     options: string[];
+  };
+  universal_documents: {
+    doc0_enabled: boolean;
+    docs: UniversalDocumentDefinition[];
   };
   phases: PhaseDefinition[];
 };
@@ -257,6 +271,20 @@ Looks like an actual archival envelope from the case era — NOT a modern Canva 
   languages: {
     options: ["Hebrew", "English", "Arabic", "Spanish", "French", "German", "Russian"],
   },
+  universal_documents: {
+    doc0_enabled: true,
+    docs: [
+      {
+        key: "doc0_contents",
+        enabled: true,
+        title_template: "Doc 0 — Contents / Case File Inventory",
+        purpose: "Player-facing checklist for the game box. List every planned document, envelope, physical insert, and generated piece the buyer should receive. No solution spoilers. Group by envelope/section when useful.",
+        doc_type: "contents checklist",
+        print_size: "A4",
+        list_scope: "planned",
+      },
+    ],
+  },
   phases: [
     { key: "setup", label: "Setup", description: "Phase 1 — gather case identity & brief." },
     { key: "summary", label: "Summary", description: "Phase 2 — write the news-style solution summary." },
@@ -353,6 +381,30 @@ const cleanPhaseList = (a: unknown, fallback: PhaseDefinition[]): PhaseDefinitio
     })
     .filter((x): x is PhaseDefinition => !!x)
     .slice(0, 16);
+  return out.length > 0 ? out : fallback;
+};
+
+const cleanUniversalDocs = (a: unknown, fallback: UniversalDocumentDefinition[]): UniversalDocumentDefinition[] => {
+  if (!Array.isArray(a)) return fallback;
+  const out = a
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const e = entry as Partial<UniversalDocumentDefinition>;
+      const key = String(e.key ?? slug(String(e.title_template ?? "universal_doc"))).trim();
+      const title_template = String(e.title_template ?? "").trim();
+      if (!key || !title_template) return null;
+      return {
+        key,
+        enabled: e.enabled !== false,
+        title_template,
+        purpose: String(e.purpose ?? "").trim(),
+        doc_type: String(e.doc_type ?? "contents checklist").trim() || "contents checklist",
+        print_size: String(e.print_size ?? "A4").trim() || "A4",
+        list_scope: e.list_scope === "generated" ? "generated" : "planned",
+      };
+    })
+    .filter((x): x is UniversalDocumentDefinition => !!x)
+    .slice(0, 12);
   return out.length > 0 ? out : fallback;
 };
 
@@ -476,6 +528,11 @@ export function resolvePlaybook(override: unknown): Playbook {
     options: cleanStringArray(o.languages?.options, d.languages.options).slice(0, 24),
   };
 
+  const universal_documents = {
+    doc0_enabled: o.universal_documents?.doc0_enabled !== false,
+    docs: cleanUniversalDocs(o.universal_documents?.docs, d.universal_documents.docs),
+  };
+
   const phases = cleanPhaseList(o.phases, d.phases);
 
   return {
@@ -493,6 +550,7 @@ export function resolvePlaybook(override: unknown): Playbook {
     doc_mode_copy,
     catalogs,
     languages,
+    universal_documents,
     phases,
   };
 }
@@ -517,21 +575,12 @@ Each "stage" represents ONE moment in the player's solving journey where they ge
 ${ladder}
 
 WHEN TO CALL WHICH TOOL:
-• \`generate_hint_stage\` — preferred. Given a stage number + (optional) steering ("the user is stuck on the ledger discrepancy clue, which is linked to clue node X"), you write all ${p.hints.per_stage} Hebrew hints in one tool call. Use this when scaffolding a new stage from scratch.
-• \`add_hint\` — single-row create. Use only when the user asks you to insert ONE specific hint at a known stage+level (e.g. "rewrite stage 2 level 3 to be sharper") — but prefer \`update_hint\` if a row already exists at that stage+level (see roster).
-• \`update_hint\` — edit an existing hint row by id (from the Existing hints roster). Use whenever the user references an existing hint.
+• \`generate_hint_stage\` — preferred. Given a stage number + (optional) steering, you write all ${p.hints.per_stage} Hebrew hints in one tool call.
+• \`add_hint\` — single-row create. Use only when the user asks for ONE hint at a specific stage+level.
+• \`update_hint\` — edit an existing hint row by id from the roster.
 
 LINKING HINTS TO THE BOARD:
-After writing a stage, you SHOULD also drop a corresponding \`hint\` node on the canvas via \`add_canvas_node\` with node_type="hint", titled "Stage N hints" (or "Stage N — <one-word topic>"), so the detective board visually shows which clue/deduction the stage supports. Use the \`linked_node_ids\` of the related clue/deduction node when possible. The hint node lives on the same board as the clue it nudges toward.
-
-QUALITY BAR:
-- All hint text in Hebrew, RTL, grammatical, no Latin filler.
-- Level 1: vague atmospheric nudge ("שימו לב לשעה שמופיעה על הקבלה"). Never names the answer.
-- Level ${Math.max(2, p.hints.per_stage - 1)}: clearly points at the right document/suspect/connection.
-- Level ${p.hints.per_stage}: explicitly tells the player what to do next, but not the final solution.
-- Each hint is one or two short sentences. No long paragraphs.
-
-NEVER hand-write empty placeholder hints just to occupy slots — if you don't have content for a level, skip the call rather than insert "TODO".`;
+After writing a stage, drop a matching \`hint\` node on the canvas via \`add_canvas_node\` so the detective board shows which clue/deduction it supports.`;
 }
 
 export function renderEnvelopesLine(p: Playbook): string {
@@ -619,6 +668,14 @@ Unusual / creative-prop document types (use these when the case calls for tactil
 
 export function renderLanguagesBlock(p: Playbook): string {
   return `Game languages available for per-case final in-game content: ${p.languages.options.join(", ")}. Ask for and save one game_language during Phase 1 unless already set.`;
+}
+
+export function renderUniversalDocumentsBlock(p: Playbook): string {
+  const docs = p.universal_documents.docs
+    .filter((d) => d.enabled)
+    .map((d, i) => `${i + 1}. ${d.title_template} (${d.doc_type}, ${d.print_size}) — ${d.purpose} List scope: ${d.list_scope}.`)
+    .join("\n");
+  return `UNIVERSAL DOCUMENTS (apply to every game)\nDoc 0 enabled: ${p.universal_documents.doc0_enabled ? "yes" : "no"}.\n${docs || "No universal documents enabled."}`;
 }
 
 export function renderPhaseEnumComment(p: Playbook): string {
