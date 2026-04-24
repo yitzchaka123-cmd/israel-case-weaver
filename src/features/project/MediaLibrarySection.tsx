@@ -207,9 +207,10 @@ function FilterSelect({ label, value, onValueChange, options }: { label: string;
   );
 }
 
-function LibraryCard({ item }: { item: LibraryItem }) {
+function LibraryCard({ item, onOpenAsset }: { item: LibraryItem; onOpenAsset: (asset: LightboxAsset) => void }) {
   const isVideo = item.mime?.startsWith("video");
   const isPdf = item.mime === "application/pdf";
+  const isDocumentFile = item.mime?.includes("pdf") || ["docx", "pptx", "xlsx"].includes(item.type.toLowerCase());
   const Icon = item.source === "Document" ? FileText : item.type.includes("cover") || item.type.includes("back") ? Package : isVideo ? Video : ImageIcon;
   const copyPrompt = async () => {
     if (!item.prompt) return;
@@ -220,14 +221,20 @@ function LibraryCard({ item }: { item: LibraryItem }) {
       toast.error("Failed to copy prompt");
     }
   };
+  const openAsset = () => {
+    if (!item.url) return;
+    onOpenAsset({ url: item.url, title: item.title, prompt: item.prompt, mimeType: item.mime, previewUrl: item.previewUrl });
+  };
+
   return (
     <article className="rounded-2xl border bg-card overflow-hidden shadow-soft">
-      <div className="aspect-[4/3] bg-muted relative overflow-hidden">
+      <button type="button" onClick={openAsset} disabled={!item.url} className="aspect-[4/3] bg-muted relative overflow-hidden block w-full text-left disabled:cursor-default">
         {item.url && isVideo ? <video src={item.url} className="h-full w-full object-cover" /> : item.url && !isPdf ? <img src={item.previewUrl ?? item.url} alt={item.title} className="h-full w-full object-cover" /> : (
           <div className="h-full w-full flex items-center justify-center text-muted-foreground"><Icon className="h-8 w-8" /></div>
         )}
-        <Badge variant="secondary" className="absolute left-2 top-2 capitalize">{item.status}</Badge>
-      </div>
+        <Badge variant={item.status === "failed" ? "destructive" : "secondary"} className="absolute left-2 top-2 capitalize">{item.status}</Badge>
+        {isDocumentFile && <Badge variant="outline" className="absolute right-2 top-2 bg-background/85">{item.type.toUpperCase()}</Badge>}
+      </button>
       <div className="p-3 space-y-2">
         <div className="flex items-start gap-2">
           <Icon className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
@@ -237,12 +244,14 @@ function LibraryCard({ item }: { item: LibraryItem }) {
           </div>
         </div>
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[11px] text-muted-foreground truncate">{item.model ?? item.mime ?? "Asset"}</span>
-          {item.url && <a href={item.url} target="_blank" rel="noreferrer" className="text-xs text-accent inline-flex items-center gap-1 hover:underline"><ExternalLink className="h-3 w-3" /> Open</a>}
+          <span className="text-[11px] text-muted-foreground truncate">{[item.provider, item.model].filter(Boolean).join(" · ") || item.mime || "Asset"}</span>
+          {item.url && <button type="button" onClick={openAsset} className="text-xs text-accent inline-flex items-center gap-1 hover:underline"><ExternalLink className="h-3 w-3" /> Preview</button>}
         </div>
         <div className="flex flex-wrap gap-1.5">
           {item.mime && <Badge variant="outline" className="text-[10px]">{item.mime.includes("pdf") ? "PDF" : item.mime.split("/")[1] ?? item.mime}</Badge>}
+          {item.provider && <Badge variant="outline" className="text-[10px]">{item.provider}</Badge>}
           {item.skill && <Badge variant="secondary" className="text-[10px]">{item.skill}</Badge>}
+          {item.skillSource && item.skillSource !== "none" && <Badge variant="outline" className="text-[10px]">{item.skillSource}</Badge>}
         </div>
         {item.error && <p className="rounded-md border border-destructive/30 bg-destructive/5 px-2 py-1 text-[11px] text-destructive line-clamp-2">{item.error}</p>}
         {item.prompt && (
