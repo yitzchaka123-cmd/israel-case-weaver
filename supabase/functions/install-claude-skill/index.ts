@@ -121,7 +121,10 @@ function inspectSkillPackage(fileName: string, arrayBuffer: ArrayBuffer) {
   const lower = fileName.toLowerCase();
   const bytes = new Uint8Array(arrayBuffer);
   const bytesText = new TextDecoder("utf-8", { fatal: false }).decode(arrayBuffer.slice(0, Math.min(arrayBuffer.byteLength, 250_000)));
-  if (lower.endsWith(".zip")) return { ...inspectZip(bytes), skillText: inspectZip(bytes).skillText, format: "zip" };
+  if (lower.endsWith(".zip")) {
+    const zip = inspectZip(bytes);
+    return { ...zip, format: "zip" };
+  }
   if (lower.endsWith(".tar")) return { ...inspectTar(bytes), format: "tar" };
   if (lower.endsWith(".tgz") || lower.endsWith(".tar.gz")) return { files: [], skillText: null, hasSkill: bytesText.includes("SKILL.md") || bytesText.includes("skill.md"), format: "compressed-tar" };
   return { files: [fileName], skillText: bytesText, hasSkill: textLooksLikeSkillMarkdown(fileName, bytesText), format: "markdown" };
