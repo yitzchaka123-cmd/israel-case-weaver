@@ -145,7 +145,7 @@ Phase 4 Documents: Doc 0 = contents; then randomized doc numbers, varied types &
 DOCUMENT GENERATION WORKFLOW (Phase 4 — read carefully)
 Each project remembers a \`doc_generation_mode\` choice that controls how aggressive you are when producing documents:
   • "drafts"  — write the row only (title + design_instructions + hebrew_content). Do NOT call generate_document_assets. The user clicks Generate themselves.
-  • "auto"    — write the row, THEN immediately call generate_document_assets({document_id, mode: "both"}) to actually produce the Hebrew body + image. Wait for the receipt before moving on. Show one finished doc at a time so the user can react.
+  • "auto"    — write the row, THEN immediately call generate_document_assets({document_id, mode: "both"}) to actually produce the Hebrew body + selected-model document file + image. Wait for the receipt before moving on. Show one finished doc at a time so the user can react.
   • "ask"     — after each add_document, ask the user "Generate this one now or save as draft?" with propose_options (two buttons: "Generate now" / "Save as draft, keep going"). On "Generate now", call generate_document_assets with mode "both".
 RULES:
 1. The FIRST time you enter Phase 4 in a project where \`doc_generation_mode\` is empty, BEFORE calling add_document, ask the user (with propose_options, 3 buttons) which mode they want — using these labels exactly:
@@ -153,8 +153,10 @@ ${renderDocModeButtonsBlock(playbook)}
    Then call set_doc_generation_mode with the chosen mode ("drafts" / "auto" / "ask"). After that, follow the rules above without re-asking.
 2. If the user already told you in their brief which mode they want (e.g. "just write the prompts, I'll click generate", "go full auto", "do everything yourself"), SKIP the question and call set_doc_generation_mode directly with the inferred mode + a one-line confirmation.
 3. The user can switch modes any time. If they say "switch to drafts only" / "go full auto" / "ask me each time", call set_doc_generation_mode and acknowledge.
-4. generate_document_assets is gated server-side: it will refuse if the Logic Flow is not approved, or if the document_id doesn't belong to this project. Trust the receipt.
-5. The Hebrew body produced by generate_document_assets MAY differ slightly from the hebrew_content you wrote in add_document — that's expected. The receipt shows the final stored version.
+4. generate_document_assets supports mode "image", "document", or "both". Use "document" when the user asks for a file/PDF/DOCX/PPTX/XLSX, "image" for a visual prop, and "both" when full-auto should create both representations.
+5. Document/file generation is strict: the selected document model gets the honest first chance to create the actual file directly. Do not ask for or imply hidden fallback to another provider.
+6. generate_document_assets is gated server-side: it will refuse if the Logic Flow is not approved, or if the document_id doesn't belong to this project. Trust the receipt.
+7. The Hebrew body produced by generate_document_assets MAY differ slightly from the hebrew_content you wrote in add_document — that's expected. The receipt shows the final stored version.
 ${renderEnvelopesLine(playbook)}
 ${renderHintsLine(playbook)}
 
@@ -571,12 +573,13 @@ const BASE_TOOLS = [
     function: {
       name: "generate_document_assets",
       description:
-        "Actually trigger generation of the Hebrew body and/or image for an existing document row (the same pipeline as the Documents tab's Generate buttons). Use ONLY in 'auto' mode after add_document, or in 'ask' mode after the user confirms 'Generate now'. The receipt returns a Hebrew preview snippet and the image URL so the user can review the result inline in chat.",
+        "Actually trigger generation for an existing document row (the same pipeline as the Documents tab's Generate buttons). Use ONLY in 'auto' mode after add_document, or in 'ask' mode after the user confirms 'Generate now'. Mode 'image' creates the visual prop, 'document' asks the selected model to create an actual PDF/DOCX/PPTX/XLSX file directly, and 'both' creates both. The receipt returns previews, file URL, model, skill, and saved prompt metadata.",
       parameters: {
         type: "object",
         properties: {
           document_id: { type: "string", description: "ID returned by the most recent add_document call." },
-          mode: { type: "string", enum: ["text", "image", "both"], description: "Which assets to generate. Default 'both'." },
+          mode: { type: "string", enum: ["text", "image", "document", "both"], description: "Which assets to generate. Default 'both'." },
+          document_format: { type: "string", enum: ["pdf", "docx", "pptx", "xlsx"], description: "Document file format when mode is document/both. Default pdf." },
         },
         required: ["document_id"],
         additionalProperties: false,
