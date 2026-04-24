@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { PLAYBOOK_DEFAULTS, resolvePlaybook } from "../_shared/assistant-playbook.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -51,7 +52,7 @@ Deno.serve(async (req) => {
     if (!projectId) return new Response(JSON.stringify({ error: "projectId required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
     const supa = createClient(SUPABASE_URL, SERVICE);
-    const { data: project } = await supa.from("projects").select("id, target_doc_count, solution_summary, logic_approved_at").eq("id", projectId).single();
+    const { data: project } = await supa.from("projects").select("id, owner_id, target_doc_count, solution_summary, logic_approved_at").eq("id", projectId).single();
     if (!project) return new Response(JSON.stringify({ error: "Project not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     if (!project.logic_approved_at || !project.solution_summary) return new Response(JSON.stringify({ error: "Approve the Logic Flow and save a solution summary before creating the Final Flow." }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
@@ -62,6 +63,12 @@ Deno.serve(async (req) => {
       supa.from("documents").select("id, doc_number, title, doc_type, print_size, envelope_number, linked_node_ids, generated_asset_url, generated_document_url, generated_pdf_url, document_preview_url, created_at").eq("project_id", projectId).order("created_at", { ascending: true }),
     ]);
 
+    const { data: ownerProfile } = project.owner_id
+      ? await supa.from("profiles").select("assistant_playbook").eq("id", project.owner_id).maybeSingle()
+      : { data: null };
+    const playbook = resolvePlaybook((ownerProfile as { assistant_playbook?: unknown } | null)?.assistant_playbook);
+    const doc0Def = playbook.universal_documents.docs.find((doc) => doc.key === "doc0_contents") ?? PLAYBOOK_DEFAULTS.universal_documents.docs[0];
+
     const logic = (logicNodes ?? []) as DbNode[];
     const existingDocs = uniqueLatestDocuments((documents ?? []) as DocumentRow[]);
     const byNumber = new Map<number, DocumentRow>();
@@ -69,7 +76,9 @@ Deno.serve(async (req) => {
 
     const planned: PlannedDoc[] = [];
     const doc0 = byNumber.get(0);
-    planned.push({ docNumber: 0, title: doc0?.title || "Doc 0 — Contents / Case File Inventory", docType: doc0?.doc_type || "contents checklist", printSize: doc0?.print_size || "A4", envelopeNumber: doc0?.envelope_number ?? null, purpose: "Player-facing box contents checklist for all planned documents and physical pieces, without solution spoilers.", sourceDocumentId: doc0?.id, generationStatus: statusFor(doc0) });
+    if (playbook.universal_documents.doc0_enabled && doc0Def.enabled) {
+      planned.push({ docNumber: 0, title: doc0?.title || doc0Def.title_template, docType: doc0?.doc_type || doc0Def.doc_type, printSize: doc0?.print_size || doc0Def.print_size, envelopeNumber: doc0?.envelope_number ?? null, purpose: `${doc0Def.purpose} Source of truth: Final Flow document nodes. List scope: ${doc0Def.list_scope}.`, sourceDocumentId: doc0?.id, generationStatus: statusFor(doc0) });
+    }
     existingDocs.filter((doc) => doc.doc_number !== 0).forEach((doc) => planned.push({ docNumber: doc.doc_number ?? 100 + planned.length, title: doc.title, docType: doc.doc_type || "document", printSize: doc.print_size || "A4", envelopeNumber: doc.envelope_number ?? null, purpose: "Existing document row already created for this case.", sourceDocumentId: doc.id, generationStatus: statusFor(doc) }));
 
     const targetCount = Math.max(planned.length, Math.min(100, n(project.target_doc_count, 40)));
@@ -109,7 +118,8 @@ Deno.serve(async (req) => {
       const s = sourceToFinal.get(edge.source_id), t = sourceToFinal.get(edge.target_id);
       if (s && t) finalEdges.push({ project_id: projectId, board: "final", source_id: s, target_id: t, label: edge.label });
     });
-    const doc0Node = docNodeByIndex[0];
+    const doc0Index = planned.findIndex((doc) => doc.docNumber === 0);
+    const doc0Node = doc0Index >= 0 ? docNodeByIndex[doc0Index] : null;
     planned.forEach((doc, i) => {
       const docNode = docNodeByIndex[i];
       if (!docNode) return;
