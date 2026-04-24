@@ -7,11 +7,12 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 import dagre from "dagre";
+import jsPDF from "jspdf";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Plus, Wand2, CheckCircle2, Loader2, ScrollText, Sparkles, FileText, ExternalLink, ChevronDown, AlertTriangle, X, LayoutGrid } from "lucide-react";
+import { Plus, Wand2, CheckCircle2, Loader2, ScrollText, Sparkles, FileText, ExternalLink, ChevronDown, AlertTriangle, X, LayoutGrid, Download, Image as ImageIcon, FileCode2 } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -44,6 +45,7 @@ export const LOGIC_FLOW_MODEL_KEY = "logic-flow-model";
 export const LOGIC_FLOW_MODEL_DEFAULT = "openai-5.2";
 
 type Board = "logic" | "final";
+type LineStyle = "flow" | "direct";
 
 const NODE_TYPES = (Object.entries(NODE_META) as [string, { label: string; accent: string }][])
   .map(([t, m]) => ({ t, l: m.label, c: m.accent }));
