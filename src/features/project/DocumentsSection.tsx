@@ -6,7 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, FileText, Trash2, Upload, Wand2, Image as ImageIcon, Loader2, FileDown, FileType } from "lucide-react";
+import { Plus, FileText, Trash2, Upload, Wand2, Image as ImageIcon, Loader2, FileDown, FileType, Copy } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
@@ -216,6 +216,24 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
   const saveTimer = useRef<number | undefined>(undefined);
   const fileInput = useRef<HTMLInputElement>(null);
 
+  const { data: filePrompt } = useQuery({
+    queryKey: ["document-file-prompt", doc?.id],
+    queryFn: async () => {
+      if (!doc) return null;
+      const { data, error } = await supabase
+        .from("prompts")
+        .select("final_prompt, provider, model, created_at")
+        .eq("target_id", doc.id)
+        .eq("scope", "document_file")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data as { final_prompt: string | null; provider: string | null; model: string | null; created_at: string } | null;
+    },
+    enabled: !!doc?.id,
+  });
+
   useEffect(() => setDraft(doc), [doc?.id]);
 
   // Refresh selected image model whenever the picker writes back to localStorage
@@ -303,6 +321,21 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
     } finally {
       setter(false);
     }
+  };
+
+  const generateOutputType = async (type: "image" | "document" | "both") => {
+    if (type === "both") {
+      await generate("document");
+      await generate("image");
+      return;
+    }
+    await generate(type);
+  };
+
+  const copyFilePrompt = async () => {
+    if (!filePrompt?.final_prompt) return;
+    await navigator.clipboard.writeText(filePrompt.final_prompt);
+    toast.success("Document prompt copied");
   };
 
   const remove = async () => {
@@ -505,6 +538,12 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
                   </Button>
                 </div>
               </div>
+              <div className="mb-2 flex flex-wrap items-center gap-2" dir="ltr">
+                <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Output type</span>
+                <Button size="sm" variant="outline" className="h-7 gap-1.5 text-[11px]" onClick={() => generateOutputType("image")} disabled={genImage}><ImageIcon className="h-3 w-3" /> Image</Button>
+                <Button size="sm" variant="outline" className="h-7 gap-1.5 text-[11px]" onClick={() => generateOutputType("document")} disabled={genDocument}><FileType className="h-3 w-3" /> Document/file</Button>
+                <Button size="sm" variant="outline" className="h-7 gap-1.5 text-[11px]" onClick={() => generateOutputType("both")} disabled={genImage || genDocument}><Wand2 className="h-3 w-3" /> Both</Button>
+              </div>
               {selectedImageModel === "chatgpt-image-2" && (
                 <div className="mb-2 text-[11px] text-muted-foreground rounded-md border border-warning/30 bg-warning/5 px-2.5 py-1.5" dir="ltr">
                   <strong className="text-warning">Heads up:</strong> <code>chatgpt-image-2</code> requires a <em>verified OpenAI organization</em> and is slower at High quality. If generation fails or times out, switch the model to <strong>ChatGPT Image 1</strong> or <strong>Nano Banana</strong>, or drop quality to Medium.
@@ -531,6 +570,20 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
                 <p className="text-sm truncate">{(draft.document_format ?? "file").toUpperCase()} • {draft.document_model ?? draft.document_provider ?? "Selected model"}</p>
               </div>
               <a href={draft.generated_document_url ?? draft.generated_pdf_url ?? "#"} target="_blank" rel="noreferrer" className="text-sm text-accent underline shrink-0">Open file</a>
+            </div>
+          )}
+          {filePrompt?.final_prompt && (
+            <div className="md:col-span-2 rounded-lg border bg-muted/30 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">PDF/document generation prompt</Label>
+                  <p className="text-[11px] text-muted-foreground">{filePrompt.provider ?? "provider"} · {filePrompt.model ?? "model"}</p>
+                </div>
+                <Button type="button" variant="ghost" size="sm" className="h-7 gap-1.5 text-[11px]" onClick={copyFilePrompt}>
+                  <Copy className="h-3 w-3" /> Copy
+                </Button>
+              </div>
+              <p className="max-h-28 overflow-auto whitespace-pre-wrap rounded-md bg-background/60 p-2 text-[11px] leading-relaxed text-muted-foreground">{filePrompt.final_prompt}</p>
             </div>
           )}
           <div className="md:col-span-2 border-t pt-4">
