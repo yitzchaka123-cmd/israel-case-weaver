@@ -23,6 +23,7 @@ import {
   renderLogicGateRefusal,
   renderCatalogsBlock,
   renderLanguagesBlock,
+  renderUniversalDocumentsBlock,
   renderPhaseEnumComment,
   renderExplanationLengthLine,
   type Playbook,
@@ -659,7 +660,28 @@ export function AssistantPlaybookPanel({}: Props = {}) {
         </div>
       </Card>
 
-      {/* 13. Phase definitions */}
+      {/* 13. Universal documents */}
+      <Card
+        id="universal"
+        title="Universal documents"
+        hint="Project-wide documents that every game should include, especially Doc 0 / box contents."
+        open={open.universal}
+        onToggle={() => toggle("universal")}
+        onReset={() => reset("universal_documents")}
+        showPrompt={showPrompt.universal}
+        onTogglePrompt={() => togglePrompt("universal")}
+        promptText={renderUniversalDocumentsBlock(playbook)}
+      >
+        <div className="space-y-3">
+          <ToggleRow label="Enable Doc 0 contents inventory" checked={playbook.universal_documents.doc0_enabled} onChange={(checked) => update("universal_documents", { ...playbook.universal_documents, doc0_enabled: checked })} />
+          <UniversalDocsEditor
+            values={playbook.universal_documents.docs}
+            onChange={(docs) => update("universal_documents", { ...playbook.universal_documents, docs })}
+          />
+        </div>
+      </Card>
+
+      {/* 14. Languages */}
       <Card
         id="languages"
         title="Game languages"
@@ -678,7 +700,7 @@ export function AssistantPlaybookPanel({}: Props = {}) {
         />
       </Card>
 
-      {/* 14. Phase definitions */}
+      {/* 15. Phase definitions */}
       <Card
         id="phases"
         title="Phase definitions"
