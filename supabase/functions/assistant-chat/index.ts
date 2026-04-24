@@ -873,7 +873,7 @@ async function executeTool(
           project_id: projectId,
           position_x: Math.random() * 600,
           position_y: Math.random() * 400,
-          created_by_message_id: messageId,
+          ...(messageId ? { created_by_message_id: messageId } : {}),
         })
         .select("id, title")
         .single();
@@ -1027,7 +1027,7 @@ async function executeTool(
       if (Object.keys(patch).length === 0) {
         return { ok: false, message: `Nothing to update — pass at least one field besides id.` };
       }
-      if (stampMessage) patch.created_by_message_id = messageId;
+      if (stampMessage && messageId) patch.created_by_message_id = messageId;
       // Verify ownership first so we can return a clean error.
       const { data: existing } = await supa
         .from(table)
