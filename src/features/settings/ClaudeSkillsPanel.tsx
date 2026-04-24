@@ -43,6 +43,17 @@ const BUILT_IN_DESCRIPTIONS: Record<string, string> = {
   pptx: "Create PowerPoint/PPTX decks for presentations and pitch materials.",
   xlsx: "Create Excel/XLSX spreadsheets for tables, logs, and data-heavy analysis.",
 };
+const STATUS_LABELS: Record<string, string> = {
+  installed: "Installed and enabled",
+  needs_review: "Saved, needs review",
+  invalid_package: "Invalid package",
+};
+
+function frontmatterOf(skill: ClaudeSkill) {
+  const metadata = skill.metadata ?? {};
+  const frontmatter = (metadata.frontmatter ?? {}) as Record<string, unknown>;
+  return frontmatter;
+}
 
 export function ClaudeSkillsPanel() {
   const { isAdmin } = useAuth();
@@ -139,7 +150,7 @@ export function ClaudeSkillsPanel() {
       <div>
         <h3 className="font-display text-lg">Claude Skills</h3>
         <p className="text-sm text-muted-foreground mt-1">
-          Built-in and custom Skills Claude can use for chat, documents, marketing, and media tasks.
+          Built-in and custom Skills Claude can use for chat, documents, marketing, and media tasks. Custom uploads should be a SKILL.md file or an archive/package containing SKILL.md and optional supporting files.
         </p>
       </div>
 
@@ -196,7 +207,7 @@ function SkillSection({ title, skills, isAdmin, updateSkill, toggleScope }: { ti
                     <h4 className="font-medium truncate">{skill.name}</h4>
                     <Badge variant="secondary">{skill.skill_type === "anthropic" ? "Built-in" : "Custom"}</Badge>
                     <Badge variant="outline">{skill.skill_id}</Badge>
-                    {skill.install_status && skill.install_status !== "installed" && <Badge variant="destructive">{skill.install_status}</Badge>}
+                    {skill.install_status && <Badge variant={skill.install_status === "installed" ? "outline" : "destructive"}>{STATUS_LABELS[skill.install_status] ?? skill.install_status}</Badge>}
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">Version {skill.version} · source {skill.install_source}{skill.installed_at ? ` · installed ${new Date(skill.installed_at).toLocaleDateString()}` : ""}</p>
                   <p className="text-[11px] text-muted-foreground mt-1">Surfaces: {(skill.usage_scope ?? []).map((scope) => SCOPE_LABELS[scope] ?? scope).join(" · ") || "None"}</p>
@@ -204,6 +215,7 @@ function SkillSection({ title, skills, isAdmin, updateSkill, toggleScope }: { ti
                 </div>
                 <Switch checked={skill.enabled} disabled={!isAdmin} onCheckedChange={(checked) => updateSkill(skill.id, { enabled: checked })} />
               </div>
+              <SkillMetadata skill={skill} />
               <div className="flex flex-wrap gap-2">
                 {SCOPE_OPTIONS.map((scope) => {
                   const active = skill.usage_scope?.includes(scope);
@@ -240,5 +252,24 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">{label}</Label>
       {children}
     </label>
+  );
+}
+
+function SkillMetadata({ skill }: { skill: ClaudeSkill }) {
+  const frontmatter = frontmatterOf(skill);
+  const visible = Object.entries(frontmatter).filter(([, value]) => value !== undefined && value !== "");
+  if (!visible.length) return null;
+  return (
+    <div className="rounded-lg border bg-muted/20 p-3 text-xs">
+      <div className="mb-2 font-medium">SKILL.md metadata</div>
+      <div className="grid gap-1 sm:grid-cols-2">
+        {visible.map(([key, value]) => (
+          <div key={key} className="min-w-0">
+            <span className="text-muted-foreground">{key}: </span>
+            <span className="break-words">{Array.isArray(value) ? value.join(", ") : String(value)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

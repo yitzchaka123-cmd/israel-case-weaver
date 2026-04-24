@@ -23,7 +23,7 @@ import {
   getPhaseEnum,
   type Playbook,
 } from "../_shared/assistant-playbook.ts";
-import { claudeSkillRequestShape, loadClaudeSkillsForSurface } from "../_shared/claude-skills.ts";
+import { claudeSkillRequestShape, loadClaudeSkillsForSurface, renderClaudeSkillCatalog, type ClaudeSkillRow } from "../_shared/claude-skills.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -89,6 +89,7 @@ function buildSystemPrompt(
   rosters: Rosters,
   tweaks: Tweak[] = [],
   playbook: Playbook = PLAYBOOK_DEFAULTS,
+  claudeSkills: ClaudeSkillRow[] = [],
 ) {
   const suspectCount = rosters.suspects.length;
   const docCount = rosters.documents.length;
@@ -159,6 +160,10 @@ ${renderDocModeButtonsBlock(playbook)}
 6. generate_document_assets is gated server-side: it will refuse if the Logic Flow is not approved, or if the document_id doesn't belong to this project. Trust the receipt.
 7. The Hebrew body produced by generate_document_assets MAY differ slightly from the hebrew_content you wrote in add_document — that's expected. The receipt shows the final stored version.
 8. If the user asks to install/add a Claude Skill from chat and there is no attached installable package, call explain_claude_skill_install. Claude can automatically choose among enabled installed skills passed to it, but the app must manage installation.
+
+AVAILABLE CLAUDE SKILLS FOR THIS SURFACE
+${renderClaudeSkillCatalog(claudeSkills)}
+Claude Skills are SKILL.md-based packages. Their descriptions tell Claude when to use them; full instructions/supporting files are only available when the Skill is invoked by Claude's runtime.
 ${renderEnvelopesLine(playbook)}
 ${renderHintsLine(playbook)}
 
@@ -1283,6 +1288,7 @@ async function processConversation(
   }
 
   const model = PROVIDER_MODEL[project.ai_provider_planning ?? "lovable"] ?? PROVIDER_MODEL.lovable;
+  const claudeChatSkills = model.startsWith("anthropic/") ? await loadClaudeSkillsForSurface(supa, "chat") : [];
   const rosters: Rosters = {
     suspects: (suspectsRoster ?? []) as RosterRow[],
     documents: (documentsRoster ?? []) as RosterRow[],
@@ -1290,7 +1296,7 @@ async function processConversation(
     hints: (hintsRoster ?? []) as RosterRow[],
     canvas_nodes: (nodesRoster ?? []) as RosterRow[],
   };
-  const systemPrompt = buildSystemPrompt(project, rosters, tweaks, playbook);
+  const systemPrompt = buildSystemPrompt(project, rosters, tweaks, playbook, claudeChatSkills);
 
   const lastUser = [...messages].reverse().find((m) => (m as { role: string }).role === "user") as { content: string } | undefined;
   if (lastUser) {
@@ -1320,8 +1326,6 @@ async function processConversation(
   const TOOLS = buildTools(playbook);
   const MAX_ROUNDS = 8;
   let lastFb: { effectiveModel: string; fallback: string } = { effectiveModel: model, fallback: "none" };
-  const claudeChatSkills = model.startsWith("anthropic/") ? await loadClaudeSkillsForSurface(supa, "chat") : [];
-
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const isFinalRound = round === MAX_ROUNDS - 1;
     const body: Record<string, unknown> = { model, messages: convo, stream: false, ...claudeSkillRequestShape(claudeChatSkills) };

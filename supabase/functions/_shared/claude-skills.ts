@@ -3,6 +3,8 @@ export type ClaudeSkillRow = {
   skill_type: string;
   version: string;
   name?: string | null;
+  description?: string | null;
+  metadata?: Record<string, unknown> | null;
   usage_scope: string[];
 };
 
@@ -17,10 +19,24 @@ type SupabaseLike = {
 export async function loadClaudeSkillsForSurface(supa: SupabaseLike, surface: string): Promise<ClaudeSkillRow[]> {
   const { data } = await supa
     .from("claude_skills")
-    .select("skill_id, skill_type, version, name, usage_scope")
+        .select("skill_id, skill_type, version, name, description, metadata, usage_scope")
     .eq("enabled", true)
     .eq("install_status", "installed");
-  return ((data ?? []) as ClaudeSkillRow[]).filter((skill) => (skill.usage_scope ?? []).includes(surface));
+  return ((data ?? []) as ClaudeSkillRow[]).filter((skill) => {
+    const metadata = skill.metadata ?? {};
+    const frontmatter = (metadata.frontmatter ?? {}) as Record<string, unknown>;
+    return (skill.usage_scope ?? []).includes(surface) && frontmatter["disable-model-invocation"] !== true;
+  });
+}
+
+export function renderClaudeSkillCatalog(skills: ClaudeSkillRow[]) {
+  if (!skills.length) return "No enabled Claude Skills are installed for this surface.";
+  return skills.map((skill) => {
+    const metadata = skill.metadata ?? {};
+    const frontmatter = (metadata.frontmatter ?? {}) as Record<string, unknown>;
+    const when = typeof frontmatter.when_to_use === "string" ? ` Use when: ${frontmatter.when_to_use}` : "";
+    return `- /${skill.skill_id} (${skill.skill_type}, v${skill.version || "latest"}): ${skill.description ?? skill.name ?? "Claude Skill"}.${when}`;
+  }).join("\n");
 }
 
 export function claudeSkillRequestShape(skills: ClaudeSkillRow[]) {
