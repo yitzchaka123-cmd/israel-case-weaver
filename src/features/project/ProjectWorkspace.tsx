@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -26,6 +26,15 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const [tab, setTab] = useState("overview");
   const [focusMessageId, setFocusMessageId] = useState<string | null>(null);
   const assistantRunning = useAssistantRunStatus(projectId);
+  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+
+  useEffect(() => {
+    tabRefs.current[tab]?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "center",
+    });
+  }, [tab]);
 
   // Allow other components (e.g. assistant tool-call receipts and origin badges)
   // to switch tabs and optionally focus a specific item or chat message by
@@ -173,8 +182,11 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
           </div>
         </div>
         <Tabs value={tab} onValueChange={setTab}>
-          <div className="px-6 md:px-10">
-            <TabsList className="bg-transparent p-0 h-auto gap-1 border-0">
+          <div className="relative px-4 md:px-10">
+            <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-8 bg-gradient-to-r from-surface/90 to-transparent md:hidden" />
+            <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-8 bg-gradient-to-l from-surface/90 to-transparent md:hidden" />
+            <div className="scrollbar-none overflow-x-auto overscroll-x-contain touch-pan-x">
+            <TabsList className="bg-transparent p-0 h-auto gap-1 border-0 min-w-max">
               {[
                 { v: "overview", l: "Overview", icon: LayoutDashboard },
                 { v: "assistant", l: "Assistant", icon: Sparkles },
@@ -192,7 +204,8 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
                   <TabsTrigger
                     key={t.v}
                     value={t.v}
-                    className="data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none text-muted-foreground relative px-3 py-2.5 rounded-none data-[state=active]:after:absolute data-[state=active]:after:inset-x-3 data-[state=active]:after:bottom-0 data-[state=active]:after:h-0.5 data-[state=active]:after:bg-accent data-[state=active]:after:rounded-full inline-flex items-center gap-1.5"
+                    ref={(node) => { tabRefs.current[t.v] = node; }}
+                    className="data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none text-muted-foreground relative px-3 py-2.5 rounded-none data-[state=active]:after:absolute data-[state=active]:after:inset-x-3 data-[state=active]:after:bottom-0 data-[state=active]:after:h-0.5 data-[state=active]:after:bg-accent data-[state=active]:after:rounded-full inline-flex items-center gap-1.5 shrink-0"
                   >
                     <span className="relative inline-flex">
                       <Icon className="h-3.5 w-3.5" />
@@ -208,6 +221,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
                 );
               })}
             </TabsList>
+            </div>
           </div>
         </Tabs>
       </header>

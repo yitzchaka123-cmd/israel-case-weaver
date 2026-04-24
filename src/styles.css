@@ -194,6 +194,11 @@
   .shadow-pop { box-shadow: var(--shadow-lg); }
   .shadow-glow { box-shadow: var(--shadow-glow); }
   .text-balance { text-wrap: balance; }
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-none::-webkit-scrollbar { display: none; }
   .glass {
     background: color-mix(in oklab, var(--color-surface) 75%, transparent);
     backdrop-filter: blur(12px);
