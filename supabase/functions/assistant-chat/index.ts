@@ -1339,10 +1339,11 @@ async function processConversation(
   const TOOLS = buildTools(playbook);
   const MAX_ROUNDS = 8;
   let lastFb: { effectiveModel: string; fallback: string } = { effectiveModel: model, fallback: "none" };
+  const claudeChatSkills = model.startsWith("anthropic/") ? await loadClaudeSkillsForSurface(supa, "chat") : [];
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const isFinalRound = round === MAX_ROUNDS - 1;
-    const body: Record<string, unknown> = { model, messages: convo, stream: false };
+    const body: Record<string, unknown> = { model, messages: convo, stream: false, ...claudeSkillRequestShape(claudeChatSkills) };
     if (!isFinalRound) body.tools = TOOLS;
 
     const roundStartedAt = Date.now();
