@@ -256,6 +256,10 @@ Deno.serve(async (req) => {
             return new Response(JSON.stringify({ ok: true, documentUrl: pub.publicUrl, documentFormat, model, skillId: (skillPayload[0] as Record<string, unknown>).skill_id }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
           }
         }
+        await saveDocumentPrompt("error", "Claude did not return a downloadable file");
+        await recordDocumentAttempt(supa, { projectId: doc.project_id, documentId, title: doc.title, documentFormat, prompt: directFilePrompt, provider: "anthropic-direct", model, status: "failed", errorMessage: "Claude did not return a downloadable file", skill: skillUsed });
+        await logAiRun({ userId: callerUserId, projectId: doc.project_id, surface: "generate-document-file", requestedModel: model, effectiveModel: model, fallback: "none", status: "error", latencyMs: Date.now() - startedAt, errorMessage: "Claude did not return a downloadable file", targetId: documentId, promptExcerpt: directFilePrompt });
+        return new Response(JSON.stringify({ error: `Claude was not able to create a downloadable ${documentFormat.toUpperCase()} directly.` }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
       const resp = await chatCompletions({ model, disableFallback: true, messages: [{ role: "user", content: directFilePrompt }] });
