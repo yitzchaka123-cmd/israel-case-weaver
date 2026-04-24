@@ -1038,6 +1038,30 @@ function SectionListEditor({
   );
 }
 
+function UniversalDocsEditor({ values, onChange }: { values: UniversalDocumentDefinition[]; onChange: (next: UniversalDocumentDefinition[]) => void }) {
+  return (
+    <div className="space-y-2">
+      {values.map((doc, i) => (
+        <div key={doc.key + i} className="space-y-2 rounded-md border bg-surface p-2">
+          <div className="flex items-center gap-2">
+            <Input value={doc.title_template} onChange={(e) => { const next = [...values]; next[i] = { ...doc, title_template: e.target.value }; onChange(next); }} className="h-8 text-sm font-medium" placeholder="Title template" />
+            <Switch checked={doc.enabled} onCheckedChange={(checked) => { const next = [...values]; next[i] = { ...doc, enabled: checked }; onChange(next); }} />
+          </div>
+          <Textarea value={doc.purpose} onChange={(e) => { const next = [...values]; next[i] = { ...doc, purpose: e.target.value }; onChange(next); }} rows={3} className="text-xs" placeholder="Purpose / rules" />
+          <div className="grid gap-2 sm:grid-cols-3">
+            <Input value={doc.doc_type} onChange={(e) => { const next = [...values]; next[i] = { ...doc, doc_type: e.target.value }; onChange(next); }} className="h-8 text-xs" placeholder="Doc type" />
+            <Input value={doc.print_size} onChange={(e) => { const next = [...values]; next[i] = { ...doc, print_size: e.target.value }; onChange(next); }} className="h-8 text-xs" placeholder="Print size" />
+            <select value={doc.list_scope} onChange={(e) => { const next = [...values]; next[i] = { ...doc, list_scope: e.target.value === "generated" ? "generated" : "planned" }; onChange(next); }} className="h-8 rounded-md border bg-background px-2 text-xs">
+              <option value="planned">planned</option>
+              <option value="generated">generated</option>
+            </select>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function PhaseListEditor({
   values,
   onChange,
