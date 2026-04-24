@@ -604,7 +604,7 @@ function MessageBubble({
   };
   const submitEdit = () => {
     const trimmed = draft.trim();
-    if (!trimmed || trimmed === msg.content.trim()) {
+    if (!trimmed) {
       cancelEdit();
       return;
     }
