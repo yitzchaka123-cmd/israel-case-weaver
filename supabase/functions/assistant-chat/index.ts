@@ -507,8 +507,41 @@ const BASE_TOOLS = [
           design_instructions: { type: "string" },
           hebrew_content: { type: "string" },
           envelope_number: { type: "number" },
+          final_node_id: { type: "string", description: "Optional Final board document-node id this row is being created from." },
         },
         required: ["title"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "create_final_documents_map",
+      description: "Create/replace the Final board production map with one document node per planned game document. This does NOT create document rows or assets; it marks planned documents as ungenerated for review first.",
+      parameters: {
+        type: "object",
+        properties: {
+          replace: { type: "boolean", description: "Default true. Replace existing unlinked Final-board document nodes." },
+          documents: {
+            type: "array",
+            minItems: 1,
+            items: {
+              type: "object",
+              properties: {
+                doc_number: { type: "number" },
+                title: { type: "string" },
+                doc_type: { type: "string" },
+                print_size: { type: "string" },
+                envelope_number: { type: "number" },
+                purpose: { type: "string" },
+              },
+              required: ["title", "purpose"],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["documents"],
         additionalProperties: false,
       },
     },
