@@ -30,6 +30,16 @@ export type PhaseDefinition = {
   description: string; // short one-liner
 };
 
+export type UniversalDocumentDefinition = {
+  key: string;
+  enabled: boolean;
+  title_template: string;
+  purpose: string;
+  doc_type: string;
+  print_size: string;
+  list_scope: "planned" | "generated";
+};
+
 export type Playbook = {
   suspect_counts: {
     easy: CountRange;
@@ -95,6 +105,10 @@ export type Playbook = {
   };
   languages: {
     options: string[];
+  };
+  universal_documents: {
+    doc0_enabled: boolean;
+    docs: UniversalDocumentDefinition[];
   };
   phases: PhaseDefinition[];
 };
@@ -256,6 +270,20 @@ Looks like an actual archival envelope from the case era — NOT a modern Canva 
   },
   languages: {
     options: ["Hebrew", "English", "Arabic", "Spanish", "French", "German", "Russian"],
+  },
+  universal_documents: {
+    doc0_enabled: true,
+    docs: [
+      {
+        key: "doc0_contents",
+        enabled: true,
+        title_template: "Doc 0 — Contents / Case File Inventory",
+        purpose: "Player-facing checklist for the game box. List every planned document, envelope, physical insert, and generated piece the buyer should receive. No solution spoilers. Group by envelope/section when useful.",
+        doc_type: "contents checklist",
+        print_size: "A4",
+        list_scope: "planned",
+      },
+    ],
   },
   phases: [
     { key: "setup", label: "Setup", description: "Phase 1 — gather case identity & brief." },
