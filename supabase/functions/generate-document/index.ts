@@ -207,8 +207,17 @@ Deno.serve(async (req) => {
       const model = resolveDocumentModel(project);
       const blocked = directProviderBlock(model, "document text");
       if (blocked) return blocked;
-      const sys = `You write in-game evidence documents for premium printable mystery games. Output ONLY the document body in ${gameLanguage}, ${isRtl ? "RTL-ready" : "properly formatted"}, realistic and immersive, tailored to the document type. No meta-commentary. No disclaimers. For interrogation transcripts include pauses, body language and back-and-forth. Do not reveal the full solution.`;
-      const userPrompt = `Case: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nPlayer role: ${project?.player_role ?? ""}\nCase goal: ${project?.case_goal ?? ""}\nYear: ${project?.year ?? ""}\nSetting: ${project?.setting ?? ""}\n\nDocument to produce:\nTitle: ${doc.title}\nType: ${doc.doc_type ?? "generic"}\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\n\nWrite the full ${gameLanguage} body now.`;
+      const doc0 = isDoc0(doc);
+      const inventory = doc0 ? await loadDoc0InventoryContext(supa, doc.project_id) : null;
+      if (doc0 && !inventory?.hasFinalMap) {
+        return new Response(JSON.stringify({ error: "Doc 0 must be generated from the Final Flow. Create the Final Documents Map first, then retry Doc 0." }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const sys = doc0
+        ? `You write Doc 0 for premium printable mystery games. Doc 0 is NEVER evidence and NEVER a normal memo. It is the player-facing box contents / case-file inventory. Output ONLY the document body in ${gameLanguage}, ${isRtl ? "RTL-ready" : "properly formatted"}. Use the supplied Final Flow document nodes as the authoritative inventory. Group by envelope/section when possible. No solution spoilers. Do not invent documents not present in the Final Flow.`
+        : `You write in-game evidence documents for premium printable mystery games. Output ONLY the document body in ${gameLanguage}, ${isRtl ? "RTL-ready" : "properly formatted"}, realistic and immersive, tailored to the document type. No meta-commentary. No disclaimers. For interrogation transcripts include pauses, body language and back-and-forth. Do not reveal the full solution.`;
+      const userPrompt = doc0
+        ? `Case: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nPlayer role: ${project?.player_role ?? ""}\nCase goal: ${project?.case_goal ?? ""}\nYear: ${project?.year ?? ""}\nSetting: ${project?.setting ?? ""}\n\nDocument to produce:\nTitle: ${doc.title}\nType: contents checklist / box inventory\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\n\n${inventory?.text ?? ""}\n\nWrite Doc 0 now as a clean player-facing checklist of every planned game document and physical insert. Include Doc 0 itself, opening/instruction pieces, envelopes, suspects/cast sheets if present, and all planned document nodes. Do not reveal answers, culprits, hidden logic, or generation status.`
+        : `Case: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nPlayer role: ${project?.player_role ?? ""}\nCase goal: ${project?.case_goal ?? ""}\nYear: ${project?.year ?? ""}\nSetting: ${project?.setting ?? ""}\n\nDocument to produce:\nTitle: ${doc.title}\nType: ${doc.doc_type ?? "generic"}\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\n\nWrite the full ${gameLanguage} body now.`;
 
       const startedAt = Date.now();
       const callerUserId = await getUserIdFromAuth(req);
@@ -360,7 +369,12 @@ Deno.serve(async (req) => {
       const useOpenAI = OPENAI_IMAGE_KEYS.has(imgPref);
 
       const designNotes = (doc.design_instructions ?? "").trim();
-      const contentExcerpt = (doc.hebrew_content ?? "").trim().slice(0, 1200);
+      const doc0 = isDoc0(doc);
+      const inventory = doc0 ? await loadDoc0InventoryContext(supa, doc.project_id) : null;
+      if (doc0 && !inventory?.hasFinalMap) {
+        return new Response(JSON.stringify({ error: "Doc 0 image must be generated from the Final Flow. Create the Final Documents Map first, then retry Doc 0." }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const contentExcerpt = (doc.hebrew_content ?? "").trim().slice(0, doc0 ? 2400 : 1200);
       const userImageInstructions = (project?.image_prompt_instructions as string ?? "").trim();
 
       const imgPrompt = [
