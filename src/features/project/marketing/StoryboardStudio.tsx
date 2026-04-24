@@ -479,10 +479,38 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
   );
 }
 
-function ColumnFrame({ title, accent, children }: { title: string; accent: string; children: React.ReactNode }) {
+function ProgressTile({ label, value }: { label: string; value: string }) {
   return (
-    <div className={`rounded-xl border bg-gradient-to-b ${accent} bg-surface/40 p-4 space-y-3`}>
-      <div className="text-[10px] font-medium tracking-widest uppercase text-muted-foreground">{title}</div>
+    <div className="rounded-xl border bg-surface p-3 md:p-4">
+      <div className="text-[10px] font-medium tracking-widest uppercase text-muted-foreground">{label}</div>
+      <div className="mt-1 font-display text-xl md:text-2xl">{value}</div>
+    </div>
+  );
+}
+
+function StepButton({ active, onClick, label, sublabel }: { active: boolean; onClick: () => void; label: string; sublabel: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        "rounded-lg px-4 py-3 text-left transition-colors touch-pan-x",
+        active ? "bg-card text-foreground shadow-soft" : "text-muted-foreground hover:text-foreground",
+      ].join(" ")}
+    >
+      <div className="text-sm font-medium">{label}</div>
+      <div className="text-[11px] text-muted-foreground mt-0.5">{sublabel}</div>
+    </button>
+  );
+}
+
+function StepPanel({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border bg-surface/40 p-4 md:p-5 space-y-4">
+      <div>
+        <h4 className="font-display text-xl">{title}</h4>
+        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+      </div>
       {children}
     </div>
   );
