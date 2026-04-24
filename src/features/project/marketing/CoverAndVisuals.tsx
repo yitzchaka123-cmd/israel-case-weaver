@@ -46,11 +46,12 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const [newTitle, setNewTitle] = useState("");
   const [newHint, setNewHint] = useState("");
   const [generating, setGenerating] = useState(false);
+  const [generatingCover, setGeneratingCover] = useState(false);
 
   const { data: project } = useQuery({
     queryKey: ["project-cover-only", projectId],
     queryFn: async () => {
-      const { data } = await supabase.from("projects").select("title, cover_image_url, cover_effective_model, cover_fallback, ai_provider_images").eq("id", projectId).maybeSingle();
+      const { data } = await supabase.from("projects").select("title, cover_image_url, cover_prompt, cover_effective_model, cover_fallback, ai_provider_images").eq("id", projectId).maybeSingle();
       return data;
     },
   });
@@ -84,6 +85,32 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
 
   const cover = project?.cover_image_url;
   const extras = (assets ?? []).filter((a) => a.category === "marketing-extra" || a.category === "back" || a.category === "marketing-back");
+
+  const handleGenerateCover = async (prompt: string) => {
+    setGeneratingCover(true);
+    try {
+      const modelOverride = getStoredImageModel("marketing-cover", "chatgpt-image-2");
+      const quality = getStoredImageQuality("marketing-cover", "medium");
+      const resp = await callEdge("generate-image", {
+        projectId,
+        category: "cover",
+        target: "project-cover",
+        prompt,
+        modelOverride,
+        aspect: "portrait",
+        quality,
+      });
+      if (!resp.ok) {
+        const e = await resp.json().catch(() => ({}));
+        toast.error(e.error ?? "Cover generation failed", { duration: 10000 });
+        return;
+      }
+      toast.success("Cover visual generated");
+      qc.invalidateQueries({ queryKey: ["project-cover-only", projectId] });
+    } finally {
+      setGeneratingCover(false);
+    }
+  };
 
   const handleGenerate = async (prompt: string) => {
     setGenerating(true);
