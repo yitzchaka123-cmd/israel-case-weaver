@@ -340,7 +340,7 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
         </div>
       </div>
 
-      <div className="overflow-x-auto scrollbar-none -mx-1 px-1">
+      <div className="overflow-x-auto scrollbar-none overscroll-x-contain touch-pan-x -mx-1 px-1">
         <div className="grid grid-cols-3 min-w-[520px] gap-2 rounded-xl bg-muted p-1">
           <StepButton active={activeStep === "script"} onClick={() => setActiveStep("script")} label="1 Script" sublabel={`${shots.length} shots`} />
           <StepButton active={activeStep === "prompts"} onClick={() => setActiveStep("prompts")} label="2 Prompts" sublabel={`${promptsReady} ready`} />
