@@ -2,6 +2,7 @@
 // for a project. Writes nodes/edges into the "logic" board and the solution_summary on the project.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { chatCompletions, providerLabel, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
+import { claudeSkillPromptBlock, loadClaudeSkillsForSurface, withClaudeSkills } from "../_shared/claude-skills.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -76,13 +77,14 @@ Deno.serve(async (req) => {
     const modelKey = (modelOverride as string) || (project.ai_provider_planning as string) || "lovable";
     const model = PROVIDER_MODEL[modelKey] ?? PROVIDER_MODEL.lovable;
     const gameLanguage = String(project.game_language ?? "Hebrew").trim() || "Hebrew";
+    const enabledSkills = model.startsWith("anthropic/") ? await loadClaudeSkillsForSurface(supa, "analysis") : [];
 
     const approvedSummary = (project.solution_summary ?? "").trim();
     const useApproved = useExistingSummary === undefined ? !!approvedSummary : (useExistingSummary && !!approvedSummary);
 
     const sys = useApproved
-      ? `You are a senior mystery game designer. The user has ALREADY APPROVED the case's solution narrative — your job is to break that exact narrative into a printable case logic flow (clues, deductions, red herrings, edges). DO NOT invent a different culprit, motive, weapon, or chain of events. Every node and edge must directly support or mislead from the approved narrative. The output must be a single JSON tool call. No prose. ${gameLanguage} is allowed for short labels but English keys.`
-      : `You are a senior mystery game designer. Produce a tight, solvable case logic flow for a printable detective game. The output must be a single JSON tool call. No prose. ${gameLanguage} is allowed for short labels but English keys.`;
+      ? `You are a senior mystery game designer. The user has ALREADY APPROVED the case's solution narrative — your job is to break that exact narrative into a printable case logic flow (clues, deductions, red herrings, edges). DO NOT invent a different culprit, motive, weapon, or chain of events. Every node and edge must directly support or mislead from the approved narrative. The output must be a single JSON tool call. No prose. ${gameLanguage} is allowed for short labels but English keys.\n\n${claudeSkillPromptBlock(enabledSkills, "analysis")}`
+      : `You are a senior mystery game designer. Produce a tight, solvable case logic flow for a printable detective game. The output must be a single JSON tool call. No prose. ${gameLanguage} is allowed for short labels but English keys.\n\n${claudeSkillPromptBlock(enabledSkills, "analysis")}`;
 
     const approvedBlock = useApproved
       ? `\nAPPROVED SOLUTION (source of truth — your flow MUST match this exactly):\n"""\n${approvedSummary}\n"""\n\nYour job is NOT to write a new solution. Your job is to decompose the approved solution above into the nodes/edges below. The "summary" field you return should restate the approved solution faithfully (you may tighten wording but must not change facts, culprit, motive, or method).\n`
@@ -185,12 +187,12 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
 
     const startedAt = Date.now();
     const callerUserId = await getUserIdFromAuth(req);
-    const resp = await chatCompletions({
+    const resp = await chatCompletions(withClaudeSkills({
       model,
       messages: [{ role: "system", content: sys }, { role: "user", content: userPrompt }],
       tools: [tool],
       tool_choice: { type: "function", function: { name: "emit_logic_flow" } },
-    });
+    }, enabledSkills));
     const fb = extractFallback(resp, model);
 
     if (!resp.ok) {
