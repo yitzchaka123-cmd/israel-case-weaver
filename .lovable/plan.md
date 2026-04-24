@@ -1,182 +1,206 @@
-## Plan: separate invite-code login from Google login
+## Add protection against accidental game deletion + version history
 
 ### Goal
 
-Make the login page support two distinct access paths:
+Make it safe to delete a game by mistake, and add a way to go back to earlier saved versions of a game by date/time with a preview before restoring.
+
+This is possible, but it is a medium-to-large feature because a game is stored across many tables: overview, suspects, documents, logic flow nodes/edges, envelopes, hints, media, marketing, storyboard, prompts, and chat.
+
+### Recommended approach
+
+Build this in two layers:
 
 ```text
-1. Continue with Google
-   - Creates/signs into a Google-based account
-   - New Google accounts still require admin approval
+1. Trash / soft delete
+   If a game is deleted by mistake, it can be restored quickly.
 
-2. Sign in with invite code
-   - Uses only the generated invite code
-   - Does not require a Google account
-   - Does not require admin approval after a valid code is used
-   - Saves work to that code’s own account
+2. Version history / snapshots
+   Save dated snapshots of the whole game and allow preview + restore.
 ```
 
----
+### User experience
 
-## 1. Change invite codes from “pending approval” to “direct access”
+#### 1. Safer delete
 
-### Current behavior
+Replace the current permanent delete button with:
 
-A user enters a code, then signs in with Google. The code attaches to their account, but the account remains pending until an admin approves it.
+- A clearer confirmation dialog.
+- A “Move to trash” action instead of immediate permanent deletion.
+- A “Deleted games” or “Trash” view on the dashboard.
+- Restore and permanently delete actions from the trash.
 
-### New behavior
+This protects against the most common mistake: accidentally clicking delete.
 
-A valid code becomes a direct login credential.
+#### 2. Version history inside each game
 
-When someone uses a valid active code:
+Add a **History** button near the current export/delete controls in the game header.
 
-- the app signs them into an account connected to that code
-- the account is automatically marked approved
-- no admin approval is needed
-- projects they create are saved under that code account
-
-Google sign-in will remain separate and will still go through admin approval for new accounts.
-
----
-
-## 2. Add backend support for code-based accounts
-
-### Database changes
-
-Update the invite-code/access system so each invite code can be tied to a code-login account.
-
-Add nullable fields to `invite_codes`, such as:
+Clicking it opens a panel like:
 
 ```text
-code_user_id
-last_login_at
+Version History
+
+Today, 2:14 PM       Manual save       Preview | Restore
+Yesterday, 7:02 PM   Auto snapshot     Preview | Restore
+Apr 20, 10:30 AM     Before delete     Preview | Restore
 ```
 
-This lets a generated code behave like its own reusable account identity.
+Each history item should show:
 
-### Backend function
+- Date and time.
+- Whether it was automatic or manually saved.
+- A short label if the user added one.
+- Summary counts: suspects, documents, nodes, envelopes, media.
 
-Add a secure backend function for code login, for example:
+#### 3. Preview before restore
+
+The preview should show a readable summary of that version before restoring:
+
+- Game title, subtitle, phase.
+- Cover image if available.
+- Counts of major sections.
+- Suspect names.
+- Document titles.
+- Logic flow node titles.
+- Marketing/box text summary.
+
+This should not immediately overwrite anything. The user would explicitly click **Restore this version**.
+
+#### 4. Manual snapshots
+
+Add a button:
 
 ```text
-login_with_invite_code(code)
+Save version
 ```
 
-It will:
-
-- validate the code exists
-- reject revoked, expired, or exhausted codes
-- create or reuse the account tied to that code
-- mark that account as `approved`
-- attach the invite code to the `user_access` row
-- update usage/login metadata
-- return a session so the user is actually signed in
-
-This must run server-side because creating/reusing a code account securely requires privileged backend logic.
-
----
-
-## 3. Keep Google login approval rules unchanged
-
-Google login will no longer depend on the invite-code field.
-
-The Google path will be:
+This lets the user create a named checkpoint, for example:
 
 ```text
-Continue with Google → account created/signed in → pending approval unless already approved
+Before changing ending
+Before final box text
+Client review version
 ```
 
-So Google remains useful for real staff/member accounts, while invite-code login is a fast direct-access option.
+#### 5. Automatic snapshots
 
----
+Add automatic snapshots at important moments, such as:
 
-## 4. Update the login page UI
+- Before moving a game to trash.
+- Before restoring an older version.
+- Optionally when opening a game after major edits, with throttling so it does not create too many versions.
 
-### File
+The first implementation should avoid snapshotting every keystroke. That would create too much data and make the history messy.
 
-- `src/routes/login.tsx`
+### Restore behavior
 
-Replace the current combined flow with two separate cards/sections:
+When restoring a version:
+
+1. Save the current state as a safety snapshot first.
+2. Replace the current game data with the selected snapshot.
+3. Keep the same game URL/project ID so existing links still work.
+4. Show a success message and refresh the game.
+
+### Technical plan
+
+#### Database changes
+
+Add soft delete fields to `projects`:
 
 ```text
-Sign in with invite code
-[Invite code]
-[Continue with code]
-No Google account required. Valid codes open the studio immediately.
-
-or
-
-Sign in with Google
-[Continue with Google]
-New Google accounts require admin approval.
+deleted_at
 ```
 
-The code button will call the new code-login flow directly.
-
-The Google button will no longer stash/redeem the code.
-
----
-
-## 5. Update auth state handling
-
-### File
-
-- `src/lib/auth.tsx`
-
-Add a new auth method:
+Add a new table for game snapshots:
 
 ```text
-signInWithInviteCode(code)
+project_versions
+- id
+- project_id
+- owner_id
+- created_by
+- created_at
+- label
+- reason: manual | auto | before_delete | before_restore
+- snapshot jsonb
+- summary jsonb
 ```
 
-This will call the backend code-login function and set the returned session.
-
-Also remove the old “stash invite code then redeem after Google login” behavior because code login and Google login are now separate.
-
----
-
-## 6. Update admin/team access wording
-
-### File
-
-- `src/features/settings/TeamAccessPanel.tsx`
-
-Adjust labels so admins understand what codes now do:
+The snapshot JSON will include the full game state across the related tables:
 
 ```text
-Invite codes → Code logins
-Create new code → Create code login
-Max uses → Max logins / or keep Max uses if one-time access is preferred
+project
+suspects
+documents
+canvas_nodes
+canvas_edges
+envelopes
+hints
+hint_sheets
+media_assets
+prompts
+chat_messages
+project_marketing
+project_storyboards
+project_notifications
 ```
 
-Show whether a code already has an attached code account, and optionally show last login time.
+RLS should ensure users can only access versions for projects they can access. Since this app currently has broad authenticated table policies for many game tables, the snapshot table should at minimum be restricted by the owning user/admin pattern rather than being fully public to all signed-in users.
 
-Members created by code login will appear in the members list as approved automatically.
+#### Backend functions
 
----
+Create backend functions for:
 
-## 7. Ensure saved work belongs to the code account
+- `create-project-version`
+  - Builds a full snapshot for a game.
+  - Stores summary metadata for preview lists.
 
-Existing project creation already saves using the signed-in user id:
+- `restore-project-version`
+  - Creates a safety snapshot of the current state.
+  - Clears the current related rows for that game.
+  - Reinserts rows from the chosen snapshot.
+  - Keeps the original `project_id`.
 
-```text
-projects.owner_id = user.id
-```
+- `trash-project`
+  - Creates a `before_delete` snapshot.
+  - Sets `deleted_at` instead of deleting the project.
 
-Once code login produces a real session/user, no major project-saving changes are needed. Any project, marketing copy, storyboard, media, or export created while signed in with the code account will be saved under that code account’s identity.
+- `restore-trashed-project`
+  - Clears `deleted_at`.
 
----
+#### Frontend changes
 
-## Technical notes
+- `src/features/project/ProjectWorkspace.tsx`
+  - Replace permanent delete with “Move to trash”.
+  - Add History button/panel.
 
-Files to edit:
+- `src/features/dashboard/Dashboard.tsx`
+  - Hide trashed games from the main list.
+  - Add a “Trash” filter/view.
+  - Add restore/permanent delete controls for trashed games.
 
-- `src/routes/login.tsx`
-- `src/lib/auth.tsx`
-- `src/features/settings/TeamAccessPanel.tsx`
-- a new backend function for invite-code login
-- a database migration for invite-code account metadata and secure helper logic
+- New component, likely:
+  - `src/features/project/ProjectHistoryPanel.tsx`
 
-No changes are needed to project creation logic unless testing reveals a missing owner/user id path.
+- Optional shared helper:
+  - `src/lib/project-versions.ts`
 
-I will also verify the app builds after the changes.
+#### Export relationship
+
+The current export system already packages a full game. Version history will use a similar data shape internally, but stored in the backend so the user can restore from a date without manually downloading/importing files.
+
+### Scope note
+
+This will create version history for game content going forward. It cannot reconstruct older versions from before the feature existed, except the current game state can be saved as the first snapshot when the feature is added.
+
+### Suggested first milestone
+
+Implement the practical safety version first:
+
+1. Move delete to trash instead of permanent delete.
+2. Add manual “Save version”.
+3. Add version list with preview.
+4. Add restore from version.
+5. Auto-create snapshots before trash and before restore.
+
+Later, if needed, we can add more advanced timeline features like automatic daily snapshots, visual diffing, or comparing two versions side-by-side.
