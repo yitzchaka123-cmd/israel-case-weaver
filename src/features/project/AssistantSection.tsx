@@ -16,6 +16,7 @@ import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { IMAGE_MODELS } from "@/components/ImageModelPicker";
 import { useAssistantRun } from "./assistant/useAssistantRun";
 import { AssetLightbox, type LightboxAsset } from "./assistant/AssetLightbox";
+import { useHiddenModels, filterModelOptions } from "@/lib/hidden-models";
 
 const PLANNING_MODELS = [
   { value: "__hdr-lovable", label: "— Lovable AI (workspace credits) —", header: true },
