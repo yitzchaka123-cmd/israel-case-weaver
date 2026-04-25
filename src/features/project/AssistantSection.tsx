@@ -155,7 +155,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     },
   });
 
-  const planningModel = project?.ai_provider_planning ?? "lovable";
+  const planningModel = project?.ai_provider_planning ?? "openai-5.2";
   const imageModel = project?.ai_provider_images ?? "nano-banana-2";
   const { hidden: hiddenModels } = useHiddenModels();
   const visiblePlanningModels = filterModelOptions(PLANNING_MODELS, hiddenModels, planningModel);
