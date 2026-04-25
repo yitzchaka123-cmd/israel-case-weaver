@@ -1,6 +1,7 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useHiddenModels, filterModelOptions } from "@/lib/hidden-models";
 
 export const IMAGE_MODELS = [
   { value: "chatgpt-image-2", label: "ChatGPT Image 2 (gpt-image-2) — latest" },
