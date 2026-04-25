@@ -84,9 +84,15 @@ Deno.serve(async (req) => {
       .order("position");
     const { data: docs } = await supa
       .from("documents")
-      .select("doc_number, title, doc_type, envelope_number")
+      .select("doc_number, title, doc_type")
       .eq("project_id", projectId)
       .order("doc_number");
+    const { data: logicNodes } = await supa
+      .from("canvas_nodes")
+      .select("id, title, node_type, description")
+      .eq("project_id", projectId)
+      .eq("board", "logic")
+      .order("created_at", { ascending: true });
 
     const modelKey = (modelOverride as string) || (project.ai_provider_planning as string) || "lovable";
     const model = PROVIDER_MODEL[modelKey] ?? PROVIDER_MODEL.lovable;
@@ -96,19 +102,26 @@ Deno.serve(async (req) => {
     const labels = playbook.envelopes.labels;
     const count = playbook.envelopes.count;
 
-    const sys = `You are a senior boxed-mystery game designer. You are designing the ${count} sealed envelopes that drive the player flow for a ${gameLanguage} murder-mystery game. The output MUST be a single JSON tool call. No prose.
+    const sys = `You are a senior boxed-mystery game designer. You are designing the ${count} sealed TASK envelopes that gate key beats of the player flow for a ${gameLanguage} murder-mystery game. The output MUST be a single JSON tool call. No prose.
+
+GAME-FLOW MODEL (read carefully):
+- All evidence documents in this case are in the box from the very start. The player has access to every document immediately.
+- Envelopes are NOT document containers. Each envelope is a SEALED TASK GATE — the player only opens it when they reach a specific beat in the case.
+- Inside each envelope is a short task, a reveal, or an instruction — NEVER the next batch of evidence to read.
 
 ENVELOPE FLOW RULES (workspace defaults — follow):
 - There are exactly ${count} envelopes in this case, in order: ${labels.map((l, i) => `#${i} "${l}"`).join(", ")}.
-- Envelope #0 ("${labels[0]}") opens the game: mission briefing + first task. Always.
-- Envelopes #1..#${count - 1} each confirm the previous task succeeded and hand off the next task.
-- Tasks are SHORT, BOLD, in ${gameLanguage}, ${isRtl ? "RTL" : "LTR"}. Never spoiler-heavy. Each envelope ends with the closing line: "${playbook.envelopes.closing_line_he}" when it matches the game language (do NOT include this in the task field — the UI appends it automatically).
+- Envelope #0 ("${labels[0]}") is the MISSION BRIEFING — opened first, before anything else. It introduces the case, the player's role, and points the player at Doc 0 (the master inventory of all documents in the box). Its opening trigger is simply "Open first, before reading anything else."
+- The FINAL envelope (#${count - 1}) contains the ACCUSATION FORM / SOLUTION REVEAL — opened only when the player is ready to commit to their answer. Its opening trigger is "Open only when you are ready to name the culprit."
+- Each middle envelope (#1..#${count - 2}) is tied to a specific BEAT in the Logic Flow: a moment where the player has narrowed something down, decoded a specific clue, identified the murder weapon, ruled out a suspect, etc. Reason from the actual logic of THIS case — never from a fixed template.
+- Tasks are SHORT, BOLD, in ${gameLanguage}, ${isRtl ? "RTL" : "LTR"}. Never spoiler-heavy. The closing line "${playbook.envelopes.closing_line_he}" is appended automatically by the UI when the language matches — do NOT include it in the task field.
 
 ${renderEnvelopeDesignTemplate(playbook)}
 
 For each envelope you generate:
 - "label": short ${gameLanguage} name shown on the envelope front. ${isRtl ? "RTL" : "LTR"}, grammatical.
-- "task": short, bold ${gameLanguage} task instruction the player reads when they open it. 1–2 short sentences. Never reveal the solution.
+- "task": short, bold ${gameLanguage} task / instruction / reveal the player reads when they open it at the right moment. 1–2 short sentences. Never reveal the solution. Never tell the player to "go open the next envelope to get more evidence" — the documents are already in the box.
+- "opening_trigger": 1 short sentence in ${gameLanguage} describing the case beat that unlocks this envelope (e.g. "פתחו לאחר שצמצמתם את החשודים לשניים." / "Open after you have narrowed it down to two suspects."). For envelope #0 use "פתחו ראשונה." (or the equivalent in ${gameLanguage}). For the final envelope use a phrase meaning "Open only when ready to name the culprit."
 - "design_instructions": a long structured visual brief for the image generator, customised from the workspace template above. Include the envelope's number, the ${gameLanguage} label verbatim, and at least one detail tied to this case (era, genre, setting). 8–20 lines.`;
 
     const userPrompt = `CASE CONTEXT
@@ -125,10 +138,13 @@ Solution summary: ${project.solution_summary ?? "(not yet written)"}
 SUSPECTS:
 ${(suspects ?? []).map((s, i) => `${i + 1}. ${s.name}${s.is_red_herring ? " (red herring)" : ""} — ${s.role_in_case ?? "—"}`).join("\n") || "(none yet)"}
 
-DOCUMENTS (${docs?.length ?? 0} total — note their envelope_number when assigned):
-${(docs ?? []).slice(0, 30).map((d) => `#${d.doc_number ?? "?"} ${d.title} (${d.doc_type ?? "—"})${d.envelope_number != null ? ` → envelope #${d.envelope_number}` : ""}`).join("\n") || "(none yet)"}
+LOGIC FLOW NODES (use these to choose the case beat each middle envelope is gated on):
+${(logicNodes ?? []).slice(0, 40).map((n) => `- [${n.node_type}] ${n.title}${n.description ? ` — ${String(n.description).slice(0, 120)}` : ""}`).join("\n") || "(none yet)"}
 
-Produce all ${count} envelopes now in numerical order. Reuse the labels above as the starting point for the "label" field but you may refine them.`;
+DOCUMENTS in the box (${docs?.length ?? 0} total — all available to the player from the start; do NOT use these to fill envelopes):
+${(docs ?? []).slice(0, 30).map((d) => `#${d.doc_number ?? "?"} ${d.title} (${d.doc_type ?? "—"})`).join("\n") || "(none yet)"}
+
+Produce all ${count} envelopes now in numerical order. Reuse the labels above as the starting point for the "label" field but you may refine them. Each envelope must have a distinct opening_trigger anchored in this case's logic flow.`;
 
     const tool = {
       type: "function",
