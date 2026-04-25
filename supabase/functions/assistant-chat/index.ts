@@ -1538,12 +1538,17 @@ async function processConversation(
 
   const convo: Array<Record<string, unknown>> = [{ role: "system", content: systemPrompt }, ...messages];
   const executedTools: Array<{ name: string; args?: Record<string, unknown>; result: unknown }> = [];
+  // Per-round reasoning traces collected from supporting models. Empty unless
+  // the project has ai_reasoning_effort != 'none' AND the model supports it.
+  type ReasoningSegment = { type: "thinking" | "summary"; text: string };
+  const reasoningRounds: Array<{ round: number; segments: ReasoningSegment[] }> = [];
+  const reasoningEffort = String((project as { ai_reasoning_effort?: string }).ai_reasoning_effort ?? "medium");
   const TOOLS = buildTools(playbook);
   const MAX_ROUNDS = 8;
   let lastFb: { effectiveModel: string; fallback: string } = { effectiveModel: model, fallback: "none" };
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const isFinalRound = round === MAX_ROUNDS - 1;
-    const body: Record<string, unknown> = { model, messages: convo, stream: false, ...claudeSkillRequestShape(claudeChatSkills) };
+    const body: Record<string, unknown> = { model, messages: convo, stream: false, reasoningEffort, ...claudeSkillRequestShape(claudeChatSkills) };
     if (!isFinalRound) body.tools = TOOLS;
 
     const roundStartedAt = Date.now();
