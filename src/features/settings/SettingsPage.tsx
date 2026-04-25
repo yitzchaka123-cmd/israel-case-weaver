@@ -63,6 +63,7 @@ export function SettingsPage() {
     if (typeof window === "undefined") return LOGIC_FLOW_MODEL_DEFAULT;
     return localStorage.getItem(LOGIC_FLOW_MODEL_KEY) ?? LOGIC_FLOW_MODEL_DEFAULT;
   });
+  const { hidden: hiddenModels } = useHiddenModels();
 
   const { data: profile } = useQuery({
     queryKey: ["profile", user?.id],
