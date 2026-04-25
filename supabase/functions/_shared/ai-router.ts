@@ -121,6 +121,44 @@ export function isGeminiDirectModel(model: string): boolean {
   return typeof model === "string" && model.startsWith("gemini-direct/");
 }
 
+// ---------- Reasoning / thinking ----------
+
+export type ReasoningEffort = "none" | "low" | "medium" | "high";
+export type ReasoningSegment = { type: "thinking" | "summary"; text: string };
+
+/**
+ * Whether the given provider-prefixed model id is known to support
+ * extended-thinking / reasoning. Used both to gate UI affordances and to
+ * decide whether to inject provider-specific reasoning request params.
+ */
+export function modelSupportsThinking(model: string): boolean {
+  if (!model) return false;
+  // Anthropic Claude 4+ family supports interleaved thinking.
+  if (model.startsWith("anthropic/")) {
+    return /claude-(sonnet|opus|haiku)-4/i.test(model);
+  }
+  // OpenAI gpt-5 family supports the reasoning parameter.
+  if (model.startsWith("openai/")) {
+    return /^openai\/gpt-5/i.test(model);
+  }
+  // Gemini 2.5 / 3 (direct or via Lovable Gateway) supports thinking.
+  // Flash-Lite is excluded — it explicitly disables thinking.
+  if (model.startsWith("gemini-direct/") || model.startsWith("google/")) {
+    if (/flash-lite/i.test(model)) return false;
+    return /(gemini-2\.5|gemini-3)/i.test(model);
+  }
+  return false;
+}
+
+function thinkingBudgetForEffort(effort: ReasoningEffort): number {
+  switch (effort) {
+    case "low": return 1024;
+    case "high": return 8192;
+    case "medium":
+    default: return 4096;
+  }
+}
+
 function jsonError(message: string, status = 500): Response {
   return new Response(JSON.stringify({ error: message }), {
     status,
@@ -133,39 +171,109 @@ function jsonError(message: string, status = 500): Response {
 export async function chatCompletions(body: Record<string, unknown>): Promise<Response> {
   const model = String(body.model ?? "");
 
+  // Caller-supplied reasoning effort. Default "medium" when the model supports
+  // thinking and no override is passed; "none" to disable. We strip our custom
+  // `reasoningEffort` field before forwarding to providers.
+  const rawEffort = (body.reasoningEffort as ReasoningEffort | undefined) ?? "medium";
+  const effort: ReasoningEffort = rawEffort;
+  const wantsThinking = effort !== "none" && modelSupportsThinking(model);
+  const downstream: Record<string, unknown> = { ...body };
+  delete downstream.reasoningEffort;
+
   if (isOpenAIModel(model)) {
     if (!OPENAI_API_KEY) return jsonError("OpenAI API key (OpenAi secret) is not configured");
-    const openaiBody = { ...body, model: model.slice("openai/".length) };
-    return await fetch("https://api.openai.com/v1/chat/completions", {
+    const openaiBody: Record<string, unknown> = { ...downstream, model: model.slice("openai/".length) };
+    if (wantsThinking && openaiBody.reasoning === undefined) {
+      openaiBody.reasoning = { effort };
+    }
+    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify(openaiBody),
     });
+    return wantsThinking ? await normalizeOpenAIShape(resp) : resp;
   }
 
   if (isAnthropicModel(model)) {
     if (!ANTHROPIC_API_KEY) return jsonError("Anthropic API key (ANTHROPIC_API_KEY) is not configured");
-    return await callAnthropic(body, model.slice("anthropic/".length));
+    return await callAnthropic(downstream, model.slice("anthropic/".length), wantsThinking ? effort : "none");
   }
 
   if (isGeminiDirectModel(model)) {
     if (!GEMINI_API_KEY) {
-      if (body.disableFallback === true) return jsonError("Google Gemini API key is not configured for strict direct generation", 401);
+      if (downstream.disableFallback === true) return jsonError("Google Gemini API key is not configured for strict direct generation", 401);
       // No Google key: prefer OpenAI direct fallback when available, else Lovable Gateway.
-      return await fallbackFromGemini(body, model, "no-key");
+      return await fallbackFromGemini(downstream, model, "no-key", wantsThinking ? effort : "none");
     }
-    const directResp = await callGeminiDirect(body, model.slice("gemini-direct/".length));
+    const directResp = await callGeminiDirect(downstream, model.slice("gemini-direct/".length), wantsThinking ? effort : "none");
     // On quota / auth / server errors, transparently fall back
     if (!directResp.ok && shouldFallbackStatus(directResp.status)) {
-      if (body.disableFallback === true) return directResp;
+      if (downstream.disableFallback === true) return directResp;
       console.warn(`Gemini direct ${directResp.status} for ${model} — falling back`);
-      return await fallbackFromGemini(body, model, `gemini-${directResp.status}`);
+      return await fallbackFromGemini(downstream, model, `gemini-${directResp.status}`, wantsThinking ? effort : "none");
     }
     return directResp;
   }
 
   // Default: Lovable AI Gateway
-  return await callLovableGateway(body);
+  const gatewayBody: Record<string, unknown> = { ...downstream };
+  if (wantsThinking && gatewayBody.reasoning === undefined) {
+    gatewayBody.reasoning = { effort };
+  }
+  const resp = await callLovableGateway(gatewayBody);
+  return wantsThinking ? await normalizeOpenAIShape(resp) : resp;
+}
+
+// OpenAI / Lovable Gateway already return chat-completions shape. We just
+// normalize any reasoning-bearing fields to a stable `message.reasoning`
+// array of { type, text } so callers don't need to know about provider quirks.
+async function normalizeOpenAIShape(resp: Response): Promise<Response> {
+  if (!resp.ok) return resp;
+  try {
+    const data = await resp.json();
+    const choice = data?.choices?.[0];
+    const msg = choice?.message;
+    if (msg) {
+      const segments = extractReasoningFromMessage(msg);
+      if (segments.length > 0) msg.reasoning = segments;
+    }
+    return new Response(JSON.stringify(data), {
+      status: resp.status,
+      headers: { ...Object.fromEntries(resp.headers), "Content-Type": "application/json" },
+    });
+  } catch (e) {
+    console.warn("normalizeOpenAIShape failed", e);
+    return resp;
+  }
+}
+
+function extractReasoningFromMessage(msg: Record<string, unknown>): ReasoningSegment[] {
+  const out: ReasoningSegment[] = [];
+  // Common chat-completions reasoning shapes seen across providers/gateways.
+  const candidates: Array<{ value: unknown; type: ReasoningSegment["type"] }> = [
+    { value: msg.reasoning_content, type: "thinking" },
+    { value: msg.reasoning, type: "summary" },
+    { value: (msg as { thinking?: unknown }).thinking, type: "thinking" },
+  ];
+  for (const c of candidates) {
+    if (typeof c.value === "string" && c.value.trim()) {
+      out.push({ type: c.type, text: c.value });
+    } else if (Array.isArray(c.value)) {
+      for (const item of c.value) {
+        if (typeof item === "string" && item.trim()) {
+          out.push({ type: c.type, text: item });
+        } else if (item && typeof item === "object") {
+          const t = (item as { text?: string; content?: string; summary?: string }).text
+            ?? (item as { content?: string }).content
+            ?? (item as { summary?: string }).summary;
+          if (typeof t === "string" && t.trim()) out.push({ type: c.type, text: t });
+        }
+      }
+    }
+  }
+  // Don't leak the raw fields back to UI alongside the normalized array.
+  delete (msg as Record<string, unknown>).reasoning_content;
+  return out;
 }
 
 // When a gemini-direct/* call cannot be served, prefer OpenAI direct
@@ -176,21 +284,28 @@ async function fallbackFromGemini(
   body: Record<string, unknown>,
   originalModel: string,
   reason: string,
+  effort: ReasoningEffort,
 ): Promise<Response> {
+  const wantsThinking = effort !== "none";
   if (OPENAI_API_KEY) {
     const fallbackModel = "openai/gpt-5.2";
     console.warn(`Falling back from ${originalModel} → ${fallbackModel} (reason: ${reason})`);
-    const openaiBody = { ...body, model: "gpt-5.2" };
+    const openaiBody: Record<string, unknown> = { ...body, model: "gpt-5.2" };
+    if (wantsThinking && openaiBody.reasoning === undefined) openaiBody.reasoning = { effort };
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify(openaiBody),
     });
-    return withFallbackHeader(resp, "openai-direct");
+    const normalized = wantsThinking ? await normalizeOpenAIShape(resp) : resp;
+    return withFallbackHeader(normalized, "openai-direct");
   }
   console.warn(`Falling back from ${originalModel} → Lovable AI Gateway (reason: ${reason})`);
-  const resp = await callLovableGateway({ ...body, model: toGatewayModel(originalModel) });
-  return withFallbackHeader(resp, "lovable-ai");
+  const gatewayBody: Record<string, unknown> = { ...body, model: toGatewayModel(originalModel) };
+  if (wantsThinking && gatewayBody.reasoning === undefined) gatewayBody.reasoning = { effort };
+  const resp = await callLovableGateway(gatewayBody);
+  const normalized = wantsThinking ? await normalizeOpenAIShape(resp) : resp;
+  return withFallbackHeader(normalized, "lovable-ai");
 }
 
 async function withFallbackHeader(resp: Response, label: string): Promise<Response> {
@@ -236,7 +351,7 @@ interface IncomingMsg {
   name?: string;
 }
 
-async function callAnthropic(body: Record<string, unknown>, model: string): Promise<Response> {
+async function callAnthropic(body: Record<string, unknown>, model: string, effort: ReasoningEffort = "none"): Promise<Response> {
   const messagesIn = (body.messages as IncomingMsg[]) ?? [];
   let systemText = "";
   const messagesOut: Array<Record<string, unknown>> = [];
@@ -276,13 +391,25 @@ async function callAnthropic(body: Record<string, unknown>, model: string): Prom
     });
   }
 
+  const wantsThinking = effort !== "none";
+  const thinkingBudget = thinkingBudgetForEffort(effort);
+  // max_tokens MUST be > thinking budget per Anthropic docs.
+  const desiredMaxTokens = (body.max_tokens as number) ?? 4096;
+  const maxTokens = wantsThinking ? Math.max(desiredMaxTokens, thinkingBudget + 1024) : desiredMaxTokens;
+
   const anthropicBody: Record<string, unknown> = {
     model,
-    max_tokens: (body.max_tokens as number) ?? 4096,
+    max_tokens: maxTokens,
     messages: messagesOut,
   };
   if (systemText) anthropicBody.system = systemText;
-  if (body.temperature !== undefined) anthropicBody.temperature = body.temperature;
+  // Anthropic requires temperature=1 when thinking is enabled.
+  if (wantsThinking) {
+    anthropicBody.temperature = 1;
+    anthropicBody.thinking = { type: "enabled", budget_tokens: thinkingBudget };
+  } else if (body.temperature !== undefined) {
+    anthropicBody.temperature = body.temperature;
+  }
 
   // Translate OpenAI-style tools → Anthropic tools, then append optional
   // Anthropic-native tools/container settings such as code execution + Skills.
@@ -300,13 +427,22 @@ async function callAnthropic(body: Record<string, unknown>, model: string): Prom
   }
   if (body.anthropicContainer) anthropicBody.container = body.anthropicContainer;
 
+  // When thinking is on for Claude 4.x, opt into the interleaved-thinking beta
+  // header so thinking blocks can come between tool_use blocks.
+  const callerBeta = body.anthropicBeta ? String(body.anthropicBeta) : "";
+  const betaParts = callerBeta ? callerBeta.split(",").map((s) => s.trim()).filter(Boolean) : [];
+  if (wantsThinking && !betaParts.includes("interleaved-thinking-2025-05-14")) {
+    betaParts.push("interleaved-thinking-2025-05-14");
+  }
+  const betaHeader = betaParts.join(",");
+
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "x-api-key": ANTHROPIC_API_KEY,
       "anthropic-version": "2023-06-01",
       "Content-Type": "application/json",
-      ...(body.anthropicBeta ? { "anthropic-beta": String(body.anthropicBeta) } : {}),
+      ...(betaHeader ? { "anthropic-beta": betaHeader } : {}),
     },
     body: JSON.stringify(anthropicBody),
   });
@@ -320,8 +456,16 @@ async function callAnthropic(body: Record<string, unknown>, model: string): Prom
   // Translate response → OpenAI chat-completions shape
   let textOut = "";
   const toolCallsOut: Array<{ id: string; type: "function"; function: { name: string; arguments: string } }> = [];
+  const reasoningOut: ReasoningSegment[] = [];
   for (const block of (data.content ?? []) as Array<Record<string, unknown>>) {
     if (block.type === "text") textOut += String(block.text ?? "");
+    if (block.type === "thinking") {
+      const t = String(block.thinking ?? block.text ?? "").trim();
+      if (t) reasoningOut.push({ type: "thinking", text: t });
+    }
+    if (block.type === "redacted_thinking") {
+      reasoningOut.push({ type: "thinking", text: "[Redacted thinking — Claude flagged this internal reasoning as sensitive]" });
+    }
     if (block.type === "tool_use") {
       toolCallsOut.push({
         id: String(block.id),
@@ -330,18 +474,16 @@ async function callAnthropic(body: Record<string, unknown>, model: string): Prom
       });
     }
   }
+  const message: Record<string, unknown> = {
+    role: "assistant",
+    content: textOut,
+    ...(toolCallsOut.length ? { tool_calls: toolCallsOut } : {}),
+    ...(reasoningOut.length ? { reasoning: reasoningOut } : {}),
+  };
   const translated = {
     id: data.id,
     model: `anthropic/${data.model ?? model}`,
-    choices: [{
-      index: 0,
-      message: {
-        role: "assistant",
-        content: textOut,
-        ...(toolCallsOut.length ? { tool_calls: toolCallsOut } : {}),
-      },
-      finish_reason: data.stop_reason ?? "stop",
-    }],
+    choices: [{ index: 0, message, finish_reason: data.stop_reason ?? "stop" }],
     usage: data.usage,
   };
   return new Response(JSON.stringify(translated), {
@@ -350,9 +492,7 @@ async function callAnthropic(body: Record<string, unknown>, model: string): Prom
   });
 }
 
-// ---------- Gemini direct translation ----------
-
-async function callGeminiDirect(body: Record<string, unknown>, model: string): Promise<Response> {
+async function callGeminiDirect(body: Record<string, unknown>, model: string, effort: ReasoningEffort = "none"): Promise<Response> {
   const messagesIn = (body.messages as IncomingMsg[]) ?? [];
   let systemText = "";
   const contents: Array<Record<string, unknown>> = [];
@@ -367,14 +507,20 @@ async function callGeminiDirect(body: Record<string, unknown>, model: string): P
     });
   }
 
-  const geminiBody: Record<string, unknown> = { contents };
-  if (systemText) geminiBody.systemInstruction = { parts: [{ text: systemText }] };
-  if (body.temperature !== undefined || body.max_tokens !== undefined) {
-    geminiBody.generationConfig = {
-      ...(body.temperature !== undefined ? { temperature: body.temperature } : {}),
-      ...(body.max_tokens !== undefined ? { maxOutputTokens: body.max_tokens } : {}),
+  const wantsThinking = effort !== "none";
+  const generationConfig: Record<string, unknown> = {};
+  if (body.temperature !== undefined) generationConfig.temperature = body.temperature;
+  if (body.max_tokens !== undefined) generationConfig.maxOutputTokens = body.max_tokens;
+  if (wantsThinking) {
+    generationConfig.thinkingConfig = {
+      includeThoughts: true,
+      thinkingBudget: thinkingBudgetForEffort(effort),
     };
   }
+
+  const geminiBody: Record<string, unknown> = { contents };
+  if (systemText) geminiBody.systemInstruction = { parts: [{ text: systemText }] };
+  if (Object.keys(generationConfig).length > 0) geminiBody.generationConfig = generationConfig;
   // Note: Gemini direct tool-calling has a different shape; we deliberately
   // skip translating tools here because our tool-using flows (assistant-chat)
   // use OpenAI/Anthropic/Lovable-gateway. Pick those for tool work.
@@ -388,15 +534,27 @@ async function callGeminiDirect(body: Record<string, unknown>, model: string): P
   if (!resp.ok) return resp;
 
   const data = await resp.json();
-  const text = (data.candidates?.[0]?.content?.parts ?? [])
-    .map((p: { text?: string }) => p.text ?? "")
-    .join("");
+  const parts = (data.candidates?.[0]?.content?.parts ?? []) as Array<{ text?: string; thought?: boolean }>;
+  let text = "";
+  const reasoningOut: ReasoningSegment[] = [];
+  for (const p of parts) {
+    if (typeof p.text !== "string") continue;
+    if (p.thought) {
+      const t = p.text.trim();
+      if (t) reasoningOut.push({ type: "thinking", text: t });
+    } else {
+      text += p.text;
+    }
+  }
+
+  const message: Record<string, unknown> = { role: "assistant", content: text };
+  if (reasoningOut.length) message.reasoning = reasoningOut;
 
   const translated = {
     model: `gemini-direct/${model}`,
     choices: [{
       index: 0,
-      message: { role: "assistant", content: text },
+      message,
       finish_reason: data.candidates?.[0]?.finishReason ?? "stop",
     }],
     usage: data.usageMetadata,

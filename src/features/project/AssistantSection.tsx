@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
-import { Sparkles, Send, Loader2, Bot, User, Wand2, CheckCircle2, Cpu, Image as ImageIcon, FileText, Settings2, Video, ChevronRight, ExternalLink, AlertCircle, Mic, MicOff, Sliders, Pencil, X, Check, Copy } from "lucide-react";
+import { Sparkles, Send, Loader2, Bot, User, Wand2, CheckCircle2, Cpu, Image as ImageIcon, FileText, Settings2, Video, ChevronRight, ExternalLink, AlertCircle, Mic, MicOff, Sliders, Pencil, X, Check, Copy, Brain } from "lucide-react";
 import { toast } from "sonner";
 import { useVoiceInput } from "@/hooks/use-voice-input";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
@@ -66,11 +66,14 @@ type ToolCall = {
 
 type QuickOption = { label: string; send: string };
 
+type ReasoningSegment = { type: "thinking" | "summary"; text: string };
+type ReasoningRound = { round: number; segments: ReasoningSegment[] };
+
 type Msg = {
   id: string;
   role: "user" | "assistant";
   content: string;
-  metadata?: { tools?: ToolCall[]; options?: QuickOption[]; question?: string | null; model?: string | null; effective_model?: string | null; fallback?: string | null; in_progress?: boolean | null } | null;
+  metadata?: { tools?: ToolCall[]; options?: QuickOption[]; question?: string | null; model?: string | null; effective_model?: string | null; fallback?: string | null; in_progress?: boolean | null; reasoning?: ReasoningRound[] | null } | null;
   created_at?: string;
 };
 
@@ -747,6 +750,9 @@ function MessageBubble({
                 ))}
               </div>
             </div>
+          )}
+          {!editing && (msg.metadata?.reasoning?.length ?? 0) > 0 && (
+            <ThinkingDisclosure reasoning={msg.metadata!.reasoning!} />
           )}
           {!editing && tools.length > 0 && <ToolReceipts tools={tools} onOpenAsset={onOpenAsset} />}
           {!editing && tools.length > 0 && <GeneratedAssetsStrip tools={tools} onOpenAsset={onOpenAsset} />}

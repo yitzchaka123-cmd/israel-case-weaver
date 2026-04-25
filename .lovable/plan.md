@@ -1,214 +1,66 @@
-Here’s how I’d make the assistant help with settings, while keeping the Settings screen clean.
+## Goal
+Surface the model's internal reasoning ("thinking") inside each assistant message — collapsed by default, expandable like a "Show thinking" disclosure (similar to ChatGPT/Claude.ai). Only enabled for models that actually support it.
 
-## Direct answers to your examples
+## Which models support it
+- **Anthropic** (`anthropic/claude-sonnet-4-5`, `claude-opus-4-5`, `claude-haiku-4-5`): `thinking: { type: "enabled", budget_tokens }` → returns `thinking` content blocks alongside text. Real, full thought stream.
+- **OpenAI gpt-5 family** (`openai/gpt-5`, `gpt-5-mini`, `gpt-5.2`, `gpt-5.4`): supports `reasoning: { effort }`. The chat-completions API returns reasoning *summaries* (not raw chain-of-thought) in `choices[0].message.reasoning` / `reasoning_content` depending on endpoint. We capture whatever the API returns.
+- **Gemini 2.5 / 3 (direct + gateway)**: `thinkingConfig: { includeThoughts: true, thinkingBudget }` on direct API → returns parts with `thought: true`. Via Lovable Gateway, pass `reasoning: { effort }` (per Lovable AI docs).
+- **Other models** (flash-lite, image models): no-op, badge hidden.
 
-### 1. “I don’t like the way this document was generated. Remember this going forward.”
-Yes — the assistant should be able to turn that into a saved rule automatically.
+## Backend changes
 
-Example:
-- You: “This document is too thin. Going forward, legal documents need more body text, more realistic stamps, and less generic wording.”
-- Assistant should:
-  1. Understand this is not just a one-time edit.
-  2. Ask a short confirmation if it’s broad: “Should I save that as a future document rule?”
-  3. Save it into Assistant rules/settings if you say yes.
-  4. Use it in future document writing and generation prompts.
+### 1. `supabase/functions/_shared/ai-router.ts`
+- Add a `modelSupportsThinking(model)` helper.
+- In `chatCompletions()`, before dispatch:
+  - If caller passed `thinking: true` (or it's on by default for supported models) and the model supports it, inject the right provider-specific payload:
+    - **Anthropic**: add `body.thinking = { type: "enabled", budget_tokens: 4000 }` and pass `anthropic-beta: interleaved-thinking-2025-05-14` header (claude 4.x). In `callAnthropic()`, when translating the response, collect `thinking` content blocks and attach a `reasoning` field to the translated OpenAI-shape message: `{ choices: [{ message: { role, content, reasoning: [{ type: "thinking", text }, …], tool_calls } }] }`.
+    - **OpenAI (gpt-5)**: pass through `reasoning: { effort: "medium" }` (already supported by the gateway/API). After the response, if `choices[0].message.reasoning_content` or `reasoning` is present, normalize it under `message.reasoning`.
+    - **Gemini direct**: in `callGeminiDirect()`, add `generationConfig.thinkingConfig = { includeThoughts: true, thinkingBudget: 4096 }`. When parsing `candidates[0].content.parts`, separate `parts` where `p.thought === true` into a `reasoning` array; the rest becomes `content`. Attach `message.reasoning` in the translated OpenAI-shape response.
+    - **Lovable Gateway**: pass `reasoning: { effort: "medium" }` through unchanged. The gateway currently surfaces reasoning via `choices[0].message.reasoning` for supporting models — capture whatever shape comes back, normalize to a string array.
+- Normalized output shape on `message.reasoning`: `Array<{ type: "thinking" | "summary"; text: string }>` so the UI has one schema regardless of provider.
 
-If the user says something explicit like “remember this”, “always”, “going forward”, “don’t do this again”, it can save the rule immediately and tell you what it saved.
+### 2. `supabase/functions/assistant-chat/index.ts`
+- After each `chatCompletions()` round, read `msg.reasoning` (the normalized array) and accumulate it across rounds in a `reasoningSegments: Array<{ round: number; segments: ReasoningSegment[] }>`.
+- When writing the final `chat_messages.metadata` (lines 1626–1632 and 1960–1970 in the file), include `reasoning: reasoningSegments` only when non-empty.
+- Also include in the partial/error update at line 1581 and 1884 so reasoning is preserved even when a turn aborts.
 
-### 2. “Change the theme of the app to dark.”
-Yes — the assistant should be able to change simple personal settings from chat.
+### 3. Effort level
+- Add a per-project setting `ai_reasoning_effort` (column on `projects`, enum `none | low | medium | high`, default `medium`) so users can tune cost vs depth. Migration adds the column.
+- Default to `medium` when the column is null. `none` skips injecting any reasoning params (saves tokens for simple turns).
 
-Example:
-- You: “Change the theme to dark.”
-- Assistant should call a settings tool, persist the theme to your profile, and the UI should switch to dark without you going into Settings.
+## Frontend changes
 
-### 3. “I don’t want to add anything to settings like crazy.”
-Agreed. I would not add lots of new settings pages or forms. The main change should be that the assistant gets a few safe settings tools, and the existing Assistant rules area becomes the place where saved preferences are visible/editable.
+### 4. `src/features/project/AssistantSection.tsx`
+- Extend the `metadata` type on `ChatMessage` (line 73) to include `reasoning?: Array<{ round: number; segments: Array<{ type: "thinking" | "summary"; text: string }> }>`.
+- Add a new `<ThinkingDisclosure reasoning={...} />` component rendered above the message bubble (between the header row and the bubble), only when `reasoning?.length > 0` and not editing. 
+  - Collapsed state: chip-style button "🧠 Thought for {N} round(s) · {totalChars} chars · Show thinking" with subtle muted styling.
+  - Expanded state: monospace, slightly dimmed, indented block grouping each round's segments. Pre-wrap, scrollable if very long.
+  - Use the existing `Brain` icon from lucide-react.
+- Persist expanded state in component memory only (not URL); collapsed by default.
+- During in-flight turns (`in_progress: true`), if any partial reasoning is visible (won't be for v1 since we only persist at end), show a "Thinking…" pulsing indicator — but for v1, the existing typing indicator covers this. Skip live streaming for now.
 
-## What I’d build
+### 5. Settings panel — `src/features/settings/AssistantTweaksPanel.tsx`
+- Add a small "Reasoning depth" radio group: Off / Low / Medium / High, wired to `projects.ai_reasoning_effort`. Show only when the project's currently selected planning model supports thinking; otherwise show a muted "Current model doesn't support reasoning."
 
-### A. Give the project assistant a “settings brain”
-Right now the main assistant can update case/project data, create documents, create canvas nodes, etc. It already reads `assistant_tweaks`, but it cannot write those rules from the main chat.
-
-I’d add assistant tools for:
-
-1. `save_assistant_rule`
-   - Saves a future behavior rule, like:
-     - “Generated documents must include more body text and fewer generic labels.”
-     - “Interrogations should include longer realistic dialogue and pauses.”
-     - “Avoid overly clean graphic design unless the document is official.”
-
-2. `remove_assistant_rule` / `update_assistant_rule`
-   - Lets you say:
-     - “Forget the rule about short documents.”
-     - “Change that rule to only apply to police reports.”
-
-3. `update_user_settings`
-   - Handles safe user-level settings:
-     - theme: light/dark
-     - display background
-     - default planning/document/image/prompt-writer model preferences
-     - image prompt assistant instructions
-
-4. Possibly `update_project_settings`
-   - For current-case settings already stored on the project:
-     - image style instructions
-     - video prompt instructions
-     - document generation mode
-     - envelope/hint settings
-
-### B. Make the assistant recognize “feedback that should become memory”
-I’d update the assistant instructions so it classifies feedback like this:
-
-```text
-User says: “Make this one document longer.”
-→ One-time edit: update the current document only.
-
-User says: “Documents like this need to be longer.”
-→ Ask whether to save as a rule.
-
-User says: “Going forward, all documents need more content.”
-→ Save as an assistant rule immediately, then confirm.
+## Database migration
+```sql
+alter table public.projects
+  add column if not exists ai_reasoning_effort text default 'medium'
+    check (ai_reasoning_effort in ('none','low','medium','high'));
 ```
 
-This matters because not every complaint should become a permanent setting. If you hate one specific result, the assistant should fix that result. If you say “always / going forward / remember”, it should store the preference.
+## Out of scope (intentionally)
+- Live streaming of reasoning tokens as they arrive. v1 captures the full reasoning at end-of-turn and shows it then.
+- Showing reasoning in the AI Run Log settings page (we can wire it in later if useful).
+- Encrypted/redacted reasoning blocks from Anthropic — we store the raw text returned. If Anthropic returns redacted blocks, we render "[Redacted thinking]".
+- No change to the gpt-5 cost path: `reasoning.effort` already affects billing; the per-project setting lets the user pick.
 
-### C. Show saved rule receipts in chat
-When the assistant saves something, it should not silently change settings. It should say something like:
+## Files touched
+- `supabase/functions/_shared/ai-router.ts` (provider-specific reasoning injection + response normalization)
+- `supabase/functions/assistant-chat/index.ts` (capture + persist `metadata.reasoning`)
+- `src/features/project/AssistantSection.tsx` (new `<ThinkingDisclosure>` component, type extension)
+- `src/features/settings/AssistantTweaksPanel.tsx` (effort selector)
+- New migration adding `projects.ai_reasoning_effort`
 
-```text
-Saved as a future assistant rule:
-“Documents must include fuller body text, specific case details, and realistic formatting notes before generation.”
-
-I’ll apply this to future documents.
-```
-
-That makes the assistant feel smarter without hiding state from you.
-
-### D. Keep Settings simple
-I would not create a new giant “Assistant controls everything” settings page.
-
-I’d reuse the existing Settings → Assistant rules panel, but improve it slightly:
-- Show rules saved from chat.
-- Label them as “Saved from assistant chat” when relevant.
-- Keep edit/delete controls.
-- Maybe add small examples like:
-  - “Always make police reports longer and more procedural.”
-  - “Avoid generic evidence documents.”
-  - “Use darker, more worn visual design for printed props.”
-
-### E. Make app theme changes actually sync
-The current theme system uses local storage and the Settings page also saves `theme` to the profile. I’d tighten that up so when the assistant changes theme:
-- it updates the profile,
-- the current browser applies the theme immediately,
-- Settings reflects the new value.
-
-For chat-triggered updates, I’d add a lightweight app event/query invalidation so the UI changes right away after the assistant tool succeeds.
-
-## Important behavior rules
-
-The assistant should be allowed to change settings, but with guardrails:
-
-1. Safe direct changes can happen immediately:
-   - “Set dark mode.”
-   - “Use ChatGPT Image 2 for images.”
-   - “Set document mode to drafts only.”
-
-2. Broad creative rules should be saved when explicit:
-   - “Always make documents longer.”
-   - “Going forward, avoid generic content.”
-   - “Remember that I prefer realistic messy paperwork.”
-
-3. Ambiguous feedback should ask once:
-   - “This document is bad” should trigger:
-     - “Do you want me to revise only this document, or save a future rule too?”
-
-4. The assistant should never silently change sensitive/admin settings.
-   - API keys, team access, invite codes, and permissions should stay manual/admin-only.
-
-## Technical implementation plan
-
-### 1. Extend `assistant-chat` tools
-Edit `supabase/functions/assistant-chat/index.ts`:
-- Add tool definitions:
-  - `save_assistant_rule`
-  - `update_assistant_rule`
-  - `remove_assistant_rule`
-  - `update_user_settings`
-- Add execution handlers that update the owner profile safely.
-- Add prompt instructions that teach the assistant when to save a rule vs when to ask first.
-
-### 2. Reuse the existing assistant rules storage
-Use the existing `profiles.assistant_tweaks` JSON list for saved assistant behavior rules.
-No new table is required unless we want richer audit history later.
-
-I would store rules in the same shape as the existing tweaks panel already expects:
-
-```ts
-{ id, text, created_at }
-```
-
-Optionally add metadata later, but avoid breaking the existing UI.
-
-### 3. Add user settings updates
-For `update_user_settings`, update safe fields on `profiles`:
-- `theme`
-- `ui_background`
-- `ai_provider_planning`
-- `ai_provider_documents`
-- `ai_provider_images`
-- `ai_provider_prompt_writer`
-- `image_prompt_assistant_instructions`
-
-Do not allow this tool to touch admin/team/API-key settings.
-
-### 4. Make theme/profile sync better
-Update `src/lib/theme.tsx` and/or shell/profile query behavior so profile theme changes can be applied immediately after the assistant updates them.
-
-Likely approach:
-- keep local storage for fast startup,
-- also listen for a browser event like `mystudio:settings-updated`,
-- refetch profile settings after assistant tool receipts,
-- apply theme when profile theme changes.
-
-### 5. Surface setting changes in chat UI
-Update `src/features/project/AssistantSection.tsx` so tool receipts for saved rules/settings look clear and useful.
-
-Examples:
-- “Rule saved”
-- “Theme changed to dark”
-- “Image model preference updated”
-
-Also invalidate relevant queries after assistant runs so Settings/AppShell refresh.
-
-### 6. Improve Settings → Assistant rules lightly
-Update `AssistantTweaksPanel` only if needed:
-- make the empty state explain that rules can now be saved from normal assistant chat,
-- maybe show examples,
-- keep the UI simple.
-
-## Resulting experience
-
-You’d be able to stay in the assistant and say things like:
-
-```text
-This invoice document is too short and generic. Going forward, every official document needs at least 2x more body text, realistic bureaucratic details, and clearer case-specific clues.
-```
-
-The assistant would save that as a future rule and apply it next time.
-
-Or:
-
-```text
-Change the app to dark mode.
-```
-
-The assistant would switch the app theme and confirm.
-
-Or:
-
-```text
-Don’t remember this forever, just rewrite this document with more content.
-```
-
-The assistant would only update that document, without saving a global rule.
+## Acceptance check
+After this lands, switching the project's planning model to Claude Sonnet 4.5, GPT-5, or Gemini 2.5/3 Pro and sending a non-trivial turn shows a "🧠 Thought for X · Show thinking" chip on the assistant reply. Clicking it reveals the model's reasoning. Switching to Gemini Flash Lite hides the chip.
