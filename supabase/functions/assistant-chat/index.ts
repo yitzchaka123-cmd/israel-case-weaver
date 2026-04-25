@@ -523,29 +523,45 @@ const BASE_TOOLS = [
   {
     type: "function",
     function: {
-      name: "create_final_documents_map",
-      description: "Create/replace the Final board production map with the approved logic nodes, envelopes, suspects, planned document nodes, and connecting lines. If documents are omitted, the app derives the full map from the approved logic flow and existing case data. This does NOT create document rows or assets.",
+      name: "propose_document_set",
+      description:
+        "Phase 4 PLANNING GATE — call this AFTER Logic Flow approval and BEFORE create_final_documents_map. You reason through the entire approved Logic Flow and propose the exact list of game documents needed (no templates, no padding). Each entry: a player-facing title, a format-style hint (doc_type — interrogation transcript, autopsy report, letter, photograph, receipt, etc.), the planned envelope, and the SPECIFIC clue/purpose this document delivers, plus which Logic Flow node ids it supports. Doc 0 is added automatically by the playbook — DO NOT include it. After calling this tool, present the list in prose and ask the user to Approve, Just-build-it, or Revise (use propose_options).",
       parameters: {
         type: "object",
         properties: {
-          replace: { type: "boolean", description: "Default true. Replace existing unlinked Final-board document nodes." },
           documents: {
             type: "array",
             minItems: 1,
             items: {
               type: "object",
               properties: {
-                doc_number: { type: "number" },
+                doc_number: { type: "number", description: "Optional. Leave blank to auto-number from 1 upward." },
                 title: { type: "string" },
-                doc_type: { type: "string" },
-                print_size: { type: "string" },
+                doc_type: { type: "string", description: "Format / visual style hint only (NOT a content template)." },
+                print_size: { type: "string", description: "e.g. A4, A5, photo, ticket-stub, etc." },
                 envelope_number: { type: "number" },
-                purpose: { type: "string" },
+                purpose: { type: "string", description: "The specific clue / role this document delivers in THIS case. Reason from the Logic Flow — not generic." },
+                linked_logic_node_ids: { type: "array", items: { type: "string" }, description: "Canvas Logic Flow node ids this document supports." },
               },
               required: ["title", "purpose"],
               additionalProperties: false,
             },
           },
+        },
+        required: ["documents"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "create_final_documents_map",
+      description: "Build the Final board production map from the approved proposed_document_set (preferred) — falls back to logic-flow padding only when no proposal exists. Call this AFTER propose_document_set has been approved by the user (or after the user clicked 'Just build it' to bypass review).",
+      parameters: {
+        type: "object",
+        properties: {
+          replace: { type: "boolean", description: "Default true. Replace existing unlinked Final-board document nodes." },
         },
         required: [],
         additionalProperties: false,
