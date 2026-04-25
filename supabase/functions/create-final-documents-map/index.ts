@@ -138,13 +138,9 @@ Deno.serve(async (req) => {
       existingDocs.filter((doc) => doc.doc_number !== 0).forEach((doc) => planned.push({ docNumber: doc.doc_number ?? 100 + planned.length, title: doc.title, docType: doc.doc_type || "document", printSize: doc.print_size || "A4", envelopeNumber: doc.envelope_number ?? null, purpose: "Existing document row already created for this case.", sourceDocumentId: doc.id, generationStatus: statusFor(doc) }));
 
       const targetCount = Math.max(planned.length, Math.min(100, n(project.target_doc_count, 40)));
-      const envs = (envelopes ?? []) as EnvelopeRow[];
       let nextNumber = Math.max(100, ...planned.map((d) => d.docNumber + 1));
-      for (const env of envs) {
-        if (planned.length >= targetCount) break;
-        const source = logic.find((node) => node.node_type === "envelope" && Number(node.data?.envelopeNumber) === env.number);
-        planned.push({ docNumber: nextNumber++, title: env.label || `Envelope ${env.number} evidence packet`, docType: "envelope evidence packet", printSize: "A4", envelopeNumber: env.number, purpose: env.task || `Evidence planned for envelope ${env.number}.`, sourceLogicNodeIds: source ? [source.id] : undefined, linkedLogicTitles: source ? [source.title] : [], generationStatus: "ungenerated" });
-      }
+      // NEW MODEL: documents are NOT distributed by envelope. Plan documents
+      // from logic / suspect / clue / red_herring nodes — never from envelopes.
       for (const node of logic) {
         if (planned.length >= targetCount) break;
         if (["solution", "envelope"].includes(node.node_type)) continue;
