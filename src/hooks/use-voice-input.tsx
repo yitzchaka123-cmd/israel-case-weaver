@@ -84,14 +84,21 @@ export function useVoiceInput(opts: UseVoiceInputOptions = {}) {
       onError?.(msg);
     };
     rec.onresult = (e) => {
+      // Rebuild transcript from scratch each event by walking ALL results.
+      // Web Speech's `e.results` is cumulative for the session; `resultIndex`
+      // marks the first changed entry but some browsers (Chrome/Safari) re-emit
+      // earlier finals, which caused duplicated/tripled text when we appended
+      // to a running ref. Recomputing from index 0 is idempotent and correct.
+      let finalText = "";
       let interim = "";
-      for (let i = e.resultIndex; i < e.results.length; i++) {
+      for (let i = 0; i < e.results.length; i++) {
         const r = e.results[i];
         const t = r[0].transcript;
-        if (r.isFinal) finalRef.current += t;
+        if (r.isFinal) finalText += t;
         else interim += t;
       }
-      const combined = (finalRef.current + interim).trim();
+      finalRef.current = finalText;
+      const combined = (finalText + interim).trim();
       onTranscript?.(combined, false);
     };
 
