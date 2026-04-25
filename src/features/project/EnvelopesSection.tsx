@@ -41,6 +41,7 @@ import {
   ImagePlus,
   FileText,
   ChevronDown,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
@@ -495,6 +496,28 @@ function EnvelopeCard({
               ))}
             </SelectContent>
           </Select>
+          {env && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!confirm(`Reset envelope #${slot.n} (${slot.label})? This clears its label, task, design, cover image, and links. The slot itself stays.`)) return;
+                    const { error } = await supabase.from("envelopes").delete().eq("id", env.id);
+                    if (error) { toast.error(error.message); return; }
+                    // Unlink any documents that pointed to this envelope number.
+                    await supabase.from("documents").update({ envelope_number: null }).eq("envelope_number", slot.n).eq("project_id", projectId);
+                    toast.success(`Envelope #${slot.n} reset`);
+                  }}
+                  className="p-2 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                  aria-label="Reset envelope"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Reset / clear this envelope</TooltipContent>
+            </Tooltip>
+          )}
         </div>
       </div>
 

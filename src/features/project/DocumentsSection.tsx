@@ -164,6 +164,7 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
                 <th className="text-left px-4 py-3 hidden md:table-cell">Type</th>
                 <th className="text-left px-4 py-3 hidden lg:table-cell">Size</th>
                 <th className="text-left px-4 py-3">Status</th>
+                <th className="px-4 py-3 w-12"></th>
               </tr>
             </thead>
             <tbody>
@@ -171,7 +172,7 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
                 <tr
                   key={d.id}
                   onClick={() => setSelected(d.id)}
-                  className="border-t cursor-pointer hover:bg-muted/40 transition-colors"
+                  className="border-t cursor-pointer hover:bg-muted/40 transition-colors group"
                 >
                   <td className="px-4 py-3 font-mono text-xs">{d.doc_number ?? "—"}</td>
                   <td className="px-4 py-3 font-medium">
@@ -190,6 +191,22 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
                     }`}>
                       {d.status}
                     </span>
+                  </td>
+                  <td className="px-2 py-3">
+                    <button
+                      type="button"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (!confirm(`Delete "${d.title}"? This cannot be undone.`)) return;
+                        const { error } = await supabase.from("documents").delete().eq("id", d.id);
+                        if (error) toast.error(error.message);
+                        else { toast.success("Document deleted"); refetch(); }
+                      }}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-destructive/10 text-muted-foreground hover:text-destructive"
+                      aria-label="Delete document"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   </td>
                 </tr>
               ))}
