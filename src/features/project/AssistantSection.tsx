@@ -157,6 +157,9 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
 
   const planningModel = project?.ai_provider_planning ?? "lovable";
   const imageModel = project?.ai_provider_images ?? "nano-banana-2";
+  const { hidden: hiddenModels } = useHiddenModels();
+  const visiblePlanningModels = filterModelOptions(PLANNING_MODELS, hiddenModels, planningModel);
+  const visibleImageModels = filterModelOptions(IMAGE_MODELS, hiddenModels, imageModel);
 
   const setProjectAi = async (patch: {
     ai_provider_planning?: string;
