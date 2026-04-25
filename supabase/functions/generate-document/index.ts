@@ -152,6 +152,84 @@ async function loadDoc0InventoryContext(supa: any, projectId: string) {
   };
 }
 
+// Build a rich, case-specific context for non-Doc-0 documents. The model must
+// reason the document content from the case (Logic Flow, suspects, the
+// document's planned purpose) — NOT from generic templates keyed off doc_type.
+async function loadPlannedDocContext(supa: any, projectId: string, documentId: string) {
+  const [{ data: project }, { data: logicNodes }, { data: logicEdges }, { data: suspects }, { data: envelopes }, { data: finalDocNodes }] = await Promise.all([
+    supa.from("projects").select("title, subtitle, mystery_type, genre, year, difficulty, player_role, case_goal, setting, selling_point, solution_summary").eq("id", projectId).single(),
+    supa.from("canvas_nodes").select("id, title, node_type, description, data").eq("project_id", projectId).eq("board", "logic").order("created_at", { ascending: true }),
+    supa.from("canvas_edges").select("source_id, target_id, label").eq("project_id", projectId).eq("board", "logic"),
+    supa.from("suspects").select("name, role_in_case, motives, secrets, summary, is_red_herring").eq("project_id", projectId).order("position", { ascending: true }),
+    supa.from("envelopes").select("number, label, task").eq("project_id", projectId).order("number", { ascending: true }),
+    supa.from("canvas_nodes").select("id, title, description, data").eq("project_id", projectId).eq("board", "final").eq("node_type", "document"),
+  ]);
+
+  const finalNode = (finalDocNodes ?? []).find((n: any) => n.data?.documentId === documentId) ?? null;
+  const linkedLogicIds: string[] = Array.isArray(finalNode?.data?.sourceLogicNodeIds) ? finalNode.data.sourceLogicNodeIds : [];
+  const linkedTitles: string[] = Array.isArray(finalNode?.data?.linkedLogicTitles) ? finalNode.data.linkedLogicTitles : [];
+  const purpose: string = String(finalNode?.data?.purpose ?? "");
+
+  const logicById = new Map((logicNodes ?? []).map((n: any) => [n.id, n]));
+  const linkedNodes = linkedLogicIds.map((id) => logicById.get(id)).filter(Boolean) as any[];
+
+  const lines: string[] = [];
+  lines.push(`CASE BRIEF`);
+  lines.push(`- Title: ${project?.title ?? ""}${project?.subtitle ? ` — ${project.subtitle}` : ""}`);
+  if (project?.mystery_type || project?.genre) lines.push(`- Mystery type / genre: ${[project?.mystery_type, project?.genre].filter(Boolean).join(" / ")}`);
+  if (project?.year) lines.push(`- Year / setting: ${project?.year}${project?.setting ? ` — ${project.setting}` : ""}`);
+  if (project?.player_role) lines.push(`- Player role: ${project.player_role}`);
+  if (project?.case_goal) lines.push(`- Case goal: ${project.case_goal}`);
+  if (project?.selling_point) lines.push(`- Selling point: ${project.selling_point}`);
+  lines.push(``);
+
+  if (project?.solution_summary) {
+    lines.push(`APPROVED SOLUTION SUMMARY (authoritative — never contradict, never spoil in player-facing text):`);
+    lines.push(project.solution_summary);
+    lines.push(``);
+  }
+
+  if ((suspects ?? []).length > 0) {
+    lines.push(`SUSPECTS / CAST:`);
+    (suspects ?? []).forEach((s: any) => {
+      lines.push(`- ${s.name}${s.role_in_case ? ` — ${s.role_in_case}` : ""}${s.is_red_herring ? " [RED HERRING]" : ""}${s.motives ? ` | motives: ${s.motives}` : ""}${s.secrets ? ` | secrets: ${s.secrets}` : ""}`);
+    });
+    lines.push(``);
+  }
+
+  if ((envelopes ?? []).length > 0) {
+    lines.push(`ENVELOPES (delivery containers):`);
+    (envelopes ?? []).forEach((e: any) => lines.push(`- Envelope ${e.number}: ${e.label ?? ""}${e.task ? ` — ${e.task}` : ""}`));
+    lines.push(``);
+  }
+
+  if ((logicNodes ?? []).length > 0) {
+    lines.push(`APPROVED LOGIC FLOW NODES (clues → deductions → solution; this is the puzzle chain you must serve):`);
+    (logicNodes ?? []).forEach((n: any) => lines.push(`- [${n.node_type}] ${n.title}${n.description ? ` — ${n.description.slice(0, 240)}` : ""}`));
+    lines.push(``);
+  }
+
+  if ((logicEdges ?? []).length > 0) {
+    const titleOf = (id: string) => (logicById.get(id) as any)?.title ?? "?";
+    lines.push(`LOGIC FLOW CONNECTIONS:`);
+    (logicEdges ?? []).slice(0, 60).forEach((e: any) => lines.push(`- ${titleOf(e.source_id)} → ${titleOf(e.target_id)}${e.label ? ` (${e.label})` : ""}`));
+    lines.push(``);
+  }
+
+  if (linkedNodes.length > 0 || linkedTitles.length > 0 || purpose) {
+    lines.push(`THIS DOCUMENT'S ROLE IN THE CASE (from the Final Flow plan — the assistant reasoned this when planning the document set):`);
+    if (purpose) lines.push(`- Purpose / clue this document delivers: ${purpose}`);
+    const titles = linkedNodes.length > 0 ? linkedNodes.map((n) => n.title) : linkedTitles;
+    if (titles.length > 0) lines.push(`- Logic Flow nodes this document supports: ${titles.join("; ")}`);
+    linkedNodes.forEach((n) => {
+      if (n.description) lines.push(`  • [${n.node_type}] ${n.title}: ${String(n.description).slice(0, 280)}`);
+    });
+    lines.push(``);
+  }
+
+  return { text: lines.join("\n"), purpose, hasContext: lines.length > 1 };
+}
+
 async function recordDocumentAttempt(supa: any, opts: {
   projectId: string;
   documentId: string;
