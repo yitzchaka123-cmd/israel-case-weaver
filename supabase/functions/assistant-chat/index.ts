@@ -21,8 +21,11 @@ import {
   renderLanguagesBlock,
   renderUniversalDocumentsBlock,
   renderPhaseEnumComment,
+  renderPlanningDepthBlock,
+  normalizePlanningDepth,
   getPhaseEnum,
   type Playbook,
+  type PlanningDepth,
 } from "../_shared/assistant-playbook.ts";
 import { claudeSkillRequestShape, loadClaudeSkillsForSurface, renderClaudeSkillCatalog, type ClaudeSkillRow } from "../_shared/claude-skills.ts";
 
