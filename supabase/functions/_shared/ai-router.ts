@@ -171,39 +171,109 @@ function jsonError(message: string, status = 500): Response {
 export async function chatCompletions(body: Record<string, unknown>): Promise<Response> {
   const model = String(body.model ?? "");
 
+  // Caller-supplied reasoning effort. Default "medium" when the model supports
+  // thinking and no override is passed; "none" to disable. We strip our custom
+  // `reasoningEffort` field before forwarding to providers.
+  const rawEffort = (body.reasoningEffort as ReasoningEffort | undefined) ?? "medium";
+  const effort: ReasoningEffort = rawEffort;
+  const wantsThinking = effort !== "none" && modelSupportsThinking(model);
+  const downstream: Record<string, unknown> = { ...body };
+  delete downstream.reasoningEffort;
+
   if (isOpenAIModel(model)) {
     if (!OPENAI_API_KEY) return jsonError("OpenAI API key (OpenAi secret) is not configured");
-    const openaiBody = { ...body, model: model.slice("openai/".length) };
-    return await fetch("https://api.openai.com/v1/chat/completions", {
+    const openaiBody: Record<string, unknown> = { ...downstream, model: model.slice("openai/".length) };
+    if (wantsThinking && openaiBody.reasoning === undefined) {
+      openaiBody.reasoning = { effort };
+    }
+    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify(openaiBody),
     });
+    return wantsThinking ? await normalizeOpenAIShape(resp) : resp;
   }
 
   if (isAnthropicModel(model)) {
     if (!ANTHROPIC_API_KEY) return jsonError("Anthropic API key (ANTHROPIC_API_KEY) is not configured");
-    return await callAnthropic(body, model.slice("anthropic/".length));
+    return await callAnthropic(downstream, model.slice("anthropic/".length), wantsThinking ? effort : "none");
   }
 
   if (isGeminiDirectModel(model)) {
     if (!GEMINI_API_KEY) {
-      if (body.disableFallback === true) return jsonError("Google Gemini API key is not configured for strict direct generation", 401);
+      if (downstream.disableFallback === true) return jsonError("Google Gemini API key is not configured for strict direct generation", 401);
       // No Google key: prefer OpenAI direct fallback when available, else Lovable Gateway.
-      return await fallbackFromGemini(body, model, "no-key");
+      return await fallbackFromGemini(downstream, model, "no-key", wantsThinking ? effort : "none");
     }
-    const directResp = await callGeminiDirect(body, model.slice("gemini-direct/".length));
+    const directResp = await callGeminiDirect(downstream, model.slice("gemini-direct/".length), wantsThinking ? effort : "none");
     // On quota / auth / server errors, transparently fall back
     if (!directResp.ok && shouldFallbackStatus(directResp.status)) {
-      if (body.disableFallback === true) return directResp;
+      if (downstream.disableFallback === true) return directResp;
       console.warn(`Gemini direct ${directResp.status} for ${model} — falling back`);
-      return await fallbackFromGemini(body, model, `gemini-${directResp.status}`);
+      return await fallbackFromGemini(downstream, model, `gemini-${directResp.status}`, wantsThinking ? effort : "none");
     }
     return directResp;
   }
 
   // Default: Lovable AI Gateway
-  return await callLovableGateway(body);
+  const gatewayBody: Record<string, unknown> = { ...downstream };
+  if (wantsThinking && gatewayBody.reasoning === undefined) {
+    gatewayBody.reasoning = { effort };
+  }
+  const resp = await callLovableGateway(gatewayBody);
+  return wantsThinking ? await normalizeOpenAIShape(resp) : resp;
+}
+
+// OpenAI / Lovable Gateway already return chat-completions shape. We just
+// normalize any reasoning-bearing fields to a stable `message.reasoning`
+// array of { type, text } so callers don't need to know about provider quirks.
+async function normalizeOpenAIShape(resp: Response): Promise<Response> {
+  if (!resp.ok) return resp;
+  try {
+    const data = await resp.json();
+    const choice = data?.choices?.[0];
+    const msg = choice?.message;
+    if (msg) {
+      const segments = extractReasoningFromMessage(msg);
+      if (segments.length > 0) msg.reasoning = segments;
+    }
+    return new Response(JSON.stringify(data), {
+      status: resp.status,
+      headers: { ...Object.fromEntries(resp.headers), "Content-Type": "application/json" },
+    });
+  } catch (e) {
+    console.warn("normalizeOpenAIShape failed", e);
+    return resp;
+  }
+}
+
+function extractReasoningFromMessage(msg: Record<string, unknown>): ReasoningSegment[] {
+  const out: ReasoningSegment[] = [];
+  // Common chat-completions reasoning shapes seen across providers/gateways.
+  const candidates: Array<{ value: unknown; type: ReasoningSegment["type"] }> = [
+    { value: msg.reasoning_content, type: "thinking" },
+    { value: msg.reasoning, type: "summary" },
+    { value: (msg as { thinking?: unknown }).thinking, type: "thinking" },
+  ];
+  for (const c of candidates) {
+    if (typeof c.value === "string" && c.value.trim()) {
+      out.push({ type: c.type, text: c.value });
+    } else if (Array.isArray(c.value)) {
+      for (const item of c.value) {
+        if (typeof item === "string" && item.trim()) {
+          out.push({ type: c.type, text: item });
+        } else if (item && typeof item === "object") {
+          const t = (item as { text?: string; content?: string; summary?: string }).text
+            ?? (item as { content?: string }).content
+            ?? (item as { summary?: string }).summary;
+          if (typeof t === "string" && t.trim()) out.push({ type: c.type, text: t });
+        }
+      }
+    }
+  }
+  // Don't leak the raw fields back to UI alongside the normalized array.
+  delete (msg as Record<string, unknown>).reasoning_content;
+  return out;
 }
 
 // When a gemini-direct/* call cannot be served, prefer OpenAI direct
