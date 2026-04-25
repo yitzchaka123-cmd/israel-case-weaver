@@ -1498,8 +1498,8 @@ async function processConversation(
     if (raw) playbook = resolvePlaybook(raw.assistant_playbook);
   }
 
-  const modelKey = String(project.ai_provider_planning ?? "lovable");
-  const model = PROVIDER_MODEL[modelKey] ?? PROVIDER_MODEL.lovable;
+  const modelKey = String(project.ai_provider_planning ?? "openai-5.2");
+  const model = PROVIDER_MODEL[modelKey] ?? PROVIDER_MODEL["openai-5.2"] ?? PROVIDER_MODEL.lovable;
   const claudeChatSkills = model.startsWith("anthropic/") ? await loadClaudeSkillsForSurface(supa, "chat") : [];
   const rosters: Rosters = {
     suspects: (suspectsRoster ?? []) as RosterRow[],
