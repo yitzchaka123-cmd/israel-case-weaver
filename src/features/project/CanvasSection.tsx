@@ -184,10 +184,11 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
         animated: lineStyle === "flow" && board === "final",
         style: { stroke: "var(--color-accent, #6366f1)", strokeWidth: 2 },
         markerEnd: { type: MarkerType.ArrowClosed, color: "var(--color-accent, #6366f1)", width: 18, height: 18 },
-        labelStyle: { fontSize: 11, fontWeight: 500, fill: "var(--color-foreground)" },
-        labelBgStyle: { fill: "var(--color-card)", fillOpacity: 0.9 },
-        labelBgPadding: [6, 3] as [number, number],
-        labelBgBorderRadius: 4,
+        labelStyle: { fontSize: 12, fontWeight: 600, fill: "var(--color-foreground)" },
+        labelBgStyle: { fill: "var(--color-card)", fillOpacity: 1 },
+        labelBgPadding: [8, 4] as [number, number],
+        labelBgBorderRadius: 6,
+        labelShowBg: true,
       }))
     );
   }, [dbEdges, setEdges, lineStyle, board]);
