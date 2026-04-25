@@ -278,7 +278,7 @@ Looks like an actual archival envelope from the case era — NOT a modern Canva 
         key: "doc0_contents",
         enabled: true,
         title_template: "Doc 0 — Contents / Case File Inventory",
-        purpose: "Player-facing checklist for the game box. List every planned document, envelope, physical insert, and generated piece the buyer should receive. No solution spoilers. Group by envelope/section when useful.",
+        purpose: "Player-facing master inventory of the game box. List EVERY document in the box (the player has access to all of them from the start, organized however helps them — by topic, document type, or investigative area — NOT by envelope). Then list the sealed task envelopes separately, each shown as a sealed item with its trigger condition (when to open it). No solution spoilers.",
         doc_type: "contents checklist",
         print_size: "A4",
         list_scope: "planned",
