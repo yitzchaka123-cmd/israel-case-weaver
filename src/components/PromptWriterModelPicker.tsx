@@ -4,6 +4,7 @@
 // in localStorage so each context keeps its own default.
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useEffect, useState } from "react";
+import { useHiddenModels, filterModelOptions } from "@/lib/hidden-models";
 
 // Grouped: header rows are non-selectable separators (value starts with "__hdr").
 export const PROMPT_WRITER_MODELS = [
