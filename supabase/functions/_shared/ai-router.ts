@@ -351,7 +351,7 @@ interface IncomingMsg {
   name?: string;
 }
 
-async function callAnthropic(body: Record<string, unknown>, model: string): Promise<Response> {
+async function callAnthropic(body: Record<string, unknown>, model: string, effort: ReasoningEffort = "none"): Promise<Response> {
   const messagesIn = (body.messages as IncomingMsg[]) ?? [];
   let systemText = "";
   const messagesOut: Array<Record<string, unknown>> = [];
@@ -391,13 +391,25 @@ async function callAnthropic(body: Record<string, unknown>, model: string): Prom
     });
   }
 
+  const wantsThinking = effort !== "none";
+  const thinkingBudget = thinkingBudgetForEffort(effort);
+  // max_tokens MUST be > thinking budget per Anthropic docs.
+  const desiredMaxTokens = (body.max_tokens as number) ?? 4096;
+  const maxTokens = wantsThinking ? Math.max(desiredMaxTokens, thinkingBudget + 1024) : desiredMaxTokens;
+
   const anthropicBody: Record<string, unknown> = {
     model,
-    max_tokens: (body.max_tokens as number) ?? 4096,
+    max_tokens: maxTokens,
     messages: messagesOut,
   };
   if (systemText) anthropicBody.system = systemText;
-  if (body.temperature !== undefined) anthropicBody.temperature = body.temperature;
+  // Anthropic requires temperature=1 when thinking is enabled.
+  if (wantsThinking) {
+    anthropicBody.temperature = 1;
+    anthropicBody.thinking = { type: "enabled", budget_tokens: thinkingBudget };
+  } else if (body.temperature !== undefined) {
+    anthropicBody.temperature = body.temperature;
+  }
 
   // Translate OpenAI-style tools → Anthropic tools, then append optional
   // Anthropic-native tools/container settings such as code execution + Skills.
@@ -415,13 +427,22 @@ async function callAnthropic(body: Record<string, unknown>, model: string): Prom
   }
   if (body.anthropicContainer) anthropicBody.container = body.anthropicContainer;
 
+  // When thinking is on for Claude 4.x, opt into the interleaved-thinking beta
+  // header so thinking blocks can come between tool_use blocks.
+  const callerBeta = body.anthropicBeta ? String(body.anthropicBeta) : "";
+  const betaParts = callerBeta ? callerBeta.split(",").map((s) => s.trim()).filter(Boolean) : [];
+  if (wantsThinking && !betaParts.includes("interleaved-thinking-2025-05-14")) {
+    betaParts.push("interleaved-thinking-2025-05-14");
+  }
+  const betaHeader = betaParts.join(",");
+
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "x-api-key": ANTHROPIC_API_KEY,
       "anthropic-version": "2023-06-01",
       "Content-Type": "application/json",
-      ...(body.anthropicBeta ? { "anthropic-beta": String(body.anthropicBeta) } : {}),
+      ...(betaHeader ? { "anthropic-beta": betaHeader } : {}),
     },
     body: JSON.stringify(anthropicBody),
   });
@@ -435,8 +456,16 @@ async function callAnthropic(body: Record<string, unknown>, model: string): Prom
   // Translate response → OpenAI chat-completions shape
   let textOut = "";
   const toolCallsOut: Array<{ id: string; type: "function"; function: { name: string; arguments: string } }> = [];
+  const reasoningOut: ReasoningSegment[] = [];
   for (const block of (data.content ?? []) as Array<Record<string, unknown>>) {
     if (block.type === "text") textOut += String(block.text ?? "");
+    if (block.type === "thinking") {
+      const t = String(block.thinking ?? block.text ?? "").trim();
+      if (t) reasoningOut.push({ type: "thinking", text: t });
+    }
+    if (block.type === "redacted_thinking") {
+      reasoningOut.push({ type: "thinking", text: "[Redacted thinking — Claude flagged this internal reasoning as sensitive]" });
+    }
     if (block.type === "tool_use") {
       toolCallsOut.push({
         id: String(block.id),
@@ -445,18 +474,16 @@ async function callAnthropic(body: Record<string, unknown>, model: string): Prom
       });
     }
   }
+  const message: Record<string, unknown> = {
+    role: "assistant",
+    content: textOut,
+    ...(toolCallsOut.length ? { tool_calls: toolCallsOut } : {}),
+    ...(reasoningOut.length ? { reasoning: reasoningOut } : {}),
+  };
   const translated = {
     id: data.id,
     model: `anthropic/${data.model ?? model}`,
-    choices: [{
-      index: 0,
-      message: {
-        role: "assistant",
-        content: textOut,
-        ...(toolCallsOut.length ? { tool_calls: toolCallsOut } : {}),
-      },
-      finish_reason: data.stop_reason ?? "stop",
-    }],
+    choices: [{ index: 0, message, finish_reason: data.stop_reason ?? "stop" }],
     usage: data.usage,
   };
   return new Response(JSON.stringify(translated), {
@@ -464,8 +491,6 @@ async function callAnthropic(body: Record<string, unknown>, model: string): Prom
     headers: { "Content-Type": "application/json" },
   });
 }
-
-// ---------- Gemini direct translation ----------
 
 async function callGeminiDirect(body: Record<string, unknown>, model: string): Promise<Response> {
   const messagesIn = (body.messages as IncomingMsg[]) ?? [];
