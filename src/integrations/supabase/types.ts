@@ -1006,6 +1006,7 @@ export type Database = {
           ai_provider_documents: string | null
           ai_provider_images: string | null
           ai_provider_planning: string | null
+          ai_reasoning_effort: string
           assistant_origins: Json
           case_goal: string | null
           cover_effective_model: string | null
@@ -1046,6 +1047,7 @@ export type Database = {
           ai_provider_documents?: string | null
           ai_provider_images?: string | null
           ai_provider_planning?: string | null
+          ai_reasoning_effort?: string
           assistant_origins?: Json
           case_goal?: string | null
           cover_effective_model?: string | null
@@ -1086,6 +1088,7 @@ export type Database = {
           ai_provider_documents?: string | null
           ai_provider_images?: string | null
           ai_provider_planning?: string | null
+          ai_reasoning_effort?: string
           assistant_origins?: Json
           case_goal?: string | null
           cover_effective_model?: string | null
