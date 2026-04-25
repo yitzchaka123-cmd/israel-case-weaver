@@ -762,6 +762,51 @@ function MessageBubble({
   );
 }
 
+function ThinkingDisclosure({ reasoning }: { reasoning: ReasoningRound[] }) {
+  const [open, setOpen] = useState(false);
+  const totalSegments = reasoning.reduce((acc, r) => acc + r.segments.length, 0);
+  if (totalSegments === 0) return null;
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 hover:bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors"
+      >
+        <Brain className="h-3 w-3" />
+        {open ? "Hide thinking" : "Show thinking"}
+        <span className="opacity-60">({totalSegments})</span>
+      </button>
+      {open && (
+        <div className="mt-2 space-y-2 rounded-md border border-border/60 bg-muted/30 p-3">
+          {reasoning.map((round, i) => (
+            <div key={i} className="space-y-1.5">
+              {reasoning.length > 1 && (
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground/70">
+                  Round {round.round}
+                </div>
+              )}
+              {round.segments.map((seg, j) => (
+                <div
+                  key={j}
+                  className="whitespace-pre-wrap text-[12px] leading-relaxed text-muted-foreground"
+                >
+                  {seg.type === "summary" && (
+                    <span className="mr-1 rounded bg-accent/20 px-1 py-0.5 text-[9px] font-semibold uppercase text-accent">
+                      summary
+                    </span>
+                  )}
+                  {seg.text}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function formatRelativeTime(iso: string): string {
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return "";
