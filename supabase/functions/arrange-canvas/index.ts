@@ -188,8 +188,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    const modelKey = (modelOverride as string) || (project?.ai_provider_planning as string) || "openai-5.2";
-    const model = PROVIDER_MODEL[modelKey] ?? PROVIDER_MODEL["openai-5.2"];
+    // Default to a fast non-reasoning model for layout — reasoning models (gpt-5.2/5.4)
+    // routinely exceed the 150s edge-function timeout on tool-call responses.
+    const modelKey = (modelOverride as string) || "gemini-3-flash";
+    const model = PROVIDER_MODEL[modelKey] ?? PROVIDER_MODEL["gemini-3-flash"];
 
     // Compact view we hand to the model (keep tokens low).
     const compactNodes = nodes.map((n) => {
@@ -276,15 +278,23 @@ Return positions for all ${compactNodes.length} nodes via the arrange_board tool
     let fallbackTag = "none";
 
     try {
-      const resp = await chatCompletions({
-        model,
-        messages: [
-          { role: "system", content: sys },
-          { role: "user", content: userPrompt },
-        ],
-        tools: [tool],
-        tool_choice: { type: "function", function: { name: "arrange_board" } },
-      });
+      // Hard timeout: race the AI call so we never blow past the 150s edge-function limit.
+      // 75s leaves plenty of room to run the deterministic fallback and persist positions.
+      const AI_TIMEOUT_MS = 75_000;
+      const resp = await Promise.race<Response>([
+        chatCompletions({
+          model,
+          messages: [
+            { role: "system", content: sys },
+            { role: "user", content: userPrompt },
+          ],
+          tools: [tool],
+          tool_choice: { type: "function", function: { name: "arrange_board" } },
+        }),
+        new Promise<Response>((_, reject) =>
+          setTimeout(() => reject(new Error(`AI layout timed out after ${AI_TIMEOUT_MS}ms`)), AI_TIMEOUT_MS),
+        ),
+      ]);
       const fb = extractFallback(resp, model);
       effectiveModel = fb.effectiveModel;
       fallbackTag = fb.fallback;
