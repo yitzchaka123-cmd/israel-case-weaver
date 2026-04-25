@@ -587,6 +587,8 @@ async function callAnthropic(body: Record<string, unknown>, model: string, effor
   }
   const betaHeader = betaParts.join(",");
 
+  console.log(`[ai-router] anthropic: model=${model} wantsThinking=${wantsThinking} budget=${thinkingBudget} beta="${betaHeader}" tools=${(anthropicBody.tools as unknown[] | undefined)?.length ?? 0} msgs=${messagesOut.length}`);
+
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -608,23 +610,37 @@ async function callAnthropic(body: Record<string, unknown>, model: string, effor
   let textOut = "";
   const toolCallsOut: Array<{ id: string; type: "function"; function: { name: string; arguments: string } }> = [];
   const reasoningOut: ReasoningSegment[] = [];
+  // Capture thinking blocks with their signatures so callers can round-trip
+  // them on subsequent tool-loop rounds (Anthropic requirement for
+  // interleaved-thinking continuity).
+  const thinkingBlocksOut: Array<{ type: "thinking"; text: string; signature?: string }> = [];
+  const blockTypesSeen: Record<string, number> = {};
   for (const block of (data.content ?? []) as Array<Record<string, unknown>>) {
-    if (block.type === "text") textOut += String(block.text ?? "");
-    if (block.type === "thinking") {
+    const btype = String(block.type ?? "");
+    blockTypesSeen[btype] = (blockTypesSeen[btype] ?? 0) + 1;
+    if (btype === "text") textOut += String(block.text ?? "");
+    else if (btype === "thinking") {
       const t = String(block.thinking ?? block.text ?? "").trim();
-      if (t) reasoningOut.push({ type: "thinking", text: t });
+      if (t) {
+        reasoningOut.push({ type: "thinking", text: t });
+        thinkingBlocksOut.push({ type: "thinking", text: t, signature: block.signature ? String(block.signature) : undefined });
+      }
     }
-    if (block.type === "redacted_thinking") {
+    else if (btype === "redacted_thinking") {
       reasoningOut.push({ type: "thinking", text: "[Redacted thinking — Claude flagged this internal reasoning as sensitive]" });
     }
-    if (block.type === "tool_use") {
+    else if (btype === "tool_use") {
       toolCallsOut.push({
         id: String(block.id),
         type: "function",
         function: { name: String(block.name), arguments: JSON.stringify(block.input ?? {}) },
       });
     }
+    else {
+      console.warn(`[ai-router] anthropic: unknown block type "${btype}"`);
+    }
   }
+  console.log(`[ai-router] anthropic returned blocks: ${JSON.stringify(blockTypesSeen)} reasoning=${reasoningOut.length}seg`);
   const message: Record<string, unknown> = {
     role: "assistant",
     content: textOut,
