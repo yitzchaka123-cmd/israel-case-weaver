@@ -12,7 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Plus, Wand2, CheckCircle2, Loader2, ScrollText, Sparkles, FileText, ExternalLink, ChevronDown, AlertTriangle, X, LayoutGrid, Download, Image as ImageIcon, FileCode2 } from "lucide-react";
+import { Plus, Wand2, CheckCircle2, Loader2, ScrollText, Sparkles, FileText, ExternalLink, ChevronDown, AlertTriangle, X, Download, Image as ImageIcon, FileCode2 } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -184,10 +184,11 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
         animated: lineStyle === "flow" && board === "final",
         style: { stroke: "var(--color-accent, #6366f1)", strokeWidth: 2 },
         markerEnd: { type: MarkerType.ArrowClosed, color: "var(--color-accent, #6366f1)", width: 18, height: 18 },
-        labelStyle: { fontSize: 11, fontWeight: 500, fill: "var(--color-foreground)" },
-        labelBgStyle: { fill: "var(--color-card)", fillOpacity: 0.9 },
-        labelBgPadding: [6, 3] as [number, number],
-        labelBgBorderRadius: 4,
+        labelStyle: { fontSize: 12, fontWeight: 600, fill: "var(--color-foreground)" },
+        labelBgStyle: { fill: "var(--color-card)", fillOpacity: 1 },
+        labelBgPadding: [8, 4] as [number, number],
+        labelBgBorderRadius: 6,
+        labelShowBg: true,
       }))
     );
   }, [dbEdges, setEdges, lineStyle, board]);
@@ -252,14 +253,13 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
 
   const [arranging, setArranging] = useState(false);
 
-  // Smart arrange: lays the board out as a true game flow.
-  // - Envelopes form the horizontal spine, ordered by their number (the play order).
-  // - Documents stack directly under their parent envelope (in doc-number order).
-  // - Suspects/clues feed in from the top lane; deductions sit between clues and the solution.
-  // - Contradictions, red herrings, hints and notes get their own lanes so the board
-  //   reads as: setup → investigation → reasoning → solution.
-  // - When edges exist, dagre is used as a tie-breaker on top of the role-based ranks
-  //   so connected items still align nicely.
+  // Smart arrange — AI-driven.
+  // Sends the current nodes + edges (for this board) to the `arrange-canvas`
+  // edge function, which asks the configured Logic-Flow model to lay them out
+  // as a true game-flow story (suspects → clues → envelope spine → documents
+  // → reasoning → solution) with enough whitespace that edge labels stay
+  // readable. The function also persists the new positions, so on success we
+  // just refetch. Re-clickable: each press triggers a fresh AI plan.
   const arrangeNodes = useCallback(async () => {
     if (arranging) return;
     if (nodes.length === 0) {
@@ -267,182 +267,52 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
       return;
     }
     setArranging(true);
+    arrangePressRef.current++;
+    const t = toast.loading(`AI is arranging ${nodes.length} nodes…`);
     try {
-      const NODE_W = 220;
-      const NODE_H = 110;
-      const COL_GAP = 80;
-      const ROW_GAP = 70;
-      const STEP_X = NODE_W + COL_GAP;
-      const STEP_Y = NODE_H + ROW_GAP;
-      const positions = new Map<string, { x: number; y: number }>();
-      arrangePressRef.current++;
-
-      type NData = {
-        type?: string;
-        envelopeNumber?: number;
-        docNumber?: number;
-        label?: string;
-      };
-      const dataOf = (id: string): NData =>
-        (nodes.find((n) => n.id === id)?.data as NData | undefined) ?? {};
-
-      // Lane order top-to-bottom — this is the "story" of a mystery game.
-      // Each lane is a horizontal row; nodes flow left-to-right within it.
-      const LANES: { key: string; types: string[] }[] = [
-        { key: "suspects",       types: ["suspect"] },
-        { key: "clues",          types: ["clue"] },
-        { key: "envelopes",      types: ["envelope"] },     // the spine
-        { key: "documents",      types: ["document"] },     // sits under envelopes
-        { key: "reasoning",      types: ["deduction", "contradiction"] },
-        { key: "distractions",   types: ["red_herring", "hint", "note"] },
-        { key: "solution",       types: ["solution"] },
-      ];
-
-      // Build adjacency for ordering helpers.
-      const outgoing = new Map<string, string[]>();
-      const incoming = new Map<string, string[]>();
-      for (const e of edges) {
-        if (!e.source || !e.target) continue;
-        if (!outgoing.has(e.source)) outgoing.set(e.source, []);
-        outgoing.get(e.source)!.push(e.target);
-        if (!incoming.has(e.target)) incoming.set(e.target, []);
-        incoming.get(e.target)!.push(e.source);
+      const { data: { session } } = await supabase.auth.getSession();
+      const resp = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/arrange-canvas`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({
+            projectId,
+            board,
+            modelOverride: logicModel,
+          }),
+        },
+      );
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        toast.error(json.error ?? `AI arrange failed (${resp.status})`, { id: t });
+        return;
       }
-
-      // 1) Place envelopes: the spine, sorted by envelopeNumber then title.
-      const envelopeNodes = nodes
-        .filter((n) => (n.data as NData).type === "envelope")
-        .sort((a, b) => {
-          const an = (a.data as NData).envelopeNumber ?? 9999;
-          const bn = (b.data as NData).envelopeNumber ?? 9999;
-          if (an !== bn) return an - bn;
-          return ((a.data as NData).label ?? "").localeCompare((b.data as NData).label ?? "");
-        });
-
-      const envelopeLaneIdx = LANES.findIndex((l) => l.key === "envelopes");
-      const envelopeY = envelopeLaneIdx * STEP_Y + 80;
-      const envelopeColumnOf = new Map<string, number>(); // envelopeId -> column index
-      envelopeNodes.forEach((n, i) => {
-        envelopeColumnOf.set(n.id, i);
-        positions.set(n.id, { x: 80 + i * STEP_X, y: envelopeY });
-      });
-
-      // 2) Place documents directly under their parent envelope when we can detect one,
-      // otherwise tile them in the documents lane in doc-number order.
-      const docNodes = nodes
-        .filter((n) => (n.data as NData).type === "document")
-        .sort((a, b) => {
-          const ae = (a.data as NData).envelopeNumber ?? 9999;
-          const be = (b.data as NData).envelopeNumber ?? 9999;
-          if (ae !== be) return ae - be;
-          const an = (a.data as NData).docNumber ?? 9999;
-          const bn = (b.data as NData).docNumber ?? 9999;
-          return an - bn;
-        });
-      const docLaneIdx = LANES.findIndex((l) => l.key === "documents");
-      const docBaseY = docLaneIdx * STEP_Y + 80;
-      // Track per-envelope-column doc stacking + a fallback column counter.
-      const docStackPerCol = new Map<number, number>();
-      let docFallbackCol = 0;
-      for (const d of docNodes) {
-        const dData = d.data as NData;
-        // Try to find the envelope this doc belongs to via edges or matching envelopeNumber.
-        let parentCol: number | undefined;
-        const linked = [...(incoming.get(d.id) ?? []), ...(outgoing.get(d.id) ?? [])];
-        for (const otherId of linked) {
-          const c = envelopeColumnOf.get(otherId);
-          if (c !== undefined) { parentCol = c; break; }
-        }
-        if (parentCol === undefined && dData.envelopeNumber !== undefined) {
-          const env = envelopeNodes.find(
-            (e) => (e.data as NData).envelopeNumber === dData.envelopeNumber,
-          );
-          if (env) parentCol = envelopeColumnOf.get(env.id);
-        }
-        const col = parentCol ?? (envelopeNodes.length + docFallbackCol++);
-        const stack = docStackPerCol.get(col) ?? 0;
-        docStackPerCol.set(col, stack + 1);
-        positions.set(d.id, { x: 80 + col * STEP_X, y: docBaseY + stack * STEP_Y });
-      }
-      // If documents stacked deeper than one row, push later lanes down.
-      const maxDocStack = Math.max(1, ...Array.from(docStackPerCol.values(), (v) => v));
-      const extraDocRows = Math.max(0, maxDocStack - 1);
-
-      // 3) Place the remaining lanes (suspects, clues above envelopes; reasoning,
-      // distractions, solution below documents). Within a lane, order by:
-      // (a) the envelope column they connect to (so connected items align), then
-      // (b) creation order via array index for stability.
-      const indexOf = new Map(nodes.map((n, i) => [n.id, i] as const));
-      const columnHint = (id: string): number => {
-        const linked = [...(incoming.get(id) ?? []), ...(outgoing.get(id) ?? [])];
-        for (const otherId of linked) {
-          const c = envelopeColumnOf.get(otherId);
-          if (c !== undefined) return c;
-          const p = positions.get(otherId);
-          if (p) return Math.round((p.x - 80) / STEP_X);
-        }
-        return Number.POSITIVE_INFINITY; // unconnected → sent to the end of the lane
-      };
-
-      LANES.forEach((lane, laneIdx) => {
-        if (lane.key === "envelopes" || lane.key === "documents") return;
-        const laneNodes = nodes
-          .filter((n) => lane.types.includes((n.data as NData).type ?? "note"))
-          .sort((a, b) => {
-            const ca = columnHint(a.id);
-            const cb = columnHint(b.id);
-            if (ca !== cb) return ca - cb;
-            return (indexOf.get(a.id) ?? 0) - (indexOf.get(b.id) ?? 0);
-          });
-        // Lanes after documents need to account for the doc stack height.
-        const effectiveLaneIdx = laneIdx > docLaneIdx ? laneIdx + extraDocRows : laneIdx;
-        const y = effectiveLaneIdx * STEP_Y + 80;
-        laneNodes.forEach((n, i) => {
-          // Try to align under the connected envelope column when possible;
-          // otherwise tile from the left.
-          const hint = columnHint(n.id);
-          const col = Number.isFinite(hint) ? hint : i;
-          // Prevent two nodes in the same lane sharing a column — bump right.
-          let finalCol = col;
-          while ([...positions.values()].some((p) => p.y === y && Math.round((p.x - 80) / STEP_X) === finalCol)) {
-            finalCol += 1;
-          }
-          positions.set(n.id, { x: 80 + finalCol * STEP_X, y });
-        });
-      });
-
-      // 4) Catch-all: any node we missed (unknown type) gets parked in a trailing row.
-      const missing = nodes.filter((n) => !positions.has(n.id));
-      if (missing.length > 0) {
-        const trailingY = (LANES.length + extraDocRows) * STEP_Y + 80;
-        missing.forEach((n, i) => {
-          positions.set(n.id, { x: 80 + i * STEP_X, y: trailingY });
-        });
-      }
-
-      // Optimistic local update so the layout snaps immediately.
+      const positions = (json.positions ?? {}) as Record<string, { x: number; y: number }>;
+      // Optimistic local update so the layout snaps immediately; the realtime
+      // refetch will reconcile shortly after.
       setNodes((ns) =>
         ns.map((n) => {
-          const p = positions.get(n.id);
+          const p = positions[n.id];
           return p ? { ...n, position: p } : n;
         }),
       );
-
-      // Persist in parallel.
-      const updates = Array.from(positions.entries()).map(([id, p]) =>
-        supabase.from("canvas_nodes").update({ position_x: p.x, position_y: p.y }).eq("id", id),
+      qc.invalidateQueries({ queryKey: ["nodes", projectId, board] });
+      const source = json.source === "ai" ? "AI" : "fallback layout";
+      toast.success(
+        `Arranged ${json.count ?? nodes.length} nodes (${source}).${json.notes ? ` ${json.notes}` : ""}`,
+        { id: t, duration: 4000 },
       );
-      const results = await Promise.all(updates);
-      const failed = results.filter((r) => r.error).length;
-      if (failed > 0) {
-        toast.error(`Arranged, but ${failed} node${failed === 1 ? "" : "s"} failed to save position.`);
-      } else {
-        toast.success(`Arranged ${nodes.length} nodes by game flow.`);
-      }
+    } catch (err) {
+      console.error("arrange-canvas failed", err);
+      toast.error(err instanceof Error ? err.message : "Arrange failed", { id: t });
     } finally {
       setArranging(false);
     }
-  }, [nodes, edges, arranging, setNodes]);
+  }, [arranging, nodes.length, projectId, board, logicModel, setNodes, qc]);
 
   const generateLogicFlow = async (opts?: { useExistingSummary?: boolean }) => {
     if (board !== "logic") {
@@ -647,13 +517,13 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
           className="gap-2 h-9"
           onClick={arrangeNodes}
           disabled={arranging || nodes.length === 0}
-          title="Smart arrange: lays nodes out by game flow — suspects & clues on top, envelopes as the spine, documents under their envelope, deductions and solution below."
+          title="AI smart arrange: the configured Logic-Flow model studies your nodes & labelled edges and lays them out as a clear game-flow story with room for the lines and labels. Click again to re-arrange."
         >
-          {arranging ? <Loader2 className="h-4 w-4 animate-spin" /> : <LayoutGrid className="h-4 w-4" />}
+          {arranging ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
           Arrange
           {nodes.length > 0 && (
             <span className="ml-0.5 text-[10px] text-muted-foreground font-normal">
-              · by game flow
+              · AI smart layout
             </span>
           )}
         </Button>
