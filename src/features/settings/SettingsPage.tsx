@@ -53,7 +53,7 @@ export function SettingsPage() {
   const fileInput = useRef<HTMLInputElement>(null);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState("");
-  const [planning, setPlanning] = useState("lovable");
+  const [planning, setPlanning] = useState("openai-5.2");
   const [documents, setDocuments] = useState("lovable");
   const [images, setImages] = useState("lovable");
   const [promptWriter, setPromptWriter] = useState("lovable");
