@@ -310,7 +310,7 @@ export function SettingsPage() {
                 >
                   <SelectTrigger className="h-9 text-xs w-[280px] shrink-0"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {LOGIC_FLOW_MODELS.map((m) => <SelectItem key={m.value} value={m.value} className="text-xs">{m.label}</SelectItem>)}
+                    {filterModelOptions(LOGIC_FLOW_MODELS, hiddenModels, logicFlowModel).map((m) => <SelectItem key={m.value} value={m.value} className="text-xs">{m.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
