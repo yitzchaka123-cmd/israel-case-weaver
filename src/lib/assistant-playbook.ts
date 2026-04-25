@@ -573,6 +573,32 @@ export function resolvePlaybook(override: unknown): Playbook {
 
   const phases = cleanPhaseList(o.phases, d.phases);
 
+  const pdRaw = o.planning_depth as Partial<Playbook["planning_depth"]> | undefined;
+  const defaultDepth: PlanningDepth =
+    pdRaw?.default === "express" || pdRaw?.default === "deep" || pdRaw?.default === "guided"
+      ? pdRaw.default
+      : d.planning_depth.default;
+  const expressFill = (pdRaw?.express?.auto_fill_defaults && typeof pdRaw.express.auto_fill_defaults === "object")
+    ? Object.fromEntries(
+        Object.entries(pdRaw.express.auto_fill_defaults)
+          .filter(([k, v]) => typeof k === "string" && typeof v === "string")
+          .map(([k, v]) => [k, String(v)])
+      )
+    : d.planning_depth.express.auto_fill_defaults;
+  const planning_depth = {
+    default: defaultDepth,
+    express: {
+      ask_title: pdRaw?.express?.ask_title !== false,
+      auto_fill_defaults: expressFill,
+    },
+    guided: {
+      ask_steps: cleanStringArray(pdRaw?.guided?.ask_steps, d.planning_depth.guided.ask_steps),
+    },
+    deep: {
+      extra_probes: cleanStringArray(pdRaw?.deep?.extra_probes, d.planning_depth.deep.extra_probes),
+    },
+  };
+
   return {
     suspect_counts,
     hints: { per_stage, ladder_labels },
@@ -590,6 +616,7 @@ export function resolvePlaybook(override: unknown): Playbook {
     languages,
     universal_documents,
     phases,
+    planning_depth,
   };
 }
 
