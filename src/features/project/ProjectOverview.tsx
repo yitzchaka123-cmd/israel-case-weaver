@@ -14,6 +14,7 @@ import { PromptPanel } from "@/components/PromptPanel";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { ProductionDashboard } from "./ProductionDashboard";
+import { ProposalStatusStrip } from "./ProposalStatusStrip";
 import { normalizePhase } from "./PhaseStatusBar";
 import { useProjectNotifications } from "./notifications/useProjectNotifications";
 import { notifyForFieldChange, type TriggerableField } from "./notifications/triggers";
