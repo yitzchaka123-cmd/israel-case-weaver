@@ -73,41 +73,56 @@ export function SuspectsSection({ projectId }: { projectId: string }) {
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {data.map((s) => (
-            <button
-              key={s.id}
-              onClick={() => setSelected(s.id)}
-              className="group text-left bg-card border rounded-2xl overflow-hidden shadow-soft hover:shadow-pop hover:-translate-y-0.5 transition-all"
-            >
-              <div className="aspect-[3/4] bg-muted relative group">
-                {s.thumbnail_url ? (
-                  <img src={s.thumbnail_url} alt={s.name} className="w-full h-full object-cover" />
-                ) : (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <UserCircle2 className="h-10 w-10 text-muted-foreground/40" />
+            <div key={s.id} className="relative group">
+              <button
+                onClick={() => setSelected(s.id)}
+                className="w-full text-left bg-card border rounded-2xl overflow-hidden shadow-soft hover:shadow-pop hover:-translate-y-0.5 transition-all"
+              >
+                <div className="aspect-[3/4] bg-muted relative">
+                  {s.thumbnail_url ? (
+                    <img src={s.thumbnail_url} alt={s.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <UserCircle2 className="h-10 w-10 text-muted-foreground/40" />
+                    </div>
+                  )}
+                  {s.thumbnail_url && (
+                    <AiOriginBadge
+                      info={{ requested: s.thumbnail_url ? "nano-banana" : null, effective: s.thumbnail_effective_model ?? null, fallback: s.thumbnail_fallback ?? null }}
+                      hoverOnly
+                    />
+                  )}
+                  {s.is_red_herring && (
+                    <span className="absolute top-2 left-2 text-[10px] font-medium uppercase tracking-wider px-2 py-0.5 rounded-md bg-destructive text-destructive-foreground">
+                      Red herring
+                    </span>
+                  )}
+                </div>
+                <div className="p-3">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <div className="font-medium truncate flex-1">{s.name}</div>
+                    <AssistantOriginBadge messageId={s.created_by_message_id} label="" />
                   </div>
-                )}
-                {s.thumbnail_url && (
-                  <AiOriginBadge
-                    info={{ requested: s.thumbnail_url ? "nano-banana" : null, effective: s.thumbnail_effective_model ?? null, fallback: s.thumbnail_fallback ?? null }}
-                    hoverOnly
-                  />
-                )}
-                {s.is_red_herring && (
-                  <span className="absolute top-2 left-2 text-[10px] font-medium uppercase tracking-wider px-2 py-0.5 rounded-md bg-destructive text-destructive-foreground">
-                    Red herring
-                  </span>
-                )}
-              </div>
-              <div className="p-3">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  <div className="font-medium truncate flex-1">{s.name}</div>
-                  <AssistantOriginBadge messageId={s.created_by_message_id} label="" />
+                  <div className="text-xs text-muted-foreground truncate">
+                    {s.role_in_case || "—"}
+                  </div>
                 </div>
-                <div className="text-xs text-muted-foreground truncate">
-                  {s.role_in_case || "—"}
-                </div>
-              </div>
-            </button>
+              </button>
+              <button
+                type="button"
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  if (!confirm(`Delete suspect "${s.name || "Untitled"}"? This cannot be undone.`)) return;
+                  const { error } = await supabase.from("suspects").delete().eq("id", s.id);
+                  if (error) toast.error(error.message);
+                  else { toast.success("Suspect deleted"); refetch(); }
+                }}
+                className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md bg-background/90 backdrop-blur border shadow-sm text-muted-foreground hover:text-destructive hover:border-destructive/40"
+                aria-label="Delete suspect"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
           ))}
         </div>
       )}
