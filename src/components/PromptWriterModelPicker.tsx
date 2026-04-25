@@ -47,6 +47,8 @@ interface Props {
 
 export function PromptWriterModelPicker({ surface, className }: Props) {
   const [value, setValue] = useState<string>("__project");
+  const { hidden } = useHiddenModels();
+  const visibleModels = filterModelOptions(PROMPT_WRITER_MODELS, hidden, value);
 
   useEffect(() => {
     setValue(getStoredWriterModel(surface));
