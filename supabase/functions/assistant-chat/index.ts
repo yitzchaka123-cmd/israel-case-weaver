@@ -1530,7 +1530,8 @@ async function processConversation(
     hints: (hintsRoster ?? []) as RosterRow[],
     canvas_nodes: (nodesRoster ?? []) as RosterRow[],
   };
-  const systemPrompt = buildSystemPrompt(project, rosters, tweaks, playbook, claudeChatSkills);
+  const isFirstTurn = (messages?.length ?? 0) <= 1;
+  const systemPrompt = buildSystemPrompt(project, rosters, tweaks, playbook, claudeChatSkills, isFirstTurn);
 
   const lastUser = [...messages].reverse().find((m) => (m as { role: string }).role === "user") as { content: string } | undefined;
   if (lastUser) {
@@ -1803,7 +1804,8 @@ Deno.serve(async (req) => {
       canvas_nodes: (nodesRoster ?? []) as RosterRow[],
     };
     const claudeChatSkills = model.startsWith("anthropic/") ? await loadClaudeSkillsForSurface(supa, "chat") : [];
-    const systemPrompt = buildSystemPrompt(project, rosters, tweaks, playbook, claudeChatSkills);
+    const isFirstTurn = (messages?.length ?? 0) <= 1;
+    const systemPrompt = buildSystemPrompt(project, rosters, tweaks, playbook, claudeChatSkills, isFirstTurn);
 
     // Persist the last user message
     const lastUser = [...messages].reverse().find((m: { role: string }) => m.role === "user");
