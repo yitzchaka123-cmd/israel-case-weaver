@@ -1894,7 +1894,7 @@ Deno.serve(async (req) => {
             `Reply "continue" once the issue is resolved and I'll pick up where I left off.`;
           await supa.from("chat_messages").update({
             content: recoveryNote,
-            metadata: { model, effective_model: lastFb.effectiveModel, fallback: lastFb.fallback, tools: executedTools, partial: true, error: errMsg, in_progress: false },
+            metadata: { model, effective_model: lastFb.effectiveModel, fallback: lastFb.fallback, tools: executedTools, ...(reasoningRounds.length ? { reasoning: reasoningRounds } : {}), partial: true, error: errMsg, in_progress: false },
           }).eq("id", assistantMessageId);
           return new Response(
             JSON.stringify({
@@ -1918,6 +1918,10 @@ Deno.serve(async (req) => {
       const data = await resp.json();
       const choice = data.choices?.[0];
       const msg = choice?.message ?? {};
+      const msgReasoning = msg.reasoning as ReasoningSegment[] | undefined;
+      if (Array.isArray(msgReasoning) && msgReasoning.length > 0) {
+        reasoningRounds.push({ round, segments: msgReasoning });
+      }
       const toolCalls = msg.tool_calls as Array<{ id: string; function: { name: string; arguments: string } }> | undefined;
 
       if (toolCalls && toolCalls.length > 0) {
