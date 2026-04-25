@@ -1029,7 +1029,39 @@ async function executeTool(
       }
       return { ok: true, message: `Document created: ${data.title} (#${docNumber})`, id: data.id };
     }
+    if (name === "propose_document_set") {
+      const proposalDocs = Array.isArray((args as { documents?: unknown[] }).documents) ? (args as { documents: unknown[] }).documents : [];
+      if (proposalDocs.length === 0) return { ok: false, message: "propose_document_set needs at least one document" };
+      // Sanitize entries — keep only the planning fields, drop unknowns.
+      const cleaned = proposalDocs.map((raw, i) => {
+        const d = (raw ?? {}) as Record<string, unknown>;
+        return {
+          doc_number: typeof d.doc_number === "number" ? d.doc_number : null,
+          title: String(d.title ?? `Planned document ${i + 1}`).slice(0, 200),
+          doc_type: typeof d.doc_type === "string" && d.doc_type.trim().length > 0 ? d.doc_type.trim() : "case evidence",
+          print_size: typeof d.print_size === "string" && d.print_size.trim().length > 0 ? d.print_size.trim() : "A4",
+          envelope_number: typeof d.envelope_number === "number" ? d.envelope_number : null,
+          purpose: String(d.purpose ?? "Planned by the assistant from the Logic Flow.").slice(0, 1200),
+          linked_logic_node_ids: Array.isArray(d.linked_logic_node_ids) ? (d.linked_logic_node_ids as unknown[]).filter((x): x is string => typeof x === "string") : [],
+        };
+      });
+      const { error } = await supa
+        .from("projects")
+        .update({ proposed_document_set: cleaned, proposed_document_set_status: "proposed", proposed_document_set_approved_at: null })
+        .eq("id", projectId);
+      if (error) return { ok: false, message: `Failed to save proposal: ${error.message}` };
+      return {
+        ok: true,
+        message: `Document plan proposed with ${cleaned.length} documents. Doc 0 will be added automatically. Ask the user to Approve, Just build it (skip review), or Revise.`,
+        proposal: cleaned,
+      };
+    }
     if (name === "create_final_documents_map") {
+      // Mark proposal as approved (or bypassed if there is none) before building.
+      const { data: proj } = await supa.from("projects").select("proposed_document_set, proposed_document_set_status").eq("id", projectId).single();
+      const hasProposal = Array.isArray(proj?.proposed_document_set) && (proj?.proposed_document_set as unknown[]).length > 0;
+      const nextStatus = hasProposal ? (proj?.proposed_document_set_status === "approved" ? "approved" : "approved") : "bypassed";
+      await supa.from("projects").update({ proposed_document_set_status: nextStatus, proposed_document_set_approved_at: new Date().toISOString() }).eq("id", projectId);
       const base = `${SUPABASE_URL}/functions/v1/create-final-documents-map`;
       const resp = await fetch(base, {
         method: "POST",
@@ -1038,7 +1070,7 @@ async function executeTool(
       });
       const payload = await resp.json().catch(() => ({}));
       if (!resp.ok) return { ok: false, message: payload.error ?? "Final Flow creation failed" };
-      return { ok: true, message: `Final Flow created with ${payload.nodeCount ?? 0} nodes, including ${payload.documentNodeCount ?? 0} planned documents and ${payload.edgeCount ?? 0} connecting lines. Review the Final board before creating document rows.` };
+      return { ok: true, message: `Final Flow created with ${payload.nodeCount ?? 0} nodes, including ${payload.documentNodeCount ?? 0} planned documents and ${payload.edgeCount ?? 0} connecting lines${hasProposal ? " (built from your approved proposal)" : ""}. Review the Final board before creating document rows.` };
     }
     if (name === "generate_logic_flow") {
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/generate-logic-flow`, {
