@@ -17,10 +17,12 @@ import { AssistantPlaybookPanel } from "./AssistantPlaybookPanel";
 import { ClaudeSkillsPanel } from "./ClaudeSkillsPanel";
 import { TeamAccessPanel } from "./TeamAccessPanel";
 import { AiRunLog } from "./AiRunLog";
+import { VisibleModelsPanel } from "./VisibleModelsPanel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LOGIC_FLOW_MODELS, LOGIC_FLOW_MODEL_KEY, LOGIC_FLOW_MODEL_DEFAULT } from "@/features/project/CanvasSection";
 import { Textarea } from "@/components/ui/textarea";
 import { DISPLAY_BACKGROUNDS, DEFAULT_DISPLAY_BACKGROUND, normalizeDisplayBackground } from "@/lib/display-background";
+import { useHiddenModels, filterModelOptions } from "@/lib/hidden-models";
 
 const SETTINGS_SECTIONS = [
   { id: "branding", label: "Branding" },
