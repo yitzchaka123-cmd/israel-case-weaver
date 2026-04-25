@@ -14,6 +14,7 @@ import { PromptPanel } from "@/components/PromptPanel";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { ProductionDashboard } from "./ProductionDashboard";
+import { ProposalStatusStrip } from "./ProposalStatusStrip";
 import { normalizePhase } from "./PhaseStatusBar";
 import { useProjectNotifications } from "./notifications/useProjectNotifications";
 import { notifyForFieldChange, type TriggerableField } from "./notifications/triggers";
@@ -453,6 +454,14 @@ export function ProjectOverview({ project }: { project: any }) {
             targetDocCount={draft.target_doc_count ?? null}
             logicApprovedAt={draft.logic_approved_at ?? null}
             onJump={(tab) => window.dispatchEvent(new CustomEvent("mystudio:navigate", { detail: { tab } }))}
+          />
+
+          <ProposalStatusStrip
+            projectId={project.id}
+            proposal={draft.proposed_document_set}
+            status={draft.proposed_document_set_status}
+            approvedAt={draft.proposed_document_set_approved_at ?? null}
+            logicApprovedAt={draft.logic_approved_at ?? null}
           />
 
           <div className="grid md:grid-cols-2 gap-4 mt-6">
