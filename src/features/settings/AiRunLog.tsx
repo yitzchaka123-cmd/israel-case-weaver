@@ -6,7 +6,8 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
-import { Loader2, RefreshCw, ChevronDown, ChevronRight } from "lucide-react";
+import { Loader2, RefreshCw, ChevronDown, ChevronRight, Copy, Check } from "lucide-react";
+import { toast } from "sonner";
 
 interface RunRow {
   id: string;
