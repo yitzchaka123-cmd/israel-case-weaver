@@ -123,8 +123,14 @@ export function isGeminiDirectModel(model: string): boolean {
 
 // ---------- Reasoning / thinking ----------
 
-export type ReasoningEffort = "none" | "low" | "medium" | "high";
+export type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh";
 export type ReasoningSegment = { type: "thinking" | "summary"; text: string };
+// Coerces "xhigh" into "high" for providers that don't recognise the extended tier.
+function effortForProvider(effort: ReasoningEffort): "low" | "medium" | "high" {
+  if (effort === "low" || effort === "medium" || effort === "high") return effort;
+  if (effort === "xhigh") return "high";
+  return "medium";
+}
 
 /**
  * Whether the given provider-prefixed model id is known to support
@@ -154,6 +160,7 @@ function thinkingBudgetForEffort(effort: ReasoningEffort): number {
   switch (effort) {
     case "low": return 1024;
     case "high": return 8192;
+    case "xhigh": return 16384;
     case "medium":
     default: return 4096;
   }
@@ -182,16 +189,19 @@ export async function chatCompletions(body: Record<string, unknown>): Promise<Re
 
   if (isOpenAIModel(model)) {
     if (!OPENAI_API_KEY) return jsonError("OpenAI API key (OpenAi secret) is not configured");
-    const openaiBody: Record<string, unknown> = { ...downstream, model: model.slice("openai/".length) };
-    if (wantsThinking && openaiBody.reasoning === undefined) {
-      openaiBody.reasoning = { effort };
+    const shortModel = model.slice("openai/".length);
+    // When thinking is wanted, use the Responses API — chat-completions silently
+    // discards reasoning summaries for gpt-5.
+    if (wantsThinking) {
+      return await callOpenAIResponses(downstream, shortModel, effort);
     }
+    const openaiBody: Record<string, unknown> = { ...downstream, model: shortModel };
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify(openaiBody),
     });
-    return wantsThinking ? await normalizeOpenAIShape(resp) : resp;
+    return resp;
   }
 
   if (isAnthropicModel(model)) {
@@ -218,16 +228,16 @@ export async function chatCompletions(body: Record<string, unknown>): Promise<Re
   // Default: Lovable AI Gateway
   const gatewayBody: Record<string, unknown> = { ...downstream };
   if (wantsThinking && gatewayBody.reasoning === undefined) {
-    gatewayBody.reasoning = { effort };
+    gatewayBody.reasoning = { effort: effortForProvider(effort) };
   }
   const resp = await callLovableGateway(gatewayBody);
-  return wantsThinking ? await normalizeOpenAIShape(resp) : resp;
+  return wantsThinking ? await normalizeOpenAIShape(resp, model) : resp;
 }
 
 // OpenAI / Lovable Gateway already return chat-completions shape. We just
 // normalize any reasoning-bearing fields to a stable `message.reasoning`
 // array of { type, text } so callers don't need to know about provider quirks.
-async function normalizeOpenAIShape(resp: Response): Promise<Response> {
+async function normalizeOpenAIShape(resp: Response, sourceLabel?: string): Promise<Response> {
   if (!resp.ok) return resp;
   try {
     const data = await resp.json();
@@ -235,7 +245,13 @@ async function normalizeOpenAIShape(resp: Response): Promise<Response> {
     const msg = choice?.message;
     if (msg) {
       const segments = extractReasoningFromMessage(msg);
+      // Some gateways place reasoning as a sibling of `message` instead of inside it.
+      if (segments.length === 0 && choice.reasoning) {
+        const sib = extractReasoningFromMessage({ reasoning: choice.reasoning });
+        if (sib.length) segments.push(...sib);
+      }
       if (segments.length > 0) msg.reasoning = segments;
+      console.log(`[ai-router] normalizeOpenAIShape ${sourceLabel ?? "?"}: extracted ${segments.length} reasoning segment(s)`);
     }
     return new Response(JSON.stringify(data), {
       status: resp.status,
@@ -253,6 +269,7 @@ function extractReasoningFromMessage(msg: Record<string, unknown>): ReasoningSeg
   const candidates: Array<{ value: unknown; type: ReasoningSegment["type"] }> = [
     { value: msg.reasoning_content, type: "thinking" },
     { value: msg.reasoning, type: "summary" },
+    { value: (msg as { reasoning_details?: unknown }).reasoning_details, type: "summary" },
     { value: (msg as { thinking?: unknown }).thinking, type: "thinking" },
   ];
   for (const c of candidates) {
@@ -263,17 +280,134 @@ function extractReasoningFromMessage(msg: Record<string, unknown>): ReasoningSeg
         if (typeof item === "string" && item.trim()) {
           out.push({ type: c.type, text: item });
         } else if (item && typeof item === "object") {
-          const t = (item as { text?: string; content?: string; summary?: string }).text
-            ?? (item as { content?: string }).content
-            ?? (item as { summary?: string }).summary;
+          const obj = item as { text?: string; content?: string; summary?: string; type?: string };
+          // OpenAI Responses-style: { type: "summary_text", text } or { type: "reasoning", summary: [...] }
+          if (Array.isArray((item as { summary?: unknown }).summary)) {
+            for (const s of (item as { summary: Array<{ text?: string }> }).summary) {
+              if (typeof s?.text === "string" && s.text.trim()) out.push({ type: c.type, text: s.text });
+            }
+            continue;
+          }
+          const t = obj.text ?? obj.content ?? obj.summary;
           if (typeof t === "string" && t.trim()) out.push({ type: c.type, text: t });
         }
       }
     }
   }
+  // Some providers ship reasoning embedded inside message.content as content parts
+  // of type "reasoning" / "thought". Scan for those too.
+  if (Array.isArray(msg.content)) {
+    for (const part of msg.content as Array<Record<string, unknown>>) {
+      const ptype = String(part?.type ?? "");
+      if (ptype === "reasoning" || ptype === "thought" || ptype === "thinking") {
+        const t = String(part.text ?? part.content ?? "").trim();
+        if (t) out.push({ type: ptype === "reasoning" ? "summary" : "thinking", text: t });
+      }
+    }
+  }
   // Don't leak the raw fields back to UI alongside the normalized array.
   delete (msg as Record<string, unknown>).reasoning_content;
+  delete (msg as Record<string, unknown>).reasoning_details;
   return out;
+}
+
+// ---------- OpenAI Responses API (for gpt-5 reasoning capture) ----------
+
+interface OAIToolDecl { type: string; function: { name: string; description?: string; parameters: unknown } }
+
+async function callOpenAIResponses(
+  body: Record<string, unknown>,
+  model: string,
+  effort: ReasoningEffort,
+): Promise<Response> {
+  // Translate chat-completions → Responses API input shape.
+  const messagesIn = (body.messages as IncomingMsg[]) ?? [];
+  const input: Array<Record<string, unknown>> = [];
+  for (const m of messagesIn) {
+    if (m.role === "tool") {
+      input.push({ type: "function_call_output", call_id: m.tool_call_id, output: typeof m.content === "string" ? m.content : JSON.stringify(m.content) });
+      continue;
+    }
+    if (m.role === "assistant" && m.tool_calls?.length) {
+      const text = typeof m.content === "string" ? m.content : "";
+      if (text) input.push({ role: "assistant", content: [{ type: "output_text", text }] });
+      for (const tc of m.tool_calls) {
+        input.push({ type: "function_call", call_id: tc.id, name: tc.function.name, arguments: tc.function.arguments || "{}" });
+      }
+      continue;
+    }
+    const role = m.role === "system" ? "system" : (m.role === "assistant" ? "assistant" : "user");
+    const partType = role === "assistant" ? "output_text" : "input_text";
+    input.push({ role, content: [{ type: partType, text: typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? "") }] });
+  }
+
+  const reqBody: Record<string, unknown> = {
+    model,
+    input,
+    reasoning: { effort: effortForProvider(effort), summary: "auto" },
+    store: false,
+  };
+  const tools = body.tools as OAIToolDecl[] | undefined;
+  if (tools?.length) {
+    reqBody.tools = tools.map((t) => ({
+      type: "function",
+      name: t.function.name,
+      description: t.function.description ?? "",
+      parameters: t.function.parameters,
+    }));
+  }
+  if (body.max_tokens !== undefined) reqBody.max_output_tokens = body.max_tokens;
+
+  console.log(`[ai-router] openai-responses: model=${model} effort=${effort} tools=${tools?.length ?? 0} msgs=${input.length}`);
+  const resp = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify(reqBody),
+  });
+  if (!resp.ok) {
+    const t = await resp.text();
+    console.error("[ai-router] openai-responses error", resp.status, t.slice(0, 500));
+    return new Response(t, { status: resp.status, headers: { "Content-Type": "application/json" } });
+  }
+  const data = await resp.json();
+  // Translate Responses output → chat-completions message shape.
+  let textOut = "";
+  const reasoningOut: ReasoningSegment[] = [];
+  const toolCallsOut: Array<{ id: string; type: "function"; function: { name: string; arguments: string } }> = [];
+  for (const item of (data.output ?? []) as Array<Record<string, unknown>>) {
+    const itype = String(item.type ?? "");
+    if (itype === "message") {
+      for (const c of (item.content as Array<Record<string, unknown>> | undefined) ?? []) {
+        if (String(c.type ?? "").includes("text")) textOut += String(c.text ?? "");
+      }
+    } else if (itype === "reasoning") {
+      const summary = (item.summary as Array<Record<string, unknown>> | undefined) ?? [];
+      for (const s of summary) {
+        const t = String(s.text ?? "").trim();
+        if (t) reasoningOut.push({ type: "summary", text: t });
+      }
+    } else if (itype === "function_call") {
+      toolCallsOut.push({
+        id: String(item.call_id ?? item.id ?? crypto.randomUUID()),
+        type: "function",
+        function: { name: String(item.name ?? ""), arguments: String(item.arguments ?? "{}") },
+      });
+    }
+  }
+  console.log(`[ai-router] openai-responses returned: text=${textOut.length}c reasoning=${reasoningOut.length}seg tool_calls=${toolCallsOut.length}`);
+  const message: Record<string, unknown> = {
+    role: "assistant",
+    content: textOut,
+    ...(toolCallsOut.length ? { tool_calls: toolCallsOut } : {}),
+    ...(reasoningOut.length ? { reasoning: reasoningOut } : {}),
+  };
+  const translated = {
+    id: data.id,
+    model: `openai/${data.model ?? model}`,
+    choices: [{ index: 0, message, finish_reason: toolCallsOut.length ? "tool_calls" : "stop" }],
+    usage: data.usage,
+  };
+  return new Response(JSON.stringify(translated), { status: 200, headers: { "Content-Type": "application/json" } });
 }
 
 // When a gemini-direct/* call cannot be served, prefer OpenAI direct
@@ -290,21 +424,23 @@ async function fallbackFromGemini(
   if (OPENAI_API_KEY) {
     const fallbackModel = "openai/gpt-5.2";
     console.warn(`Falling back from ${originalModel} → ${fallbackModel} (reason: ${reason})`);
+    if (wantsThinking) {
+      const responsesResp = await callOpenAIResponses(body, "gpt-5.2", effort);
+      return withFallbackHeader(responsesResp, "openai-direct");
+    }
     const openaiBody: Record<string, unknown> = { ...body, model: "gpt-5.2" };
-    if (wantsThinking && openaiBody.reasoning === undefined) openaiBody.reasoning = { effort };
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify(openaiBody),
     });
-    const normalized = wantsThinking ? await normalizeOpenAIShape(resp) : resp;
-    return withFallbackHeader(normalized, "openai-direct");
+    return withFallbackHeader(resp, "openai-direct");
   }
   console.warn(`Falling back from ${originalModel} → Lovable AI Gateway (reason: ${reason})`);
   const gatewayBody: Record<string, unknown> = { ...body, model: toGatewayModel(originalModel) };
-  if (wantsThinking && gatewayBody.reasoning === undefined) gatewayBody.reasoning = { effort };
+  if (wantsThinking && gatewayBody.reasoning === undefined) gatewayBody.reasoning = { effort: effortForProvider(effort) };
   const resp = await callLovableGateway(gatewayBody);
-  const normalized = wantsThinking ? await normalizeOpenAIShape(resp) : resp;
+  const normalized = wantsThinking ? await normalizeOpenAIShape(resp, "gateway-fallback") : resp;
   return withFallbackHeader(normalized, "lovable-ai");
 }
 
@@ -349,6 +485,10 @@ interface IncomingMsg {
   tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
   tool_call_id?: string;
   name?: string;
+  // Optional: prior thinking blocks captured from a previous Anthropic turn.
+  // When the caller round-trips them, we re-emit them so interleaved-thinking
+  // continuity holds across multi-round tool loops.
+  thinking?: Array<{ type: "thinking" | "summary"; text: string; signature?: string }>;
 }
 
 async function callAnthropic(body: Record<string, unknown>, model: string, effort: ReasoningEffort = "none"): Promise<Response> {
@@ -373,11 +513,22 @@ async function callAnthropic(body: Record<string, unknown>, model: string, effor
       });
       continue;
     }
-    if (m.role === "assistant" && m.tool_calls?.length) {
+    if (m.role === "assistant" && (m.tool_calls?.length || m.thinking?.length)) {
       const blocks: Array<Record<string, unknown>> = [];
+      // Thinking blocks MUST come first when interleaved-thinking + tool_use
+      // are in play (Anthropic requirement).
+      if (m.thinking?.length) {
+        for (const seg of m.thinking) {
+          if (seg.type === "thinking" && seg.text) {
+            const block: Record<string, unknown> = { type: "thinking", thinking: seg.text };
+            if (seg.signature) block.signature = seg.signature;
+            blocks.push(block);
+          }
+        }
+      }
       const text = typeof m.content === "string" ? m.content : "";
       if (text) blocks.push({ type: "text", text });
-      for (const tc of m.tool_calls) {
+      for (const tc of (m.tool_calls ?? [])) {
         let input: unknown = {};
         try { input = JSON.parse(tc.function.arguments || "{}"); } catch { /* */ }
         blocks.push({ type: "tool_use", id: tc.id, name: tc.function.name, input });
@@ -436,6 +587,8 @@ async function callAnthropic(body: Record<string, unknown>, model: string, effor
   }
   const betaHeader = betaParts.join(",");
 
+  console.log(`[ai-router] anthropic: model=${model} wantsThinking=${wantsThinking} budget=${thinkingBudget} beta="${betaHeader}" tools=${(anthropicBody.tools as unknown[] | undefined)?.length ?? 0} msgs=${messagesOut.length}`);
+
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -457,28 +610,45 @@ async function callAnthropic(body: Record<string, unknown>, model: string, effor
   let textOut = "";
   const toolCallsOut: Array<{ id: string; type: "function"; function: { name: string; arguments: string } }> = [];
   const reasoningOut: ReasoningSegment[] = [];
+  // Capture thinking blocks with their signatures so callers can round-trip
+  // them on subsequent tool-loop rounds (Anthropic requirement for
+  // interleaved-thinking continuity).
+  const thinkingBlocksOut: Array<{ type: "thinking"; text: string; signature?: string }> = [];
+  const blockTypesSeen: Record<string, number> = {};
   for (const block of (data.content ?? []) as Array<Record<string, unknown>>) {
-    if (block.type === "text") textOut += String(block.text ?? "");
-    if (block.type === "thinking") {
+    const btype = String(block.type ?? "");
+    blockTypesSeen[btype] = (blockTypesSeen[btype] ?? 0) + 1;
+    if (btype === "text") textOut += String(block.text ?? "");
+    else if (btype === "thinking") {
       const t = String(block.thinking ?? block.text ?? "").trim();
-      if (t) reasoningOut.push({ type: "thinking", text: t });
+      if (t) {
+        reasoningOut.push({ type: "thinking", text: t });
+        thinkingBlocksOut.push({ type: "thinking", text: t, signature: block.signature ? String(block.signature) : undefined });
+      }
     }
-    if (block.type === "redacted_thinking") {
+    else if (btype === "redacted_thinking") {
       reasoningOut.push({ type: "thinking", text: "[Redacted thinking — Claude flagged this internal reasoning as sensitive]" });
     }
-    if (block.type === "tool_use") {
+    else if (btype === "tool_use") {
       toolCallsOut.push({
         id: String(block.id),
         type: "function",
         function: { name: String(block.name), arguments: JSON.stringify(block.input ?? {}) },
       });
     }
+    else {
+      console.warn(`[ai-router] anthropic: unknown block type "${btype}"`);
+    }
   }
+  console.log(`[ai-router] anthropic returned blocks: ${JSON.stringify(blockTypesSeen)} reasoning=${reasoningOut.length}seg`);
   const message: Record<string, unknown> = {
     role: "assistant",
     content: textOut,
     ...(toolCallsOut.length ? { tool_calls: toolCallsOut } : {}),
     ...(reasoningOut.length ? { reasoning: reasoningOut } : {}),
+    // Internal field consumed by callers that want to round-trip thinking
+    // blocks (with signatures) on the next Anthropic round.
+    ...(thinkingBlocksOut.length ? { thinking_blocks: thinkingBlocksOut } : {}),
   };
   const translated = {
     id: data.id,

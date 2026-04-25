@@ -1598,9 +1598,10 @@ async function processConversation(
       reasoningRounds.push({ round, segments: msgReasoning });
     }
     const toolCalls = msg.tool_calls as Array<{ id: string; function: { name: string; arguments: string } }> | undefined;
+    const thinkingBlocks = (msg as { thinking_blocks?: Array<{ type: "thinking"; text: string; signature?: string }> }).thinking_blocks;
 
     if (toolCalls && toolCalls.length > 0) {
-      convo.push({ role: "assistant", content: msg.content ?? "", tool_calls: toolCalls });
+      convo.push({ role: "assistant", content: msg.content ?? "", tool_calls: toolCalls, ...(thinkingBlocks?.length ? { thinking: thinkingBlocks } : {}) });
       for (const call of toolCalls) {
         let args: Record<string, unknown> = {};
         try { args = JSON.parse(call.function.arguments || "{}"); } catch { /* ignore */ }
@@ -1923,9 +1924,10 @@ Deno.serve(async (req) => {
         reasoningRounds.push({ round, segments: msgReasoning });
       }
       const toolCalls = msg.tool_calls as Array<{ id: string; function: { name: string; arguments: string } }> | undefined;
+      const thinkingBlocks = (msg as { thinking_blocks?: Array<{ type: "thinking"; text: string; signature?: string }> }).thinking_blocks;
 
       if (toolCalls && toolCalls.length > 0) {
-        convo.push({ role: "assistant", content: msg.content ?? "", tool_calls: toolCalls });
+        convo.push({ role: "assistant", content: msg.content ?? "", tool_calls: toolCalls, ...(thinkingBlocks?.length ? { thinking: thinkingBlocks } : {}) });
         for (const call of toolCalls) {
           let args: Record<string, unknown> = {};
           try { args = JSON.parse(call.function.arguments || "{}"); } catch { /* ignore */ }
