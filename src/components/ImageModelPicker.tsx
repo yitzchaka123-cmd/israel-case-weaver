@@ -108,7 +108,7 @@ export function ImageModelPicker({ surface, defaultModel, className, size = "sm"
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {IMAGE_MODELS.map((m) => (
+          {visibleModels.map((m) => (
             <SelectItem key={m.value} value={m.value} className="text-xs">
               {m.label}
             </SelectItem>
