@@ -1982,6 +1982,7 @@ Deno.serve(async (req) => {
           fallback: lastFb.fallback,
           tools: executedTools,
           in_progress: false,
+          ...(reasoningRounds.length ? { reasoning: reasoningRounds } : {}),
           ...(quickOptions ? { options: quickOptions, question: quickQuestion } : {}),
         },
       }).eq("id", assistantMessageId);
