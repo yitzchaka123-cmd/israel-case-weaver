@@ -381,7 +381,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
             <Select value={imageModel} onValueChange={(v) => setProjectAi({ ai_provider_images: v })}>
               <SelectTrigger className="h-8 text-xs w-[260px]"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {IMAGE_MODELS.map((m) => (
+                {visibleImageModels.map((m) => (
                   <SelectItem key={m.value} value={m.value} className="text-xs">{m.label}</SelectItem>
                 ))}
               </SelectContent>
