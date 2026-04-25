@@ -424,21 +424,23 @@ async function fallbackFromGemini(
   if (OPENAI_API_KEY) {
     const fallbackModel = "openai/gpt-5.2";
     console.warn(`Falling back from ${originalModel} → ${fallbackModel} (reason: ${reason})`);
+    if (wantsThinking) {
+      const responsesResp = await callOpenAIResponses(body, "gpt-5.2", effort);
+      return withFallbackHeader(responsesResp, "openai-direct");
+    }
     const openaiBody: Record<string, unknown> = { ...body, model: "gpt-5.2" };
-    if (wantsThinking && openaiBody.reasoning === undefined) openaiBody.reasoning = { effort };
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify(openaiBody),
     });
-    const normalized = wantsThinking ? await normalizeOpenAIShape(resp) : resp;
-    return withFallbackHeader(normalized, "openai-direct");
+    return withFallbackHeader(resp, "openai-direct");
   }
   console.warn(`Falling back from ${originalModel} → Lovable AI Gateway (reason: ${reason})`);
   const gatewayBody: Record<string, unknown> = { ...body, model: toGatewayModel(originalModel) };
-  if (wantsThinking && gatewayBody.reasoning === undefined) gatewayBody.reasoning = { effort };
+  if (wantsThinking && gatewayBody.reasoning === undefined) gatewayBody.reasoning = { effort: effortForProvider(effort) };
   const resp = await callLovableGateway(gatewayBody);
-  const normalized = wantsThinking ? await normalizeOpenAIShape(resp) : resp;
+  const normalized = wantsThinking ? await normalizeOpenAIShape(resp, "gateway-fallback") : resp;
   return withFallbackHeader(normalized, "lovable-ai");
 }
 
