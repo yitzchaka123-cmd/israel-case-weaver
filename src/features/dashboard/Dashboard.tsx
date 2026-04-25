@@ -455,9 +455,15 @@ function CreateProjectDialog({ trigger }: { trigger?: React.ReactNode }) {
   const mut = useMutation({
     mutationFn: async () => {
       if (!user) throw new Error("Not signed in");
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("default_planning_depth")
+        .eq("id", user.id)
+        .maybeSingle();
+      const planning_depth = (profile as { default_planning_depth?: string } | null)?.default_planning_depth ?? "guided";
       const { data, error } = await supabase
         .from("projects")
-        .insert({ title: title || "Untitled Case", subtitle: subtitle || null, owner_id: user.id, game_language: gameLanguage })
+        .insert({ title: title || "Untitled Case", subtitle: subtitle || null, owner_id: user.id, game_language: gameLanguage, planning_depth })
         .select()
         .single();
       if (error) throw error;
