@@ -23,7 +23,14 @@ export async function loadClaudeSkillsForSurface(supa: SupabaseLike, surface: st
   return ((data ?? []) as ClaudeSkillRow[]).filter((skill) => {
     const metadata = skill.metadata ?? {};
     const frontmatter = (metadata.frontmatter ?? {}) as Record<string, unknown>;
-    return (skill.usage_scope ?? []).includes(surface) && frontmatter["disable-model-invocation"] !== true;
+    const anthropicStatus = Number(metadata.anthropicStatus ?? 0);
+    const isBuiltInSkill = skill.skill_type === "anthropic";
+    const isRegisteredCustomSkill = anthropicStatus >= 200 && anthropicStatus < 300;
+    return (
+      (skill.usage_scope ?? []).includes(surface) &&
+      frontmatter["disable-model-invocation"] !== true &&
+      (isBuiltInSkill || isRegisteredCustomSkill)
+    );
   });
 }
 
