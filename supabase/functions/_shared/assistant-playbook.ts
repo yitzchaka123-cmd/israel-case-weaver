@@ -127,10 +127,10 @@ export const PLAYBOOK_DEFAULTS: Playbook = {
     count: 5,
     labels: ["Open First", "1", "2", "3", "4"],
     closing_line_he:
-      "פתחו את המעטפה הבאה רק אם אתם בטוחים שביצעתם את המשימה הקודמת כראוי.",
+      "פתחו את המעטפה הבאה רק אם הגעתם לרגע המתאים בחקירה. כל המסמכים כבר בקופסה — המשיכו לחקור איתם.",
     design_brief_template:
       `GOAL
-A single sealed kraft-paper envelope, photographed flat on a neutral background. In-world prop, premium tactile feel — heavy paper stock, slight tooth, faintly aged. The envelope is closed with a wax seal and stamped with the case file's classification.
+A single sealed kraft-paper envelope, photographed flat on a neutral background. This is an in-world TASK envelope — sealed shut so the player only opens it when they reach a specific beat in the case. The envelope must look heavy and important; what's inside is an instruction, a reveal, or a task — never the next batch of evidence (all evidence documents live loose in the box from the start).
 
 OUTPUT FORMAT
 Single image, portrait orientation, ~2480×3508 px (A4 at 300 DPI). Flat archival-style scan: no hands, no desk, no shadows from a photographer. The envelope fills ~70% of the frame, centered, with a small gutter of clean off-white margin around it.
