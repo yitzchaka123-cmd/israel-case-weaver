@@ -123,8 +123,14 @@ export function isGeminiDirectModel(model: string): boolean {
 
 // ---------- Reasoning / thinking ----------
 
-export type ReasoningEffort = "none" | "low" | "medium" | "high";
+export type ReasoningEffort = "none" | "low" | "medium" | "high" | "xhigh";
 export type ReasoningSegment = { type: "thinking" | "summary"; text: string };
+// Coerces "xhigh" into "high" for providers that don't recognise the extended tier.
+function effortForProvider(effort: ReasoningEffort): "low" | "medium" | "high" {
+  if (effort === "low" || effort === "medium" || effort === "high") return effort;
+  if (effort === "xhigh") return "high";
+  return "medium";
+}
 
 /**
  * Whether the given provider-prefixed model id is known to support
@@ -154,6 +160,7 @@ function thinkingBudgetForEffort(effort: ReasoningEffort): number {
   switch (effort) {
     case "low": return 1024;
     case "high": return 8192;
+    case "xhigh": return 16384;
     case "medium":
     default: return 4096;
   }
