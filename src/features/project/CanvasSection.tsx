@@ -516,13 +516,13 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
           className="gap-2 h-9"
           onClick={arrangeNodes}
           disabled={arranging || nodes.length === 0}
-          title="Smart arrange: lays nodes out by game flow — suspects & clues on top, envelopes as the spine, documents under their envelope, deductions and solution below."
+          title="AI smart arrange: the configured Logic-Flow model studies your nodes & labelled edges and lays them out as a clear game-flow story with room for the lines and labels. Click again to re-arrange."
         >
-          {arranging ? <Loader2 className="h-4 w-4 animate-spin" /> : <LayoutGrid className="h-4 w-4" />}
+          {arranging ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
           Arrange
           {nodes.length > 0 && (
             <span className="ml-0.5 text-[10px] text-muted-foreground font-normal">
-              · by game flow
+              · AI smart layout
             </span>
           )}
         </Button>
