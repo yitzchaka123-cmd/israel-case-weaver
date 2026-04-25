@@ -237,7 +237,7 @@ export async function chatCompletions(body: Record<string, unknown>): Promise<Re
 // OpenAI / Lovable Gateway already return chat-completions shape. We just
 // normalize any reasoning-bearing fields to a stable `message.reasoning`
 // array of { type, text } so callers don't need to know about provider quirks.
-async function normalizeOpenAIShape(resp: Response): Promise<Response> {
+async function normalizeOpenAIShape(resp: Response, sourceLabel?: string): Promise<Response> {
   if (!resp.ok) return resp;
   try {
     const data = await resp.json();
@@ -245,7 +245,13 @@ async function normalizeOpenAIShape(resp: Response): Promise<Response> {
     const msg = choice?.message;
     if (msg) {
       const segments = extractReasoningFromMessage(msg);
+      // Some gateways place reasoning as a sibling of `message` instead of inside it.
+      if (segments.length === 0 && choice.reasoning) {
+        const sib = extractReasoningFromMessage({ reasoning: choice.reasoning });
+        if (sib.length) segments.push(...sib);
+      }
       if (segments.length > 0) msg.reasoning = segments;
+      console.log(`[ai-router] normalizeOpenAIShape ${sourceLabel ?? "?"}: extracted ${segments.length} reasoning segment(s)`);
     }
     return new Response(JSON.stringify(data), {
       status: resp.status,
@@ -263,6 +269,7 @@ function extractReasoningFromMessage(msg: Record<string, unknown>): ReasoningSeg
   const candidates: Array<{ value: unknown; type: ReasoningSegment["type"] }> = [
     { value: msg.reasoning_content, type: "thinking" },
     { value: msg.reasoning, type: "summary" },
+    { value: (msg as { reasoning_details?: unknown }).reasoning_details, type: "summary" },
     { value: (msg as { thinking?: unknown }).thinking, type: "thinking" },
   ];
   for (const c of candidates) {
@@ -273,17 +280,134 @@ function extractReasoningFromMessage(msg: Record<string, unknown>): ReasoningSeg
         if (typeof item === "string" && item.trim()) {
           out.push({ type: c.type, text: item });
         } else if (item && typeof item === "object") {
-          const t = (item as { text?: string; content?: string; summary?: string }).text
-            ?? (item as { content?: string }).content
-            ?? (item as { summary?: string }).summary;
+          const obj = item as { text?: string; content?: string; summary?: string; type?: string };
+          // OpenAI Responses-style: { type: "summary_text", text } or { type: "reasoning", summary: [...] }
+          if (Array.isArray((item as { summary?: unknown }).summary)) {
+            for (const s of (item as { summary: Array<{ text?: string }> }).summary) {
+              if (typeof s?.text === "string" && s.text.trim()) out.push({ type: c.type, text: s.text });
+            }
+            continue;
+          }
+          const t = obj.text ?? obj.content ?? obj.summary;
           if (typeof t === "string" && t.trim()) out.push({ type: c.type, text: t });
         }
       }
     }
   }
+  // Some providers ship reasoning embedded inside message.content as content parts
+  // of type "reasoning" / "thought". Scan for those too.
+  if (Array.isArray(msg.content)) {
+    for (const part of msg.content as Array<Record<string, unknown>>) {
+      const ptype = String(part?.type ?? "");
+      if (ptype === "reasoning" || ptype === "thought" || ptype === "thinking") {
+        const t = String(part.text ?? part.content ?? "").trim();
+        if (t) out.push({ type: ptype === "reasoning" ? "summary" : "thinking", text: t });
+      }
+    }
+  }
   // Don't leak the raw fields back to UI alongside the normalized array.
   delete (msg as Record<string, unknown>).reasoning_content;
+  delete (msg as Record<string, unknown>).reasoning_details;
   return out;
+}
+
+// ---------- OpenAI Responses API (for gpt-5 reasoning capture) ----------
+
+interface OAIToolDecl { type: string; function: { name: string; description?: string; parameters: unknown } }
+
+async function callOpenAIResponses(
+  body: Record<string, unknown>,
+  model: string,
+  effort: ReasoningEffort,
+): Promise<Response> {
+  // Translate chat-completions → Responses API input shape.
+  const messagesIn = (body.messages as IncomingMsg[]) ?? [];
+  const input: Array<Record<string, unknown>> = [];
+  for (const m of messagesIn) {
+    if (m.role === "tool") {
+      input.push({ type: "function_call_output", call_id: m.tool_call_id, output: typeof m.content === "string" ? m.content : JSON.stringify(m.content) });
+      continue;
+    }
+    if (m.role === "assistant" && m.tool_calls?.length) {
+      const text = typeof m.content === "string" ? m.content : "";
+      if (text) input.push({ role: "assistant", content: [{ type: "output_text", text }] });
+      for (const tc of m.tool_calls) {
+        input.push({ type: "function_call", call_id: tc.id, name: tc.function.name, arguments: tc.function.arguments || "{}" });
+      }
+      continue;
+    }
+    const role = m.role === "system" ? "system" : (m.role === "assistant" ? "assistant" : "user");
+    const partType = role === "assistant" ? "output_text" : "input_text";
+    input.push({ role, content: [{ type: partType, text: typeof m.content === "string" ? m.content : JSON.stringify(m.content ?? "") }] });
+  }
+
+  const reqBody: Record<string, unknown> = {
+    model,
+    input,
+    reasoning: { effort: effortForProvider(effort), summary: "auto" },
+    store: false,
+  };
+  const tools = body.tools as OAIToolDecl[] | undefined;
+  if (tools?.length) {
+    reqBody.tools = tools.map((t) => ({
+      type: "function",
+      name: t.function.name,
+      description: t.function.description ?? "",
+      parameters: t.function.parameters,
+    }));
+  }
+  if (body.max_tokens !== undefined) reqBody.max_output_tokens = body.max_tokens;
+
+  console.log(`[ai-router] openai-responses: model=${model} effort=${effort} tools=${tools?.length ?? 0} msgs=${input.length}`);
+  const resp = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify(reqBody),
+  });
+  if (!resp.ok) {
+    const t = await resp.text();
+    console.error("[ai-router] openai-responses error", resp.status, t.slice(0, 500));
+    return new Response(t, { status: resp.status, headers: { "Content-Type": "application/json" } });
+  }
+  const data = await resp.json();
+  // Translate Responses output → chat-completions message shape.
+  let textOut = "";
+  const reasoningOut: ReasoningSegment[] = [];
+  const toolCallsOut: Array<{ id: string; type: "function"; function: { name: string; arguments: string } }> = [];
+  for (const item of (data.output ?? []) as Array<Record<string, unknown>>) {
+    const itype = String(item.type ?? "");
+    if (itype === "message") {
+      for (const c of (item.content as Array<Record<string, unknown>> | undefined) ?? []) {
+        if (String(c.type ?? "").includes("text")) textOut += String(c.text ?? "");
+      }
+    } else if (itype === "reasoning") {
+      const summary = (item.summary as Array<Record<string, unknown>> | undefined) ?? [];
+      for (const s of summary) {
+        const t = String(s.text ?? "").trim();
+        if (t) reasoningOut.push({ type: "summary", text: t });
+      }
+    } else if (itype === "function_call") {
+      toolCallsOut.push({
+        id: String(item.call_id ?? item.id ?? crypto.randomUUID()),
+        type: "function",
+        function: { name: String(item.name ?? ""), arguments: String(item.arguments ?? "{}") },
+      });
+    }
+  }
+  console.log(`[ai-router] openai-responses returned: text=${textOut.length}c reasoning=${reasoningOut.length}seg tool_calls=${toolCallsOut.length}`);
+  const message: Record<string, unknown> = {
+    role: "assistant",
+    content: textOut,
+    ...(toolCallsOut.length ? { tool_calls: toolCallsOut } : {}),
+    ...(reasoningOut.length ? { reasoning: reasoningOut } : {}),
+  };
+  const translated = {
+    id: data.id,
+    model: `openai/${data.model ?? model}`,
+    choices: [{ index: 0, message, finish_reason: toolCallsOut.length ? "tool_calls" : "stop" }],
+    usage: data.usage,
+  };
+  return new Response(JSON.stringify(translated), { status: 200, headers: { "Content-Type": "application/json" } });
 }
 
 // When a gemini-direct/* call cannot be served, prefer OpenAI direct
