@@ -476,6 +476,7 @@ const BASE_TOOLS = [
           video_prompt_instructions: { type: "string", description: "Per-project style guide for video prompts." },
           hint_settings: { type: "object", description: "Stage/level hint configuration object. Replaces the existing value (no shallow merge)." },
           envelope_settings: { type: "object", description: "Envelope numbering & defaults object. Replaces the existing value (no shallow merge)." },
+          planning_depth: { type: "string", enum: ["express", "guided", "deep"], description: "How thoroughly the assistant should plan this case: 'express' = ask only the title and auto-fill the rest; 'guided' = basics only; 'deep' = walk through every detail. Set this when the user picks a depth on the first turn or asks to switch later." },
         },
         additionalProperties: false,
       },
