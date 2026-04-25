@@ -19,8 +19,13 @@ import { AssetLightbox, type LightboxAsset } from "./assistant/AssetLightbox";
 import { useHiddenModels, filterModelOptions } from "@/lib/hidden-models";
 
 const PLANNING_MODELS = [
+  { value: "__hdr-openai", label: "— OpenAI —", header: true },
+  { value: "openai-5.2", label: "ChatGPT 5.2 (default)" },
+  { value: "openai-5.4", label: "ChatGPT 5.4 (newest)" },
+  { value: "openai", label: "ChatGPT 5" },
+  { value: "openai-mini", label: "ChatGPT 5 mini" },
   { value: "__hdr-lovable", label: "— Lovable AI (workspace credits) —", header: true },
-  { value: "lovable", label: "Gemini 3.1 Pro (default)" },
+  { value: "lovable", label: "Gemini 3.1 Pro (Lovable)" },
   { value: "gemini-3-flash", label: "Gemini 3 Flash (preview)" },
   { value: "gemini", label: "Gemini 2.5 Pro" },
   { value: "gemini-flash", label: "Gemini 2.5 Flash" },
@@ -31,11 +36,6 @@ const PLANNING_MODELS = [
   { value: "gemini-direct-pro", label: "Gemini 2.5 Pro (direct)" },
   { value: "gemini-direct-flash", label: "Gemini 2.5 Flash (direct)" },
   { value: "gemini-direct-flash-lite", label: "Gemini 2.5 Flash Lite (direct)" },
-  { value: "__hdr-openai", label: "— OpenAI —", header: true },
-  { value: "openai-5.4", label: "ChatGPT 5.4 (newest)" },
-  { value: "openai-5.2", label: "ChatGPT 5.2" },
-  { value: "openai", label: "ChatGPT 5" },
-  { value: "openai-mini", label: "ChatGPT 5 mini" },
   { value: "__hdr-claude", label: "— Anthropic (your Claude key) —", header: true },
   { value: "claude", label: "Claude Sonnet 4.5" },
   { value: "claude-opus", label: "Claude Opus 4.5 (highest quality)" },
