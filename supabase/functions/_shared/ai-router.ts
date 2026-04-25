@@ -513,11 +513,22 @@ async function callAnthropic(body: Record<string, unknown>, model: string, effor
       });
       continue;
     }
-    if (m.role === "assistant" && m.tool_calls?.length) {
+    if (m.role === "assistant" && (m.tool_calls?.length || m.thinking?.length)) {
       const blocks: Array<Record<string, unknown>> = [];
+      // Thinking blocks MUST come first when interleaved-thinking + tool_use
+      // are in play (Anthropic requirement).
+      if (m.thinking?.length) {
+        for (const seg of m.thinking) {
+          if (seg.type === "thinking" && seg.text) {
+            const block: Record<string, unknown> = { type: "thinking", thinking: seg.text };
+            if (seg.signature) block.signature = seg.signature;
+            blocks.push(block);
+          }
+        }
+      }
       const text = typeof m.content === "string" ? m.content : "";
       if (text) blocks.push({ type: "text", text });
-      for (const tc of m.tool_calls) {
+      for (const tc of (m.tool_calls ?? [])) {
         let input: unknown = {};
         try { input = JSON.parse(tc.function.arguments || "{}"); } catch { /* */ }
         blocks.push({ type: "tool_use", id: tc.id, name: tc.function.name, input });
