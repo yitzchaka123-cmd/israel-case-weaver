@@ -255,8 +255,8 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
           <div>
             <h2 className="font-display text-3xl">Envelopes</h2>
             <p className="text-sm text-muted-foreground mt-1">
-              {playbook.envelopes.count} sealed envelopes drive the flow. Each one has a
-              player-facing Hebrew brief and a separate design instruction for the printed cover.
+              {playbook.envelopes.count} sealed task gates — opened only when the player reaches the matching beat.
+              All evidence documents live loose in the box from the start; envelopes only hold a task or reveal.
             </p>
           </div>
           <div className="flex items-center gap-2">
