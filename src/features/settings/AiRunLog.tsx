@@ -158,6 +158,22 @@ function FilterChips({
   );
 }
 
+function formatRunForCopy(r: RunRow): string {
+  const lines = [
+    `Time: ${new Date(r.created_at).toLocaleString()}`,
+    `Surface: ${r.surface}`,
+    `Requested model: ${r.requested_model ?? "—"}`,
+    `Effective model: ${r.effective_model ?? "—"}`,
+    `Fallback: ${r.fallback}`,
+    `Status: ${r.status}`,
+    `Latency: ${r.latency_ms != null ? `${r.latency_ms}ms` : "—"}`,
+  ];
+  if (r.target_id) lines.push(`Target: ${r.target_id}`);
+  if (r.prompt_excerpt) lines.push(`Prompt: ${r.prompt_excerpt}`);
+  if (r.error_message) lines.push(`Error: ${r.error_message}`);
+  return lines.join("\n");
+}
+
 function RunRowItem({
   row,
   expanded,
@@ -167,39 +183,64 @@ function RunRowItem({
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const [copied, setCopied] = useState(false);
   const dot = row.status === "error"
     ? "bg-destructive"
     : row.fallback !== "none"
     ? "bg-amber-500"
     : "bg-emerald-500";
+
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(formatRunForCopy(row));
+      setCopied(true);
+      toast.success("Run details copied");
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error("Couldn't copy to clipboard");
+    }
+  };
+
   return (
     <div>
-      <button
-        onClick={onToggle}
-        className="w-full grid grid-cols-[16px_120px_1fr_1fr_90px_70px_70px] gap-2 px-3 py-2 items-center text-left hover:bg-muted/30 transition-colors text-xs"
-      >
-        <div className={`h-2 w-2 rounded-full ${dot}`} />
-        <div className="text-muted-foreground text-[11px] truncate">
-          {new Date(row.created_at).toLocaleString()}
-        </div>
-        <div className="min-w-0">
-          <div className="font-medium truncate">{row.surface}</div>
-          <div className="text-muted-foreground text-[10px] truncate">{row.requested_model ?? "—"}</div>
-        </div>
-        <div className="min-w-0">
-          <div className="truncate">{row.effective_model ?? "—"}</div>
-          <div className="text-[10px] text-muted-foreground truncate">
-            {row.fallback === "none" ? "no fallback" : row.fallback}
+      <div className="w-full grid grid-cols-[16px_120px_1fr_1fr_90px_70px_28px_28px] gap-2 px-3 py-2 items-center text-xs hover:bg-muted/30 transition-colors">
+        <button onClick={onToggle} className="contents text-left">
+          <div className={`h-2 w-2 rounded-full ${dot}`} />
+          <div className="text-muted-foreground text-[11px] truncate">
+            {new Date(row.created_at).toLocaleString()}
           </div>
-        </div>
-        <div className="text-right text-[11px] text-muted-foreground">
-          {row.latency_ms != null ? `${row.latency_ms}ms` : "—"}
-        </div>
-        <div className="text-center text-[11px] capitalize">{row.status}</div>
-        <div className="text-muted-foreground">
+          <div className="min-w-0">
+            <div className="font-medium truncate">{row.surface}</div>
+            <div className="text-muted-foreground text-[10px] truncate">{row.requested_model ?? "—"}</div>
+          </div>
+          <div className="min-w-0">
+            <div className="truncate">{row.effective_model ?? "—"}</div>
+            <div className="text-[10px] text-muted-foreground truncate">
+              {row.fallback === "none" ? "no fallback" : row.fallback}
+            </div>
+          </div>
+          <div className="text-right text-[11px] text-muted-foreground">
+            {row.latency_ms != null ? `${row.latency_ms}ms` : "—"}
+          </div>
+          <div className="text-center text-[11px] capitalize">{row.status}</div>
+        </button>
+        <button
+          onClick={handleCopy}
+          className="h-6 w-6 inline-flex items-center justify-center rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+          title="Copy run details"
+          aria-label="Copy run details"
+        >
+          {copied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+        </button>
+        <button
+          onClick={onToggle}
+          className="h-6 w-6 inline-flex items-center justify-center rounded hover:bg-muted text-muted-foreground transition-colors"
+          aria-label={expanded ? "Collapse" : "Expand"}
+        >
           {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-        </div>
-      </button>
+        </button>
+      </div>
       {expanded && (
         <div className="px-3 pb-3 pt-1 bg-muted/20 text-[11px] space-y-1">
           {row.prompt_excerpt && (
