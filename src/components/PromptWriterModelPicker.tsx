@@ -67,7 +67,7 @@ export function PromptWriterModelPicker({ surface, className }: Props) {
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {PROMPT_WRITER_MODELS.map((m) => {
+        {visibleModels.map((m) => {
           if ((m as { header?: boolean }).header) {
             return (
               <div
