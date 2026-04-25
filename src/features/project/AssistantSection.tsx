@@ -360,7 +360,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
             <Select value={planningModel} onValueChange={(v) => setProjectAi({ ai_provider_planning: v })}>
               <SelectTrigger className="h-8 text-xs w-[210px]"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {PLANNING_MODELS.map((m) => {
+                {visiblePlanningModels.map((m) => {
                   if ((m as { header?: boolean }).header) {
                     return (
                       <div key={m.value} className="px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
