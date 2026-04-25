@@ -255,8 +255,8 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
           <div>
             <h2 className="font-display text-3xl">Envelopes</h2>
             <p className="text-sm text-muted-foreground mt-1">
-              {playbook.envelopes.count} sealed envelopes drive the flow. Each one has a
-              player-facing Hebrew brief and a separate design instruction for the printed cover.
+              {playbook.envelopes.count} sealed task gates — opened only when the player reaches the matching beat.
+              All evidence documents live loose in the box from the start; envelopes only hold a task or reveal.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -551,14 +551,29 @@ function EnvelopeCard({
 
           <div className="space-y-1.5">
             <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-              Linked documents · {linkedDocs.length}
+              Opening trigger
+            </Label>
+            <Textarea
+              rows={2}
+              value={value("notes") as string}
+              onChange={(e) => onUpdate({ notes: e.target.value })}
+              placeholder="When does the player open this envelope? e.g. 'Open after you've narrowed it to two suspects.' All documents are already in the box — this envelope holds a task or reveal, not evidence."
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Sealed task gate. Players only open this when they reach the matching beat in the case.
+            </p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+              Physical inserts (rare) · {linkedDocs.length}
             </Label>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" className="w-full justify-between font-normal">
                   <span className="truncate text-sm">
                     {linkedDocs.length === 0
-                      ? "Pick documents that go inside this envelope"
+                      ? "No documents inside (default — all docs live in the box)"
                       : linkedDocs
                           .map((d) => `#${d.doc_number ?? "?"} ${d.title}`)
                           .join(", ")}
@@ -567,7 +582,9 @@ function EnvelopeCard({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-[320px] max-h-72 overflow-y-auto" align="start">
-                <DropdownMenuLabel className="text-xs">Project documents</DropdownMenuLabel>
+                <DropdownMenuLabel className="text-xs">
+                  Optional — only items literally sealed inside this envelope
+                </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 {docs.length === 0 && (
                   <div className="px-2 py-3 text-xs text-muted-foreground">
@@ -602,18 +619,9 @@ function EnvelopeCard({
                 })}
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-              Internal notes
-            </Label>
-            <Textarea
-              rows={2}
-              value={value("notes") as string}
-              onChange={(e) => onUpdate({ notes: e.target.value })}
-              placeholder="What is revealed, what is withheld…"
-            />
+            <p className="text-[11px] text-muted-foreground">
+              Default: empty. Documents live loose in the box. Only link items physically tucked inside this sealed envelope.
+            </p>
           </div>
 
           <div

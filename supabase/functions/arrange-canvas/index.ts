@@ -66,8 +66,8 @@ function fallbackLayout(nodes: ArrangeNode[], edges: ArrangeEdge[]): Record<stri
   const LANES: { key: string; types: string[] }[] = [
     { key: "suspects", types: ["suspect"] },
     { key: "clues", types: ["clue"] },
-    { key: "envelopes", types: ["envelope"] },
     { key: "documents", types: ["document"] },
+    { key: "envelopes", types: ["envelope"] },
     { key: "reasoning", types: ["deduction", "contradiction"] },
     { key: "distractions", types: ["red_herring", "hint", "note"] },
     { key: "solution", types: ["solution"] },
@@ -216,17 +216,17 @@ CRITICAL constraints:
 3. Group nodes into HORIZONTAL LANES by their semantic role, top to bottom in this order:
    Lane 0 (y≈80):           suspects
    Lane 1 (y≈80+1·${STEP_Y}): clues
-   Lane 2 (y≈80+2·${STEP_Y}): envelopes  ← the SPINE; sort left→right by envelopeNumber
-   Lane 3 (y≈80+3·${STEP_Y}): documents  ← stack vertically UNDER the envelope they belong to
+   Lane 2 (y≈80+2·${STEP_Y}): documents  ← INDEPENDENT lane. Documents live loose in the box from the start; group them by suspect / topic / logic node, NOT by envelope.
+   Lane 3 (y≈80+3·${STEP_Y}): envelopes  ← SEALED TASK GATES on the side. Each envelope is pinned to the column of the LOGIC BEAT it unlocks (e.g. a deduction or clue node). Envelopes do NOT contain documents.
    Lane 4:                  deductions / contradictions
    Lane 5:                  red_herring / hint / note
    Lane 6 (bottom):         solution
-4. ALIGN connected items: if a clue/deduction/document is connected to envelope #N, place it in that envelope's COLUMN (same x). This makes the connecting lines short, mostly vertical, and easy to read.
+4. ALIGN connected items: place each envelope in the SAME COLUMN as the logic beat that triggers it (so the labelled trigger edge is short and vertical). Place each document in the column of the suspect / clue / deduction it supports.
 5. LEAVE ROOM FOR EDGE LABELS. The labels appear on the connecting lines. Vertical edges between lanes need at least ${ROW_GAP}px of clear space; horizontal edges in the same lane need at least ${COL_GAP}px. If an edge has a label, prefer routing that goes through empty space (do NOT place a third node directly between the two endpoints of a labelled edge).
 6. Keep similar nodes evenly spaced — do not bunch everything in a corner. The whole layout should be roughly centered around x ∈ [80, 80 + numColumns · ${STEP_X}].
 7. Return EVERY node id exactly once. Coordinates must be integers.
 
-Think like a designer reading the case for the first time: setup at the top, evidence flowing down through the envelope spine, reasoning below, solution at the bottom.`;
+Think like a designer reading the case for the first time: setup at the top, evidence available throughout, sealed task envelopes pinned to the moments that unlock them, reasoning below, solution at the bottom.`;
 
     const userPrompt = `PROJECT: "${project?.title ?? ""}" — ${project?.subtitle ?? ""}
 ${project?.solution_summary ? `SOLUTION SUMMARY (helps you decide which clues belong to which envelope):\n${(project.solution_summary as string).slice(0, 800)}\n` : ""}

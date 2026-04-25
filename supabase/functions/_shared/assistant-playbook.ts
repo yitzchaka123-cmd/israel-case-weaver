@@ -127,10 +127,10 @@ export const PLAYBOOK_DEFAULTS: Playbook = {
     count: 5,
     labels: ["Open First", "1", "2", "3", "4"],
     closing_line_he:
-      "פתחו את המעטפה הבאה רק אם אתם בטוחים שביצעתם את המשימה הקודמת כראוי.",
+      "פתחו את המעטפה הבאה רק אם הגעתם לרגע המתאים בחקירה. כל המסמכים כבר בקופסה — המשיכו לחקור איתם.",
     design_brief_template:
       `GOAL
-A single sealed kraft-paper envelope, photographed flat on a neutral background. In-world prop, premium tactile feel — heavy paper stock, slight tooth, faintly aged. The envelope is closed with a wax seal and stamped with the case file's classification.
+A single sealed kraft-paper envelope, photographed flat on a neutral background. This is an in-world TASK envelope — sealed shut so the player only opens it when they reach a specific beat in the case. The envelope must look heavy and important; what's inside is an instruction, a reveal, or a task — never the next batch of evidence (all evidence documents live loose in the box from the start).
 
 OUTPUT FORMAT
 Single image, portrait orientation, ~2480×3508 px (A4 at 300 DPI). Flat archival-style scan: no hands, no desk, no shadows from a photographer. The envelope fills ~70% of the frame, centered, with a small gutter of clean off-white margin around it.
@@ -278,7 +278,7 @@ Looks like an actual archival envelope from the case era — NOT a modern Canva 
         key: "doc0_contents",
         enabled: true,
         title_template: "Doc 0 — Contents / Case File Inventory",
-        purpose: "Player-facing checklist for the game box. List every planned document, envelope, physical insert, and generated piece the buyer should receive. No solution spoilers. Group by envelope/section when useful.",
+        purpose: "Player-facing master inventory of the game box. List EVERY document in the box (the player has access to all of them from the start, organized however helps them — by topic, document type, or investigative area — NOT by envelope). Then list the sealed task envelopes separately, each shown as a sealed item with its trigger condition (when to open it). No solution spoilers.",
         doc_type: "contents checklist",
         print_size: "A4",
         list_scope: "planned",
@@ -288,9 +288,9 @@ Looks like an actual archival envelope from the case era — NOT a modern Canva 
   phases: [
     { key: "setup", label: "Setup", description: "Phase 1 — gather case identity & brief." },
     { key: "summary", label: "Summary", description: "Phase 2 — write the news-style solution summary." },
-    { key: "structure", label: "Structure", description: "Phase 3 — suspects, clues, red herrings, envelope flow." },
-    { key: "documents", label: "Documents", description: "Phase 4 — generate the printable documents." },
-    { key: "envelopes", label: "Envelopes", description: "Phase 5 — finalise envelope tasks & order." },
+    { key: "structure", label: "Structure", description: "Phase 3 — suspects, clues, red herrings, deduction logic, sealed task-envelope plan." },
+    { key: "documents", label: "Documents", description: "Phase 4 — generate the printable documents (all in the box from the start)." },
+    { key: "envelopes", label: "Envelopes", description: "Phase 5 — finalise sealed task-gate envelopes (opening trigger + payload per envelope)." },
     { key: "hints", label: "Hints", description: "Phase 6 — write the graduated hint ladder per stage." },
     { key: "packaging", label: "Packaging", description: "Phase 7 — physical box / print / fulfilment notes." },
     { key: "done", label: "Done", description: "Project complete and ready to ship." },
@@ -584,7 +584,7 @@ After writing a stage, drop a matching \`hint\` node on the canvas via \`add_can
 }
 
 export function renderEnvelopesLine(p: Playbook): string {
-  return `Envelopes (fixed ${p.envelopes.count}): ${p.envelopes.labels.join(" / ")}. Tasks short, bold, not overly revealing. Every envelope ends with: "${p.envelopes.closing_line_he}"`;
+  return `Envelopes (fixed ${p.envelopes.count}): ${p.envelopes.labels.join(" / ")}. Envelopes are SEALED TASK GATES, not document containers. All evidence documents live loose in the box from the start; envelopes only hold a short task / reveal / instruction the player reads when they reach the matching beat in the case. Each envelope has an opening trigger (the case beat that unlocks it). Envelope #0 is the mission briefing (opened first, points the player at Doc 0). The final envelope is the accusation/solution reveal. Tasks short, bold, never reveal the solution. Closing line when language matches: "${p.envelopes.closing_line_he}"`;
 }
 
 export function renderEnvelopeDesignTemplate(p: Playbook): string {

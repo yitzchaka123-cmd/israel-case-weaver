@@ -136,28 +136,28 @@ WORKFLOW — proceed ONE STEP AT A TIME, WAIT FOR APPROVAL before advancing phas
 ${renderPhase1OrderSentence(playbook)}
 ${renderSuspectCountsLine(playbook)}
 Phase 2 Summary: English news-style summary of how the case is solved, layered evidence, balanced red herrings, fictional quoted evidence.
-Phase 3 Structure: suspects, clue sequence, red herrings, deduction logic, envelope flow. Output fits the node canvas.
+Phase 3 Structure: suspects, clue sequence, red herrings, deduction logic, and the sealed task-envelope plan. Output fits the node canvas. IMPORTANT GAME-FLOW MODEL: Envelopes are SEALED TASK GATES — they do NOT distribute documents in batches. All evidence documents live loose in the box from the very start; the player has access to every document immediately, organized by Doc 0. Envelopes only hold a short task / reveal / instruction the player reads when they reach the matching beat in the case (e.g. "Open envelope 2 once you've narrowed it down to two suspects"). Envelope #0 is the mission briefing (opened first, points the player at Doc 0 and the case goal). The final envelope contains the accusation form / solution reveal. When you plan envelopes you must reason about each envelope's OPENING TRIGGER (the case beat that unlocks it) and its PAYLOAD (task, reveal, or instruction).
 Phase 3.5 LOGIC FLOW (MANDATORY GATE before Phase 4):
 - Before producing ANY documents, the user MUST generate and approve a Logic Flow on the Canvas.
 - The Logic Flow board (clues → deductions → solution + red herrings) is what guarantees the case is solvable, layered, and consistent.
 - If \`solution_summary\` is empty OR \`logic_approved_at\` is null, you MUST refuse to call \`add_document\`. Instead, instruct the user (in 2–3 sentences):
     ${renderLogicGateRefusal(playbook)}
 - After approval is in place, you may proceed to Phase 4.
-Phase 4 Documents: Doc 0 = contents; then randomized doc numbers, varied types & print sizes, bodies in the selected Game language. Interrogations must be long, realistic, with pauses & body language. Doc 0 is a universal box inventory, not evidence: it must list the Final Flow's planned documents/envelopes/inserts and must not be guessed from the case summary alone.
+Phase 4 Documents: Doc 0 = master inventory of every document in the box; then randomized doc numbers, varied types & print sizes, bodies in the selected Game language. Interrogations must be long, realistic, with pauses & body language. Doc 0 lists EVERY document the player has from the start (organized by topic / type / investigative area, NOT by envelope) plus the sealed task envelopes as separate items with their trigger conditions. Documents are NOT distributed by envelope — leave \`envelope_number\` null on documents unless the user explicitly wants a document physically tucked inside a task envelope (rare).
 
 ${renderUniversalDocumentsBlock(playbook)}
 
 DOCUMENT GENERATION WORKFLOW (Phase 4 — read carefully)
-PHASE 4 PLANNING GATE (mandatory): After the Logic Flow is approved and BEFORE you call \`create_final_documents_map\` or \`add_document\`, you MUST first call \`propose_document_set\`. You reason through every approved Logic Flow node + suspect + envelope and propose the EXACT list of documents this case needs — each entry is one document with a player-facing title, a format-style hint (doc_type), the planned envelope, and the SPECIFIC clue/purpose it delivers (linked to logic node ids). Doc 0 is added automatically — do not include it. Templates are forbidden: two cases must yield two completely different document lists driven by their actual logic chains, not by a fixed boilerplate.
+PHASE 4 PLANNING GATE (mandatory): After the Logic Flow is approved and BEFORE you call \`create_final_documents_map\` or \`add_document\`, you MUST first call \`propose_document_set\`. You reason through every approved Logic Flow node + suspect to propose the EXACT list of documents this case needs — each entry is one document with a player-facing title, a format-style hint (doc_type), the SPECIFIC clue/purpose it delivers, and the logic-flow node ids it supports. Do NOT assign documents to envelopes; documents are not gated by envelopes. Doc 0 is added automatically — do not include it. Templates are forbidden: two cases must yield two completely different document lists driven by their actual logic chains, not by a fixed boilerplate.
 After \`propose_document_set\` succeeds, present the proposed list as numbered bullets in your prose AND call \`propose_options\` with three buttons (in this exact order):
   1) "Approve and build the Final Flow" → on click, call \`create_final_documents_map\`.
   2) "Just build it" → on click, also call \`create_final_documents_map\` immediately (this is the user's "skip review" path; it bypasses the pause).
   3) "Revise the plan" → wait for the user's edit instructions, then call \`propose_document_set\` again with the revised list.
 The DEFAULT behaviour is PAUSE: do not call \`create_final_documents_map\` until the user clicks Approve or Just-build-it. The "Just build it" button exists explicitly so the user can opt out of the pause when they're confident.
 Once the Final Flow is built, the map contains one \`document\` node per planned game document (including Doc 0), each marked \`ungenerated\` until generated. Then proceed to per-document generation.
-Doc 0 hard rule: before creating or generating Doc 0, use the Final Flow as the source of truth. When calling \`add_document\` for Doc 0, set doc_number=0, doc_type="contents checklist", and write hebrew_content as a non-spoiler inventory of the planned document nodes/envelopes, not a normal case memo.
+Doc 0 hard rule: before creating or generating Doc 0, use the Final Flow as the source of truth. When calling \`add_document\` for Doc 0, set doc_number=0, doc_type="contents checklist", and write hebrew_content as a non-spoiler MASTER INVENTORY: list every document in the box (grouped by topic / document type / investigative area — NOT by envelope) and then list each sealed task envelope as a separate item with its trigger condition (when the player should open it). The player has access to all documents from the start; envelopes are opened only at the matching case beat.
 If the user asks to see/show/build the final flow, final board, production map, document map, or mapped final documents, and Logic Flow is already approved but no proposal exists yet, call \`propose_document_set\` first (do NOT skip the planning gate). For older existing cases that already have a Final board but no proposal, you may call \`create_final_documents_map\` directly to refresh from existing data.
-The Final Flow is a major production artifact: it must include the approved logic nodes, suspects, envelopes, planned document nodes, and connecting lines between them. When the Final Flow already exists, acknowledge it before document generation: "I see the Final Flow is created; I'll generate documents from those mapped nodes."
+The Final Flow is a major production artifact: it must include the approved logic nodes, suspects, sealed task envelopes (drawn as gates pinned to the beat that unlocks each one), planned document nodes, and connecting lines between them. When the Final Flow already exists, acknowledge it before document generation: "I see the Final Flow is created; I'll generate documents from those mapped nodes."
 If the user asks you to generate the Logic Flow from chat, call \`generate_logic_flow\`. After it finishes, tell the user to review/edit the Canvas Logic Flow and click Approve logic before final-document generation.
 
 Each project remembers a \`doc_generation_mode\` choice that controls how aggressive you are when producing documents:
@@ -518,7 +518,7 @@ const BASE_TOOLS = [
           print_size: { type: "string" },
           design_instructions: { type: "string" },
           hebrew_content: { type: "string" },
-          envelope_number: { type: "number" },
+          envelope_number: { type: "number", description: "DEPRECATED for distribution. Leave null in nearly all cases. All documents are in the box from the start. Set this ONLY if the user explicitly wants this document physically tucked inside a sealed task envelope (rare)." },
           final_node_id: { type: "string", description: "Optional Final board document-node id this row is being created from." },
         },
         required: ["title"],
@@ -531,7 +531,7 @@ const BASE_TOOLS = [
     function: {
       name: "propose_document_set",
       description:
-        "Phase 4 PLANNING GATE — call this AFTER Logic Flow approval and BEFORE create_final_documents_map. You reason through the entire approved Logic Flow and propose the exact list of game documents needed (no templates, no padding). Each entry: a player-facing title, a format-style hint (doc_type — interrogation transcript, autopsy report, letter, photograph, receipt, etc.), the planned envelope, and the SPECIFIC clue/purpose this document delivers, plus which Logic Flow node ids it supports. Doc 0 is added automatically by the playbook — DO NOT include it. After calling this tool, present the list in prose and ask the user to Approve, Just-build-it, or Revise (use propose_options).",
+        "Phase 4 PLANNING GATE — call this AFTER Logic Flow approval and BEFORE create_final_documents_map. You reason through the entire approved Logic Flow and propose the exact list of game documents needed (no templates, no padding). Each entry: a player-facing title, a format-style hint (doc_type — interrogation transcript, autopsy report, letter, photograph, receipt, etc.), the SPECIFIC clue/purpose this document delivers, and which Logic Flow node ids it supports. Documents are NOT distributed by envelope — every document is in the box from the start; do not assign envelope_number unless the user explicitly wants a doc physically inside a task envelope (rare). Doc 0 is added automatically by the playbook — DO NOT include it. After calling this tool, present the list in prose and ask the user to Approve, Just-build-it, or Revise (use propose_options).",
       parameters: {
         type: "object",
         properties: {
@@ -545,7 +545,7 @@ const BASE_TOOLS = [
                 title: { type: "string" },
                 doc_type: { type: "string", description: "Format / visual style hint only (NOT a content template)." },
                 print_size: { type: "string", description: "e.g. A4, A5, photo, ticket-stub, etc." },
-                envelope_number: { type: "number" },
+                envelope_number: { type: "number", description: "DEPRECATED for distribution. Leave blank/null. Documents are not gated by envelopes." },
                 purpose: { type: "string", description: "The specific clue / role this document delivers in THIS case. Reason from the Logic Flow — not generic." },
                 linked_logic_node_ids: { type: "array", items: { type: "string" }, description: "Canvas Logic Flow node ids this document supports." },
               },
@@ -730,7 +730,7 @@ const BASE_TOOLS = [
           print_size: { type: "string" },
           design_instructions: { type: "string" },
           hebrew_content: { type: "string" },
-          envelope_number: { type: "number" },
+          envelope_number: { type: "number", description: "DEPRECATED for distribution. Almost always leave null. Documents are in the box from the start; only set if the user explicitly wants this doc physically inside a sealed task envelope." },
           status: { type: "string" },
         },
         required: ["id"],
@@ -743,14 +743,14 @@ const BASE_TOOLS = [
     function: {
       name: "update_envelope",
       description:
-        "Edit an EXISTING envelope row by id (from the Existing envelopes roster). Pass ONLY the fields you want to change.",
+        "Edit an EXISTING envelope row by id (from the Existing envelopes roster). Pass ONLY the fields you want to change. Envelopes are SEALED TASK GATES (not document containers): the player only opens an envelope when they reach the matching beat. The 'notes' field MUST start with the OPENING TRIGGER — a 1-sentence description of when the player should open this envelope (e.g. 'Open after the player has narrowed it to two suspects.' or 'Open once the cipher in Doc 7 is solved.') — followed by any internal design notes. The 'task' field is the short, bold, in-language instruction the player reads when they open the envelope.",
       parameters: {
         type: "object",
         properties: {
           id: { type: "string", description: "Envelope id from the roster." },
           label: { type: "string" },
-          task: { type: "string" },
-          notes: { type: "string" },
+          task: { type: "string", description: "Short, bold, in-language instruction the player reads when they open this envelope at the right moment. Never the next batch of evidence." },
+          notes: { type: "string", description: "Start with 'Opening trigger: <when to open>'. Then any internal design notes." },
           status: { type: "string" },
           number: { type: "number" },
         },

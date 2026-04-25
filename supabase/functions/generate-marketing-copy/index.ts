@@ -175,9 +175,9 @@ FRONT COVER TEXT
 BACK COVER TEXT
 - "back_headline": 1 punchy sentence, max 14 words, sets the stakes.
 - "back_teaser": 1–2 cinematic setup sentences.
-- "back_body": 80–130 words, paragraph form, mentions player role, ${docCount} documents and ${envCount} envelopes, age rating if known, but NEVER spoils the solution.
-- "back_whats_in_box": line-separated list of physical contents, including documents, envelopes, evidence, props, and mini movie QR when appropriate.
-- "back_how_to_play": 2–4 clear sentences explaining the player experience.
+- "back_body": 80–130 words, paragraph form, mentions player role, ${docCount} documents (all in the box from the start) and ${envCount} sealed task envelopes (opened only at the matching beat in the case), age rating if known, but NEVER spoils the solution.
+- "back_whats_in_box": line-separated list of physical contents. State that ALL ${docCount} case documents are loose in the box from the start, and that the ${envCount} sealed envelopes are task gates the player opens only when they reach the matching moment. Include props, evidence, and mini-movie QR when appropriate.
+- "back_how_to_play": 2–4 clear sentences explaining the player experience. MUST clarify: all evidence documents are available immediately and the player works through them freely; the sealed envelopes are opened ONLY when the player reaches the specific case beat marked on each one (each envelope contains a task or a reveal — never new evidence to read at random). The final envelope holds the accusation/solution reveal.
 - "back_feature_bullets": 3–5 line-separated selling bullets.
 - "back_specs": packaging metadata, e.g. Ages, duration, players, difficulty.
 - "back_content_note": optional spoiler-safe warning or tone note.

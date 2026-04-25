@@ -138,13 +138,9 @@ Deno.serve(async (req) => {
       existingDocs.filter((doc) => doc.doc_number !== 0).forEach((doc) => planned.push({ docNumber: doc.doc_number ?? 100 + planned.length, title: doc.title, docType: doc.doc_type || "document", printSize: doc.print_size || "A4", envelopeNumber: doc.envelope_number ?? null, purpose: "Existing document row already created for this case.", sourceDocumentId: doc.id, generationStatus: statusFor(doc) }));
 
       const targetCount = Math.max(planned.length, Math.min(100, n(project.target_doc_count, 40)));
-      const envs = (envelopes ?? []) as EnvelopeRow[];
       let nextNumber = Math.max(100, ...planned.map((d) => d.docNumber + 1));
-      for (const env of envs) {
-        if (planned.length >= targetCount) break;
-        const source = logic.find((node) => node.node_type === "envelope" && Number(node.data?.envelopeNumber) === env.number);
-        planned.push({ docNumber: nextNumber++, title: env.label || `Envelope ${env.number} evidence packet`, docType: "envelope evidence packet", printSize: "A4", envelopeNumber: env.number, purpose: env.task || `Evidence planned for envelope ${env.number}.`, sourceLogicNodeIds: source ? [source.id] : undefined, linkedLogicTitles: source ? [source.title] : [], generationStatus: "ungenerated" });
-      }
+      // NEW MODEL: documents are NOT distributed by envelope. Plan documents
+      // from logic / suspect / clue / red_herring nodes — never from envelopes.
       for (const node of logic) {
         if (planned.length >= targetCount) break;
         if (["solution", "envelope"].includes(node.node_type)) continue;
@@ -182,10 +178,13 @@ Deno.serve(async (req) => {
       if (!docNode) return;
       const sourceIds = (doc.sourceLogicNodeIds ?? []).map((id) => sourceToFinal.get(id)).filter((x): x is string => Boolean(x));
       sourceIds.forEach((sid) => finalEdges.push({ project_id: projectId, board: "final", source_id: sid, target_id: docNode, label: "becomes document" }));
+      // NEW MODEL: documents are NOT inside envelopes — they live in the box
+      // from the start. Only draw an "inside envelope" edge if the user has
+      // explicitly tucked a doc inside a sealed task envelope (rare).
       if (doc.envelopeNumber) {
         const envLogic = logic.find((node) => node.node_type === "envelope" && Number(node.data?.envelopeNumber) === doc.envelopeNumber);
         const envNode = envLogic ? sourceToFinal.get(envLogic.id) : null;
-        if (envNode) finalEdges.push({ project_id: projectId, board: "final", source_id: docNode, target_id: envNode, label: `inside envelope ${doc.envelopeNumber}` });
+        if (envNode) finalEdges.push({ project_id: projectId, board: "final", source_id: docNode, target_id: envNode, label: `physical insert in envelope ${doc.envelopeNumber}` });
       }
       if (doc0Node && i > 0) finalEdges.push({ project_id: projectId, board: "final", source_id: doc0Node, target_id: docNode, label: "listed in contents" });
     });
