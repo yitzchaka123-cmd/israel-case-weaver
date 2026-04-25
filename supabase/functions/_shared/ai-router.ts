@@ -485,6 +485,10 @@ interface IncomingMsg {
   tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
   tool_call_id?: string;
   name?: string;
+  // Optional: prior thinking blocks captured from a previous Anthropic turn.
+  // When the caller round-trips them, we re-emit them so interleaved-thinking
+  // continuity holds across multi-round tool loops.
+  thinking?: Array<{ type: "thinking" | "summary"; text: string; signature?: string }>;
 }
 
 async function callAnthropic(body: Record<string, unknown>, model: string, effort: ReasoningEffort = "none"): Promise<Response> {
