@@ -288,9 +288,9 @@ Looks like an actual archival envelope from the case era — NOT a modern Canva 
   phases: [
     { key: "setup", label: "Setup", description: "Phase 1 — gather case identity & brief." },
     { key: "summary", label: "Summary", description: "Phase 2 — write the news-style solution summary." },
-    { key: "structure", label: "Structure", description: "Phase 3 — suspects, clues, red herrings, envelope flow." },
-    { key: "documents", label: "Documents", description: "Phase 4 — generate the printable documents." },
-    { key: "envelopes", label: "Envelopes", description: "Phase 5 — finalise envelope tasks & order." },
+    { key: "structure", label: "Structure", description: "Phase 3 — suspects, clues, red herrings, deduction logic, sealed task-envelope plan." },
+    { key: "documents", label: "Documents", description: "Phase 4 — generate the printable documents (all in the box from the start)." },
+    { key: "envelopes", label: "Envelopes", description: "Phase 5 — finalise sealed task-gate envelopes (opening trigger + payload per envelope)." },
     { key: "hints", label: "Hints", description: "Phase 6 — write the graduated hint ladder per stage." },
     { key: "packaging", label: "Packaging", description: "Phase 7 — physical box / print / fulfilment notes." },
     { key: "done", label: "Done", description: "Project complete and ready to ship." },
