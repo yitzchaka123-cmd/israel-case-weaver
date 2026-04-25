@@ -1636,6 +1636,7 @@ async function processConversation(
       content: finalText,
       metadata: {
         model, effective_model: lastFb.effectiveModel, fallback: lastFb.fallback, tools: executedTools, in_progress: false,
+        ...(reasoningRounds.length ? { reasoning: reasoningRounds } : {}),
         ...(quickOptions ? { options: quickOptions, question: quickQuestion } : {}),
       },
     }).eq("id", assistantMessageId);
