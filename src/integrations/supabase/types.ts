@@ -754,6 +754,7 @@ export type Database = {
           assistant_tweaks: Json
           avatar_url: string | null
           created_at: string
+          default_planning_depth: string
           display_name: string | null
           id: string
           image_prompt_assistant_instructions: string | null
@@ -771,6 +772,7 @@ export type Database = {
           assistant_tweaks?: Json
           avatar_url?: string | null
           created_at?: string
+          default_planning_depth?: string
           display_name?: string | null
           id: string
           image_prompt_assistant_instructions?: string | null
@@ -788,6 +790,7 @@ export type Database = {
           assistant_tweaks?: Json
           avatar_url?: string | null
           created_at?: string
+          default_planning_depth?: string
           display_name?: string | null
           id?: string
           image_prompt_assistant_instructions?: string | null
@@ -1029,6 +1032,7 @@ export type Database = {
           owner_id: string
           packaging_notes: string | null
           phase: string
+          planning_depth: string
           player_role: string | null
           proposed_document_set: Json
           proposed_document_set_approved_at: string | null
@@ -1070,6 +1074,7 @@ export type Database = {
           owner_id: string
           packaging_notes?: string | null
           phase?: string
+          planning_depth?: string
           player_role?: string | null
           proposed_document_set?: Json
           proposed_document_set_approved_at?: string | null
@@ -1111,6 +1116,7 @@ export type Database = {
           owner_id?: string
           packaging_notes?: string | null
           phase?: string
+          planning_depth?: string
           player_role?: string | null
           proposed_document_set?: Json
           proposed_document_set_approved_at?: string | null

@@ -142,7 +142,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     queryFn: async () => {
       const { data, error } = await supabase
         .from("projects")
-        .select("ai_provider_planning, ai_provider_images, image_prompt_instructions, video_prompt_instructions")
+        .select("ai_provider_planning, ai_provider_images, image_prompt_instructions, video_prompt_instructions, planning_depth")
         .eq("id", projectId)
         .single();
       if (error) throw error;
@@ -151,12 +151,14 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
         ai_provider_images: string | null;
         image_prompt_instructions: string | null;
         video_prompt_instructions: string | null;
+        planning_depth: string | null;
       };
     },
   });
 
   const planningModel = project?.ai_provider_planning ?? "openai-5.2";
   const imageModel = project?.ai_provider_images ?? "nano-banana-2";
+  const planningDepth = (project?.planning_depth ?? "guided") as "express" | "guided" | "deep";
   const { hidden: hiddenModels } = useHiddenModels();
   const visiblePlanningModels = filterModelOptions(PLANNING_MODELS, hiddenModels, planningModel);
   const visibleImageModels = filterModelOptions(IMAGE_MODELS, hiddenModels, imageModel);
@@ -166,6 +168,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     ai_provider_images?: string;
     image_prompt_instructions?: string;
     video_prompt_instructions?: string;
+    planning_depth?: "express" | "guided" | "deep";
   }) => {
     const { error } = await supabase.from("projects").update(patch).eq("id", projectId);
     if (error) toast.error(error.message);
@@ -384,6 +387,17 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
                 {visibleImageModels.map((m) => (
                   <SelectItem key={m.value} value={m.value} className="text-xs">{m.label}</SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-2" title="Express = ask only the title and auto-fill the rest. Guided = basics only. Deep Dive = walk through every detail.">
+            <span className="text-[11px] text-muted-foreground">Depth</span>
+            <Select value={planningDepth} onValueChange={(v) => setProjectAi({ planning_depth: v as "express" | "guided" | "deep" })}>
+              <SelectTrigger className="h-8 text-xs w-[170px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="express" className="text-xs">⚡ Express</SelectItem>
+                <SelectItem value="guided" className="text-xs">🎯 Guided (default)</SelectItem>
+                <SelectItem value="deep" className="text-xs">🔬 Deep Dive</SelectItem>
               </SelectContent>
             </Select>
           </div>

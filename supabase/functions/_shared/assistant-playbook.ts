@@ -111,7 +111,15 @@ export type Playbook = {
     docs: UniversalDocumentDefinition[];
   };
   phases: PhaseDefinition[];
+  planning_depth: {
+    default: PlanningDepth;
+    express: { auto_fill_defaults: Record<string, string>; ask_title: boolean };
+    guided: { ask_steps: string[] };
+    deep: { extra_probes: string[] };
+  };
 };
+
+export type PlanningDepth = "express" | "guided" | "deep";
 
 export const PLAYBOOK_DEFAULTS: Playbook = {
   suspect_counts: {
@@ -295,6 +303,36 @@ Looks like an actual archival envelope from the case era — NOT a modern Canva 
     { key: "packaging", label: "Packaging", description: "Phase 7 — physical box / print / fulfilment notes." },
     { key: "done", label: "Done", description: "Project complete and ready to ship." },
   ],
+  planning_depth: {
+    default: "guided",
+    express: {
+      ask_title: true,
+      auto_fill_defaults: {
+        mystery_type: "Murder & Homicide",
+        genre: "Forensics",
+        difficulty: "medium",
+        year: "Present day",
+        game_language: "Hebrew",
+        player_role: "Lead detective",
+        case_goal: "Identify the culprit and reconstruct the crime",
+        setting: "Israel, present day",
+      },
+    },
+    guided: {
+      ask_steps: ["language", "mystery_type", "genre", "titles", "difficulty", "year"],
+    },
+    deep: {
+      extra_probes: [
+        "per_suspect_motive",
+        "per_suspect_secret",
+        "per_suspect_contradiction",
+        "per_suspect_relationship_to_victim",
+        "per_clue_reasoning",
+        "red_herring_rationale",
+        "validate_deduction_chain",
+      ],
+    },
+  },
 };
 
 const clamp = (n: number, lo: number, hi: number) =>
@@ -535,6 +573,32 @@ export function resolvePlaybook(override: unknown): Playbook {
 
   const phases = cleanPhaseList(o.phases, d.phases);
 
+  const pdRaw = o.planning_depth as Partial<Playbook["planning_depth"]> | undefined;
+  const defaultDepth: PlanningDepth =
+    pdRaw?.default === "express" || pdRaw?.default === "deep" || pdRaw?.default === "guided"
+      ? pdRaw.default
+      : d.planning_depth.default;
+  const expressFill = (pdRaw?.express?.auto_fill_defaults && typeof pdRaw.express.auto_fill_defaults === "object")
+    ? Object.fromEntries(
+        Object.entries(pdRaw.express.auto_fill_defaults)
+          .filter(([k, v]) => typeof k === "string" && typeof v === "string")
+          .map(([k, v]) => [k, String(v)])
+      )
+    : d.planning_depth.express.auto_fill_defaults;
+  const planning_depth = {
+    default: defaultDepth,
+    express: {
+      ask_title: pdRaw?.express?.ask_title !== false,
+      auto_fill_defaults: expressFill,
+    },
+    guided: {
+      ask_steps: cleanStringArray(pdRaw?.guided?.ask_steps, d.planning_depth.guided.ask_steps),
+    },
+    deep: {
+      extra_probes: cleanStringArray(pdRaw?.deep?.extra_probes, d.planning_depth.deep.extra_probes),
+    },
+  };
+
   return {
     suspect_counts,
     hints: { per_stage, ladder_labels },
@@ -552,6 +616,7 @@ export function resolvePlaybook(override: unknown): Playbook {
     languages,
     universal_documents,
     phases,
+    planning_depth,
   };
 }
 
@@ -685,4 +750,48 @@ export function renderPhaseEnumComment(p: Playbook): string {
 
 export function getPhaseEnum(p: Playbook): string[] {
   return p.phases.map((ph) => ph.key);
+}
+
+// ---------- Planning depth ----------
+
+export function normalizePlanningDepth(value: unknown, fallback: PlanningDepth = "guided"): PlanningDepth {
+  if (value === "express" || value === "guided" || value === "deep") return value;
+  return fallback;
+}
+
+export function renderPlanningDepthBlock(depth: PlanningDepth, p: Playbook): string {
+  if (depth === "express") {
+    const fills = Object.entries(p.planning_depth.express.auto_fill_defaults)
+      .map(([k, v]) => `      ${k} = ${v}`)
+      .join("\n");
+    return `PLANNING DEPTH = EXPRESS (the user wants the AI to plan everything, ask almost nothing)
+- Ask the user for ONLY ONE thing: the case TITLE. Either propose 5 Hebrew title options with propose_options OR accept whatever they type.
+- After the title is locked in, IMMEDIATELY:
+    1. Call \`update_project\` once, passing ALL of these fields together (skip any the user already filled):
+${fills}
+    2. Then write a short solution summary on your own (3–6 paragraphs) and call \`set_solution_summary\`.
+    3. Then call \`generate_logic_flow\`.
+    4. Then send ONE assistant message: "✨ Express mode: I've drafted the case identity, summary, and logic flow. Open the Canvas tab, review the Logic Flow board, and click 'Approve logic' when you're happy. From there I'll keep going on documents."
+- Do NOT ask the user about: player_role, case_goal, setting, selling_point, mystery_type, genre, year, difficulty, suspects' motives, suspects' secrets, contradictions, red herrings, clue-by-clue reasoning, or anything else. The user has explicitly chosen to skip these questions.
+- The user may still volunteer extra info — if they do, persist it via update_project and continue.
+- Do NOT pause for confirmation between the title and the logic flow. Treat the title as the green light to do everything.`;
+  }
+  if (depth === "deep") {
+    const probes = p.planning_depth.deep.extra_probes.map((x) => `  - ${x.replaceAll("_", " ")}`).join("\n");
+    return `PLANNING DEPTH = DEEP DIVE (the user wants to plan thoroughly with lots of detail)
+- Use the FULL Phase 1 setup ladder (one question per turn, propose_options where applicable). Do not skip any setup field.
+- During Phase 2 / Phase 3 (summary + structure), interrogate the case in depth. For each of these probes, ask a separate question and capture the answer:
+${probes}
+- For every suspect: ask SEPARATELY about their motive, their secret, their contradiction, and how they relate to the victim. Persist each via update_suspect the moment it's confirmed.
+- For every clue: confirm out loud what it proves, what it eliminates, and what red herring (if any) it counters.
+- Before moving from Phase 3 to Phase 3.5 (Logic Flow), summarise the deduction chain in prose and ask the user to confirm "yes, generate the Logic Flow" or "wait, I want to revise X".
+- Take more turns. The user picked Deep Dive precisely to be asked these questions — do NOT shortcut them.`;
+  }
+  // guided (default)
+  const ask = p.planning_depth.guided.ask_steps.join(", ");
+  return `PLANNING DEPTH = GUIDED (default — basic questions only)
+- During Phase 1, ask only the basics IN THIS ORDER, ONE QUESTION PER TURN: ${ask}.
+- Skip player_role, case_goal, setting, selling_point unless the user volunteers them in their own message. If they're missing when Phase 1 ends, fill them silently with sensible defaults via update_project — do NOT ask.
+- After the year/setting question, propose generating the Logic Flow with propose_options ("Generate Logic Flow now" / "Add a player role first" / "Add a case goal first"). Default to generating immediately.
+- During Phase 3 (Structure), ask high-level questions only — name + role for each suspect, the murder weapon, the location. Do NOT ask separately about motives / secrets / contradictions per suspect (Deep Dive does that).`;
 }
