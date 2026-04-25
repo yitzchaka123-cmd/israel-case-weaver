@@ -121,6 +121,44 @@ export function isGeminiDirectModel(model: string): boolean {
   return typeof model === "string" && model.startsWith("gemini-direct/");
 }
 
+// ---------- Reasoning / thinking ----------
+
+export type ReasoningEffort = "none" | "low" | "medium" | "high";
+export type ReasoningSegment = { type: "thinking" | "summary"; text: string };
+
+/**
+ * Whether the given provider-prefixed model id is known to support
+ * extended-thinking / reasoning. Used both to gate UI affordances and to
+ * decide whether to inject provider-specific reasoning request params.
+ */
+export function modelSupportsThinking(model: string): boolean {
+  if (!model) return false;
+  // Anthropic Claude 4+ family supports interleaved thinking.
+  if (model.startsWith("anthropic/")) {
+    return /claude-(sonnet|opus|haiku)-4/i.test(model);
+  }
+  // OpenAI gpt-5 family supports the reasoning parameter.
+  if (model.startsWith("openai/")) {
+    return /^openai\/gpt-5/i.test(model);
+  }
+  // Gemini 2.5 / 3 (direct or via Lovable Gateway) supports thinking.
+  // Flash-Lite is excluded — it explicitly disables thinking.
+  if (model.startsWith("gemini-direct/") || model.startsWith("google/")) {
+    if (/flash-lite/i.test(model)) return false;
+    return /(gemini-2\.5|gemini-3)/i.test(model);
+  }
+  return false;
+}
+
+function thinkingBudgetForEffort(effort: ReasoningEffort): number {
+  switch (effort) {
+    case "low": return 1024;
+    case "high": return 8192;
+    case "medium":
+    default: return 4096;
+  }
+}
+
 function jsonError(message: string, status = 500): Response {
   return new Response(JSON.stringify({ error: message }), {
     status,
