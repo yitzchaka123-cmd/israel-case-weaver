@@ -94,6 +94,7 @@ function buildSystemPrompt(
   tweaks: Tweak[] = [],
   playbook: Playbook = PLAYBOOK_DEFAULTS,
   claudeSkills: ClaudeSkillRow[] = [],
+  isFirstTurn: boolean = false,
 ) {
   const suspectCount = rosters.suspects.length;
   const docCount = rosters.documents.length;
