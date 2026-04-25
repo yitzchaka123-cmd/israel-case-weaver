@@ -98,26 +98,60 @@ Deno.serve(async (req) => {
     existingDocs.forEach((doc) => { if (doc.doc_number != null) byNumber.set(doc.doc_number, doc); });
 
     const planned: PlannedDoc[] = [];
+    const proposedRaw = Array.isArray(project.proposed_document_set) ? project.proposed_document_set as ProposedDoc[] : [];
+    const proposedStatus = String(project.proposed_document_set_status ?? "none");
+    const useProposal = proposedRaw.length > 0 && (proposedStatus === "approved" || proposedStatus === "bypassed" || proposedStatus === "proposed");
+    const logicById = new Map(logic.map((node) => [node.id, node]));
+    const titlesFor = (ids: string[] | undefined) => (ids ?? []).map((id) => logicById.get(id)?.title).filter((t): t is string => typeof t === "string" && t.length > 0);
+
     const doc0 = byNumber.get(0);
     if (playbook.universal_documents.doc0_enabled && doc0Def.enabled) {
       planned.push({ docNumber: 0, title: doc0?.title || doc0Def.title_template, docType: doc0?.doc_type || doc0Def.doc_type, printSize: doc0?.print_size || doc0Def.print_size, envelopeNumber: doc0?.envelope_number ?? null, purpose: `${doc0Def.purpose} Source of truth: Final Flow document nodes. List scope: ${doc0Def.list_scope}.`, sourceDocumentId: doc0?.id, generationStatus: statusFor(doc0) });
     }
-    existingDocs.filter((doc) => doc.doc_number !== 0).forEach((doc) => planned.push({ docNumber: doc.doc_number ?? 100 + planned.length, title: doc.title, docType: doc.doc_type || "document", printSize: doc.print_size || "A4", envelopeNumber: doc.envelope_number ?? null, purpose: "Existing document row already created for this case.", sourceDocumentId: doc.id, generationStatus: statusFor(doc) }));
 
-    const targetCount = Math.max(planned.length, Math.min(100, n(project.target_doc_count, 40)));
-    const envs = (envelopes ?? []) as EnvelopeRow[];
-    let nextNumber = Math.max(100, ...planned.map((d) => d.docNumber + 1));
-    for (const env of envs) {
-      if (planned.length >= targetCount) break;
-      const source = logic.find((node) => node.node_type === "envelope" && Number(node.data?.envelopeNumber) === env.number);
-      planned.push({ docNumber: nextNumber++, title: env.label || `Envelope ${env.number} evidence packet`, docType: "envelope evidence packet", printSize: "A4", envelopeNumber: env.number, purpose: env.task || `Evidence planned for envelope ${env.number}.`, sourceLogicNodeId: source?.id, generationStatus: "ungenerated" });
+    if (useProposal) {
+      // Assistant-led: build the planned document list strictly from the
+      // approved proposal. Each entry carries its own purpose + linked logic
+      // node IDs reasoned by the assistant — no padding from logic nodes.
+      let nextNumber = Math.max(1, ...planned.map((d) => d.docNumber + 1));
+      proposedRaw.forEach((p) => {
+        const number = (typeof p.doc_number === "number" && Number.isFinite(p.doc_number) && p.doc_number !== 0) ? p.doc_number : nextNumber++;
+        if (number === 0) return; // Doc 0 already added via playbook
+        const linkedIds = (p.linked_logic_node_ids ?? []).filter((id): id is string => typeof id === "string");
+        const existing = existingDocs.find((d) => d.doc_number === number || d.title.trim().toLowerCase() === String(p.title ?? "").trim().toLowerCase());
+        planned.push({
+          docNumber: number,
+          title: String(p.title ?? `Planned document ${number}`).slice(0, 120),
+          docType: String(p.doc_type ?? "case evidence"),
+          printSize: String(p.print_size ?? "A4"),
+          envelopeNumber: typeof p.envelope_number === "number" ? p.envelope_number : null,
+          purpose: String(p.purpose ?? "Planned by the assistant from the Logic Flow."),
+          sourceLogicNodeIds: linkedIds.length > 0 ? linkedIds : undefined,
+          linkedLogicTitles: titlesFor(linkedIds),
+          sourceDocumentId: existing?.id,
+          generationStatus: statusFor(existing),
+        });
+      });
+    } else {
+      // Legacy / no-proposal fallback: keep existing behaviour so older cases
+      // approved before the assistant-led workflow continue to produce a map.
+      existingDocs.filter((doc) => doc.doc_number !== 0).forEach((doc) => planned.push({ docNumber: doc.doc_number ?? 100 + planned.length, title: doc.title, docType: doc.doc_type || "document", printSize: doc.print_size || "A4", envelopeNumber: doc.envelope_number ?? null, purpose: "Existing document row already created for this case.", sourceDocumentId: doc.id, generationStatus: statusFor(doc) }));
+
+      const targetCount = Math.max(planned.length, Math.min(100, n(project.target_doc_count, 40)));
+      const envs = (envelopes ?? []) as EnvelopeRow[];
+      let nextNumber = Math.max(100, ...planned.map((d) => d.docNumber + 1));
+      for (const env of envs) {
+        if (planned.length >= targetCount) break;
+        const source = logic.find((node) => node.node_type === "envelope" && Number(node.data?.envelopeNumber) === env.number);
+        planned.push({ docNumber: nextNumber++, title: env.label || `Envelope ${env.number} evidence packet`, docType: "envelope evidence packet", printSize: "A4", envelopeNumber: env.number, purpose: env.task || `Evidence planned for envelope ${env.number}.`, sourceLogicNodeIds: source ? [source.id] : undefined, linkedLogicTitles: source ? [source.title] : [], generationStatus: "ungenerated" });
+      }
+      for (const node of logic) {
+        if (planned.length >= targetCount) break;
+        if (["solution", "envelope"].includes(node.node_type)) continue;
+        planned.push({ docNumber: nextNumber++, title: node.title.length > 90 ? `${node.title.slice(0, 87)}…` : node.title, docType: node.node_type === "suspect" ? "suspect file" : node.node_type === "red_herring" ? "red herring evidence" : "case evidence", printSize: "A4", envelopeNumber: null, purpose: node.description || `Supports the ${node.node_type.replaceAll("_", " ")} node in the approved logic flow.`, sourceLogicNodeIds: [node.id], linkedLogicTitles: [node.title], generationStatus: "ungenerated" });
+      }
+      while (planned.length < targetCount) planned.push({ docNumber: nextNumber++, title: `Planned case document ${planned.length}`, docType: "case evidence", printSize: "A4", envelopeNumber: null, purpose: "Reserved slot from the target document count. Define before generation.", generationStatus: "ungenerated" });
     }
-    for (const node of logic) {
-      if (planned.length >= targetCount) break;
-      if (["solution", "envelope"].includes(node.node_type)) continue;
-      planned.push({ docNumber: nextNumber++, title: node.title.length > 90 ? `${node.title.slice(0, 87)}…` : node.title, docType: node.node_type === "suspect" ? "suspect file" : node.node_type === "red_herring" ? "red herring evidence" : "case evidence", printSize: "A4", envelopeNumber: null, purpose: node.description || `Supports the ${node.node_type.replaceAll("_", " ")} node in the approved logic flow.`, sourceLogicNodeId: node.id, generationStatus: "ungenerated" });
-    }
-    while (planned.length < targetCount) planned.push({ docNumber: nextNumber++, title: `Planned case document ${planned.length}`, docType: "case evidence", printSize: "A4", envelopeNumber: null, purpose: "Reserved slot from the target document count. Define before generation.", generationStatus: "ungenerated" });
 
     if (replace) {
       await supa.from("canvas_edges").delete().eq("project_id", projectId).eq("board", "final");
