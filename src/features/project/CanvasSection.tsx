@@ -437,13 +437,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
       if (failed > 0) {
         toast.error(`Arranged, but ${failed} node${failed === 1 ? "" : "s"} failed to save position.`);
       } else {
-        const flowLabels = ["left-to-right flow", "top-down flow", "right-to-left flow", "bottom-up flow"];
-        const looseLabels = ["grouped grid", "wide staggered grid", "radial map"];
-        toast.success(
-          edges.length > 0
-            ? `Arranged ${nodes.length} nodes as ${flowLabels[(arrangeIndex % flowLabels.length)]}.`
-            : `Arranged ${nodes.length} nodes as ${looseLabels[(arrangeIndex % looseLabels.length)]}.`,
-        );
+        toast.success(`Arranged ${nodes.length} nodes by game flow.`);
       }
     } finally {
       setArranging(false);
