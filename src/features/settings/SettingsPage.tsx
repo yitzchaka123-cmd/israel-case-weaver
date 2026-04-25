@@ -282,10 +282,10 @@ export function SettingsPage() {
         return (
           <Section id="ai-routing" title="AI provider routing" desc="Choose which provider handles each task. Each prefix routes to its own billing account.">
             <div className="space-y-3 max-w-xl">
-              <ProviderSelectRow label="Planning / Game design" value={planning} onChange={setPlanning} options={TEXT_PROVIDER_OPTIONS} />
-              <ProviderSelectRow label="Document generation" value={documents} onChange={setDocuments} options={TEXT_PROVIDER_OPTIONS} />
-              <ProviderSelectRow label="Prompt generation" value={promptWriter} onChange={setPromptWriter} options={TEXT_PROVIDER_OPTIONS} />
-              <ProviderSelectRow label="Image generation" value={images} onChange={setImages} options={IMAGE_PROVIDER_OPTIONS} />
+              <ProviderSelectRow label="Planning / Game design" value={planning} onChange={setPlanning} options={filterModelOptions(TEXT_PROVIDER_OPTIONS, hiddenModels, planning)} />
+              <ProviderSelectRow label="Document generation" value={documents} onChange={setDocuments} options={filterModelOptions(TEXT_PROVIDER_OPTIONS, hiddenModels, documents)} />
+              <ProviderSelectRow label="Prompt generation" value={promptWriter} onChange={setPromptWriter} options={filterModelOptions(TEXT_PROVIDER_OPTIONS, hiddenModels, promptWriter)} />
+              <ProviderSelectRow label="Image generation" value={images} onChange={setImages} options={filterModelOptions(IMAGE_PROVIDER_OPTIONS, hiddenModels, images)} />
             </div>
             <div className="text-xs text-muted-foreground mt-4 space-y-1">
               <p><strong>Lovable AI</strong> entries use the Lovable AI Gateway (workspace credits).</p>
