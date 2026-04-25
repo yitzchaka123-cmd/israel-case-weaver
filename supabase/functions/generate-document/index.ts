@@ -300,12 +300,24 @@ Deno.serve(async (req) => {
       if (doc0 && !inventory?.hasFinalMap) {
         return new Response(JSON.stringify({ error: "Doc 0 must be generated from the Final Flow. Create the Final Documents Map first, then retry Doc 0." }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
+      const planned = doc0 ? null : await loadPlannedDocContext(supa, doc.project_id, documentId);
       const sys = doc0
         ? `You write Doc 0 for premium printable mystery games. Doc 0 is NEVER evidence and NEVER a normal memo. It is the player-facing box contents / case-file inventory. Output ONLY the document body in ${gameLanguage}, ${isRtl ? "RTL-ready" : "properly formatted"}. Use the supplied Final Flow document nodes as the authoritative inventory. Group by envelope/section when possible. No solution spoilers. Do not invent documents not present in the Final Flow.`
-        : `You write in-game evidence documents for premium printable mystery games. Output ONLY the document body in ${gameLanguage}, ${isRtl ? "RTL-ready" : "properly formatted"}, realistic and immersive, tailored to the document type. No meta-commentary. No disclaimers. For interrogation transcripts include pauses, body language and back-and-forth. Do not reveal the full solution.`;
+        : `You are a senior mystery-game writer producing one in-world evidence document for a premium printable detective game.
+
+CONTENT IS REASONED, NOT TEMPLATED. Read the case brief, the approved solution summary, the suspects, and the Logic Flow nodes this specific document is meant to support. Then write the document so it delivers ITS planned clue / role inside the case — not a generic example of its document type. The 'document type' field is ONLY a hint about FORMAT and visual style (interrogation transcript, autopsy report, letter, receipt, photograph caption, etc.). It is NOT a template for the body. Two documents of the same type in the same case must read very differently because the underlying evidence and characters are different.
+
+OUTPUT RULES:
+- Output ONLY the document body in ${gameLanguage}, ${isRtl ? "RTL-ready" : "properly formatted"}.
+- No meta-commentary, no disclaimers, no "[Note: ...]".
+- Stay in-world. Names, dates, locations, and details must be consistent with the case brief and Logic Flow.
+- Honor the document's planned purpose: the clue or piece of information it is supposed to surface for the player.
+- Do NOT reveal the full solution. Plant evidence; let the player deduce.
+- For interrogation transcripts: include pauses, body language, hesitations, contradictions, real back-and-forth.
+- Length and tone should match a real-world example of this document type, but the substance must come from THIS case.`;
       const userPrompt = doc0
         ? `Case: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nPlayer role: ${project?.player_role ?? ""}\nCase goal: ${project?.case_goal ?? ""}\nYear: ${project?.year ?? ""}\nSetting: ${project?.setting ?? ""}\n\nDocument to produce:\nTitle: ${doc.title}\nType: contents checklist / box inventory\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\n\n${inventory?.text ?? ""}\n\nWrite Doc 0 now as a clean player-facing checklist of every planned game document and physical insert. Include Doc 0 itself, opening/instruction pieces, envelopes, suspects/cast sheets if present, and all planned document nodes. Do not reveal answers, culprits, hidden logic, or generation status.`
-        : `Case: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nPlayer role: ${project?.player_role ?? ""}\nCase goal: ${project?.case_goal ?? ""}\nYear: ${project?.year ?? ""}\nSetting: ${project?.setting ?? ""}\n\nDocument to produce:\nTitle: ${doc.title}\nType: ${doc.doc_type ?? "generic"}\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\n\nWrite the full ${gameLanguage} body now.`;
+        : `${planned?.text ?? ""}\n\nDOCUMENT TO PRODUCE:\n- Title: ${doc.title}\n- Format style hint (NOT a content template): ${doc.doc_type ?? "evidence document"}\n- Print size: ${doc.print_size ?? "A4"}\n- Design / layout notes: ${doc.design_instructions ?? "—"}\n${planned?.purpose ? `- Planned clue / role: ${planned.purpose}\n` : ""}\nWrite the full ${gameLanguage} body now. Reason from the case brief and Logic Flow above — do NOT fall back on a generic '${doc.doc_type ?? "document"}' template. Make sure the content this document delivers is the planned clue / role for THIS case.`;
 
       const startedAt = Date.now();
       const callerUserId = await getUserIdFromAuth(req);
