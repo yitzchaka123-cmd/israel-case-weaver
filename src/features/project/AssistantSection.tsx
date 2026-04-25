@@ -751,6 +751,9 @@ function MessageBubble({
               </div>
             </div>
           )}
+          {!editing && (msg.metadata?.reasoning?.length ?? 0) > 0 && (
+            <ThinkingDisclosure reasoning={msg.metadata!.reasoning!} />
+          )}
           {!editing && tools.length > 0 && <ToolReceipts tools={tools} onOpenAsset={onOpenAsset} />}
           {!editing && tools.length > 0 && <GeneratedAssetsStrip tools={tools} onOpenAsset={onOpenAsset} />}
         </div>
