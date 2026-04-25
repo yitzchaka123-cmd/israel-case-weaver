@@ -97,8 +97,8 @@ export function CaseNode({ data, selected }: NodeProps<CaseNodeData>) {
     <div
       className="group relative rounded-xl overflow-hidden bg-card text-card-foreground transition-all"
       style={{
-        minWidth: isEnvelope ? 240 : 200,
-        maxWidth: isEnvelope ? 280 : 240,
+        minWidth: isDocument ? 240 : isEnvelope ? 240 : 200,
+        maxWidth: isDocument ? 280 : isEnvelope ? 280 : 240,
         border: `1.5px solid ${selected ? accent : "var(--color-border)"}`,
         boxShadow: selected
           ? `0 0 0 3px color-mix(in oklab, ${accent} 25%, transparent), 0 10px 24px -10px color-mix(in oklab, ${accent} 35%, transparent)`
@@ -140,7 +140,9 @@ export function CaseNode({ data, selected }: NodeProps<CaseNodeData>) {
         >
           {isEnvelope && typeof envelopeNumber === "number"
             ? `Envelope #${envelopeNumber}`
-            : meta.label}
+            : isDocument && typeof data.docNumber === "number"
+              ? `Doc #${data.docNumber}${data.docType ? ` · ${data.docType}` : ""}`
+              : meta.label}
         </span>
         {data.createdByMessageId && (
           <AssistantOriginBadge messageId={data.createdByMessageId} label="" />
@@ -152,19 +154,58 @@ export function CaseNode({ data, selected }: NodeProps<CaseNodeData>) {
         <div className="text-[13px] font-medium leading-snug text-foreground line-clamp-3">
           {data.label || "(untitled)"}
         </div>
-        {data.description && (
-          <div
-            className={`mt-1.5 text-[11px] text-muted-foreground leading-snug whitespace-pre-line ${
-              isEnvelope || isSolution ? "line-clamp-6" : "line-clamp-2"
-            }`}
-          >
-            {data.description}
-          </div>
-        )}
-        {data.type === "document" && data.generationStatus && (
-          <div className="mt-2 inline-flex items-center rounded-md border bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-            {data.generationStatus === "ungenerated" ? "Ungenerated" : data.generationStatus}
-          </div>
+
+        {isDocument ? (
+          <>
+            {data.docType && (
+              <div className="mt-1.5">
+                <span
+                  className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                  style={{
+                    background: `color-mix(in oklab, ${accent} 18%, var(--color-card))`,
+                    color: `color-mix(in oklab, ${accent} 70%, var(--color-foreground))`,
+                    border: `1px solid color-mix(in oklab, ${accent} 30%, transparent)`,
+                  }}
+                >
+                  {data.docType}
+                </span>
+              </div>
+            )}
+            {data.purpose && (
+              <div className="mt-1.5 text-[11px] text-muted-foreground leading-snug line-clamp-3">
+                {data.purpose}
+              </div>
+            )}
+            {data.linkedLogicTitles && data.linkedLogicTitles.length > 0 && (
+              <div className="mt-1.5 text-[10px] text-muted-foreground/90 leading-snug">
+                <span className="font-semibold uppercase tracking-wider">Logic:</span>{" "}
+                <span className="line-clamp-2">{data.linkedLogicTitles.join(" · ")}</span>
+              </div>
+            )}
+            <div className="mt-2">
+              {(() => {
+                const s = statusStyleFor(data.generationStatus);
+                return (
+                  <span
+                    className="inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-semibold"
+                    style={{ background: s.bg, color: s.fg }}
+                  >
+                    {s.label}
+                  </span>
+                );
+              })()}
+            </div>
+          </>
+        ) : (
+          data.description && (
+            <div
+              className={`mt-1.5 text-[11px] text-muted-foreground leading-snug whitespace-pre-line ${
+                isEnvelope || isSolution ? "line-clamp-6" : "line-clamp-2"
+              }`}
+            >
+              {data.description}
+            </div>
+          )
         )}
       </div>
 
