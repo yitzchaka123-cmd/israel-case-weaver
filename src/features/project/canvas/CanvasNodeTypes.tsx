@@ -59,7 +59,25 @@ export type CaseNodeData = {
   description?: string | null;
   createdByMessageId?: string | null;
   generationStatus?: string | null;
+  envelopeNumber?: number;
+  docType?: string;
+  docNumber?: number;
+  purpose?: string;
+  linkedLogicTitles?: string[];
 };
+
+const STATUS_STYLE: Record<string, { label: string; bg: string; fg: string }> = {
+  ungenerated: { label: "Ungenerated", bg: "color-mix(in oklab, var(--color-muted) 70%, transparent)", fg: "var(--color-muted-foreground)" },
+  "draft row created": { label: "Draft row", bg: "color-mix(in oklab, oklch(0.75 0.12 75) 22%, transparent)", fg: "oklch(0.45 0.15 75)" },
+  "image generated": { label: "Image ready", bg: "color-mix(in oklab, oklch(0.70 0.14 220) 22%, transparent)", fg: "oklch(0.40 0.15 220)" },
+  "file generated": { label: "File ready", bg: "color-mix(in oklab, oklch(0.68 0.16 155) 22%, transparent)", fg: "oklch(0.38 0.16 155)" },
+  finalized: { label: "Finalized", bg: "color-mix(in oklab, oklch(0.62 0.18 155) 28%, transparent)", fg: "oklch(0.32 0.16 155)" },
+};
+
+function statusStyleFor(status?: string | null) {
+  if (!status) return STATUS_STYLE.ungenerated;
+  return STATUS_STYLE[status] ?? { label: status, bg: "color-mix(in oklab, var(--color-muted) 70%, transparent)", fg: "var(--color-muted-foreground)" };
+}
 
 /**
  * Custom React Flow node — colored header strip + icon + title.
@@ -72,7 +90,8 @@ export function CaseNode({ data, selected }: NodeProps<CaseNodeData>) {
   const Icon = meta.icon;
   const isEnvelope = data.type === "envelope";
   const isSolution = data.type === "solution";
-  const envelopeNumber = (data as unknown as { envelopeNumber?: number }).envelopeNumber;
+  const isDocument = data.type === "document";
+  const envelopeNumber = data.envelopeNumber;
 
   return (
     <div
