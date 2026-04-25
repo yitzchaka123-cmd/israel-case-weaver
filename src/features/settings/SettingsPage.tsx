@@ -30,6 +30,7 @@ const SETTINGS_SECTIONS = [
   { id: "image-prompt-assistant", label: "Image prompt assistant" },
   { id: "assistant-rules", label: "Assistant rules" },
   { id: "ai-routing", label: "AI routing" },
+  { id: "visible-models", label: "Visible models" },
   { id: "ai-connections", label: "AI connections" },
   { id: "ai-ops", label: "Usage, credits, API keys & activity" },
   { id: "team-access", label: "Team access" },
