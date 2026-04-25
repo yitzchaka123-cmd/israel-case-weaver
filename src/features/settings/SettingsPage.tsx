@@ -316,6 +316,16 @@ export function SettingsPage() {
             </div>
           </Section>
         );
+      case "visible-models":
+        return (
+          <Section
+            id="visible-models"
+            title="Visible models"
+            desc="Trim the long model dropdowns. Hidden models stay fully connected and routable — they just don't show up in the picker menus."
+          >
+            <VisibleModelsPanel />
+          </Section>
+        );
       case "ai-connections":
         return (
           <Section
