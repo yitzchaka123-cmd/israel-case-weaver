@@ -646,6 +646,9 @@ async function callAnthropic(body: Record<string, unknown>, model: string, effor
     content: textOut,
     ...(toolCallsOut.length ? { tool_calls: toolCallsOut } : {}),
     ...(reasoningOut.length ? { reasoning: reasoningOut } : {}),
+    // Internal field consumed by callers that want to round-trip thinking
+    // blocks (with signatures) on the next Anthropic round.
+    ...(thinkingBlocksOut.length ? { thinking_blocks: thinkingBlocksOut } : {}),
   };
   const translated = {
     id: data.id,
