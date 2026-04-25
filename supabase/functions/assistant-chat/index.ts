@@ -518,7 +518,7 @@ const BASE_TOOLS = [
           print_size: { type: "string" },
           design_instructions: { type: "string" },
           hebrew_content: { type: "string" },
-          envelope_number: { type: "number" },
+          envelope_number: { type: "number", description: "DEPRECATED for distribution. Leave null in nearly all cases. All documents are in the box from the start. Set this ONLY if the user explicitly wants this document physically tucked inside a sealed task envelope (rare)." },
           final_node_id: { type: "string", description: "Optional Final board document-node id this row is being created from." },
         },
         required: ["title"],
@@ -531,7 +531,7 @@ const BASE_TOOLS = [
     function: {
       name: "propose_document_set",
       description:
-        "Phase 4 PLANNING GATE — call this AFTER Logic Flow approval and BEFORE create_final_documents_map. You reason through the entire approved Logic Flow and propose the exact list of game documents needed (no templates, no padding). Each entry: a player-facing title, a format-style hint (doc_type — interrogation transcript, autopsy report, letter, photograph, receipt, etc.), the planned envelope, and the SPECIFIC clue/purpose this document delivers, plus which Logic Flow node ids it supports. Doc 0 is added automatically by the playbook — DO NOT include it. After calling this tool, present the list in prose and ask the user to Approve, Just-build-it, or Revise (use propose_options).",
+        "Phase 4 PLANNING GATE — call this AFTER Logic Flow approval and BEFORE create_final_documents_map. You reason through the entire approved Logic Flow and propose the exact list of game documents needed (no templates, no padding). Each entry: a player-facing title, a format-style hint (doc_type — interrogation transcript, autopsy report, letter, photograph, receipt, etc.), the SPECIFIC clue/purpose this document delivers, and which Logic Flow node ids it supports. Documents are NOT distributed by envelope — every document is in the box from the start; do not assign envelope_number unless the user explicitly wants a doc physically inside a task envelope (rare). Doc 0 is added automatically by the playbook — DO NOT include it. After calling this tool, present the list in prose and ask the user to Approve, Just-build-it, or Revise (use propose_options).",
       parameters: {
         type: "object",
         properties: {
@@ -545,7 +545,7 @@ const BASE_TOOLS = [
                 title: { type: "string" },
                 doc_type: { type: "string", description: "Format / visual style hint only (NOT a content template)." },
                 print_size: { type: "string", description: "e.g. A4, A5, photo, ticket-stub, etc." },
-                envelope_number: { type: "number" },
+                envelope_number: { type: "number", description: "DEPRECATED for distribution. Leave blank/null. Documents are not gated by envelopes." },
                 purpose: { type: "string", description: "The specific clue / role this document delivers in THIS case. Reason from the Logic Flow — not generic." },
                 linked_logic_node_ids: { type: "array", items: { type: "string" }, description: "Canvas Logic Flow node ids this document supports." },
               },
@@ -730,7 +730,7 @@ const BASE_TOOLS = [
           print_size: { type: "string" },
           design_instructions: { type: "string" },
           hebrew_content: { type: "string" },
-          envelope_number: { type: "number" },
+          envelope_number: { type: "number", description: "DEPRECATED for distribution. Almost always leave null. Documents are in the box from the start; only set if the user explicitly wants this doc physically inside a sealed task envelope." },
           status: { type: "string" },
         },
         required: ["id"],
