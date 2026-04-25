@@ -14,7 +14,27 @@ type DbNode = { id: string; title: string; node_type: string; description: strin
 type DbEdge = { source_id: string; target_id: string; label: string | null };
 type DocumentRow = { id: string; doc_number: number | null; title: string; doc_type: string | null; print_size: string | null; envelope_number: number | null; linked_node_ids: string[] | null; generated_asset_url: string | null; generated_document_url: string | null; generated_pdf_url: string | null; document_preview_url: string | null; created_at: string };
 type EnvelopeRow = { number: number; label: string | null; task: string | null };
-type PlannedDoc = { docNumber: number; title: string; docType: string; printSize: string; envelopeNumber: number | null; purpose: string; sourceDocumentId?: string; sourceLogicNodeId?: string; generationStatus: string };
+type PlannedDoc = {
+  docNumber: number;
+  title: string;
+  docType: string;
+  printSize: string;
+  envelopeNumber: number | null;
+  purpose: string;
+  sourceDocumentId?: string;
+  sourceLogicNodeIds?: string[];
+  linkedLogicTitles?: string[];
+  generationStatus: string;
+};
+type ProposedDoc = {
+  doc_number?: number | null;
+  title?: string;
+  doc_type?: string;
+  print_size?: string;
+  envelope_number?: number | null;
+  purpose?: string;
+  linked_logic_node_ids?: string[];
+};
 
 const COLORS: Record<string, string> = {
   clue: "oklch(0.68 0.15 155)", suspect: "oklch(0.62 0.20 30)", deduction: "oklch(0.65 0.18 285)", contradiction: "oklch(0.58 0.22 27)", red_herring: "oklch(0.78 0.16 75)", envelope: "oklch(0.55 0.18 220)", document: "oklch(0.50 0.05 260)", solution: "oklch(0.45 0.15 285)", hint: "oklch(0.78 0.16 75)", note: "oklch(0.70 0.02 260)",
