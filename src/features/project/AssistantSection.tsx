@@ -16,6 +16,7 @@ import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { IMAGE_MODELS } from "@/components/ImageModelPicker";
 import { useAssistantRun } from "./assistant/useAssistantRun";
 import { AssetLightbox, type LightboxAsset } from "./assistant/AssetLightbox";
+import { useHiddenModels, filterModelOptions } from "@/lib/hidden-models";
 
 const PLANNING_MODELS = [
   { value: "__hdr-lovable", label: "— Lovable AI (workspace credits) —", header: true },
@@ -156,6 +157,9 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
 
   const planningModel = project?.ai_provider_planning ?? "lovable";
   const imageModel = project?.ai_provider_images ?? "nano-banana-2";
+  const { hidden: hiddenModels } = useHiddenModels();
+  const visiblePlanningModels = filterModelOptions(PLANNING_MODELS, hiddenModels, planningModel);
+  const visibleImageModels = filterModelOptions(IMAGE_MODELS, hiddenModels, imageModel);
 
   const setProjectAi = async (patch: {
     ai_provider_planning?: string;
@@ -356,7 +360,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
             <Select value={planningModel} onValueChange={(v) => setProjectAi({ ai_provider_planning: v })}>
               <SelectTrigger className="h-8 text-xs w-[210px]"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {PLANNING_MODELS.map((m) => {
+                {visiblePlanningModels.map((m) => {
                   if ((m as { header?: boolean }).header) {
                     return (
                       <div key={m.value} className="px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -377,7 +381,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
             <Select value={imageModel} onValueChange={(v) => setProjectAi({ ai_provider_images: v })}>
               <SelectTrigger className="h-8 text-xs w-[260px]"><SelectValue /></SelectTrigger>
               <SelectContent>
-                {IMAGE_MODELS.map((m) => (
+                {visibleImageModels.map((m) => (
                   <SelectItem key={m.value} value={m.value} className="text-xs">{m.label}</SelectItem>
                 ))}
               </SelectContent>

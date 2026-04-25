@@ -17,10 +17,12 @@ import { AssistantPlaybookPanel } from "./AssistantPlaybookPanel";
 import { ClaudeSkillsPanel } from "./ClaudeSkillsPanel";
 import { TeamAccessPanel } from "./TeamAccessPanel";
 import { AiRunLog } from "./AiRunLog";
+import { VisibleModelsPanel } from "./VisibleModelsPanel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LOGIC_FLOW_MODELS, LOGIC_FLOW_MODEL_KEY, LOGIC_FLOW_MODEL_DEFAULT } from "@/features/project/CanvasSection";
 import { Textarea } from "@/components/ui/textarea";
 import { DISPLAY_BACKGROUNDS, DEFAULT_DISPLAY_BACKGROUND, normalizeDisplayBackground } from "@/lib/display-background";
+import { useHiddenModels, filterModelOptions } from "@/lib/hidden-models";
 
 const SETTINGS_SECTIONS = [
   { id: "branding", label: "Branding" },
@@ -30,6 +32,7 @@ const SETTINGS_SECTIONS = [
   { id: "image-prompt-assistant", label: "Image prompt assistant" },
   { id: "assistant-rules", label: "Assistant rules" },
   { id: "ai-routing", label: "AI routing" },
+  { id: "visible-models", label: "Visible models" },
   { id: "ai-connections", label: "AI connections" },
   { id: "ai-ops", label: "Usage, credits, API keys & activity" },
   { id: "team-access", label: "Team access" },
@@ -60,6 +63,7 @@ export function SettingsPage() {
     if (typeof window === "undefined") return LOGIC_FLOW_MODEL_DEFAULT;
     return localStorage.getItem(LOGIC_FLOW_MODEL_KEY) ?? LOGIC_FLOW_MODEL_DEFAULT;
   });
+  const { hidden: hiddenModels } = useHiddenModels();
 
   const { data: profile } = useQuery({
     queryKey: ["profile", user?.id],
@@ -278,10 +282,10 @@ export function SettingsPage() {
         return (
           <Section id="ai-routing" title="AI provider routing" desc="Choose which provider handles each task. Each prefix routes to its own billing account.">
             <div className="space-y-3 max-w-xl">
-              <ProviderSelectRow label="Planning / Game design" value={planning} onChange={setPlanning} options={TEXT_PROVIDER_OPTIONS} />
-              <ProviderSelectRow label="Document generation" value={documents} onChange={setDocuments} options={TEXT_PROVIDER_OPTIONS} />
-              <ProviderSelectRow label="Prompt generation" value={promptWriter} onChange={setPromptWriter} options={TEXT_PROVIDER_OPTIONS} />
-              <ProviderSelectRow label="Image generation" value={images} onChange={setImages} options={IMAGE_PROVIDER_OPTIONS} />
+              <ProviderSelectRow label="Planning / Game design" value={planning} onChange={setPlanning} options={filterModelOptions(TEXT_PROVIDER_OPTIONS, hiddenModels, planning)} />
+              <ProviderSelectRow label="Document generation" value={documents} onChange={setDocuments} options={filterModelOptions(TEXT_PROVIDER_OPTIONS, hiddenModels, documents)} />
+              <ProviderSelectRow label="Prompt generation" value={promptWriter} onChange={setPromptWriter} options={filterModelOptions(TEXT_PROVIDER_OPTIONS, hiddenModels, promptWriter)} />
+              <ProviderSelectRow label="Image generation" value={images} onChange={setImages} options={filterModelOptions(IMAGE_PROVIDER_OPTIONS, hiddenModels, images)} />
             </div>
             <div className="text-xs text-muted-foreground mt-4 space-y-1">
               <p><strong>Lovable AI</strong> entries use the Lovable AI Gateway (workspace credits).</p>
@@ -306,11 +310,21 @@ export function SettingsPage() {
                 >
                   <SelectTrigger className="h-9 text-xs w-[280px] shrink-0"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {LOGIC_FLOW_MODELS.map((m) => <SelectItem key={m.value} value={m.value} className="text-xs">{m.label}</SelectItem>)}
+                    {filterModelOptions(LOGIC_FLOW_MODELS, hiddenModels, logicFlowModel).map((m) => <SelectItem key={m.value} value={m.value} className="text-xs">{m.label}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
             </div>
+          </Section>
+        );
+      case "visible-models":
+        return (
+          <Section
+            id="visible-models"
+            title="Visible models"
+            desc="Trim the long model dropdowns. Hidden models stay fully connected and routable — they just don't show up in the picker menus."
+          >
+            <VisibleModelsPanel />
           </Section>
         );
       case "ai-connections":

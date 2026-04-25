@@ -1,6 +1,7 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useHiddenModels, filterModelOptions } from "@/lib/hidden-models";
 
 export const IMAGE_MODELS = [
   { value: "chatgpt-image-2", label: "ChatGPT Image 2 (gpt-image-2) — latest" },
@@ -52,6 +53,8 @@ export function ImageModelPicker({ surface, defaultModel, className, size = "sm"
   const [value, setValue] = useState<ImageModelKey>(defaultModel);
   const [quality, setQuality] = useState<ImageQuality>("medium");
   const [geminiKeyPresent, setGeminiKeyPresent] = useState<boolean | null>(null);
+  const { hidden } = useHiddenModels();
+  const visibleModels = filterModelOptions(IMAGE_MODELS, hidden, value);
 
   useEffect(() => {
     setValue(getStoredImageModel(surface, defaultModel));
@@ -105,7 +108,7 @@ export function ImageModelPicker({ surface, defaultModel, className, size = "sm"
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {IMAGE_MODELS.map((m) => (
+          {visibleModels.map((m) => (
             <SelectItem key={m.value} value={m.value} className="text-xs">
               {m.label}
             </SelectItem>

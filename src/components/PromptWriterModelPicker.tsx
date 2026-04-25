@@ -4,6 +4,7 @@
 // in localStorage so each context keeps its own default.
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useEffect, useState } from "react";
+import { useHiddenModels, filterModelOptions } from "@/lib/hidden-models";
 
 // Grouped: header rows are non-selectable separators (value starts with "__hdr").
 export const PROMPT_WRITER_MODELS = [
@@ -46,6 +47,8 @@ interface Props {
 
 export function PromptWriterModelPicker({ surface, className }: Props) {
   const [value, setValue] = useState<string>("__project");
+  const { hidden } = useHiddenModels();
+  const visibleModels = filterModelOptions(PROMPT_WRITER_MODELS, hidden, value);
 
   useEffect(() => {
     setValue(getStoredWriterModel(surface));
@@ -64,7 +67,7 @@ export function PromptWriterModelPicker({ surface, className }: Props) {
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {PROMPT_WRITER_MODELS.map((m) => {
+        {visibleModels.map((m) => {
           if ((m as { header?: boolean }).header) {
             return (
               <div
