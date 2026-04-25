@@ -152,6 +152,84 @@ async function loadDoc0InventoryContext(supa: any, projectId: string) {
   };
 }
 
+// Build a rich, case-specific context for non-Doc-0 documents. The model must
+// reason the document content from the case (Logic Flow, suspects, the
+// document's planned purpose) — NOT from generic templates keyed off doc_type.
+async function loadPlannedDocContext(supa: any, projectId: string, documentId: string) {
+  const [{ data: project }, { data: logicNodes }, { data: logicEdges }, { data: suspects }, { data: envelopes }, { data: finalDocNodes }] = await Promise.all([
+    supa.from("projects").select("title, subtitle, mystery_type, genre, year, difficulty, player_role, case_goal, setting, selling_point, solution_summary").eq("id", projectId).single(),
+    supa.from("canvas_nodes").select("id, title, node_type, description, data").eq("project_id", projectId).eq("board", "logic").order("created_at", { ascending: true }),
+    supa.from("canvas_edges").select("source_id, target_id, label").eq("project_id", projectId).eq("board", "logic"),
+    supa.from("suspects").select("name, role_in_case, motives, secrets, summary, is_red_herring").eq("project_id", projectId).order("position", { ascending: true }),
+    supa.from("envelopes").select("number, label, task").eq("project_id", projectId).order("number", { ascending: true }),
+    supa.from("canvas_nodes").select("id, title, description, data").eq("project_id", projectId).eq("board", "final").eq("node_type", "document"),
+  ]);
+
+  const finalNode = (finalDocNodes ?? []).find((n: any) => n.data?.documentId === documentId) ?? null;
+  const linkedLogicIds: string[] = Array.isArray(finalNode?.data?.sourceLogicNodeIds) ? finalNode.data.sourceLogicNodeIds : [];
+  const linkedTitles: string[] = Array.isArray(finalNode?.data?.linkedLogicTitles) ? finalNode.data.linkedLogicTitles : [];
+  const purpose: string = String(finalNode?.data?.purpose ?? "");
+
+  const logicById = new Map((logicNodes ?? []).map((n: any) => [n.id, n]));
+  const linkedNodes = linkedLogicIds.map((id) => logicById.get(id)).filter(Boolean) as any[];
+
+  const lines: string[] = [];
+  lines.push(`CASE BRIEF`);
+  lines.push(`- Title: ${project?.title ?? ""}${project?.subtitle ? ` — ${project.subtitle}` : ""}`);
+  if (project?.mystery_type || project?.genre) lines.push(`- Mystery type / genre: ${[project?.mystery_type, project?.genre].filter(Boolean).join(" / ")}`);
+  if (project?.year) lines.push(`- Year / setting: ${project?.year}${project?.setting ? ` — ${project.setting}` : ""}`);
+  if (project?.player_role) lines.push(`- Player role: ${project.player_role}`);
+  if (project?.case_goal) lines.push(`- Case goal: ${project.case_goal}`);
+  if (project?.selling_point) lines.push(`- Selling point: ${project.selling_point}`);
+  lines.push(``);
+
+  if (project?.solution_summary) {
+    lines.push(`APPROVED SOLUTION SUMMARY (authoritative — never contradict, never spoil in player-facing text):`);
+    lines.push(project.solution_summary);
+    lines.push(``);
+  }
+
+  if ((suspects ?? []).length > 0) {
+    lines.push(`SUSPECTS / CAST:`);
+    (suspects ?? []).forEach((s: any) => {
+      lines.push(`- ${s.name}${s.role_in_case ? ` — ${s.role_in_case}` : ""}${s.is_red_herring ? " [RED HERRING]" : ""}${s.motives ? ` | motives: ${s.motives}` : ""}${s.secrets ? ` | secrets: ${s.secrets}` : ""}`);
+    });
+    lines.push(``);
+  }
+
+  if ((envelopes ?? []).length > 0) {
+    lines.push(`ENVELOPES (delivery containers):`);
+    (envelopes ?? []).forEach((e: any) => lines.push(`- Envelope ${e.number}: ${e.label ?? ""}${e.task ? ` — ${e.task}` : ""}`));
+    lines.push(``);
+  }
+
+  if ((logicNodes ?? []).length > 0) {
+    lines.push(`APPROVED LOGIC FLOW NODES (clues → deductions → solution; this is the puzzle chain you must serve):`);
+    (logicNodes ?? []).forEach((n: any) => lines.push(`- [${n.node_type}] ${n.title}${n.description ? ` — ${n.description.slice(0, 240)}` : ""}`));
+    lines.push(``);
+  }
+
+  if ((logicEdges ?? []).length > 0) {
+    const titleOf = (id: string) => (logicById.get(id) as any)?.title ?? "?";
+    lines.push(`LOGIC FLOW CONNECTIONS:`);
+    (logicEdges ?? []).slice(0, 60).forEach((e: any) => lines.push(`- ${titleOf(e.source_id)} → ${titleOf(e.target_id)}${e.label ? ` (${e.label})` : ""}`));
+    lines.push(``);
+  }
+
+  if (linkedNodes.length > 0 || linkedTitles.length > 0 || purpose) {
+    lines.push(`THIS DOCUMENT'S ROLE IN THE CASE (from the Final Flow plan — the assistant reasoned this when planning the document set):`);
+    if (purpose) lines.push(`- Purpose / clue this document delivers: ${purpose}`);
+    const titles = linkedNodes.length > 0 ? linkedNodes.map((n) => n.title) : linkedTitles;
+    if (titles.length > 0) lines.push(`- Logic Flow nodes this document supports: ${titles.join("; ")}`);
+    linkedNodes.forEach((n) => {
+      if (n.description) lines.push(`  • [${n.node_type}] ${n.title}: ${String(n.description).slice(0, 280)}`);
+    });
+    lines.push(``);
+  }
+
+  return { text: lines.join("\n"), purpose, hasContext: lines.length > 1 };
+}
+
 async function recordDocumentAttempt(supa: any, opts: {
   projectId: string;
   documentId: string;
@@ -222,12 +300,24 @@ Deno.serve(async (req) => {
       if (doc0 && !inventory?.hasFinalMap) {
         return new Response(JSON.stringify({ error: "Doc 0 must be generated from the Final Flow. Create the Final Documents Map first, then retry Doc 0." }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
+      const planned = doc0 ? null : await loadPlannedDocContext(supa, doc.project_id, documentId);
       const sys = doc0
         ? `You write Doc 0 for premium printable mystery games. Doc 0 is NEVER evidence and NEVER a normal memo. It is the player-facing box contents / case-file inventory. Output ONLY the document body in ${gameLanguage}, ${isRtl ? "RTL-ready" : "properly formatted"}. Use the supplied Final Flow document nodes as the authoritative inventory. Group by envelope/section when possible. No solution spoilers. Do not invent documents not present in the Final Flow.`
-        : `You write in-game evidence documents for premium printable mystery games. Output ONLY the document body in ${gameLanguage}, ${isRtl ? "RTL-ready" : "properly formatted"}, realistic and immersive, tailored to the document type. No meta-commentary. No disclaimers. For interrogation transcripts include pauses, body language and back-and-forth. Do not reveal the full solution.`;
+        : `You are a senior mystery-game writer producing one in-world evidence document for a premium printable detective game.
+
+CONTENT IS REASONED, NOT TEMPLATED. Read the case brief, the approved solution summary, the suspects, and the Logic Flow nodes this specific document is meant to support. Then write the document so it delivers ITS planned clue / role inside the case — not a generic example of its document type. The 'document type' field is ONLY a hint about FORMAT and visual style (interrogation transcript, autopsy report, letter, receipt, photograph caption, etc.). It is NOT a template for the body. Two documents of the same type in the same case must read very differently because the underlying evidence and characters are different.
+
+OUTPUT RULES:
+- Output ONLY the document body in ${gameLanguage}, ${isRtl ? "RTL-ready" : "properly formatted"}.
+- No meta-commentary, no disclaimers, no "[Note: ...]".
+- Stay in-world. Names, dates, locations, and details must be consistent with the case brief and Logic Flow.
+- Honor the document's planned purpose: the clue or piece of information it is supposed to surface for the player.
+- Do NOT reveal the full solution. Plant evidence; let the player deduce.
+- For interrogation transcripts: include pauses, body language, hesitations, contradictions, real back-and-forth.
+- Length and tone should match a real-world example of this document type, but the substance must come from THIS case.`;
       const userPrompt = doc0
         ? `Case: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nPlayer role: ${project?.player_role ?? ""}\nCase goal: ${project?.case_goal ?? ""}\nYear: ${project?.year ?? ""}\nSetting: ${project?.setting ?? ""}\n\nDocument to produce:\nTitle: ${doc.title}\nType: contents checklist / box inventory\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\n\n${inventory?.text ?? ""}\n\nWrite Doc 0 now as a clean player-facing checklist of every planned game document and physical insert. Include Doc 0 itself, opening/instruction pieces, envelopes, suspects/cast sheets if present, and all planned document nodes. Do not reveal answers, culprits, hidden logic, or generation status.`
-        : `Case: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nPlayer role: ${project?.player_role ?? ""}\nCase goal: ${project?.case_goal ?? ""}\nYear: ${project?.year ?? ""}\nSetting: ${project?.setting ?? ""}\n\nDocument to produce:\nTitle: ${doc.title}\nType: ${doc.doc_type ?? "generic"}\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\n\nWrite the full ${gameLanguage} body now.`;
+        : `${planned?.text ?? ""}\n\nDOCUMENT TO PRODUCE:\n- Title: ${doc.title}\n- Format style hint (NOT a content template): ${doc.doc_type ?? "evidence document"}\n- Print size: ${doc.print_size ?? "A4"}\n- Design / layout notes: ${doc.design_instructions ?? "—"}\n${planned?.purpose ? `- Planned clue / role: ${planned.purpose}\n` : ""}\nWrite the full ${gameLanguage} body now. Reason from the case brief and Logic Flow above — do NOT fall back on a generic '${doc.doc_type ?? "document"}' template. Make sure the content this document delivers is the planned clue / role for THIS case.`;
 
       const startedAt = Date.now();
       const callerUserId = await getUserIdFromAuth(req);
@@ -294,9 +384,10 @@ Deno.serve(async (req) => {
       if (doc0 && !inventory?.hasFinalMap) {
         return new Response(JSON.stringify({ error: "Doc 0 file must be generated from the Final Flow. Create the Final Documents Map first, then retry Doc 0." }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
+      const plannedFile = doc0 ? null : await loadPlannedDocContext(supa, doc.project_id, documentId);
       const directFilePrompt = doc0
         ? `Create the final ${documentFormat.toUpperCase()} document directly if your API supports returning generated files. If you cannot return an actual file, say exactly: UNABLE_TO_CREATE_FILE.\n\nThis is Doc 0 for a premium mystery game. Doc 0 is a player-facing box contents / case-file inventory, not evidence and not a case memo. Use the Final Flow inventory below as the source of truth. Do not invent documents and do not reveal solution spoilers.\n\nCase: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nDocument title: ${doc.title}\nType: contents checklist / box inventory\nPrint size: ${doc.print_size ?? inventory?.doc0?.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\n\n${inventory?.text ?? ""}\n\nPlayer-facing content to place in the file:\n${doc.hebrew_content ?? ""}`
-        : `Create the final ${documentFormat.toUpperCase()} document directly if your API supports returning generated files. If you cannot return an actual file, say exactly: UNABLE_TO_CREATE_FILE.\n\nCase: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nDocument title: ${doc.title}\nType: ${doc.doc_type ?? "generic"}\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\nContent:\n${doc.hebrew_content ?? ""}`;
+        : `Create the final ${documentFormat.toUpperCase()} document directly if your API supports returning generated files. If you cannot return an actual file, say exactly: UNABLE_TO_CREATE_FILE.\n\nThe document type is ONLY a visual / format hint (interrogation transcript, autopsy report, letter, etc.) — NOT a content template. The body content below was reasoned from the case's Logic Flow and is the source of truth. Lay it out faithfully in the chosen format.\n\nCase: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nDocument title: ${doc.title}\nFormat style hint: ${doc.doc_type ?? "evidence document"}\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\n${plannedFile?.purpose ? `Planned clue / role this document delivers: ${plannedFile.purpose}\n` : ""}\nContent:\n${doc.hebrew_content ?? ""}`;
       const startedAt = Date.now();
       const callerUserId = await getUserIdFromAuth(req);
       const saveDocumentPrompt = async (status: "ok" | "error", errorMessage?: string) => {

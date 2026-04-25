@@ -148,10 +148,16 @@ Phase 4 Documents: Doc 0 = contents; then randomized doc numbers, varied types &
 ${renderUniversalDocumentsBlock(playbook)}
 
 DOCUMENT GENERATION WORKFLOW (Phase 4 — read carefully)
-Before creating final document rows, you MUST create/review the Final Documents Map on the Case Board's Final board. The map contains one \`document\` node for every planned real game document, including Doc 0, marked as ungenerated until a real document row is created/generated. If the Final board does not yet contain planned document nodes, call \`create_final_documents_map\` first and ask the user to review it before calling \`add_document\`.
-Doc 0 hard rule: before creating or generating Doc 0, use the Final Flow as the source of truth. If the Final Flow has no document nodes, call \`create_final_documents_map\` first. When calling \`add_document\` for Doc 0, set doc_number=0, doc_type="contents checklist", and write hebrew_content as a non-spoiler inventory of the planned document nodes/envelopes, not a normal case memo.
-If the user asks to see/show/build the final flow, final board, production map, document map, or mapped final documents, and Logic Flow is already approved but the Final board has no \`document\` nodes, call \`create_final_documents_map\` immediately before prose. This is especially important for older existing cases that were approved before this workflow existed.
-The Final Flow is a major production artifact: it must include the approved logic nodes, suspects, envelopes, planned document nodes, and connecting lines between them. When the Final Flow already exists, acknowledge it before document generation: “I see the Final Flow is created; I’ll generate documents from those mapped nodes.” If it does not exist, ask whether to generate it now and use propose_options with Yes/No buttons. If the user answers yes, call \`create_final_documents_map\`.
+PHASE 4 PLANNING GATE (mandatory): After the Logic Flow is approved and BEFORE you call \`create_final_documents_map\` or \`add_document\`, you MUST first call \`propose_document_set\`. You reason through every approved Logic Flow node + suspect + envelope and propose the EXACT list of documents this case needs — each entry is one document with a player-facing title, a format-style hint (doc_type), the planned envelope, and the SPECIFIC clue/purpose it delivers (linked to logic node ids). Doc 0 is added automatically — do not include it. Templates are forbidden: two cases must yield two completely different document lists driven by their actual logic chains, not by a fixed boilerplate.
+After \`propose_document_set\` succeeds, present the proposed list as numbered bullets in your prose AND call \`propose_options\` with three buttons (in this exact order):
+  1) "Approve and build the Final Flow" → on click, call \`create_final_documents_map\`.
+  2) "Just build it" → on click, also call \`create_final_documents_map\` immediately (this is the user's "skip review" path; it bypasses the pause).
+  3) "Revise the plan" → wait for the user's edit instructions, then call \`propose_document_set\` again with the revised list.
+The DEFAULT behaviour is PAUSE: do not call \`create_final_documents_map\` until the user clicks Approve or Just-build-it. The "Just build it" button exists explicitly so the user can opt out of the pause when they're confident.
+Once the Final Flow is built, the map contains one \`document\` node per planned game document (including Doc 0), each marked \`ungenerated\` until generated. Then proceed to per-document generation.
+Doc 0 hard rule: before creating or generating Doc 0, use the Final Flow as the source of truth. When calling \`add_document\` for Doc 0, set doc_number=0, doc_type="contents checklist", and write hebrew_content as a non-spoiler inventory of the planned document nodes/envelopes, not a normal case memo.
+If the user asks to see/show/build the final flow, final board, production map, document map, or mapped final documents, and Logic Flow is already approved but no proposal exists yet, call \`propose_document_set\` first (do NOT skip the planning gate). For older existing cases that already have a Final board but no proposal, you may call \`create_final_documents_map\` directly to refresh from existing data.
+The Final Flow is a major production artifact: it must include the approved logic nodes, suspects, envelopes, planned document nodes, and connecting lines between them. When the Final Flow already exists, acknowledge it before document generation: "I see the Final Flow is created; I'll generate documents from those mapped nodes."
 If the user asks you to generate the Logic Flow from chat, call \`generate_logic_flow\`. After it finishes, tell the user to review/edit the Canvas Logic Flow and click Approve logic before final-document generation.
 
 Each project remembers a \`doc_generation_mode\` choice that controls how aggressive you are when producing documents:
@@ -523,29 +529,45 @@ const BASE_TOOLS = [
   {
     type: "function",
     function: {
-      name: "create_final_documents_map",
-      description: "Create/replace the Final board production map with the approved logic nodes, envelopes, suspects, planned document nodes, and connecting lines. If documents are omitted, the app derives the full map from the approved logic flow and existing case data. This does NOT create document rows or assets.",
+      name: "propose_document_set",
+      description:
+        "Phase 4 PLANNING GATE — call this AFTER Logic Flow approval and BEFORE create_final_documents_map. You reason through the entire approved Logic Flow and propose the exact list of game documents needed (no templates, no padding). Each entry: a player-facing title, a format-style hint (doc_type — interrogation transcript, autopsy report, letter, photograph, receipt, etc.), the planned envelope, and the SPECIFIC clue/purpose this document delivers, plus which Logic Flow node ids it supports. Doc 0 is added automatically by the playbook — DO NOT include it. After calling this tool, present the list in prose and ask the user to Approve, Just-build-it, or Revise (use propose_options).",
       parameters: {
         type: "object",
         properties: {
-          replace: { type: "boolean", description: "Default true. Replace existing unlinked Final-board document nodes." },
           documents: {
             type: "array",
             minItems: 1,
             items: {
               type: "object",
               properties: {
-                doc_number: { type: "number" },
+                doc_number: { type: "number", description: "Optional. Leave blank to auto-number from 1 upward." },
                 title: { type: "string" },
-                doc_type: { type: "string" },
-                print_size: { type: "string" },
+                doc_type: { type: "string", description: "Format / visual style hint only (NOT a content template)." },
+                print_size: { type: "string", description: "e.g. A4, A5, photo, ticket-stub, etc." },
                 envelope_number: { type: "number" },
-                purpose: { type: "string" },
+                purpose: { type: "string", description: "The specific clue / role this document delivers in THIS case. Reason from the Logic Flow — not generic." },
+                linked_logic_node_ids: { type: "array", items: { type: "string" }, description: "Canvas Logic Flow node ids this document supports." },
               },
               required: ["title", "purpose"],
               additionalProperties: false,
             },
           },
+        },
+        required: ["documents"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "create_final_documents_map",
+      description: "Build the Final board production map from the approved proposed_document_set (preferred) — falls back to logic-flow padding only when no proposal exists. Call this AFTER propose_document_set has been approved by the user (or after the user clicked 'Just build it' to bypass review).",
+      parameters: {
+        type: "object",
+        properties: {
+          replace: { type: "boolean", description: "Default true. Replace existing unlinked Final-board document nodes." },
         },
         required: [],
         additionalProperties: false,
@@ -1013,7 +1035,39 @@ async function executeTool(
       }
       return { ok: true, message: `Document created: ${data.title} (#${docNumber})`, id: data.id };
     }
+    if (name === "propose_document_set") {
+      const proposalDocs = Array.isArray((args as { documents?: unknown[] }).documents) ? (args as { documents: unknown[] }).documents : [];
+      if (proposalDocs.length === 0) return { ok: false, message: "propose_document_set needs at least one document" };
+      // Sanitize entries — keep only the planning fields, drop unknowns.
+      const cleaned = proposalDocs.map((raw, i) => {
+        const d = (raw ?? {}) as Record<string, unknown>;
+        return {
+          doc_number: typeof d.doc_number === "number" ? d.doc_number : null,
+          title: String(d.title ?? `Planned document ${i + 1}`).slice(0, 200),
+          doc_type: typeof d.doc_type === "string" && d.doc_type.trim().length > 0 ? d.doc_type.trim() : "case evidence",
+          print_size: typeof d.print_size === "string" && d.print_size.trim().length > 0 ? d.print_size.trim() : "A4",
+          envelope_number: typeof d.envelope_number === "number" ? d.envelope_number : null,
+          purpose: String(d.purpose ?? "Planned by the assistant from the Logic Flow.").slice(0, 1200),
+          linked_logic_node_ids: Array.isArray(d.linked_logic_node_ids) ? (d.linked_logic_node_ids as unknown[]).filter((x): x is string => typeof x === "string") : [],
+        };
+      });
+      const { error } = await supa
+        .from("projects")
+        .update({ proposed_document_set: cleaned, proposed_document_set_status: "proposed", proposed_document_set_approved_at: null })
+        .eq("id", projectId);
+      if (error) return { ok: false, message: `Failed to save proposal: ${error.message}` };
+      return {
+        ok: true,
+        message: `Document plan proposed with ${cleaned.length} documents. Doc 0 will be added automatically. Ask the user to Approve, Just build it (skip review), or Revise.`,
+        proposal: cleaned,
+      };
+    }
     if (name === "create_final_documents_map") {
+      // Mark proposal as approved (or bypassed if there is none) before building.
+      const { data: proj } = await supa.from("projects").select("proposed_document_set, proposed_document_set_status").eq("id", projectId).single();
+      const hasProposal = Array.isArray(proj?.proposed_document_set) && (proj?.proposed_document_set as unknown[]).length > 0;
+      const nextStatus = hasProposal ? (proj?.proposed_document_set_status === "approved" ? "approved" : "approved") : "bypassed";
+      await supa.from("projects").update({ proposed_document_set_status: nextStatus, proposed_document_set_approved_at: new Date().toISOString() }).eq("id", projectId);
       const base = `${SUPABASE_URL}/functions/v1/create-final-documents-map`;
       const resp = await fetch(base, {
         method: "POST",
@@ -1022,7 +1076,7 @@ async function executeTool(
       });
       const payload = await resp.json().catch(() => ({}));
       if (!resp.ok) return { ok: false, message: payload.error ?? "Final Flow creation failed" };
-      return { ok: true, message: `Final Flow created with ${payload.nodeCount ?? 0} nodes, including ${payload.documentNodeCount ?? 0} planned documents and ${payload.edgeCount ?? 0} connecting lines. Review the Final board before creating document rows.` };
+      return { ok: true, message: `Final Flow created with ${payload.nodeCount ?? 0} nodes, including ${payload.documentNodeCount ?? 0} planned documents and ${payload.edgeCount ?? 0} connecting lines${hasProposal ? " (built from your approved proposal)" : ""}. Review the Final board before creating document rows.` };
     }
     if (name === "generate_logic_flow") {
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/generate-logic-flow`, {
