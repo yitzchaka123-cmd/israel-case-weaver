@@ -53,6 +53,8 @@ export function ImageModelPicker({ surface, defaultModel, className, size = "sm"
   const [value, setValue] = useState<ImageModelKey>(defaultModel);
   const [quality, setQuality] = useState<ImageQuality>("medium");
   const [geminiKeyPresent, setGeminiKeyPresent] = useState<boolean | null>(null);
+  const { hidden } = useHiddenModels();
+  const visibleModels = filterModelOptions(IMAGE_MODELS, hidden, value);
 
   useEffect(() => {
     setValue(getStoredImageModel(surface, defaultModel));
