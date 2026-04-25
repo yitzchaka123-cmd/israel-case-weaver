@@ -492,7 +492,7 @@ async function callAnthropic(body: Record<string, unknown>, model: string, effor
   });
 }
 
-async function callGeminiDirect(body: Record<string, unknown>, model: string): Promise<Response> {
+async function callGeminiDirect(body: Record<string, unknown>, model: string, effort: ReasoningEffort = "none"): Promise<Response> {
   const messagesIn = (body.messages as IncomingMsg[]) ?? [];
   let systemText = "";
   const contents: Array<Record<string, unknown>> = [];
@@ -507,14 +507,20 @@ async function callGeminiDirect(body: Record<string, unknown>, model: string): P
     });
   }
 
-  const geminiBody: Record<string, unknown> = { contents };
-  if (systemText) geminiBody.systemInstruction = { parts: [{ text: systemText }] };
-  if (body.temperature !== undefined || body.max_tokens !== undefined) {
-    geminiBody.generationConfig = {
-      ...(body.temperature !== undefined ? { temperature: body.temperature } : {}),
-      ...(body.max_tokens !== undefined ? { maxOutputTokens: body.max_tokens } : {}),
+  const wantsThinking = effort !== "none";
+  const generationConfig: Record<string, unknown> = {};
+  if (body.temperature !== undefined) generationConfig.temperature = body.temperature;
+  if (body.max_tokens !== undefined) generationConfig.maxOutputTokens = body.max_tokens;
+  if (wantsThinking) {
+    generationConfig.thinkingConfig = {
+      includeThoughts: true,
+      thinkingBudget: thinkingBudgetForEffort(effort),
     };
   }
+
+  const geminiBody: Record<string, unknown> = { contents };
+  if (systemText) geminiBody.systemInstruction = { parts: [{ text: systemText }] };
+  if (Object.keys(generationConfig).length > 0) geminiBody.generationConfig = generationConfig;
   // Note: Gemini direct tool-calling has a different shape; we deliberately
   // skip translating tools here because our tool-using flows (assistant-chat)
   // use OpenAI/Anthropic/Lovable-gateway. Pick those for tool work.
@@ -528,15 +534,27 @@ async function callGeminiDirect(body: Record<string, unknown>, model: string): P
   if (!resp.ok) return resp;
 
   const data = await resp.json();
-  const text = (data.candidates?.[0]?.content?.parts ?? [])
-    .map((p: { text?: string }) => p.text ?? "")
-    .join("");
+  const parts = (data.candidates?.[0]?.content?.parts ?? []) as Array<{ text?: string; thought?: boolean }>;
+  let text = "";
+  const reasoningOut: ReasoningSegment[] = [];
+  for (const p of parts) {
+    if (typeof p.text !== "string") continue;
+    if (p.thought) {
+      const t = p.text.trim();
+      if (t) reasoningOut.push({ type: "thinking", text: t });
+    } else {
+      text += p.text;
+    }
+  }
+
+  const message: Record<string, unknown> = { role: "assistant", content: text };
+  if (reasoningOut.length) message.reasoning = reasoningOut;
 
   const translated = {
     model: `gemini-direct/${model}`,
     choices: [{
       index: 0,
-      message: { role: "assistant", content: text },
+      message,
       finish_reason: data.candidates?.[0]?.finishReason ?? "stop",
     }],
     usage: data.usageMetadata,
