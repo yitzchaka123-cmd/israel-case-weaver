@@ -111,7 +111,15 @@ export type Playbook = {
     docs: UniversalDocumentDefinition[];
   };
   phases: PhaseDefinition[];
+  planning_depth: {
+    default: PlanningDepth;
+    express: { auto_fill_defaults: Record<string, string>; ask_title: boolean };
+    guided: { ask_steps: string[] };
+    deep: { extra_probes: string[] };
+  };
 };
+
+export type PlanningDepth = "express" | "guided" | "deep";
 
 export const PLAYBOOK_DEFAULTS: Playbook = {
   suspect_counts: {
