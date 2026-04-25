@@ -178,10 +178,13 @@ Deno.serve(async (req) => {
       if (!docNode) return;
       const sourceIds = (doc.sourceLogicNodeIds ?? []).map((id) => sourceToFinal.get(id)).filter((x): x is string => Boolean(x));
       sourceIds.forEach((sid) => finalEdges.push({ project_id: projectId, board: "final", source_id: sid, target_id: docNode, label: "becomes document" }));
+      // NEW MODEL: documents are NOT inside envelopes — they live in the box
+      // from the start. Only draw an "inside envelope" edge if the user has
+      // explicitly tucked a doc inside a sealed task envelope (rare).
       if (doc.envelopeNumber) {
         const envLogic = logic.find((node) => node.node_type === "envelope" && Number(node.data?.envelopeNumber) === doc.envelopeNumber);
         const envNode = envLogic ? sourceToFinal.get(envLogic.id) : null;
-        if (envNode) finalEdges.push({ project_id: projectId, board: "final", source_id: docNode, target_id: envNode, label: `inside envelope ${doc.envelopeNumber}` });
+        if (envNode) finalEdges.push({ project_id: projectId, board: "final", source_id: docNode, target_id: envNode, label: `physical insert in envelope ${doc.envelopeNumber}` });
       }
       if (doc0Node && i > 0) finalEdges.push({ project_id: projectId, board: "final", source_id: doc0Node, target_id: docNode, label: "listed in contents" });
     });
