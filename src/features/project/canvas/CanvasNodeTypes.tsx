@@ -59,7 +59,25 @@ export type CaseNodeData = {
   description?: string | null;
   createdByMessageId?: string | null;
   generationStatus?: string | null;
+  envelopeNumber?: number;
+  docType?: string;
+  docNumber?: number;
+  purpose?: string;
+  linkedLogicTitles?: string[];
 };
+
+const STATUS_STYLE: Record<string, { label: string; bg: string; fg: string }> = {
+  ungenerated: { label: "Ungenerated", bg: "color-mix(in oklab, var(--color-muted) 70%, transparent)", fg: "var(--color-muted-foreground)" },
+  "draft row created": { label: "Draft row", bg: "color-mix(in oklab, oklch(0.75 0.12 75) 22%, transparent)", fg: "oklch(0.45 0.15 75)" },
+  "image generated": { label: "Image ready", bg: "color-mix(in oklab, oklch(0.70 0.14 220) 22%, transparent)", fg: "oklch(0.40 0.15 220)" },
+  "file generated": { label: "File ready", bg: "color-mix(in oklab, oklch(0.68 0.16 155) 22%, transparent)", fg: "oklch(0.38 0.16 155)" },
+  finalized: { label: "Finalized", bg: "color-mix(in oklab, oklch(0.62 0.18 155) 28%, transparent)", fg: "oklch(0.32 0.16 155)" },
+};
+
+function statusStyleFor(status?: string | null) {
+  if (!status) return STATUS_STYLE.ungenerated;
+  return STATUS_STYLE[status] ?? { label: status, bg: "color-mix(in oklab, var(--color-muted) 70%, transparent)", fg: "var(--color-muted-foreground)" };
+}
 
 /**
  * Custom React Flow node — colored header strip + icon + title.
@@ -72,14 +90,15 @@ export function CaseNode({ data, selected }: NodeProps<CaseNodeData>) {
   const Icon = meta.icon;
   const isEnvelope = data.type === "envelope";
   const isSolution = data.type === "solution";
-  const envelopeNumber = (data as unknown as { envelopeNumber?: number }).envelopeNumber;
+  const isDocument = data.type === "document";
+  const envelopeNumber = data.envelopeNumber;
 
   return (
     <div
       className="group relative rounded-xl overflow-hidden bg-card text-card-foreground transition-all"
       style={{
-        minWidth: isEnvelope ? 240 : 200,
-        maxWidth: isEnvelope ? 280 : 240,
+        minWidth: isDocument ? 240 : isEnvelope ? 240 : 200,
+        maxWidth: isDocument ? 280 : isEnvelope ? 280 : 240,
         border: `1.5px solid ${selected ? accent : "var(--color-border)"}`,
         boxShadow: selected
           ? `0 0 0 3px color-mix(in oklab, ${accent} 25%, transparent), 0 10px 24px -10px color-mix(in oklab, ${accent} 35%, transparent)`
@@ -121,7 +140,9 @@ export function CaseNode({ data, selected }: NodeProps<CaseNodeData>) {
         >
           {isEnvelope && typeof envelopeNumber === "number"
             ? `Envelope #${envelopeNumber}`
-            : meta.label}
+            : isDocument && typeof data.docNumber === "number"
+              ? `Doc #${data.docNumber}${data.docType ? ` · ${data.docType}` : ""}`
+              : meta.label}
         </span>
         {data.createdByMessageId && (
           <AssistantOriginBadge messageId={data.createdByMessageId} label="" />
@@ -133,19 +154,58 @@ export function CaseNode({ data, selected }: NodeProps<CaseNodeData>) {
         <div className="text-[13px] font-medium leading-snug text-foreground line-clamp-3">
           {data.label || "(untitled)"}
         </div>
-        {data.description && (
-          <div
-            className={`mt-1.5 text-[11px] text-muted-foreground leading-snug whitespace-pre-line ${
-              isEnvelope || isSolution ? "line-clamp-6" : "line-clamp-2"
-            }`}
-          >
-            {data.description}
-          </div>
-        )}
-        {data.type === "document" && data.generationStatus && (
-          <div className="mt-2 inline-flex items-center rounded-md border bg-muted/60 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-            {data.generationStatus === "ungenerated" ? "Ungenerated" : data.generationStatus}
-          </div>
+
+        {isDocument ? (
+          <>
+            {data.docType && (
+              <div className="mt-1.5">
+                <span
+                  className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                  style={{
+                    background: `color-mix(in oklab, ${accent} 18%, var(--color-card))`,
+                    color: `color-mix(in oklab, ${accent} 70%, var(--color-foreground))`,
+                    border: `1px solid color-mix(in oklab, ${accent} 30%, transparent)`,
+                  }}
+                >
+                  {data.docType}
+                </span>
+              </div>
+            )}
+            {data.purpose && (
+              <div className="mt-1.5 text-[11px] text-muted-foreground leading-snug line-clamp-3">
+                {data.purpose}
+              </div>
+            )}
+            {data.linkedLogicTitles && data.linkedLogicTitles.length > 0 && (
+              <div className="mt-1.5 text-[10px] text-muted-foreground/90 leading-snug">
+                <span className="font-semibold uppercase tracking-wider">Logic:</span>{" "}
+                <span className="line-clamp-2">{data.linkedLogicTitles.join(" · ")}</span>
+              </div>
+            )}
+            <div className="mt-2">
+              {(() => {
+                const s = statusStyleFor(data.generationStatus);
+                return (
+                  <span
+                    className="inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-semibold"
+                    style={{ background: s.bg, color: s.fg }}
+                  >
+                    {s.label}
+                  </span>
+                );
+              })()}
+            </div>
+          </>
+        ) : (
+          data.description && (
+            <div
+              className={`mt-1.5 text-[11px] text-muted-foreground leading-snug whitespace-pre-line ${
+                isEnvelope || isSolution ? "line-clamp-6" : "line-clamp-2"
+              }`}
+            >
+              {data.description}
+            </div>
+          )
         )}
       </div>
 

@@ -1029,6 +1029,9 @@ export type Database = {
           packaging_notes: string | null
           phase: string
           player_role: string | null
+          proposed_document_set: Json
+          proposed_document_set_approved_at: string | null
+          proposed_document_set_status: string
           selling_point: string | null
           setting: string | null
           solution_summary: string | null
@@ -1066,6 +1069,9 @@ export type Database = {
           packaging_notes?: string | null
           phase?: string
           player_role?: string | null
+          proposed_document_set?: Json
+          proposed_document_set_approved_at?: string | null
+          proposed_document_set_status?: string
           selling_point?: string | null
           setting?: string | null
           solution_summary?: string | null
@@ -1103,6 +1109,9 @@ export type Database = {
           packaging_notes?: string | null
           phase?: string
           player_role?: string | null
+          proposed_document_set?: Json
+          proposed_document_set_approved_at?: string | null
+          proposed_document_set_status?: string
           selling_point?: string | null
           setting?: string | null
           solution_summary?: string | null
