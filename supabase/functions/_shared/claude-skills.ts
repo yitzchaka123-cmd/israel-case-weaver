@@ -39,9 +39,11 @@ export function renderClaudeSkillCatalog(skills: ClaudeSkillRow[]) {
 
 export function claudeSkillRequestShape(skills: ClaudeSkillRow[]) {
   if (!skills.length) return {};
+  // Anthropic Skills require the current code-execution beta + tool version.
+  // The legacy 2025-05-22 version is rejected by Sonnet/Opus/Haiku 4.5+.
   return {
-    anthropicBeta: "code-execution-2025-05-22,files-api-2025-04-14,skills-2025-10-02",
-    anthropicTools: [{ type: "code_execution_20250522", name: "code_execution" }],
+    anthropicBeta: "code-execution-2025-08-25,files-api-2025-04-14,skills-2025-10-02",
+    anthropicTools: [{ type: "code_execution_20250825", name: "code_execution" }],
     anthropicContainer: {
       skills: skills.map((skill) => ({
         type: skill.skill_type === "anthropic" ? "anthropic" : "custom",
