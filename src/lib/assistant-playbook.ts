@@ -303,6 +303,36 @@ Looks like an actual archival envelope from the case era — NOT a modern Canva 
     { key: "packaging", label: "Packaging", description: "Phase 7 — physical box / print / fulfilment notes." },
     { key: "done", label: "Done", description: "Project complete and ready to ship." },
   ],
+  planning_depth: {
+    default: "guided",
+    express: {
+      ask_title: true,
+      auto_fill_defaults: {
+        mystery_type: "Murder & Homicide",
+        genre: "Forensics",
+        difficulty: "medium",
+        year: "Present day",
+        game_language: "Hebrew",
+        player_role: "Lead detective",
+        case_goal: "Identify the culprit and reconstruct the crime",
+        setting: "Israel, present day",
+      },
+    },
+    guided: {
+      ask_steps: ["language", "mystery_type", "genre", "titles", "difficulty", "year"],
+    },
+    deep: {
+      extra_probes: [
+        "per_suspect_motive",
+        "per_suspect_secret",
+        "per_suspect_contradiction",
+        "per_suspect_relationship_to_victim",
+        "per_clue_reasoning",
+        "red_herring_rationale",
+        "validate_deduction_chain",
+      ],
+    },
+  },
 };
 
 const clamp = (n: number, lo: number, hi: number) =>
