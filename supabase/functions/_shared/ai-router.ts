@@ -189,16 +189,19 @@ export async function chatCompletions(body: Record<string, unknown>): Promise<Re
 
   if (isOpenAIModel(model)) {
     if (!OPENAI_API_KEY) return jsonError("OpenAI API key (OpenAi secret) is not configured");
-    const openaiBody: Record<string, unknown> = { ...downstream, model: model.slice("openai/".length) };
-    if (wantsThinking && openaiBody.reasoning === undefined) {
-      openaiBody.reasoning = { effort };
+    const shortModel = model.slice("openai/".length);
+    // When thinking is wanted, use the Responses API — chat-completions silently
+    // discards reasoning summaries for gpt-5.
+    if (wantsThinking) {
+      return await callOpenAIResponses(downstream, shortModel, effort);
     }
+    const openaiBody: Record<string, unknown> = { ...downstream, model: shortModel };
     const resp = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify(openaiBody),
     });
-    return wantsThinking ? await normalizeOpenAIShape(resp) : resp;
+    return resp;
   }
 
   if (isAnthropicModel(model)) {
@@ -225,10 +228,10 @@ export async function chatCompletions(body: Record<string, unknown>): Promise<Re
   // Default: Lovable AI Gateway
   const gatewayBody: Record<string, unknown> = { ...downstream };
   if (wantsThinking && gatewayBody.reasoning === undefined) {
-    gatewayBody.reasoning = { effort };
+    gatewayBody.reasoning = { effort: effortForProvider(effort) };
   }
   const resp = await callLovableGateway(gatewayBody);
-  return wantsThinking ? await normalizeOpenAIShape(resp) : resp;
+  return wantsThinking ? await normalizeOpenAIShape(resp, model) : resp;
 }
 
 // OpenAI / Lovable Gateway already return chat-completions shape. We just
