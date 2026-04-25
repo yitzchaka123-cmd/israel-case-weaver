@@ -87,13 +87,14 @@ export function AiRunLog() {
       </div>
 
       <div className="rounded-xl border bg-card overflow-hidden">
-        <div className="grid grid-cols-[16px_120px_1fr_1fr_90px_70px_70px] gap-2 px-3 py-2 border-b bg-muted/40 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <div className="grid grid-cols-[16px_120px_1fr_1fr_90px_70px_28px_28px] gap-2 px-3 py-2 border-b bg-muted/40 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
           <div></div>
           <div>When</div>
           <div>Surface · Requested</div>
           <div>Effective · Fallback</div>
           <div className="text-right">Latency</div>
           <div className="text-center">Status</div>
+          <div></div>
           <div></div>
         </div>
         {rows.length === 0 ? (
