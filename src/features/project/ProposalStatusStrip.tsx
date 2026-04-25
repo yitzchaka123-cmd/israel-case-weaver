@@ -111,17 +111,11 @@ export function ProposalStatusStrip({
 
   const statusBadge =
     effectiveStatus === "approved" ? (
-      <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30">
-        Approved
-      </Badge>
+      <Badge variant="secondary" className="border">Approved</Badge>
     ) : effectiveStatus === "bypassed" ? (
-      <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30">
-        Bypassed (just build it)
-      </Badge>
+      <Badge variant="outline">Bypassed (just build it)</Badge>
     ) : (
-      <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-300 border-blue-500/30">
-        Awaiting your approval
-      </Badge>
+      <Badge>Awaiting your approval</Badge>
     );
 
   return (
