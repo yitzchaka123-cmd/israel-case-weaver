@@ -61,6 +61,9 @@ function docDescription(doc: PlannedDoc) {
     `Print size: ${doc.printSize}`,
     doc.envelopeNumber ? `Envelope: ${doc.envelopeNumber}` : null,
     doc.sourceDocumentId ? "Linked document row: yes" : "Linked document row: no",
+    doc.linkedLogicTitles && doc.linkedLogicTitles.length > 0
+      ? `Linked logic nodes: ${doc.linkedLogicTitles.join("; ")}`
+      : null,
     `Purpose: ${doc.purpose}`,
   ].filter(Boolean).join("\n");
 }
@@ -72,7 +75,7 @@ Deno.serve(async (req) => {
     if (!projectId) return new Response(JSON.stringify({ error: "projectId required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
     const supa = createClient(SUPABASE_URL, SERVICE);
-    const { data: project } = await supa.from("projects").select("id, owner_id, target_doc_count, solution_summary, logic_approved_at").eq("id", projectId).single();
+    const { data: project } = await supa.from("projects").select("id, owner_id, target_doc_count, solution_summary, logic_approved_at, proposed_document_set, proposed_document_set_status").eq("id", projectId).single();
     if (!project) return new Response(JSON.stringify({ error: "Project not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     if (!project.logic_approved_at || !project.solution_summary) return new Response(JSON.stringify({ error: "Approve the Logic Flow and save a solution summary before creating the Final Flow." }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
