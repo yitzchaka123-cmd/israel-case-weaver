@@ -208,18 +208,21 @@ Produce all ${count} envelopes now in numerical order. Reuse the labels above as
       return new Response(JSON.stringify({ error: "No structured output returned" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     const parsed = JSON.parse(call) as {
-      envelopes: { number: number; label: string; task: string; design_instructions: string }[];
+      envelopes: { number: number; label: string; task: string; opening_trigger?: string; design_instructions: string }[];
     };
 
     let written = 0;
     for (const env of parsed.envelopes) {
       const number = Math.max(0, Math.min(count - 1, Math.round(env.number)));
       const id = existingByNumber.get(number);
+      const trigger = (env.opening_trigger ?? "").trim();
+      const notes = trigger ? `Opening trigger: ${trigger}` : null;
       if (id) {
         await supa.from("envelopes").update({
           label: env.label,
           task: env.task,
           design_instructions: env.design_instructions,
+          ...(notes ? { notes } : {}),
           status: "review",
         }).eq("id", id);
       } else {
@@ -229,6 +232,7 @@ Produce all ${count} envelopes now in numerical order. Reuse the labels above as
           label: env.label,
           task: env.task,
           design_instructions: env.design_instructions,
+          ...(notes ? { notes } : {}),
           status: "review",
         });
       }
