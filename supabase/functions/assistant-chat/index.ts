@@ -1772,7 +1772,7 @@ Deno.serve(async (req) => {
       if (raw) playbook = resolvePlaybook(raw.assistant_playbook);
     }
 
-    const model = PROVIDER_MODEL[project.ai_provider_planning ?? "lovable"] ?? PROVIDER_MODEL.lovable;
+    const model = PROVIDER_MODEL[project.ai_provider_planning ?? "openai-5.2"] ?? PROVIDER_MODEL["openai-5.2"] ?? PROVIDER_MODEL.lovable;
     const rosters: Rosters = {
       suspects: (suspectsRoster ?? []) as RosterRow[],
       documents: (documentsRoster ?? []) as RosterRow[],
