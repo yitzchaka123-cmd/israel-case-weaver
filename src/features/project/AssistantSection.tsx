@@ -765,37 +765,73 @@ function MessageBubble({
 function ThinkingDisclosure({ reasoning }: { reasoning: ReasoningRound[] }) {
   const [open, setOpen] = useState(false);
   const totalSegments = reasoning.reduce((acc, r) => acc + r.segments.length, 0);
+  const totalChars = reasoning.reduce(
+    (acc, r) => acc + r.segments.reduce((a, s) => a + s.text.length, 0),
+    0,
+  );
   if (totalSegments === 0) return null;
+
+  const fullText = reasoning
+    .map((r) => {
+      const head = `--- Round ${r.round} ---`;
+      const body = r.segments.map((s) => `[${s.type}] ${s.text}`).join("\n\n");
+      return `${head}\n${body}`;
+    })
+    .join("\n\n");
+
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(fullText);
+      toast.success("Reasoning copied");
+    } catch {
+      toast.error("Couldn't copy reasoning");
+    }
+  };
+
   return (
     <div className="mt-2">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 hover:bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors"
-      >
-        <Brain className="h-3 w-3" />
-        {open ? "Hide thinking" : "Show thinking"}
-        <span className="opacity-60">({totalSegments})</span>
-      </button>
+      <div className="inline-flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="inline-flex items-center gap-1.5 rounded-l-full border border-border bg-muted/50 hover:bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors"
+        >
+          <Brain className="h-3 w-3 text-accent" />
+          {open ? "Hide thinking" : "Show thinking"}
+          <span className="opacity-70">
+            · {totalSegments} segment{totalSegments === 1 ? "" : "s"} · {totalChars.toLocaleString()} chars
+          </span>
+        </button>
+        {open && (
+          <button
+            type="button"
+            onClick={handleCopy}
+            title="Copy full reasoning"
+            className="inline-flex items-center rounded-r-full border border-l-0 border-border bg-muted/50 hover:bg-muted px-2 py-1 text-[11px] text-muted-foreground transition-colors"
+          >
+            <Copy className="h-3 w-3" />
+          </button>
+        )}
+      </div>
       {open && (
-        <div className="mt-2 space-y-2 rounded-md border border-border/60 bg-muted/30 p-3">
+        <div className="mt-2 space-y-3 rounded-md border border-border/60 bg-muted/30 p-3">
           {reasoning.map((round, i) => (
             <div key={i} className="space-y-1.5">
               {reasoning.length > 1 && (
-                <div className="text-[10px] uppercase tracking-wide text-muted-foreground/70">
-                  Round {round.round}
+                <div className="flex items-center gap-2 text-[10px] uppercase tracking-wide text-muted-foreground/70 border-b border-border/40 pb-1">
+                  <span>Round {round.round}</span>
+                  <span className="opacity-60">· {round.segments.length} segment{round.segments.length === 1 ? "" : "s"}</span>
                 </div>
               )}
               {round.segments.map((seg, j) => (
                 <div
                   key={j}
-                  className="whitespace-pre-wrap text-[12px] leading-relaxed text-muted-foreground"
+                  className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-foreground/75"
                 >
-                  {seg.type === "summary" && (
-                    <span className="mr-1 rounded bg-accent/20 px-1 py-0.5 text-[9px] font-semibold uppercase text-accent">
-                      summary
-                    </span>
-                  )}
+                  <span className={`mr-1.5 rounded px-1 py-0.5 text-[9px] font-semibold uppercase ${seg.type === "summary" ? "bg-accent/20 text-accent" : "bg-primary/15 text-primary"}`}>
+                    {seg.type}
+                  </span>
                   {seg.text}
                 </div>
               ))}
