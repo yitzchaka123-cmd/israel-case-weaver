@@ -41,6 +41,7 @@ import {
   ImagePlus,
   FileText,
   ChevronDown,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
