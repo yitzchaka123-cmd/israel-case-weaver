@@ -6,7 +6,7 @@ import ReactFlow, {
   MarkerType,
 } from "reactflow";
 import "reactflow/dist/style.css";
-import dagre from "dagre";
+
 import jsPDF from "jspdf";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -252,8 +252,14 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
 
   const [arranging, setArranging] = useState(false);
 
-  // Auto-arrange the current board. Each press cycles through a different
-  // smart layout so users can quickly find the clearest map composition.
+  // Smart arrange: lays the board out as a true game flow.
+  // - Envelopes form the horizontal spine, ordered by their number (the play order).
+  // - Documents stack directly under their parent envelope (in doc-number order).
+  // - Suspects/clues feed in from the top lane; deductions sit between clues and the solution.
+  // - Contradictions, red herrings, hints and notes get their own lanes so the board
+  //   reads as: setup → investigation → reasoning → solution.
+  // - When edges exist, dagre is used as a tie-breaker on top of the role-based ranks
+  //   so connected items still align nicely.
   const arrangeNodes = useCallback(async () => {
     if (arranging) return;
     if (nodes.length === 0) {
@@ -262,86 +268,156 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
     }
     setArranging(true);
     try {
-      const NODE_W = 200;
-      const NODE_H = 90;
+      const NODE_W = 220;
+      const NODE_H = 110;
+      const COL_GAP = 80;
+      const ROW_GAP = 70;
+      const STEP_X = NODE_W + COL_GAP;
+      const STEP_Y = NODE_H + ROW_GAP;
       const positions = new Map<string, { x: number; y: number }>();
-      const arrangeIndex = arrangePressRef.current++;
+      arrangePressRef.current++;
 
-      if (edges.length > 0) {
-        const flowLayouts = [
-          { rankdir: "LR", nodesep: 70, ranksep: 140, name: "left-to-right flow" },
-          { rankdir: "TB", nodesep: 85, ranksep: 120, name: "top-down flow" },
-          { rankdir: "RL", nodesep: 70, ranksep: 140, name: "right-to-left flow" },
-          { rankdir: "BT", nodesep: 85, ranksep: 120, name: "bottom-up flow" },
-        ] as const;
-        const layout = flowLayouts[arrangeIndex % flowLayouts.length];
-        const g = new dagre.graphlib.Graph();
-        g.setGraph({
-          rankdir: layout.rankdir,
-          nodesep: layout.nodesep,
-          ranksep: layout.ranksep,
-          marginx: 40,
-          marginy: 40,
+      type NData = {
+        type?: string;
+        envelopeNumber?: number;
+        docNumber?: number;
+        label?: string;
+      };
+      const dataOf = (id: string): NData =>
+        (nodes.find((n) => n.id === id)?.data as NData | undefined) ?? {};
+
+      // Lane order top-to-bottom — this is the "story" of a mystery game.
+      // Each lane is a horizontal row; nodes flow left-to-right within it.
+      const LANES: { key: string; types: string[] }[] = [
+        { key: "suspects",       types: ["suspect"] },
+        { key: "clues",          types: ["clue"] },
+        { key: "envelopes",      types: ["envelope"] },     // the spine
+        { key: "documents",      types: ["document"] },     // sits under envelopes
+        { key: "reasoning",      types: ["deduction", "contradiction"] },
+        { key: "distractions",   types: ["red_herring", "hint", "note"] },
+        { key: "solution",       types: ["solution"] },
+      ];
+
+      // Build adjacency for ordering helpers.
+      const outgoing = new Map<string, string[]>();
+      const incoming = new Map<string, string[]>();
+      for (const e of edges) {
+        if (!e.source || !e.target) continue;
+        if (!outgoing.has(e.source)) outgoing.set(e.source, []);
+        outgoing.get(e.source)!.push(e.target);
+        if (!incoming.has(e.target)) incoming.set(e.target, []);
+        incoming.get(e.target)!.push(e.source);
+      }
+
+      // 1) Place envelopes: the spine, sorted by envelopeNumber then title.
+      const envelopeNodes = nodes
+        .filter((n) => (n.data as NData).type === "envelope")
+        .sort((a, b) => {
+          const an = (a.data as NData).envelopeNumber ?? 9999;
+          const bn = (b.data as NData).envelopeNumber ?? 9999;
+          if (an !== bn) return an - bn;
+          return ((a.data as NData).label ?? "").localeCompare((b.data as NData).label ?? "");
         });
-        g.setDefaultEdgeLabel(() => ({}));
 
-        for (const n of nodes) {
-          g.setNode(n.id, { width: NODE_W, height: NODE_H });
-        }
-        for (const e of edges) {
-          if (e.source && e.target) g.setEdge(e.source, e.target);
-        }
-        dagre.layout(g);
+      const envelopeLaneIdx = LANES.findIndex((l) => l.key === "envelopes");
+      const envelopeY = envelopeLaneIdx * STEP_Y + 80;
+      const envelopeColumnOf = new Map<string, number>(); // envelopeId -> column index
+      envelopeNodes.forEach((n, i) => {
+        envelopeColumnOf.set(n.id, i);
+        positions.set(n.id, { x: 80 + i * STEP_X, y: envelopeY });
+      });
 
-        for (const n of nodes) {
-          const p = g.node(n.id);
-          if (p) {
-            // dagre returns center coords; React Flow expects top-left.
-            positions.set(n.id, { x: p.x - NODE_W / 2, y: p.y - NODE_H / 2 });
-          }
+      // 2) Place documents directly under their parent envelope when we can detect one,
+      // otherwise tile them in the documents lane in doc-number order.
+      const docNodes = nodes
+        .filter((n) => (n.data as NData).type === "document")
+        .sort((a, b) => {
+          const ae = (a.data as NData).envelopeNumber ?? 9999;
+          const be = (b.data as NData).envelopeNumber ?? 9999;
+          if (ae !== be) return ae - be;
+          const an = (a.data as NData).docNumber ?? 9999;
+          const bn = (b.data as NData).docNumber ?? 9999;
+          return an - bn;
+        });
+      const docLaneIdx = LANES.findIndex((l) => l.key === "documents");
+      const docBaseY = docLaneIdx * STEP_Y + 80;
+      // Track per-envelope-column doc stacking + a fallback column counter.
+      const docStackPerCol = new Map<number, number>();
+      let docFallbackCol = 0;
+      for (const d of docNodes) {
+        const dData = d.data as NData;
+        // Try to find the envelope this doc belongs to via edges or matching envelopeNumber.
+        let parentCol: number | undefined;
+        const linked = [...(incoming.get(d.id) ?? []), ...(outgoing.get(d.id) ?? [])];
+        for (const otherId of linked) {
+          const c = envelopeColumnOf.get(otherId);
+          if (c !== undefined) { parentCol = c; break; }
         }
-      } else {
-        // Alternates between grouped grid, wide grid, and radial clusters.
-        const groups = new Map<string, string[]>();
-        for (const n of nodes) {
-          const t = (n.data as { type?: string } | undefined)?.type ?? "note";
-          if (!groups.has(t)) groups.set(t, []);
-          groups.get(t)!.push(n.id);
+        if (parentCol === undefined && dData.envelopeNumber !== undefined) {
+          const env = envelopeNodes.find(
+            (e) => (e.data as NData).envelopeNumber === dData.envelopeNumber,
+          );
+          if (env) parentCol = envelopeColumnOf.get(env.id);
         }
-        const layoutKind = arrangeIndex % 3;
-        if (layoutKind === 2) {
-          const centerX = 420;
-          const centerY = 300;
-          const radius = Math.max(260, nodes.length * 28);
-          const orderedIds = Array.from(groups.values()).flat();
-          orderedIds.forEach((id, i) => {
-            const angle = (i / orderedIds.length) * Math.PI * 2 - Math.PI / 2;
-            positions.set(id, {
-              x: centerX + Math.cos(angle) * radius - NODE_W / 2,
-              y: centerY + Math.sin(angle) * radius - NODE_H / 2,
-            });
+        const col = parentCol ?? (envelopeNodes.length + docFallbackCol++);
+        const stack = docStackPerCol.get(col) ?? 0;
+        docStackPerCol.set(col, stack + 1);
+        positions.set(d.id, { x: 80 + col * STEP_X, y: docBaseY + stack * STEP_Y });
+      }
+      // If documents stacked deeper than one row, push later lanes down.
+      const maxDocStack = Math.max(1, ...Array.from(docStackPerCol.values(), (v) => v));
+      const extraDocRows = Math.max(0, maxDocStack - 1);
+
+      // 3) Place the remaining lanes (suspects, clues above envelopes; reasoning,
+      // distractions, solution below documents). Within a lane, order by:
+      // (a) the envelope column they connect to (so connected items align), then
+      // (b) creation order via array index for stability.
+      const indexOf = new Map(nodes.map((n, i) => [n.id, i] as const));
+      const columnHint = (id: string): number => {
+        const linked = [...(incoming.get(id) ?? []), ...(outgoing.get(id) ?? [])];
+        for (const otherId of linked) {
+          const c = envelopeColumnOf.get(otherId);
+          if (c !== undefined) return c;
+          const p = positions.get(otherId);
+          if (p) return Math.round((p.x - 80) / STEP_X);
+        }
+        return Number.POSITIVE_INFINITY; // unconnected → sent to the end of the lane
+      };
+
+      LANES.forEach((lane, laneIdx) => {
+        if (lane.key === "envelopes" || lane.key === "documents") return;
+        const laneNodes = nodes
+          .filter((n) => lane.types.includes((n.data as NData).type ?? "note"))
+          .sort((a, b) => {
+            const ca = columnHint(a.id);
+            const cb = columnHint(b.id);
+            if (ca !== cb) return ca - cb;
+            return (indexOf.get(a.id) ?? 0) - (indexOf.get(b.id) ?? 0);
           });
-        } else {
-          const COLS = layoutKind === 0
-            ? Math.min(5, Math.max(3, Math.ceil(Math.sqrt(nodes.length))))
-            : Math.min(7, Math.max(4, Math.ceil(nodes.length / 2)));
-          const STEP_X = NODE_W + (layoutKind === 0 ? 60 : 90);
-          const STEP_Y = NODE_H + (layoutKind === 0 ? 70 : 95);
-          let row = 0;
-          for (const [, ids] of groups) {
-            let col = 0;
-            for (const id of ids) {
-              const visualCol = layoutKind === 1 && row % 2 === 1 ? COLS - 1 - col : col;
-              positions.set(id, { x: 60 + visualCol * STEP_X, y: 60 + row * STEP_Y });
-              col += 1;
-              if (col >= COLS) {
-                col = 0;
-                row += 1;
-              }
-            }
-            if (col !== 0) row += 1;
+        // Lanes after documents need to account for the doc stack height.
+        const effectiveLaneIdx = laneIdx > docLaneIdx ? laneIdx + extraDocRows : laneIdx;
+        const y = effectiveLaneIdx * STEP_Y + 80;
+        laneNodes.forEach((n, i) => {
+          // Try to align under the connected envelope column when possible;
+          // otherwise tile from the left.
+          const hint = columnHint(n.id);
+          const col = Number.isFinite(hint) ? hint : i;
+          // Prevent two nodes in the same lane sharing a column — bump right.
+          let finalCol = col;
+          while ([...positions.values()].some((p) => p.y === y && Math.round((p.x - 80) / STEP_X) === finalCol)) {
+            finalCol += 1;
           }
-        }
+          positions.set(n.id, { x: 80 + finalCol * STEP_X, y });
+        });
+      });
+
+      // 4) Catch-all: any node we missed (unknown type) gets parked in a trailing row.
+      const missing = nodes.filter((n) => !positions.has(n.id));
+      if (missing.length > 0) {
+        const trailingY = (LANES.length + extraDocRows) * STEP_Y + 80;
+        missing.forEach((n, i) => {
+          positions.set(n.id, { x: 80 + i * STEP_X, y: trailingY });
+        });
       }
 
       // Optimistic local update so the layout snaps immediately.
@@ -361,13 +437,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
       if (failed > 0) {
         toast.error(`Arranged, but ${failed} node${failed === 1 ? "" : "s"} failed to save position.`);
       } else {
-        const flowLabels = ["left-to-right flow", "top-down flow", "right-to-left flow", "bottom-up flow"];
-        const looseLabels = ["grouped grid", "wide staggered grid", "radial map"];
-        toast.success(
-          edges.length > 0
-            ? `Arranged ${nodes.length} nodes as ${flowLabels[(arrangeIndex % flowLabels.length)]}.`
-            : `Arranged ${nodes.length} nodes as ${looseLabels[(arrangeIndex % looseLabels.length)]}.`,
-        );
+        toast.success(`Arranged ${nodes.length} nodes by game flow.`);
       }
     } finally {
       setArranging(false);
@@ -577,17 +647,13 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
           className="gap-2 h-9"
           onClick={arrangeNodes}
           disabled={arranging || nodes.length === 0}
-          title={
-            edges.length > 0
-              ? "Auto-arrange nodes by their connections (left → right)"
-              : "Auto-arrange nodes into a clean grid (no connections yet)"
-          }
+          title="Smart arrange: lays nodes out by game flow — suspects & clues on top, envelopes as the spine, documents under their envelope, deductions and solution below."
         >
           {arranging ? <Loader2 className="h-4 w-4 animate-spin" /> : <LayoutGrid className="h-4 w-4" />}
           Arrange
           {nodes.length > 0 && (
             <span className="ml-0.5 text-[10px] text-muted-foreground font-normal">
-              · {edges.length > 0 ? "by flow" : "grid"}
+              · by game flow
             </span>
           )}
         </Button>
