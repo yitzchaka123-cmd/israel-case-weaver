@@ -524,7 +524,7 @@ OUTPUT RULES:
             `Final print size: ${doc.print_size ?? "A4"} — compose to that aspect ratio with safe margins.`,
             ``,
             `STRICT DESIGN & GRAPHIC INSTRUCTIONS (FOLLOW EVERY DETAIL — this is the primary brief):`,
-            designNotes ? designNotes : `Authentic, period-correct, high-detail. Treat as a real-world physical prop: realistic paper texture, period-correct typography, believable headers/stamps/signatures.\n\nADDITIONAL REALISM DETAILS — include AT LEAST 20 concrete, period-appropriate details visible on the document. Pick from (and add similar): slight paper yellowing, faint horizontal fold across the center, mild edge wear, punch-hole marks on the left margin, one or two intake/filing stamps with era-correct date format, a typed reference number, a distribution list at the bottom, a small handwritten marginal note in pen or pencil, a signature scribble above a typed name, slightly uneven line spacing, faint photocopy shadowing along one edge, a classification stamp in dark red ink, a smaller box stamp near the lower third, a discreet fictitious seal (never a real emblem), a paperclip or staple shadow, a coffee/ink ring, smudged ribbon impression, carbon-copy bleed-through where applicable, a tape-repaired tear, a tiny fingerprint smudge, perforation marks if it's a tear-off form. Every detail must be concrete and visible — not a vague "looks aged".\n\nIf this document is an unusual / creative prop (map, diagram, hand-drawn note, cipher, blueprint, matchbook, ransom note, photo collage, evidence tag, ship/building map, etc.) instead include 8–15 CREATIVE in-world touches: hand annotations, torn-and-taped corners, smudged compass roses, coded margin doodles, crayon arrows, crossed-out misspellings, hidden symbols, unusual aspect ratios, attached Polaroids, etc. — tactile prop-style authenticity over bureaucratic realism.\n\nNo cartoon style. No watermark text. No copyright marks. No real emblems, real names, or real signatures.`,
+            designNotes ? designNotes : `Authentic, period-correct, high-detail. Treat as a real-world physical prop: realistic paper texture, period-correct typography, believable headers/stamps/signatures.`,
             ``,
             `CONTENT TO RENDER (${gameLanguage}, ${isRtl ? "RTL" : "LTR"}, grammatically correct, fully legible):`,
             contentExcerpt ? contentExcerpt : `Use plausible ${gameLanguage} text appropriate to the document type. All ${gameLanguage} must be perfectly readable and correctly laid out ${isRtl ? "right-to-left" : "left-to-right"}.`,
@@ -538,155 +538,164 @@ OUTPUT RULES:
             `- Output ONE image only. Fill the frame with the document.`,
           ].filter(Boolean).join("\n");
 
-      let mime = "image/png";
-      let bytes: Uint8Array;
       const imageProvider = useOpenAI ? (imgPref === "chatgpt-image-2" ? "openai-image2" : "openai") : (Deno.env.get("GEMINI_API_KEY") ? "gemini-direct" : "lovable-ai");
+      const requestedQuality = (qualityOverride === "high" || qualityOverride === "low" || qualityOverride === "medium") ? qualityOverride : "medium";
 
-      if (useOpenAI) {
+      // ─── Determine OpenAI sizing once (shared by sync + async path) ───
+      const ps = (doc.print_size ?? "A4").toLowerCase();
+      const portraitSizes = ["a3", "a4", "a5", "a6"];
+      const isGptImage2 = model === "gpt-image-2";
+      const openAiSize = isGptImage2
+        ? (portraitSizes.includes(ps) ? "1440x2048" : ps === "business card" ? "2048x1440" : "1440x2048")
+        : (portraitSizes.includes(ps) ? "1024x1536" : ps === "business card" ? "1536x1024" : "1024x1536");
+
+      // Helper that does the OpenAI call → upload → DB writes. Used by both
+      // the synchronous path (medium/low) and the async background path (high).
+      const runOpenAiImage = async (opts: { jobId?: string; abortMs?: number; quality: "low" | "medium" | "high" }) => {
         const openAiImageKey = pickOpenAIImageKey(imgPref);
-        if (!openAiImageKey) {
-          return new Response(JSON.stringify({ error: "OpenAI API key not configured" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        }
-        // Map print size → model-appropriate dimensions.
-        // gpt-image-2 accepts arbitrary sizes when edges are multiples of 16,
-        // so use a near-A4 1440x2048 instead of invalid 1448x2048.
-        // gpt-image-1 only accepts a fixed set, so it keeps 1024x1536 / 1536x1024.
-        const ps = (doc.print_size ?? "A4").toLowerCase();
-        const portraitSizes = ["a3", "a4", "a5", "a6"];
-        const isGptImage2 = model === "gpt-image-2";
-        const size = isGptImage2
-          ? (portraitSizes.includes(ps) ? "1440x2048"
-            : ps === "business card" ? "2048x1440"
-            : "1440x2048")
-          : (portraitSizes.includes(ps) ? "1024x1536"
-            : ps === "business card" ? "1536x1024"
-            : "1024x1536");
-
-        // Default to "medium" — gpt-image-2 at "high" can take ~2 min and exceed
-        // the edge runtime budget. User can still opt into "high" explicitly.
-        const quality = (qualityOverride === "high" || qualityOverride === "low" || qualityOverride === "medium")
-          ? qualityOverride
-          : "medium";
-
-        // Cap at 110s — leaves headroom under the platform's ~150s kill.
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 110_000);
-
-        // NOTE: do NOT add `background` or `input_fidelity` to this body —
-        // gpt-image-2 returns a 400 for either of those parameters. Defensive
-        // guard: build the body explicitly and only add `moderation` for gpt-image-2.
+        if (!openAiImageKey) throw new Error("OpenAI API key not configured");
         const openaiBody: Record<string, unknown> = {
-          model,
-          prompt: imgPrompt,
-          size,
-          quality,
-          n: 1,
-          output_format: "jpeg",
-          output_compression: 90,
+          model, prompt: imgPrompt, size: openAiSize, quality: opts.quality, n: 1,
+          output_format: "jpeg", output_compression: 90,
         };
-        if (isGptImage2) {
-          // Mystery / detective prompts (ransom notes, crime-scene props, autopsy
-          // reports) often trip default moderation. gpt-image-2 supports "low".
-          openaiBody.moderation = "low";
-        }
-
-        let oResp: Response;
-        try {
-          oResp = await fetch("https://api.openai.com/v1/images/generations", {
-            method: "POST",
-            headers: { Authorization: `Bearer ${openAiImageKey}`, "Content-Type": "application/json" },
-            body: JSON.stringify(openaiBody),
-            signal: controller.signal,
-          });
-        } catch (e) {
-          clearTimeout(timer);
-          const aborted = (e as Error)?.name === "AbortError";
-          console.error("openai image fetch failed", e);
-          return new Response(JSON.stringify({
-            error: aborted
-              ? `OpenAI image generation timed out after 110s. Try lowering quality to "Medium" or switch to a Nano Banana model.`
-              : `OpenAI request failed: ${(e as Error)?.message ?? "network error"}`,
-          }), { status: aborted ? 504 : 502, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        }
-        clearTimeout(timer);
-
+        if (isGptImage2) openaiBody.moderation = "low";
+        const controller = opts.abortMs ? new AbortController() : undefined;
+        const timer = opts.abortMs && controller ? setTimeout(() => controller.abort(), opts.abortMs) : undefined;
+        const oResp = await fetch("https://api.openai.com/v1/images/generations", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${openAiImageKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify(openaiBody),
+          ...(controller ? { signal: controller.signal } : {}),
+        });
+        if (timer) clearTimeout(timer);
         if (!oResp.ok) {
-          const reqId = oResp.headers.get("x-request-id") ?? "";
           const t = await oResp.text();
-          console.error("openai image error", oResp.status, reqId, t);
-          // Try to surface the real OpenAI error message
           let realMessage = t;
           try { realMessage = JSON.parse(t)?.error?.message ?? t; } catch { /* not json */ }
-          const reqIdSuffix = reqId ? ` (request id: ${reqId})` : "";
-
-          if (oResp.status === 429) {
-            const tierHint = isGptImage2
-              ? ` Tier 1 OpenAI accounts are limited to 5 images/min on gpt-image-2. Wait ~60s and retry, or upgrade your OpenAI tier.`
-              : "";
-            return new Response(JSON.stringify({ error: `OpenAI rate limit. ${realMessage}${tierHint}${reqIdSuffix}` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-          }
-          if (oResp.status === 403 && /verif/i.test(realMessage)) {
-            return new Response(JSON.stringify({
-              error: `OpenAI requires organization verification to use ${model}. Open https://platform.openai.com/settings/organization/general → Verify Organization, then retry. Or switch to "ChatGPT Image 1" or a Nano Banana model.${reqIdSuffix}`,
-            }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-          }
-          if (oResp.status === 401 || oResp.status === 403) {
-            return new Response(JSON.stringify({ error: `OpenAI auth failed — ${realMessage}${reqIdSuffix}` }), { status: oResp.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-          }
-          return new Response(JSON.stringify({ error: `OpenAI image generation failed (${oResp.status}): ${realMessage}${reqIdSuffix}` }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          throw new Error(`OpenAI ${oResp.status}: ${realMessage}`);
         }
         const oData = await oResp.json();
         const b64: string | undefined = oData.data?.[0]?.b64_json;
-        if (!b64) return new Response(JSON.stringify({ error: "No image returned (OpenAI)" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-        mime = "image/jpeg";
-      } else {
-        try {
-          const result = await generateImage({ prompt: imgPrompt, model });
-          bytes = result.bytes;
-          mime = result.mime;
-        } catch (e) {
-          if (e instanceof ImageGenError) {
-            const provider = e.provider === "gemini-direct" ? "Google Gemini" : "direct image provider";
-            console.error(`${provider} image error`, e.status, e.message);
-            if (e.status === 429) return new Response(JSON.stringify({ error: `${provider} rate limit` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-            if (e.status === 402) return new Response(JSON.stringify({ error: `${provider} credits/key issue` }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-            if (e.status === 401 || e.status === 403) return new Response(JSON.stringify({ error: `${provider} auth failed — check Settings → API keys` }), { status: e.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-            return new Response(JSON.stringify({ error: `${provider} image generation failed` }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-          }
-          throw e;
+        if (!b64) throw new Error("No image returned (OpenAI)");
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        const mime = "image/jpeg";
+        const ext = "jpg";
+        const path = `${doc.project_id}/${documentId}-${Date.now()}.${ext}`;
+        await supa.storage.from("documents").upload(path, bytes, { contentType: mime, upsert: true });
+        const { data: pub } = supa.storage.from("documents").getPublicUrl(path);
+        await supa.from("documents").update({ generated_asset_url: pub.publicUrl, active_version: "generated", status: "review", document_model: model, document_provider: imageProvider }).eq("id", documentId);
+        await supa.from("media_assets").insert({
+          project_id: doc.project_id, category: "document", title: doc.title, url: pub.publicUrl,
+          mime_type: mime, prompt: imgPrompt, provider: imageProvider, model, effective_model: model,
+          asset_type: "image", document_format: "image", source_document_id: documentId,
+          created_by_message_id: doc.created_by_message_id ?? null, generation_mode: "image_generation",
+          status: "generated", error_message: null,
+        } as never);
+        if (opts.jobId) {
+          await supa.from("image_generations").update({
+            status: "generated", url: pub.publicUrl, mime_type: mime, effective_model: model, fallback: "none",
+          }).eq("id", opts.jobId);
         }
+        return pub.publicUrl;
+      };
+
+      // ── Async background path: gpt-image-2 at HIGH quality ──
+      // Insert a pending job and respond immediately. Continue the OpenAI
+      // call in the background via EdgeRuntime.waitUntil so the platform
+      // doesn't kill us at 110s.
+      if (useOpenAI && requestedQuality === "high") {
+        const { data: jobRow, error: jobErr } = await supa.from("image_generations").insert({
+          project_id: doc.project_id, source_document_id: documentId, prompt: imgPrompt,
+          model, provider: imageProvider, quality: "high", status: "pending",
+          created_by_message_id: doc.created_by_message_id ?? null,
+        } as never).select("id").single();
+        if (jobErr || !jobRow) {
+          return new Response(JSON.stringify({ error: `Could not start background job: ${jobErr?.message ?? "unknown"}` }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        const jobId = (jobRow as { id: string }).id;
+        await supa.from("prompts").insert({
+          project_id: doc.project_id, scope: "document-image", target_id: documentId,
+          original_prompt: imgPrompt, final_prompt: imgPrompt, provider: imageProvider, model,
+        });
+
+        const bg = (async () => {
+          try {
+            await runOpenAiImage({ jobId, quality: "high" });
+          } catch (e) {
+            console.error("background gpt-image-2 high failed", e);
+            await supa.from("image_generations").update({
+              status: "failed", error_message: (e as Error)?.message?.slice(0, 1000) ?? "Unknown error",
+            }).eq("id", jobId);
+          }
+        })();
+        // @ts-ignore — EdgeRuntime.waitUntil is provided by Supabase Edge runtime
+        if (typeof EdgeRuntime !== "undefined" && (EdgeRuntime as any).waitUntil) {
+          // @ts-ignore
+          (EdgeRuntime as any).waitUntil(bg);
+        }
+        return new Response(JSON.stringify({
+          ok: true, pending: true, jobId, requestedModel: model, provider: imageProvider,
+          message: "High-quality image is generating in the background. This usually takes 90–180 seconds.",
+        }), { status: 202, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      // ── Synchronous path: medium / low / non-OpenAI ──
+      let mime = "image/png";
+      let bytes: Uint8Array;
+
+      if (useOpenAI) {
+        try {
+          const url = await runOpenAiImage({ quality: requestedQuality, abortMs: 110_000 });
+          await supa.from("prompts").insert({
+            project_id: doc.project_id, scope: "document-image", target_id: documentId,
+            original_prompt: imgPrompt, final_prompt: imgPrompt, provider: imageProvider, model,
+          });
+          return new Response(JSON.stringify({ ok: true, url, requestedModel: model, effectiveModel: model, provider: imageProvider, fallback: "none" }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        } catch (e) {
+          const msg = (e as Error)?.message ?? "Unknown";
+          const aborted = (e as Error)?.name === "AbortError" || /aborted/i.test(msg);
+          if (aborted) {
+            return new Response(JSON.stringify({ error: `OpenAI image generation timed out after 110s at ${requestedQuality} quality. Switch to "High" (runs in background) or use a Nano Banana model.` }), { status: 504, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          }
+          if (/\b429\b/.test(msg)) return new Response(JSON.stringify({ error: msg }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          if (/\b40[13]\b/.test(msg)) return new Response(JSON.stringify({ error: msg }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          return new Response(JSON.stringify({ error: msg }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+      }
+
+      // Non-OpenAI image providers
+      try {
+        const result = await generateImage({ prompt: imgPrompt, model });
+        bytes = result.bytes;
+        mime = result.mime;
+      } catch (e) {
+        if (e instanceof ImageGenError) {
+          const provider = e.provider === "gemini-direct" ? "Google Gemini" : "direct image provider";
+          if (e.status === 429) return new Response(JSON.stringify({ error: `${provider} rate limit` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          if (e.status === 402) return new Response(JSON.stringify({ error: `${provider} credits/key issue` }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          if (e.status === 401 || e.status === 403) return new Response(JSON.stringify({ error: `${provider} auth failed — check Settings → API keys` }), { status: e.status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          return new Response(JSON.stringify({ error: `${provider} image generation failed` }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        throw e;
       }
 
       const ext = mime.split("/")[1] ?? "png";
       const path = `${doc.project_id}/${documentId}-${Date.now()}.${ext}`;
       await supa.storage.from("documents").upload(path, bytes, { contentType: mime, upsert: true });
       const { data: pub } = supa.storage.from("documents").getPublicUrl(path);
-
       await supa.from("documents").update({ generated_asset_url: pub.publicUrl, active_version: "generated", status: "review", document_model: model, document_provider: imageProvider }).eq("id", documentId);
       await supa.from("prompts").insert({
         project_id: doc.project_id, scope: "document-image", target_id: documentId,
-        original_prompt: imgPrompt, final_prompt: imgPrompt,
-        provider: imageProvider,
-        model,
+        original_prompt: imgPrompt, final_prompt: imgPrompt, provider: imageProvider, model,
       });
       await supa.from("media_assets").insert({
-        project_id: doc.project_id,
-        category: "document",
-        title: doc.title,
-        url: pub.publicUrl,
-        mime_type: mime,
-        prompt: imgPrompt,
-        provider: imageProvider,
-        model,
-        effective_model: model,
-        asset_type: "image",
-        document_format: "image",
-        source_document_id: documentId,
-        created_by_message_id: doc.created_by_message_id ?? null,
-        generation_mode: "image_generation",
-        status: "generated",
-        error_message: null,
+        project_id: doc.project_id, category: "document", title: doc.title, url: pub.publicUrl,
+        mime_type: mime, prompt: imgPrompt, provider: imageProvider, model, effective_model: model,
+        asset_type: "image", document_format: "image", source_document_id: documentId,
+        created_by_message_id: doc.created_by_message_id ?? null, generation_mode: "image_generation",
+        status: "generated", error_message: null,
       } as never);
 
       return new Response(JSON.stringify({ ok: true, url: pub.publicUrl, requestedModel: model, effectiveModel: model, provider: imageProvider, fallback: "none" }), {
