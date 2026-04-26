@@ -418,29 +418,7 @@ function AssetDialog({
 
   const isImageAsset = asset.mime_type?.startsWith("image");
 
-  const handleRegeneratePrompt = async () => {
-    setRegenPrompt(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const writerModel = getStoredWriterModel("media");
-      const resp = await callEdge("suggest-image-prompt", {
-        projectId,
-        category: asset.category ?? category,
-        currentPrompt: editPrompt.trim() || undefined,
-        writerModel: writerModel === "__project" ? undefined : writerModel,
-        userId: session?.user?.id,
-      });
-      const json = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        toast.error(json.error ?? "Couldn't generate a prompt");
-        return;
-      }
-      setEditPrompt(json.prompt);
-      toast.success("Prompt revised");
-    } finally {
-      setRegenPrompt(false);
-    }
-  };
+  // Prompt re-drafting is now handled inside <ImagePromptAssistant /> below.
 
   const handleRetry = async () => {
     if (!editPrompt.trim()) return toast.error("Prompt is empty");
