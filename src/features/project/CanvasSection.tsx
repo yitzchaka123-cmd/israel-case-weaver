@@ -180,6 +180,8 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
   });
   const posTimers = useRef<Record<string, number>>({});
   const arrangePressRef = useRef(0);
+  // Reset variant cycle when switching boards so each board starts at variant 0.
+  useEffect(() => { arrangePressRef.current = 0; }, [board]);
 
   // Detect live streaming of the logic flow: when the node count for this
   // board ticks up via realtime, mark a "last grew" timestamp. If the board
@@ -340,7 +342,10 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
       return;
     }
     setArranging(true);
-    arrangePressRef.current++;
+    // Each press cycles through smart-layout variants on the server. AI refine
+    // always polishes the *current* variant (don't bump the counter).
+    const variantIndex = mode === "deterministic" ? arrangePressRef.current : Math.max(0, arrangePressRef.current - 1);
+    if (mode === "deterministic") arrangePressRef.current++;
     const label = mode === "ai-refine" ? `AI is refining ${nodes.length} nodes…` : `Arranging ${nodes.length} nodes…`;
     const t = toast.loading(label);
     try {
@@ -358,6 +363,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
             board,
             mode,
             modelOverride: logicModel,
+            variantIndex,
           }),
         },
       );
@@ -376,12 +382,17 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
         }),
       );
       qc.invalidateQueries({ queryKey: ["nodes", projectId, board] });
+      const variantLabel = json.variant ? ` · ${json.variant}` : "";
+      const variantHint =
+        mode === "deterministic" && json.variantCount > 1
+          ? ` (${(json.variantIndex ?? 0) + 1}/${json.variantCount} — press again for another)`
+          : "";
       const sourceLabel =
-        json.source === "ai-refine" ? "AI refined"
-        : json.source === "ai-refine-fallback" ? "AI refine failed — kept smart layout"
-        : "Smart layout";
+        json.source === "ai-refine" ? `AI refined${variantLabel}`
+        : json.source === "ai-refine-fallback" ? `AI refine failed — kept smart layout${variantLabel}`
+        : `Smart layout${variantLabel}`;
       toast.success(
-        `Arranged ${json.count ?? nodes.length} nodes (${sourceLabel}).${json.notes ? ` ${json.notes}` : ""}`,
+        `Arranged ${json.count ?? nodes.length} nodes (${sourceLabel})${variantHint}.${json.notes ? ` ${json.notes}` : ""}`,
         { id: t, duration: 4000 },
       );
     } catch (err) {
@@ -610,7 +621,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
             className="gap-2 h-9 rounded-r-none border-r-0"
             onClick={() => arrangeNodes("deterministic")}
             disabled={arranging || nodes.length === 0}
-            title="Smart arrange — instant context-aware layout. For the Final Flow it places the logic chain on the left, documents in the middle aligned with the logic node they came from, and envelopes on the right in numerical order."
+            title="Smart arrange — instant context-aware layout. Press repeatedly to cycle through different smart layouts (lanes / columns / suspect bands / chain-packed for the Logic board; bands / stacked / grouped-by-envelope for the Final board)."
           >
             {arranging ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
             Arrange
@@ -637,7 +648,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
                 <Sparkles className="h-4 w-4" />
                 <div className="flex flex-col">
                   <span className="font-medium">Smart arrange</span>
-                  <span className="text-[11px] text-muted-foreground">Instant · context-aware layout</span>
+                  <span className="text-[11px] text-muted-foreground">Instant · cycles through layout variants on repeat press</span>
                 </div>
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => arrangeNodes("ai-refine")} className="gap-2">

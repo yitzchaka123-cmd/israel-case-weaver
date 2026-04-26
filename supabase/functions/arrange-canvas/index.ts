@@ -6,14 +6,25 @@
 // already-good layout (instead of building one from scratch), with a much
 // shorter timeout.
 //
-// Two layouts are produced depending on the board:
-//   • "logic"  — 7 horizontal lanes (suspects, clues, documents, envelopes,
-//                 deductions, distractions, solution) with topological-depth
-//                 columns so chains read left→right.
-//   • "final"  — 3 vertical bands (logic chain | documents | envelopes) where
-//                 each document sits in the row of the logic node it
-//                 materialises (`sourceLogicNodeIds[0]`), and each envelope
-//                 sits at the row of its highest-numbered document.
+// Each board has a CYCLE of smart layout variants. Pressing "Smart arrange"
+// repeatedly walks through the variants so the user can preview the same
+// case from different structural angles. Each variant is still deterministic
+// and context-aware (uses node_type, finalMapRole, envelopeNumber, edges).
+//
+// Logic-board variants (cycled in order):
+//   0 "lanes"   — 7 horizontal lanes by node_type, columns from longest-path.
+//   1 "columns" — vertical lanes (lane = column, depth = row). Same role
+//                 grouping but reads top→bottom.
+//   2 "suspects"— grouped by primary suspect (data.suspectId / suspectName),
+//                 each suspect getting their own horizontal swimlane band.
+//   3 "compact" — depth-first chain layout: follow each chain root through
+//                 its successors, packing chains tightly into rows.
+//
+// Final-board variants (cycled in order):
+//   0 "bands"      — Logic | Documents | Envelopes left→right (default).
+//   1 "stacked"    — Logic top, Documents middle, Envelopes bottom (rows).
+//   2 "envelope"   — grouped by envelope: each envelope owns a column of
+//                    its documents, with the logic chain spread along top.
 //
 // All position writes are committed in a single batched upsert.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
@@ -208,6 +219,134 @@ function deterministicLogicLayout(nodes: ArrangeNode[], edges: ArrangeEdge[]): R
   return positions;
 }
 
+// Variant 1: vertical lanes (rotate 90°). Each role gets a column;
+// topological depth pushes nodes downward.
+function logicLayoutColumns(nodes: ArrangeNode[], edges: ArrangeEdge[]): Record<string, Pos> {
+  const positions: Record<string, Pos> = {};
+  const depths = longestPathColumns(nodes, edges);
+  const byLane = new Map<number, ArrangeNode[]>();
+  for (const n of nodes) {
+    const lane = laneIndexFor(n.node_type);
+    if (!byLane.has(lane)) byLane.set(lane, []);
+    byLane.get(lane)!.push(n);
+  }
+  for (let lane = 0; lane < LOGIC_LANES.length + 1; lane++) {
+    const arr = byLane.get(lane) ?? [];
+    if (arr.length === 0) continue;
+    arr.sort((a, b) => (depths.get(a.id) ?? 0) - (depths.get(b.id) ?? 0));
+    const used = new Set<number>();
+    const x = ORIGIN_X + lane * STEP_X;
+    for (const n of arr) {
+      let r = depths.get(n.id) ?? 0;
+      while (used.has(r)) r++;
+      used.add(r);
+      positions[n.id] = { x, y: ORIGIN_Y + r * STEP_Y };
+    }
+  }
+  resolveOverlaps(positions);
+  return positions;
+}
+
+// Variant 2: grouped by suspect. Each suspect (or "unassigned") owns a
+// horizontal band; within the band we render the same lane structure.
+function logicLayoutBySuspect(nodes: ArrangeNode[], edges: ArrangeEdge[]): Record<string, Pos> {
+  const positions: Record<string, Pos> = {};
+  const dataOf = (n: ArrangeNode) =>
+    (n.data ?? {}) as { suspectId?: string; suspectName?: string; suspectIds?: string[] };
+  // Build suspect key per node
+  const keyOf = (n: ArrangeNode): string => {
+    const d = dataOf(n);
+    if (n.node_type === "suspect") return n.id; // suspect anchors its own band
+    const k = d.suspectId || (Array.isArray(d.suspectIds) && d.suspectIds[0]) || d.suspectName;
+    return k ?? "__unassigned__";
+  };
+  // Suspect nodes establish band order
+  const suspectNodes = nodes.filter((n) => n.node_type === "suspect");
+  const bandOrder: string[] = [];
+  const seen = new Set<string>();
+  for (const s of suspectNodes) {
+    bandOrder.push(s.id);
+    seen.add(s.id);
+  }
+  for (const n of nodes) {
+    const k = keyOf(n);
+    if (!seen.has(k)) {
+      bandOrder.push(k);
+      seen.add(k);
+    }
+  }
+  const depths = longestPathColumns(nodes, edges);
+  // Sub-lane within each band: roles other than suspect
+  const SUB_LANES = ["clue", "document", "envelope", "deduction", "red_herring", "solution"];
+  const subLaneIdx = (t: string) => {
+    const i = SUB_LANES.indexOf(t);
+    return i < 0 ? SUB_LANES.length : i;
+  };
+  const BAND_HEIGHT = (SUB_LANES.length + 1) * STEP_Y;
+  bandOrder.forEach((bandKey, bandIdx) => {
+    const bandY0 = ORIGIN_Y + bandIdx * BAND_HEIGHT;
+    const bandNodes = nodes.filter((n) => keyOf(n) === bandKey);
+    // Suspect head sits at top-left of the band
+    const head = bandNodes.find((n) => n.node_type === "suspect");
+    if (head) positions[head.id] = { x: ORIGIN_X, y: bandY0 };
+    // Other nodes by sub-lane row, depth column
+    const others = bandNodes.filter((n) => n.node_type !== "suspect");
+    const used = new Map<number, Set<number>>(); // row → cols used
+    for (const n of others) {
+      const row = subLaneIdx(n.node_type) + 1; // +1 leaves row 0 for suspect
+      let col = (depths.get(n.id) ?? 0) + 1; // +1 leaves col 0 for suspect anchor
+      if (!used.has(row)) used.set(row, new Set());
+      const u = used.get(row)!;
+      while (u.has(col)) col++;
+      u.add(col);
+      positions[n.id] = { x: ORIGIN_X + col * STEP_X, y: bandY0 + row * STEP_Y };
+    }
+  });
+  // Anything missed
+  let trailRow = bandOrder.length * (SUB_LANES.length + 1);
+  for (const n of nodes) {
+    if (!positions[n.id]) {
+      positions[n.id] = { x: ORIGIN_X, y: ORIGIN_Y + trailRow * STEP_Y };
+      trailRow++;
+    }
+  }
+  resolveOverlaps(positions);
+  return positions;
+}
+
+// Variant 3: depth-first chain packing. Walk each root-to-leaf chain into
+// its own row, packing chains tightly so related deductions read along a line.
+function logicLayoutChains(nodes: ArrangeNode[], edges: ArrangeEdge[]): Record<string, Pos> {
+  const positions: Record<string, Pos> = {};
+  const { out, inc } = buildAdjacency(edges);
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
+  const visited = new Set<string>();
+  // Roots: no incoming edges. Sort by lane so suspects come first.
+  const roots = nodes
+    .filter((n) => (inc.get(n.id) ?? []).length === 0)
+    .sort((a, b) => laneIndexFor(a.node_type) - laneIndexFor(b.node_type));
+  let row = 0;
+  const placeChain = (startId: string) => {
+    const stack: { id: string; depth: number }[] = [{ id: startId, depth: 0 }];
+    let chainPlaced = false;
+    while (stack.length) {
+      const { id, depth } = stack.pop()!;
+      if (visited.has(id) || !nodeById.has(id)) continue;
+      visited.add(id);
+      positions[id] = { x: ORIGIN_X + depth * STEP_X, y: ORIGIN_Y + row * STEP_Y };
+      chainPlaced = true;
+      const children = (out.get(id) ?? []).slice().reverse();
+      for (const c of children) stack.push({ id: c, depth: depth + 1 });
+    }
+    if (chainPlaced) row++;
+  };
+  for (const r of roots) placeChain(r.id);
+  // Disconnected nodes (cycles or isolated)
+  for (const n of nodes) if (!visited.has(n.id)) placeChain(n.id);
+  resolveOverlaps(positions);
+  return positions;
+}
+
 // ─── FINAL board: 3-band role-aware layout ───────────────────────────────────
 
 // Band A (logic chain) on the left, Band B (documents) middle, Band C
@@ -324,6 +463,118 @@ function deterministicFinalLayout(nodes: ArrangeNode[], _edges: ArrangeEdge[]): 
   return positions;
 }
 
+// Final variant 1: stacked horizontally — Logic on top row(s), Documents in
+// the middle, Envelopes at the bottom. Useful on tall screens.
+function finalLayoutStacked(nodes: ArrangeNode[], _edges: ArrangeEdge[]): Record<string, Pos> {
+  const positions: Record<string, Pos> = {};
+  const dataOf = (n: ArrangeNode) =>
+    (n.data ?? {}) as { envelopeNumber?: number; docNumber?: number; finalMapRole?: string };
+  const logicNodes = nodes.filter((n) => dataOf(n).finalMapRole === "logic");
+  const docNodes = [...nodes.filter((n) => n.node_type === "document")].sort(
+    (a, b) => (dataOf(a).docNumber ?? 9999) - (dataOf(b).docNumber ?? 9999),
+  );
+  const envNodes = [...nodes.filter((n) => n.node_type === "envelope")].sort(
+    (a, b) => (dataOf(a).envelopeNumber ?? 9999) - (dataOf(b).envelopeNumber ?? 9999),
+  );
+  const others = nodes.filter(
+    (n) => n.node_type !== "document" && n.node_type !== "envelope" && dataOf(n).finalMapRole !== "logic",
+  );
+  // Up to 8 per row, then wrap.
+  const place = (arr: ArrangeNode[], rowStart: number, perRow = 8) => {
+    let lastRow = rowStart;
+    arr.forEach((n, i) => {
+      const r = rowStart + Math.floor(i / perRow);
+      const c = i % perRow;
+      lastRow = r;
+      positions[n.id] = { x: ORIGIN_X + c * STEP_X, y: ORIGIN_Y + r * STEP_Y };
+    });
+    return lastRow + 1;
+  };
+  const afterLogic = place(logicNodes, 0);
+  const afterDocs = place(docNodes, afterLogic + 1);
+  const afterEnvs = place(envNodes, afterDocs + 1);
+  place(others, afterEnvs + 1);
+  resolveOverlaps(positions);
+  return positions;
+}
+
+// Final variant 2: grouped by envelope. Each envelope owns a column with its
+// documents stacked beneath it; the logic chain spreads along the top.
+function finalLayoutByEnvelope(nodes: ArrangeNode[], _edges: ArrangeEdge[]): Record<string, Pos> {
+  const positions: Record<string, Pos> = {};
+  const dataOf = (n: ArrangeNode) =>
+    (n.data ?? {}) as { envelopeNumber?: number; docNumber?: number; finalMapRole?: string };
+  const logicNodes = nodes.filter((n) => dataOf(n).finalMapRole === "logic");
+  const docNodes = nodes.filter((n) => n.node_type === "document");
+  const envNodes = [...nodes.filter((n) => n.node_type === "envelope")].sort(
+    (a, b) => (dataOf(a).envelopeNumber ?? 9999) - (dataOf(b).envelopeNumber ?? 9999),
+  );
+  const others = nodes.filter(
+    (n) => n.node_type !== "document" && n.node_type !== "envelope" && dataOf(n).finalMapRole !== "logic",
+  );
+  // Logic chain across the top, packed in rows of 8.
+  logicNodes.forEach((n, i) => {
+    const r = Math.floor(i / 8);
+    const c = i % 8;
+    positions[n.id] = { x: ORIGIN_X + c * STEP_X, y: ORIGIN_Y + r * STEP_Y };
+  });
+  const logicRows = Math.max(1, Math.ceil(logicNodes.length / 8));
+  // Each envelope = column. Below it: that envelope's documents (sorted by docNumber).
+  envNodes.forEach((env, idx) => {
+    const x = ORIGIN_X + idx * STEP_X;
+    const y0 = ORIGIN_Y + (logicRows + 1) * STEP_Y;
+    positions[env.id] = { x, y: y0 };
+    const num = dataOf(env).envelopeNumber;
+    const docs = docNodes
+      .filter((d) => dataOf(d).envelopeNumber === num)
+      .sort((a, b) => (dataOf(a).docNumber ?? 9999) - (dataOf(b).docNumber ?? 9999));
+    docs.forEach((d, i) => {
+      positions[d.id] = { x, y: y0 + (i + 1) * STEP_Y };
+    });
+  });
+  // Orphan docs (no envelope) → trailing column on the right.
+  const orphanCol = envNodes.length + 1;
+  const orphanX = ORIGIN_X + orphanCol * STEP_X;
+  const y0 = ORIGIN_Y + (logicRows + 1) * STEP_Y;
+  let orphanRow = 0;
+  for (const d of docNodes) {
+    if (positions[d.id]) continue;
+    positions[d.id] = { x: orphanX, y: y0 + orphanRow * STEP_Y };
+    orphanRow++;
+  }
+  // Others stacked below logic, left side.
+  others.forEach((n, i) => {
+    if (positions[n.id]) return;
+    positions[n.id] = { x: ORIGIN_X, y: ORIGIN_Y + (logicRows + 1 + envNodes.length + i) * STEP_Y };
+  });
+  resolveOverlaps(positions);
+  return positions;
+}
+
+// ─── Variant dispatcher ──────────────────────────────────────────────────────
+
+const LOGIC_VARIANTS = ["lanes", "columns", "suspects", "compact"] as const;
+const FINAL_VARIANTS = ["bands", "stacked", "envelope"] as const;
+type LogicVariant = typeof LOGIC_VARIANTS[number];
+type FinalVariant = typeof FINAL_VARIANTS[number];
+
+function pickLogicLayout(variant: LogicVariant, nodes: ArrangeNode[], edges: ArrangeEdge[]) {
+  switch (variant) {
+    case "columns": return logicLayoutColumns(nodes, edges);
+    case "suspects": return logicLayoutBySuspect(nodes, edges);
+    case "compact": return logicLayoutChains(nodes, edges);
+    case "lanes":
+    default: return deterministicLogicLayout(nodes, edges);
+  }
+}
+function pickFinalLayout(variant: FinalVariant, nodes: ArrangeNode[], edges: ArrangeEdge[]) {
+  switch (variant) {
+    case "stacked": return finalLayoutStacked(nodes, edges);
+    case "envelope": return finalLayoutByEnvelope(nodes, edges);
+    case "bands":
+    default: return deterministicFinalLayout(nodes, edges);
+  }
+}
 // ─── AI refine path (optional) ───────────────────────────────────────────────
 
 async function aiRefine(
@@ -450,7 +701,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { projectId, board = "logic", modelOverride, mode = "deterministic" } = await req.json();
+    const { projectId, board = "logic", modelOverride, mode = "deterministic", variantIndex = 0, variant: variantName } = await req.json();
     if (!projectId) {
       return new Response(JSON.stringify({ error: "projectId required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -476,9 +727,18 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Always start from the deterministic layout — fast and predictable.
+    // Pick a smart-layout variant. Each "Smart arrange" press from the client
+    // increments variantIndex so users cycle through different sensible layouts.
+    const variants = board === "final" ? FINAL_VARIANTS : LOGIC_VARIANTS;
+    const idx = ((Number(variantIndex) || 0) % variants.length + variants.length) % variants.length;
+    const chosenVariant =
+      (typeof variantName === "string" && variants.includes(variantName as never))
+        ? (variantName as LogicVariant | FinalVariant)
+        : variants[idx];
     let positions: Record<string, Pos> =
-      board === "final" ? deterministicFinalLayout(nodes, edges) : deterministicLogicLayout(nodes, edges);
+      board === "final"
+        ? pickFinalLayout(chosenVariant as FinalVariant, nodes, edges)
+        : pickLogicLayout(chosenVariant as LogicVariant, nodes, edges);
     let source: "deterministic" | "ai-refine" | "ai-refine-fallback" = "deterministic";
     let aiNotes: string | undefined;
     let effectiveModel: string | undefined;
@@ -529,7 +789,7 @@ Deno.serve(async (req) => {
       fallback: fallbackTag,
       status: writeErr ? "error" : "ok",
       latencyMs: Date.now() - startedAt,
-      promptExcerpt: `${nodes.length} nodes, ${edges.length} edges, mode=${mode}, board=${board}`,
+      promptExcerpt: `${nodes.length} nodes, ${edges.length} edges, mode=${mode}, board=${board}, variant=${chosenVariant}`,
       errorMessage: writeErr ? writeErr.message : undefined,
     });
 
@@ -539,6 +799,9 @@ Deno.serve(async (req) => {
         positions,
         count: Object.keys(positions).length,
         source,
+        variant: chosenVariant,
+        variantIndex: idx,
+        variantCount: variants.length,
         notes: aiNotes,
         model: usedModel,
         effectiveModel,
