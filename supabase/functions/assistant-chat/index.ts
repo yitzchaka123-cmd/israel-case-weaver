@@ -1180,14 +1180,34 @@ async function executeTool(
       return { ok: true, message: `Final Flow created with ${payload.nodeCount ?? 0} nodes, including ${payload.documentNodeCount ?? 0} planned documents and ${payload.edgeCount ?? 0} connecting lines${hasProposal ? " (built from your approved proposal)" : ""}. Review the Final board before creating document rows.` };
     }
     if (name === "generate_logic_flow") {
-      const resp = await fetch(`${SUPABASE_URL}/functions/v1/generate-logic-flow`, {
+      // generate-logic-flow can take 2-3 minutes (heavy planning model call),
+      // which exceeds the subrequest timeout when awaited synchronously from
+      // here. Kick it off as a background task and tell the assistant to
+      // report it as STARTED, not COMPLETE, so the LLM doesn't claim it
+      // failed when the underlying job is still working.
+      const body = JSON.stringify({
+        projectId,
+        replace: true,
+        useExistingSummary: (args as { use_existing_summary?: boolean }).use_existing_summary !== false,
+      });
+      const fireAndForget = fetch(`${SUPABASE_URL}/functions/v1/generate-logic-flow`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
-        body: JSON.stringify({ projectId, replace: true, useExistingSummary: (args as { use_existing_summary?: boolean }).use_existing_summary !== false }),
+        body,
+      }).catch((err) => {
+        console.error("[assistant-chat] generate-logic-flow background fetch failed", err);
       });
-      const payload = await resp.json().catch(() => ({}));
-      if (!resp.ok) return { ok: false, message: payload.error ?? "Logic Flow generation failed" };
-      return { ok: true, message: `Logic Flow generated with ${payload.nodeCount ?? 0} nodes and ${payload.edgeCount ?? 0} connections. The user must review and approve it on the Canvas before documents or Final Flow generation.` };
+      // Keep the worker alive long enough to send the request without blocking
+      // the assistant turn on the full 2-3 min response.
+      const runtime = (globalThis as { EdgeRuntime?: { waitUntil: (p: Promise<unknown>) => void } }).EdgeRuntime;
+      if (runtime?.waitUntil) runtime.waitUntil(fireAndForget);
+      return {
+        ok: true,
+        message:
+          "Logic Flow regeneration STARTED in the background (uses your planning model — typically 2-3 minutes). It is NOT done yet. " +
+          "Tell the user: the new board will appear automatically on Canvas → Logic Flow when it finishes; refresh that view in a couple of minutes. " +
+          "Do NOT claim the flow is already regenerated, and do NOT call this tool again in the same turn.",
+      };
     }
     if (name === "add_canvas_node") {
       const { data, error } = await supa
