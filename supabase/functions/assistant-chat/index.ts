@@ -168,7 +168,13 @@ Phase 4 Documents: Doc 0 = master inventory of every document in the box; then r
 
 ${renderUniversalDocumentsBlock(playbook)}
 
-DOCUMENT GENERATION WORKFLOW (Phase 4 — read carefully)
+${(() => {
+  // Heavy Phase-4 doc-workflow lecture is only relevant once the user is at
+  // (or close to) Phase 4. In phases 1–2 it just bloats the system prompt.
+  const phase = String((project as { phase?: string }).phase ?? "").toLowerCase();
+  const docPhases = ["", "structure", "documents", "envelopes", "hints", "packaging", "done"];
+  if (!docPhases.includes(phase)) return "";
+  return `DOCUMENT GENERATION WORKFLOW (Phase 4 — read carefully)
 PHASE 4 PLANNING GATE (mandatory): After the Logic Flow is approved and BEFORE you call \`create_final_documents_map\` or \`add_document\`, you MUST first call \`propose_document_set\`. You reason through every approved Logic Flow node + suspect to propose the EXACT list of documents this case needs — each entry is one document with a player-facing title, a format-style hint (doc_type), the SPECIFIC clue/purpose it delivers, and the logic-flow node ids it supports. Do NOT assign documents to envelopes; documents are not gated by envelopes. Doc 0 is added automatically — do not include it. Templates are forbidden: two cases must yield two completely different document lists driven by their actual logic chains, not by a fixed boilerplate.
 After \`propose_document_set\` succeeds, present the proposed list as numbered bullets in your prose AND call \`propose_options\` with three buttons (in this exact order):
   1) "Approve and build the Final Flow" → on click, call \`create_final_documents_map\`.
@@ -195,11 +201,12 @@ ${renderDocModeButtonsBlock(playbook)}
 5. Document/file generation is strict direct-provider-only: the selected document model (or assistant planning model if no document model is set) gets the honest first chance to create the actual file directly. Never use or imply hidden Lovable fallback. If the selected model cannot make real files, say to switch Documents to Claude with document skills for PDF/DOCX, or choose Image-only with ChatGPT Image.
 6. generate_document_assets is gated server-side: it will refuse if the Logic Flow is not approved, or if the document_id doesn't belong to this project. Trust the receipt.
 7. The Hebrew body produced by generate_document_assets MAY differ slightly from the hebrew_content you wrote in add_document — that's expected. The receipt shows the final stored version.
-8. If the user asks to install/add a Claude Skill from chat and there is no attached installable package, call explain_claude_skill_install. Claude can automatically choose among enabled installed skills passed to it, but the app must manage installation.
+8. If the user asks to install/add a Claude Skill from chat and there is no attached installable package, call explain_claude_skill_install. Claude can automatically choose among enabled installed skills passed to it, but the app must manage installation.`;
+})()}
 
-AVAILABLE CLAUDE SKILLS FOR THIS SURFACE
+${claudeSkills.length > 0 ? `AVAILABLE CLAUDE SKILLS FOR THIS SURFACE
 ${renderClaudeSkillCatalog(claudeSkills)}
-Claude Skills are SKILL.md-based packages. Their descriptions tell Claude when to use them; full instructions/supporting files are only available when the Skill is invoked by Claude's runtime.
+Claude Skills are SKILL.md-based packages. Their descriptions tell Claude when to use them; full instructions/supporting files are only available when the Skill is invoked by Claude's runtime.` : ""}
 ${renderEnvelopesLine(playbook)}
 ${renderHintsLine(playbook)}
 
