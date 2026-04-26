@@ -74,7 +74,7 @@ type Msg = {
   id: string;
   role: "user" | "assistant";
   content: string;
-  metadata?: { tools?: ToolCall[]; options?: QuickOption[]; question?: string | null; model?: string | null; effective_model?: string | null; fallback?: string | null; in_progress?: boolean | null; reasoning?: ReasoningRound[] | null } | null;
+  metadata?: { tools?: ToolCall[]; options?: QuickOption[]; question?: string | null; model?: string | null; effective_model?: string | null; fallback?: string | null; in_progress?: boolean | null; stage?: string | null; reasoning?: ReasoningRound[] | null } | null;
   created_at?: string;
 };
 
