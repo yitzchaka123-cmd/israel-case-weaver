@@ -754,7 +754,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
                 />
               ) : null}
             </Button>
-            {project?.solution_summary?.trim() && !approved && (
+            {project?.solution_summary?.trim() && !approved && nodes.length > 0 && (
               <Button
                 className="gap-2 shadow-pop"
                 onClick={() => approveLogic((project?.solution_summary ?? "").trim())}
