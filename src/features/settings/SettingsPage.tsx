@@ -59,6 +59,7 @@ export function SettingsPage() {
   const [promptWriter, setPromptWriter] = useState("lovable");
   const [uiBackground, setUiBackground] = useState(DEFAULT_DISPLAY_BACKGROUND);
   const [imgAssistantInstructions, setImgAssistantInstructions] = useState("");
+  const [defaultDepth, setDefaultDepth] = useState<"express" | "guided" | "deep">("guided");
   const [logicFlowModel, setLogicFlowModel] = useState<string>(() => {
     if (typeof window === "undefined") return LOGIC_FLOW_MODEL_DEFAULT;
     return localStorage.getItem(LOGIC_FLOW_MODEL_KEY) ?? LOGIC_FLOW_MODEL_DEFAULT;
