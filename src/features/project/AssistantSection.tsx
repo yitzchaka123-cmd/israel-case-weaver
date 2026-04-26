@@ -516,6 +516,25 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
 
         {/* Composer */}
         <div className="border-t bg-surface/60 backdrop-blur">
+          {!project?.logic_approved_at && project?.solution_summary?.trim() && (
+            <div className="max-w-3xl mx-auto px-6 pt-3">
+              <div className="flex items-center gap-3 rounded-lg border border-accent/30 bg-accent/10 px-3 py-2">
+                <CheckCircle2 className="h-4 w-4 text-accent shrink-0" />
+                <div className="flex-1 text-xs text-foreground/80">
+                  A solution summary is saved. Approve it to unlock document generation.
+                </div>
+                <Button
+                  size="sm"
+                  onClick={approveLogicFromAssistant}
+                  disabled={approvingLogic}
+                  className="h-8 gap-1.5"
+                >
+                  {approvingLogic ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                  Approve logic
+                </Button>
+              </div>
+            </div>
+          )}
           <div className="max-w-3xl mx-auto px-6 py-4">
             <div className={`relative rounded-xl border bg-background shadow-sm focus-within:ring-2 focus-within:ring-accent/30 transition ${voice.listening ? "ring-2 ring-destructive/40" : ""}`}>
               <Textarea
