@@ -30,7 +30,7 @@ async function buildProjectPackage(projectId: string): Promise<{ blob: Blob; fil
   for (const d of docs ?? []) {
     const base = `${d.doc_number ?? "x"}_${safeName(d.title)}`;
     if (d.hebrew_content) docsFolder?.file(`${base}.txt`, d.hebrew_content);
-    const assetUrl = d.active_version === "uploaded" ? d.uploaded_asset_url : d.generated_asset_url;
+    const assetUrl = pickActiveAsset(d);
     if (assetUrl) {
       const blob = await fetchBlob(assetUrl);
       if (blob) {
@@ -182,7 +182,7 @@ export async function exportDocumentsOnly(projectId: string) {
     for (const d of docs ?? []) {
       const base = `${d.doc_number ?? "x"}_${safeName(d.title)}`;
       if (d.hebrew_content) zip.file(`${base}.txt`, d.hebrew_content);
-      const assetUrl = d.active_version === "uploaded" ? d.uploaded_asset_url : d.generated_asset_url;
+      const assetUrl = pickActiveAsset(d);
       if (assetUrl) {
         const blob = await fetchBlob(assetUrl);
         if (blob) {
