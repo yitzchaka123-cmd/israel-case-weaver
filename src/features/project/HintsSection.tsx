@@ -4,9 +4,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Lightbulb, Plus, Trash2, ImageIcon, ChevronDown, Loader2, Pin } from "lucide-react";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Lightbulb, Plus, Trash2, ImageIcon, ChevronDown, Loader2, Pin, Upload } from "lucide-react";
 import { toast } from "sonner";
-import { PromptPanel } from "@/components/PromptPanel";
+import { ImagePromptAssistant } from "@/components/ImagePromptAssistant";
+import { ImageHistoryStrip, type ImageHistoryRow } from "@/components/ImageHistoryStrip";
+import { FinalAssetPicker } from "@/components/FinalAssetPicker";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
 
@@ -23,6 +26,8 @@ interface HintSheet {
   project_id: string;
   stage: number;
   image_url: string | null;
+  uploaded_image_url: string | null;
+  active_version: string;
   prompt: string | null;
   effective_model: string | null;
   fallback: string | null;
