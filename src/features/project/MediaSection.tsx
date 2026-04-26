@@ -231,34 +231,14 @@ function CategoryPanel({ projectId, category, items }: { projectId: string; cate
         </div>
 
         {isImage && (
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium flex items-center gap-1.5">
-                <FileText className="h-3 w-3" /> Image prompt — preview & edit before generating
-              </Label>
-              <div className="flex items-center gap-1.5">
-                <PromptWriterModelPicker surface="media" />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 gap-1.5 text-xs"
-                  onClick={handleSuggestPrompt}
-                  disabled={suggestingPrompt}
-                >
-                  {suggestingPrompt ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                  {prompt.trim() ? "Regenerate prompt" : "Generate prompt"}
-                </Button>
-              </div>
-            </div>
-            <Textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Click Generate Prompt for a contextual draft based on your case, or write your own."
-              rows={5}
-              className="font-mono text-xs leading-relaxed"
-            />
-          </div>
+          <ImagePromptAssistant
+            projectId={projectId}
+            surface="media"
+            category={category}
+            hint={hint || undefined}
+            prompt={prompt}
+            onChange={setPrompt}
+          />
         )}
 
         {isImage && (
