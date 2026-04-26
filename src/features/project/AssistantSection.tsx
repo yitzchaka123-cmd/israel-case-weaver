@@ -1061,13 +1061,13 @@ function LiveReasoningSegment({
   const stillTyping = revealedChars < text.length;
 
   return (
-    <div className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-foreground/75">
+    <div className={`whitespace-pre-wrap font-mono leading-relaxed text-foreground/75 ${compact ? "text-[10.5px]" : "text-[11px]"}`}>
       <span
         className={`mr-1.5 rounded px-1 py-0.5 text-[9px] font-semibold uppercase ${
           type === "summary" ? "bg-accent/20 text-accent" : "bg-primary/15 text-primary"
         }`}
       >
-        {type}
+        {compact ? "step" : type}
       </span>
       {shown}
       {stillTyping && (
