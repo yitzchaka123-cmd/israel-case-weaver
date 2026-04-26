@@ -463,7 +463,119 @@ function deterministicFinalLayout(nodes: ArrangeNode[], _edges: ArrangeEdge[]): 
   return positions;
 }
 
-// ─── AI refine path (optional) ───────────────────────────────────────────────
+// Final variant 1: stacked horizontally — Logic on top row(s), Documents in
+// the middle, Envelopes at the bottom. Useful on tall screens.
+function finalLayoutStacked(nodes: ArrangeNode[], _edges: ArrangeEdge[]): Record<string, Pos> {
+  const positions: Record<string, Pos> = {};
+  const dataOf = (n: ArrangeNode) =>
+    (n.data ?? {}) as { envelopeNumber?: number; docNumber?: number; finalMapRole?: string };
+  const logicNodes = nodes.filter((n) => dataOf(n).finalMapRole === "logic");
+  const docNodes = [...nodes.filter((n) => n.node_type === "document")].sort(
+    (a, b) => (dataOf(a).docNumber ?? 9999) - (dataOf(b).docNumber ?? 9999),
+  );
+  const envNodes = [...nodes.filter((n) => n.node_type === "envelope")].sort(
+    (a, b) => (dataOf(a).envelopeNumber ?? 9999) - (dataOf(b).envelopeNumber ?? 9999),
+  );
+  const others = nodes.filter(
+    (n) => n.node_type !== "document" && n.node_type !== "envelope" && dataOf(n).finalMapRole !== "logic",
+  );
+  // Up to 8 per row, then wrap.
+  const place = (arr: ArrangeNode[], rowStart: number, perRow = 8) => {
+    let lastRow = rowStart;
+    arr.forEach((n, i) => {
+      const r = rowStart + Math.floor(i / perRow);
+      const c = i % perRow;
+      lastRow = r;
+      positions[n.id] = { x: ORIGIN_X + c * STEP_X, y: ORIGIN_Y + r * STEP_Y };
+    });
+    return lastRow + 1;
+  };
+  const afterLogic = place(logicNodes, 0);
+  const afterDocs = place(docNodes, afterLogic + 1);
+  const afterEnvs = place(envNodes, afterDocs + 1);
+  place(others, afterEnvs + 1);
+  resolveOverlaps(positions);
+  return positions;
+}
+
+// Final variant 2: grouped by envelope. Each envelope owns a column with its
+// documents stacked beneath it; the logic chain spreads along the top.
+function finalLayoutByEnvelope(nodes: ArrangeNode[], _edges: ArrangeEdge[]): Record<string, Pos> {
+  const positions: Record<string, Pos> = {};
+  const dataOf = (n: ArrangeNode) =>
+    (n.data ?? {}) as { envelopeNumber?: number; docNumber?: number; finalMapRole?: string };
+  const logicNodes = nodes.filter((n) => dataOf(n).finalMapRole === "logic");
+  const docNodes = nodes.filter((n) => n.node_type === "document");
+  const envNodes = [...nodes.filter((n) => n.node_type === "envelope")].sort(
+    (a, b) => (dataOf(a).envelopeNumber ?? 9999) - (dataOf(b).envelopeNumber ?? 9999),
+  );
+  const others = nodes.filter(
+    (n) => n.node_type !== "document" && n.node_type !== "envelope" && dataOf(n).finalMapRole !== "logic",
+  );
+  // Logic chain across the top, packed in rows of 8.
+  logicNodes.forEach((n, i) => {
+    const r = Math.floor(i / 8);
+    const c = i % 8;
+    positions[n.id] = { x: ORIGIN_X + c * STEP_X, y: ORIGIN_Y + r * STEP_Y };
+  });
+  const logicRows = Math.max(1, Math.ceil(logicNodes.length / 8));
+  // Each envelope = column. Below it: that envelope's documents (sorted by docNumber).
+  envNodes.forEach((env, idx) => {
+    const x = ORIGIN_X + idx * STEP_X;
+    const y0 = ORIGIN_Y + (logicRows + 1) * STEP_Y;
+    positions[env.id] = { x, y: y0 };
+    const num = dataOf(env).envelopeNumber;
+    const docs = docNodes
+      .filter((d) => dataOf(d).envelopeNumber === num)
+      .sort((a, b) => (dataOf(a).docNumber ?? 9999) - (dataOf(b).docNumber ?? 9999));
+    docs.forEach((d, i) => {
+      positions[d.id] = { x, y: y0 + (i + 1) * STEP_Y };
+    });
+  });
+  // Orphan docs (no envelope) → trailing column on the right.
+  const orphanCol = envNodes.length + 1;
+  const orphanX = ORIGIN_X + orphanCol * STEP_X;
+  const y0 = ORIGIN_Y + (logicRows + 1) * STEP_Y;
+  let orphanRow = 0;
+  for (const d of docNodes) {
+    if (positions[d.id]) continue;
+    positions[d.id] = { x: orphanX, y: y0 + orphanRow * STEP_Y };
+    orphanRow++;
+  }
+  // Others stacked below logic, left side.
+  others.forEach((n, i) => {
+    if (positions[n.id]) return;
+    positions[n.id] = { x: ORIGIN_X, y: ORIGIN_Y + (logicRows + 1 + envNodes.length + i) * STEP_Y };
+  });
+  resolveOverlaps(positions);
+  return positions;
+}
+
+// ─── Variant dispatcher ──────────────────────────────────────────────────────
+
+const LOGIC_VARIANTS = ["lanes", "columns", "suspects", "compact"] as const;
+const FINAL_VARIANTS = ["bands", "stacked", "envelope"] as const;
+type LogicVariant = typeof LOGIC_VARIANTS[number];
+type FinalVariant = typeof FINAL_VARIANTS[number];
+
+function pickLogicLayout(variant: LogicVariant, nodes: ArrangeNode[], edges: ArrangeEdge[]) {
+  switch (variant) {
+    case "columns": return logicLayoutColumns(nodes, edges);
+    case "suspects": return logicLayoutBySuspect(nodes, edges);
+    case "compact": return logicLayoutChains(nodes, edges);
+    case "lanes":
+    default: return deterministicLogicLayout(nodes, edges);
+  }
+}
+function pickFinalLayout(variant: FinalVariant, nodes: ArrangeNode[], edges: ArrangeEdge[]) {
+  switch (variant) {
+    case "stacked": return finalLayoutStacked(nodes, edges);
+    case "envelope": return finalLayoutByEnvelope(nodes, edges);
+    case "bands":
+    default: return deterministicFinalLayout(nodes, edges);
+  }
+}
+
 
 async function aiRefine(
   model: string,
