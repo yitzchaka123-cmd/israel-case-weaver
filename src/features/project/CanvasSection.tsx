@@ -180,6 +180,8 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
   });
   const posTimers = useRef<Record<string, number>>({});
   const arrangePressRef = useRef(0);
+  // Reset variant cycle when switching boards so each board starts at variant 0.
+  useEffect(() => { arrangePressRef.current = 0; }, [board]);
 
   // Detect live streaming of the logic flow: when the node count for this
   // board ticks up via realtime, mark a "last grew" timestamp. If the board
