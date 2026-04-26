@@ -1573,8 +1573,22 @@ async function processConversation(
   let lastFb: { effectiveModel: string; fallback: string } = { effectiveModel: model, fallback: "none" };
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const isFinalRound = round === MAX_ROUNDS - 1;
-    const body: Record<string, unknown> = { model, messages: convo, stream: false, reasoningEffort, ...claudeSkillRequestShape(claudeChatSkills) };
+    // Tool-only rounds (everything but the last) get the cheapest reasoning
+    // tier — picking the next tool call doesn't need deep thought. Save the
+    // user's chosen `baseEffort` for the final prose round.
+    const roundEffort = isFinalRound ? baseEffort : "low";
+    const body: Record<string, unknown> = { model, messages: convo, stream: false, reasoningEffort: roundEffort, ...claudeSkillRequestShape(claudeChatSkills) };
     if (!isFinalRound) body.tools = TOOLS;
+
+    // Surface progress to the UI between rounds via the placeholder row's
+    // metadata.stage. The chat_messages realtime subscription picks this up.
+    if (round > 0) {
+      const lastTool = executedTools[executedTools.length - 1]?.name;
+      const stage = isFinalRound ? "writing reply" : lastTool ? `after ${lastTool}…` : "thinking…";
+      void supa.from("chat_messages")
+        .update({ metadata: { in_progress: true, model, stage, partial_tools: executedTools.length } })
+        .eq("id", assistantMessageId);
+    }
 
     const roundStartedAt = Date.now();
     const resp = await chatCompletions(body);
