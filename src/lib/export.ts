@@ -4,6 +4,23 @@ const { saveAs } = pkg;
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
+// Pick the URL the user actively chose for export. Priority follows
+// `documents.active_version`: uploaded > generated_document (PDF/file) > generated (image).
+// Falls through if the chosen source is missing.
+function pickActiveAsset(d: {
+  active_version?: string | null;
+  uploaded_asset_url?: string | null;
+  generated_document_url?: string | null;
+  generated_pdf_url?: string | null;
+  generated_asset_url?: string | null;
+}): string | null {
+  const av = d.active_version ?? "generated";
+  const docFile = d.generated_document_url ?? d.generated_pdf_url ?? null;
+  if (av === "uploaded") return d.uploaded_asset_url ?? docFile ?? d.generated_asset_url ?? null;
+  if (av === "generated_document") return docFile ?? d.generated_asset_url ?? d.uploaded_asset_url ?? null;
+  return d.generated_asset_url ?? docFile ?? d.uploaded_asset_url ?? null;
+}
+
 // Build the same project-package zip used by exportProjectPackage and return
 // it as a Blob + suggested file name. Shared by the local download path and
 // the "Save case to Google Drive" path so both produce identical archives.
