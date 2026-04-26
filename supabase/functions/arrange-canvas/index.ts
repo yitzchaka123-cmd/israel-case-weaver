@@ -575,7 +575,7 @@ function pickFinalLayout(variant: FinalVariant, nodes: ArrangeNode[], edges: Arr
     default: return deterministicFinalLayout(nodes, edges);
   }
 }
-
+// ─── AI refine path (optional) ───────────────────────────────────────────────
 
 async function aiRefine(
   model: string,
