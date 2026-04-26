@@ -259,7 +259,69 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
     enabled: !!doc?.id,
   });
 
-  useEffect(() => setDraft(doc), [doc?.id]);
+  const { data: imageHistory, refetch: refetchImageHistory } = useQuery({
+    queryKey: ["document-image-history", doc?.id],
+    queryFn: async () => {
+      if (!doc) return [];
+      const { data, error } = await supabase
+        .from("media_assets")
+        .select("id, url, preview_url, model, effective_model, provider, document_format, created_at")
+        .eq("source_document_id", doc.id)
+        .eq("asset_type", "image")
+        .not("url", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(24);
+      if (error) throw error;
+      return (data ?? []) as MediaHistoryRow[];
+    },
+    enabled: !!doc?.id,
+  });
+
+  const { data: documentHistory, refetch: refetchDocumentHistory } = useQuery({
+    queryKey: ["document-file-history", doc?.id],
+    queryFn: async () => {
+      if (!doc) return [];
+      const { data, error } = await supabase
+        .from("media_assets")
+        .select("id, url, preview_url, model, effective_model, provider, document_format, created_at")
+        .eq("source_document_id", doc.id)
+        .eq("asset_type", "document")
+        .not("url", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(24);
+      if (error) throw error;
+      return (data ?? []) as MediaHistoryRow[];
+    },
+    enabled: !!doc?.id,
+  });
+
+  // Poll a pending High-quality image generation job until it resolves.
+  useEffect(() => {
+    if (!pendingJobId) return;
+    let cancelled = false;
+    const tick = async () => {
+      const { data: job } = await supabase
+        .from("image_generations")
+        .select("status, url, error_message, model, effective_model, provider")
+        .eq("id", pendingJobId)
+        .maybeSingle();
+      if (cancelled || !job) return;
+      if (job.status === "generated" && job.url) {
+        setDraft((d) => d ? { ...d, generated_asset_url: job.url, active_version: "generated", status: "review" } : d);
+        setPendingJobId(null);
+        setGenImage(false);
+        toast.success("High-quality image ready");
+        refetchImageHistory();
+      } else if (job.status === "failed") {
+        setPendingJobId(null);
+        setGenImage(false);
+        toast.error(job.error_message ?? "High-quality image generation failed", { duration: 8000 });
+      }
+    };
+    const interval = window.setInterval(tick, 4000);
+    tick();
+    return () => { cancelled = true; window.clearInterval(interval); };
+  }, [pendingJobId, refetchImageHistory]);
 
   if (!doc || !draft) return null;
 
