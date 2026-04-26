@@ -284,39 +284,19 @@ function HintSheetBlock({ projectId, stage, sheet }: { projectId: string; stage:
       toast.error("Click Create prompt first, or type a prompt in the Final prompt tab");
       return;
     }
-    setGenerating(true);
+    const model = getStoredImageModel("hint", "chatgpt-image");
+    const quality = getStoredImageQuality("hint", "medium");
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const model = getStoredImageModel("hint", "chatgpt-image");
-      const quality = getStoredImageQuality("hint", "medium");
-      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-image`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-        },
-        body: JSON.stringify({
-          projectId,
-          prompt,
-          target: "hint-sheet",
-          targetId: String(stage),
-          modelOverride: model,
-          quality,
-          aspect: "portrait",
-          category: "hint-sheet",
-        }),
+      await sheetJob.start({
+        prompt,
+        modelOverride: model,
+        quality,
+        aspect: "portrait",
+        category: "hint-sheet",
       });
-      const json = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        toast.error(json.error ?? "Hint sheet generation failed");
-        return;
-      }
-      toast.success(`Stage ${stage} hint sheet generated`);
-      setOpen(false);
-      qc.invalidateQueries({ queryKey: ["hint_sheets", projectId] });
-      refetchHistory();
-    } finally {
-      setGenerating(false);
+      toast.message("Generating in the background — you can close the tab.");
+    } catch {
+      // start() already showed an error toast
     }
   };
 
