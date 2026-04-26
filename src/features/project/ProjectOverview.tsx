@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { AutoSaveInput, AutoSaveTextarea } from "@/components/AutoSave";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Upload, Lock, Sparkles, Loader2, ArrowRight } from "lucide-react";
@@ -362,12 +363,12 @@ export function ProjectOverview({ project }: { project: any }) {
           <SectionTitle>Case Identity</SectionTitle>
           <div className="grid md:grid-cols-2 gap-4">
             <Field label="Title" originId={draft.assistant_origins?.title}>
-              <Input value={draft.title ?? ""} onChange={(e) => update({ title: e.target.value })} />
+              <AutoSaveInput value={draft.title ?? ""} onSave={(v) => update({ title: v })} />
             </Field>
             <Field label="Subtitle" originId={draft.assistant_origins?.subtitle}>
-              <Input
+              <AutoSaveInput
                 value={draft.subtitle ?? ""}
-                onChange={(e) => update({ subtitle: e.target.value })}
+                onSave={(v) => update({ subtitle: v })}
                 placeholder="The assistant will fill this in during setup — or type your own."
               />
             </Field>
@@ -414,15 +415,15 @@ export function ProjectOverview({ project }: { project: any }) {
           <SectionTitle>Case brief</SectionTitle>
           <div className="space-y-4">
             <Field label="Player role" originId={draft.assistant_origins?.player_role}>
-              <Input value={draft.player_role ?? ""} onChange={(e) => update({ player_role: e.target.value })} placeholder="e.g. Mossad junior analyst" />
+              <AutoSaveInput value={draft.player_role ?? ""} onSave={(v) => update({ player_role: v })} placeholder="e.g. Mossad junior analyst" />
             </Field>
             <Field label="Case goal" originId={draft.assistant_origins?.case_goal}>
-              <Textarea value={draft.case_goal ?? ""} onChange={(e) => update({ case_goal: e.target.value })} rows={3} />
+              <AutoSaveTextarea value={draft.case_goal ?? ""} onSave={(v) => update({ case_goal: v })} rows={3} />
             </Field>
             <Field label="Setting / location" originId={draft.assistant_origins?.setting}>
-              <Input
+              <AutoSaveInput
                 value={draft.setting ?? ""}
-                onChange={(e) => update({ setting: e.target.value })}
+                onSave={(v) => update({ setting: v })}
                 placeholder="The assistant will fill this in during setup — or type your own."
               />
             </Field>
@@ -460,9 +461,9 @@ export function ProjectOverview({ project }: { project: any }) {
                         : "Generate idea"}
                     </Button>
                   </div>
-                  <Textarea
+                  <AutoSaveTextarea
                     value={draft.selling_point ?? ""}
-                    onChange={(e) => update({ selling_point: e.target.value })}
+                    onSave={(v) => update({ selling_point: v })}
                     rows={2}
                     placeholder="e.g. a 1980s telex machine that decodes the final clue. Click ✨ Generate idea to let the assistant draft one."
                     className="bg-background"
@@ -547,7 +548,7 @@ export function ProjectOverview({ project }: { project: any }) {
           <div className="mt-4">
             {(draft.phase === "packaging" || draft.phase === "done") ? (
               <Field label="Packaging notes" originId={draft.assistant_origins?.packaging_notes}>
-                <Textarea value={draft.packaging_notes ?? ""} onChange={(e) => update({ packaging_notes: e.target.value })} rows={3} />
+                <AutoSaveTextarea value={draft.packaging_notes ?? ""} onSave={(v) => update({ packaging_notes: v })} rows={3} />
               </Field>
             ) : (
               <div className="px-4 py-3 rounded-lg border border-dashed bg-muted/20 text-xs text-muted-foreground">

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Textarea } from "@/components/ui/textarea";
+import { AutoSaveTextarea } from "@/components/AutoSave";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -200,12 +200,12 @@ export function HintsSection({ projectId }: { projectId: string }) {
                       <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
                         {l.n}. {l.label}
                       </Label>
-                      <Textarea
+                      <AutoSaveTextarea
                         rows={4}
                         dir="rtl"
                         className="text-right"
-                        defaultValue={existing?.text ?? ""}
-                        onBlur={(e) => upsertHint(stage, l.n, e.target.value, existing)}
+                        value={existing?.text ?? ""}
+                        onSave={(v) => upsertHint(stage, l.n, v, existing)}
                         placeholder="כתוב את הרמז בעברית…"
                       />
                     </div>
