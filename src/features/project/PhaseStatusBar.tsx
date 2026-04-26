@@ -104,10 +104,11 @@ export function PhaseStatusBar({
     currentIdx = Math.min(currentIdx, summaryIdx);
   } else if (!logicApproved) {
     // The server snaps `phase` back to "summary" when the assistant rewrites
-    // the summary (because the prior logic flow was wiped). Honor that signal
-    // — if the server says we're back at Summary AND nothing has been approved
-    // since, show Summary as the current step.
-    const cap = normalizePhase(phase) === "summary" ? summaryIdx : logicIdx;
+    // the summary (the prior logic flow gets wiped). Honor that ONLY while
+    // the logic board is still empty — once the user (re)generates nodes,
+    // they are clearly on the Logic Flow step again.
+    const backToSummary = normalizePhase(phase) === "summary" && logicNodeCount === 0;
+    const cap = backToSummary ? summaryIdx : logicIdx;
     currentIdx = Math.min(currentIdx, cap);
   }
 
