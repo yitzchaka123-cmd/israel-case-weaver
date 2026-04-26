@@ -86,6 +86,8 @@ export function SettingsPage() {
       setPromptWriter((profile as any).ai_provider_prompt_writer ?? "lovable");
       setUiBackground(normalizeDisplayBackground((profile as any).ui_background));
       setImgAssistantInstructions((profile as any).image_prompt_assistant_instructions ?? "");
+      const d = (profile as any).default_planning_depth;
+      if (d === "express" || d === "guided" || d === "deep") setDefaultDepth(d);
     }
   }, [profile]);
 
