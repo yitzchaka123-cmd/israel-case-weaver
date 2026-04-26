@@ -78,6 +78,8 @@ type Rosters = {
   envelopes: RosterRow[];
   hints: RosterRow[];
   canvas_nodes: RosterRow[];
+  canvas_edges_count?: number;
+  logic_dirty_since_approval?: boolean;
 };
 function truncate(s: unknown, n = 60): string {
   const str = String(s ?? "").replace(/\s+/g, " ").trim();
@@ -256,7 +258,8 @@ When the user approves a change, you MUST persist it by calling the appropriate 
 - add_suspect / update_suspect: manage cast.
 - add_document / update_document: create or edit a document record.
 - generate_logic_flow: generate/replace the Canvas Logic Flow from chat when the user asks, then tell them to review and approve it on the Canvas.
-- add_canvas_node / update_canvas_node: add or edit a logic/clue/deduction/envelope/solution node.
+- add_canvas_node / update_canvas_node: add or edit a logic/clue/deduction/envelope/solution node. CRITICAL: when you add a clue/deduction/contradiction/red_herring/document/solution node and the project already has other nodes, you MUST in the SAME turn call add_canvas_edge at least once to wire it into the graph — a floating, unconnected node breaks the Logic Flow.
+- add_canvas_edge: connect two existing nodes (source → target) with an optional descriptive label ("reveals", "contradicts", "supports"). Use right after add_canvas_node, or any time the user asks you to link/connect/draw a line between existing nodes.
 - add_envelope / update_envelope: manage the 5 fixed envelopes (only update_envelope exists for editing labels/tasks/notes).
 - add_hint / generate_hint_stage / update_hint: manage hints (see HINT SYSTEM block below). Prefer generate_hint_stage to scaffold a whole stage; use add_hint for single rows; use update_hint to edit existing rows.
 - notify_user: drop a "callback" notification into the case's bell panel — use ONLY when the user defers a decision ("I'll write the title later"), skips a planning step, or asks something that needs revisiting later. Never use it for in-the-moment choices (use propose_options for those).
@@ -264,6 +267,13 @@ When the user approves a change, you MUST persist it by calling the appropriate 
 EDIT-VS-CREATE RULE (CRITICAL — prevents duplicate rows)
 When the user references an EXISTING item — by name ("change Yossi's motive"), by number ("rename document 5", "envelope 3"), by pronoun ("make it shorter", "rename it"), by role ("the murder weapon node", "the red herring suspect"), or any other reference to something already in the rosters below — you MUST call the matching \`update_*\` tool, passing the \`id\` from the roster. NEVER call the \`add_*\` variant for an item that already exists — that creates a duplicate row and confuses the user. Use \`add_*\` ONLY for items that are not present in the rosters below.
 Pass ONLY the fields the user wants to change in the update tool — undefined keys are ignored, so partial edits won't wipe other columns. The receipt will say "Updated X: <name> (<changed-fields>)" so the user can immediately see what was touched.
+
+POST-APPROVAL EDIT RULE (CRITICAL — keeps downstream artifacts in sync)
+After the user has approved the Logic Flow (logic_approved_at is set), every add_canvas_node, update_canvas_node, and add_canvas_edge call returns a tool result with a \`requires_followup\` payload. This means the saved \`solution_summary\` and any existing Final Flow / production map are now potentially STALE — they reflect the old graph, not the change you just made. You MUST in the SAME assistant turn:
+  1. Briefly tell the user (1–2 sentences) which downstream artifacts are now stale (e.g. "Heads-up: the case summary and the Final Flow still reflect the old graph.").
+  2. Call \`propose_options\` with the EXACT options listed in \`requires_followup.offer\` (use each \`label\` as the button text and each \`send\` as the click payload). Do not invent your own labels — pass them through verbatim so the buttons trigger the right follow-up tools.
+  3. Wait for the user's choice before doing anything else. If they pick "Update the case summary", call \`set_solution_summary\` with a freshly rewritten summary that incorporates the change. If they pick "Rebuild the Final Flow", call \`create_final_documents_map\`. If they pick "Leave as-is for now", drop a \`notify_user\` reminder so the resync is not forgotten.
+NEVER skip this step after a post-approval graph edit — that is the #1 way the project drifts out of sync (Canvas shows the new clue, but the summary, the Final Flow, and the documents that get generated all still ignore it).
 
 DESIGN INSTRUCTIONS RULES (CRITICAL — applies to EVERY add_document call)
 The \`design_instructions\` field is the visual brief for the image generator. It MUST be long, structured, and specific. Never leave it empty, never use one-line notes, never use generic placeholders.
@@ -304,6 +314,7 @@ ${rosters.envelopes.length > 0 ? `Existing envelopes (${rosters.envelopes.length
 ${rosters.hints.length > 0 ? `Existing hints (${rosters.hints.length}):\n${hintsList}` : ""}
 ${rosters.canvas_nodes.length > 0 ? `Existing canvas nodes (${rosters.canvas_nodes.length}):\n${nodesList}` : ""}
 Logic flow approved: ${project.logic_approved_at ? "YES (" + project.logic_approved_at + ")" : "NO — must be approved on the Canvas before generating documents"}
+Canvas edges: ${rosters.canvas_edges_count ?? 0}${rosters.logic_dirty_since_approval ? " — ⚠️ LOGIC GRAPH HAS BEEN EDITED SINCE APPROVAL: solution_summary and any existing Final Flow may be stale. Offer the user the post-approval follow-up buttons (see POST-APPROVAL EDIT RULE)." : ""}
 Final Flow mapped: ${rosters.canvas_nodes.some((n) => n.board === "final" && n.node_type === "document") ? `YES (${rosters.canvas_nodes.filter((n) => n.board === "final").length} final-board nodes)` : "NO — ask to create the Final Flow before final documents"}
 Solution summary set: ${project.solution_summary ? "YES" : "NO"}
 Doc generation mode: ${project.doc_generation_mode ? `"${project.doc_generation_mode}"` : "NOT YET CHOSEN — ask the user with propose_options before the first add_document in Phase 4 (see DOCUMENT GENERATION WORKFLOW)"}
@@ -617,7 +628,7 @@ const BASE_TOOLS = [
     type: "function",
     function: {
       name: "add_canvas_node",
-      description: "Add a node to the logic canvas.",
+      description: "Add a node to the logic canvas. CRITICAL: when the node is a clue, deduction, contradiction, red_herring, document, or solution and the project already has other nodes, you MUST in the SAME turn also call add_canvas_edge at least once to wire this node into the existing graph (otherwise it floats disconnected and breaks the Logic Flow). If logic_approved_at is set, you must also follow the POST-APPROVAL EDIT RULE.",
       parameters: {
         type: "object",
         properties: {
@@ -625,8 +636,27 @@ const BASE_TOOLS = [
           title: { type: "string" },
           description: { type: "string" },
           color: { type: "string" },
+          board: { type: "string", enum: ["logic", "final"], description: "Defaults to 'logic'. Use 'final' only when explicitly editing the production map." },
         },
         required: ["node_type", "title"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "add_canvas_edge",
+      description: "Connect two existing canvas nodes with a directional edge (source → target). Use immediately after add_canvas_node to wire the new node into the graph, or any time the user asks you to link / connect / draw a line between nodes. The label is optional but strongly recommended for logic clarity (e.g. 'leads to', 'contradicts', 'supports', 'reveals').",
+      parameters: {
+        type: "object",
+        properties: {
+          source_id: { type: "string", description: "Canvas node id the edge starts from (from the Existing canvas nodes roster)." },
+          target_id: { type: "string", description: "Canvas node id the edge points to." },
+          label: { type: "string", description: "Optional short label shown on the edge (e.g. 'reveals', 'contradicts', 'supports')." },
+          board: { type: "string", enum: ["logic", "final"], description: "Defaults to 'logic'." },
+        },
+        required: ["source_id", "target_id"],
         additionalProperties: false,
       },
     },
@@ -919,9 +949,56 @@ async function executeTool(
     const withMessage = (payload: Record<string, unknown>) => (
       messageId ? { ...payload, created_by_message_id: messageId } : payload
     );
-    if (!messageId && ["add_document", "update_document", "add_suspect", "update_suspect", "add_canvas_node", "update_canvas_node"].includes(name)) {
+    if (!messageId && ["add_document", "update_document", "add_suspect", "update_suspect", "add_canvas_node", "update_canvas_node", "add_canvas_edge"].includes(name)) {
       return { ok: false, message: "Assistant message could not be saved, so I did not create linked project rows. Please retry this step." };
     }
+    // Helper: when the project has already been logic-approved, any edit to the
+    // logic graph (add/update node, add edge) means the saved solution_summary
+    // and any existing Final Flow are now potentially stale. We attach a
+    // `requires_followup` payload to the receipt so the assistant must surface
+    // it as quick-reply buttons in the same turn (see POST-APPROVAL EDIT RULE).
+    const buildPostApprovalFollowup = async (changeKind: string): Promise<{ requires_followup: { reason: string; stale: string[]; offer: Array<{ key: string; label: string; send: string }> } } | Record<string, never>> => {
+      const { data: proj } = await supa
+        .from("projects")
+        .select("logic_approved_at, solution_summary, proposed_document_set_status")
+        .eq("id", projectId)
+        .single();
+      if (!proj?.logic_approved_at) return {};
+      const { count: finalNodeCount } = await supa
+        .from("canvas_nodes")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", projectId)
+        .eq("board", "final");
+      const stale: string[] = [];
+      if (proj.solution_summary) stale.push("solution_summary");
+      if ((finalNodeCount ?? 0) > 0) stale.push("final_flow");
+      if (proj.proposed_document_set_status === "approved") stale.push("proposed_document_set");
+      const offer: Array<{ key: string; label: string; send: string }> = [];
+      offer.push({
+        key: "rewrite_summary",
+        label: "Update the case summary",
+        send: "Rewrite the case summary now to reflect the change I just made, then call set_solution_summary with the new text.",
+      });
+      if ((finalNodeCount ?? 0) > 0) {
+        offer.push({
+          key: "rebuild_final_flow",
+          label: "Rebuild the Final Flow",
+          send: "Rebuild the Final Flow / production map now using create_final_documents_map so it reflects the change.",
+        });
+      }
+      offer.push({
+        key: "leave_as_is",
+        label: "Leave as-is for now",
+        send: "Leave the summary and Final Flow as-is for now. I'll resync later.",
+      });
+      return {
+        requires_followup: {
+          reason: `${changeKind} after Logic Flow was approved`,
+          stale,
+          offer,
+        },
+      };
+    };
     if (name === "update_project") {
       // Merge per-field origins so each updated field points to this message.
       const { data: current } = await supa
@@ -1125,7 +1202,42 @@ async function executeTool(
         .select("id, title")
         .single();
       if (error) throw error;
-      return { ok: true, message: `Canvas node added: ${data.title}`, id: data.id };
+      const followup = await buildPostApprovalFollowup(`add_canvas_node (${data.title})`);
+      return { ok: true, message: `Canvas node added: ${data.title}. ${('requires_followup' in followup) ? "REMEMBER: also call add_canvas_edge to wire it into the graph, then surface the post-approval follow-up buttons." : "REMEMBER: if there are existing nodes this should connect to, call add_canvas_edge in the same turn."}`, id: data.id, ...followup };
+    }
+    if (name === "add_canvas_edge") {
+      const sourceId = String((args as { source_id?: string }).source_id ?? "").trim();
+      const targetId = String((args as { target_id?: string }).target_id ?? "").trim();
+      const label = (args as { label?: string }).label;
+      const board = String((args as { board?: string }).board ?? "logic").trim();
+      if (!sourceId || !targetId) return { ok: false, message: "source_id and target_id are required" };
+      if (sourceId === targetId) return { ok: false, message: "source_id and target_id must be different nodes" };
+      // Verify both nodes exist on the same board within this project.
+      const { data: nodes, error: lookupErr } = await supa
+        .from("canvas_nodes")
+        .select("id, board, title")
+        .in("id", [sourceId, targetId])
+        .eq("project_id", projectId);
+      if (lookupErr) throw lookupErr;
+      if (!nodes || nodes.length !== 2) {
+        return { ok: false, message: "One or both node ids were not found in this project. Pass valid ids from the Existing canvas nodes roster." };
+      }
+      const { data, error } = await supa
+        .from("canvas_edges")
+        .insert({
+          source_id: sourceId,
+          target_id: targetId,
+          label: label ?? null,
+          board,
+          project_id: projectId,
+        })
+        .select("id")
+        .single();
+      if (error) throw error;
+      const src = (nodes as Array<{ id: string; title: string }>).find((n) => n.id === sourceId)?.title ?? sourceId;
+      const tgt = (nodes as Array<{ id: string; title: string }>).find((n) => n.id === targetId)?.title ?? targetId;
+      const followup = await buildPostApprovalFollowup(`add_canvas_edge (${src} → ${tgt})`);
+      return { ok: true, message: `Edge created: ${src} → ${tgt}${label ? ` ("${label}")` : ""}`, id: data.id, ...followup };
     }
     if (name === "propose_options") {
       // No state mutation — this tool exists purely so the model can attach
@@ -1384,13 +1496,18 @@ async function executeTool(
       );
     }
     if (name === "update_canvas_node") {
-      return await runUpdate(
+      const result = await runUpdate(
         "canvas_nodes",
         "node",
         true,
         "id, title, data",
         (r) => String(r.title ?? "—"),
       );
+      if ((result as { ok?: boolean })?.ok) {
+        const followup = await buildPostApprovalFollowup("update_canvas_node");
+        return { ...(result as Record<string, unknown>), ...followup };
+      }
+      return result;
     }
     if (name === "add_hint") {
       const a = args as { stage?: number; level?: number; text?: string };
@@ -1499,6 +1616,8 @@ async function processConversation(
     { data: envelopesRoster },
     { data: hintsRoster },
     { data: nodesRoster },
+    { count: edgesCount },
+    { data: latestNode },
   ] = await Promise.all([
     supa.from("projects").select("*").eq("id", projectId).single(),
     supa.from("suspects").select("id, name, role_in_case").eq("project_id", projectId).order("position", { ascending: true }).limit(25),
@@ -1506,6 +1625,8 @@ async function processConversation(
     supa.from("envelopes").select("id, number, label").eq("project_id", projectId).order("number", { ascending: true }).limit(25),
     supa.from("hints").select("id, stage, level").eq("project_id", projectId).order("stage", { ascending: true }).order("level", { ascending: true }).limit(25),
     supa.from("canvas_nodes").select("id, title, node_type, board").eq("project_id", projectId).order("created_at", { ascending: true }).limit(25),
+    supa.from("canvas_edges").select("id", { count: "exact", head: true }).eq("project_id", projectId),
+    supa.from("canvas_nodes").select("updated_at").eq("project_id", projectId).order("updated_at", { ascending: false }).limit(1).maybeSingle(),
   ]);
   if (!project) throw new Error("Project not found");
 
@@ -1531,6 +1652,11 @@ async function processConversation(
     envelopes: (envelopesRoster ?? []) as RosterRow[],
     hints: (hintsRoster ?? []) as RosterRow[],
     canvas_nodes: (nodesRoster ?? []) as RosterRow[],
+    canvas_edges_count: edgesCount ?? 0,
+    logic_dirty_since_approval: Boolean(
+      project.logic_approved_at && (latestNode as { updated_at?: string } | null)?.updated_at
+        && new Date((latestNode as { updated_at: string }).updated_at).getTime() > new Date(project.logic_approved_at).getTime(),
+    ),
   };
   const isFirstTurn = (messages?.length ?? 0) <= 1;
   const systemPrompt = buildSystemPrompt(project, rosters, tweaks, playbook, claudeChatSkills, isFirstTurn);
@@ -1770,6 +1896,8 @@ Deno.serve(async (req) => {
       { data: envelopesRoster },
       { data: hintsRoster },
       { data: nodesRoster },
+      { count: edgesCount },
+      { data: latestNode },
     ] = await Promise.all([
       supa.from("projects").select("*").eq("id", projectId).single(),
       supa.from("suspects")
@@ -1798,6 +1926,8 @@ Deno.serve(async (req) => {
         .eq("project_id", projectId)
         .order("created_at", { ascending: true })
         .limit(100),
+      supa.from("canvas_edges").select("id", { count: "exact", head: true }).eq("project_id", projectId),
+      supa.from("canvas_nodes").select("updated_at").eq("project_id", projectId).order("updated_at", { ascending: false }).limit(1).maybeSingle(),
     ]);
     if (!project) {
       return new Response(JSON.stringify({ error: "Project not found" }), {
@@ -1827,6 +1957,11 @@ Deno.serve(async (req) => {
       envelopes: (envelopesRoster ?? []) as RosterRow[],
       hints: (hintsRoster ?? []) as RosterRow[],
       canvas_nodes: (nodesRoster ?? []) as RosterRow[],
+      canvas_edges_count: edgesCount ?? 0,
+      logic_dirty_since_approval: Boolean(
+        project.logic_approved_at && (latestNode as { updated_at?: string } | null)?.updated_at
+          && new Date((latestNode as { updated_at: string }).updated_at).getTime() > new Date(project.logic_approved_at).getTime(),
+      ),
     };
     const claudeChatSkills = model.startsWith("anthropic/") ? await loadClaudeSkillsForSurface(supa, "chat") : [];
     const isFirstTurn = (messages?.length ?? 0) <= 1;
