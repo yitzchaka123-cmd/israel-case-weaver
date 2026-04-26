@@ -217,6 +217,25 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
     const startedAt = Date.now();
     const callerUserId = await getUserIdFromAuth(req);
 
+    // Snapshot pre-regen counts so we can decide whether to warn the user
+    // that downstream artifacts (built from the OLD logic) are now stale.
+    const [{ count: preDocCount }, { count: preEnvCount }, { count: preHintCount }, { count: preFinalCount }] = await Promise.all([
+      supa.from("documents").select("id", { count: "exact", head: true }).eq("project_id", projectId),
+      supa.from("envelopes").select("id", { count: "exact", head: true }).eq("project_id", projectId),
+      supa.from("hints").select("id", { count: "exact", head: true }).eq("project_id", projectId),
+      supa.from("canvas_nodes").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("board", "final"),
+    ]);
+
+    // Rotate the project's logic_version_id BEFORE we wipe + redraw. Every
+    // node/edge inserted below is stamped with this new id; existing
+    // documents/envelopes/hints/final-nodes keep their OLD id, so the
+    // assistant's CHANGE WATCH check will flag them as stale next turn.
+    const newLogicVersionId = crypto.randomUUID();
+    await supa
+      .from("projects")
+      .update({ logic_version_id: newLogicVersionId, logic_approved_at: null })
+      .eq("id", projectId);
+
     // Clear the board up-front so the user sees it fill in live (instead of a
     // stale board sitting there until the new one arrives).
     if (replace) {
