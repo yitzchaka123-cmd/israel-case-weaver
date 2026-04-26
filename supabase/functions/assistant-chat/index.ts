@@ -78,6 +78,8 @@ type Rosters = {
   envelopes: RosterRow[];
   hints: RosterRow[];
   canvas_nodes: RosterRow[];
+  canvas_edges_count?: number;
+  logic_dirty_since_approval?: boolean;
 };
 function truncate(s: unknown, n = 60): string {
   const str = String(s ?? "").replace(/\s+/g, " ").trim();
