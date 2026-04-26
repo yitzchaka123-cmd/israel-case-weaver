@@ -1957,6 +1957,11 @@ Deno.serve(async (req) => {
       envelopes: (envelopesRoster ?? []) as RosterRow[],
       hints: (hintsRoster ?? []) as RosterRow[],
       canvas_nodes: (nodesRoster ?? []) as RosterRow[],
+      canvas_edges_count: edgesCount ?? 0,
+      logic_dirty_since_approval: Boolean(
+        project.logic_approved_at && (latestNode as { updated_at?: string } | null)?.updated_at
+          && new Date((latestNode as { updated_at: string }).updated_at).getTime() > new Date(project.logic_approved_at).getTime(),
+      ),
     };
     const claudeChatSkills = model.startsWith("anthropic/") ? await loadClaudeSkillsForSurface(supa, "chat") : [];
     const isFirstTurn = (messages?.length ?? 0) <= 1;
