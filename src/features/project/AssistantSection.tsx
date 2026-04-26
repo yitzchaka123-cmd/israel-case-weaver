@@ -142,7 +142,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     queryFn: async () => {
       const { data, error } = await supabase
         .from("projects")
-        .select("ai_provider_planning, ai_provider_images, image_prompt_instructions, video_prompt_instructions, planning_depth")
+        .select("ai_provider_planning, ai_provider_images, image_prompt_instructions, video_prompt_instructions, planning_depth, logic_approved_at, solution_summary")
         .eq("id", projectId)
         .single();
       if (error) throw error;
@@ -152,9 +152,35 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
         image_prompt_instructions: string | null;
         video_prompt_instructions: string | null;
         planning_depth: string | null;
+        logic_approved_at: string | null;
+        solution_summary: string | null;
       };
     },
   });
+
+  const [approvingLogic, setApprovingLogic] = useState(false);
+  const approveLogicFromAssistant = async () => {
+    if (!project?.solution_summary?.trim()) {
+      toast.error("Add a solution summary first (Canvas → Logic Flow)");
+      return;
+    }
+    setApprovingLogic(true);
+    try {
+      const { error } = await supabase
+        .from("projects")
+        .update({ logic_approved_at: new Date().toISOString(), phase: "production" })
+        .eq("id", projectId);
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      toast.success("Logic approved — you can now generate documents");
+      qc.invalidateQueries({ queryKey: ["project-ai", projectId] });
+      qc.invalidateQueries({ queryKey: ["project", projectId] });
+    } finally {
+      setApprovingLogic(false);
+    }
+  };
 
   const planningModel = project?.ai_provider_planning ?? "openai-5.2";
   const imageModel = project?.ai_provider_images ?? "nano-banana-2";
@@ -490,6 +516,25 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
 
         {/* Composer */}
         <div className="border-t bg-surface/60 backdrop-blur">
+          {!project?.logic_approved_at && project?.solution_summary?.trim() && (
+            <div className="max-w-3xl mx-auto px-6 pt-3">
+              <div className="flex items-center gap-3 rounded-lg border border-accent/30 bg-accent/10 px-3 py-2">
+                <CheckCircle2 className="h-4 w-4 text-accent shrink-0" />
+                <div className="flex-1 text-xs text-foreground/80">
+                  A solution summary is saved. Approve it to unlock document generation.
+                </div>
+                <Button
+                  size="sm"
+                  onClick={approveLogicFromAssistant}
+                  disabled={approvingLogic}
+                  className="h-8 gap-1.5"
+                >
+                  {approvingLogic ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                  Approve logic
+                </Button>
+              </div>
+            </div>
+          )}
           <div className="max-w-3xl mx-auto px-6 py-4">
             <div className={`relative rounded-xl border bg-background shadow-sm focus-within:ring-2 focus-within:ring-accent/30 transition ${voice.listening ? "ring-2 ring-destructive/40" : ""}`}>
               <Textarea
