@@ -227,11 +227,49 @@ export function HintsSection({ projectId }: { projectId: string }) {
 }
 
 function HintSheetBlock({ projectId, stage, sheet }: { projectId: string; stage: number; sheet: HintSheet | null }) {
+  const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [draftPrompt, setDraftPrompt] = useState<string>(sheet?.prompt ?? "");
+  const fileInput = useState<HTMLInputElement | null>(null);
 
-  const generate = async (prompt: string) => {
+  useEffect(() => { setDraftPrompt(sheet?.prompt ?? ""); }, [sheet?.id, sheet?.prompt]);
+
+  // Persist prompt edits onto the hint_sheets row (debounced).
+  useEffect(() => {
+    if (!sheet?.id) return;
+    if (draftPrompt === (sheet.prompt ?? "")) return;
+    const t = setTimeout(() => {
+      supabase.from("hint_sheets").update({ prompt: draftPrompt }).eq("id", sheet.id).then(() => {});
+    }, 600);
+    return () => clearTimeout(t);
+  }, [draftPrompt, sheet?.id, sheet?.prompt]);
+
+  // Per-stage history strip (filtered by source_hint_sheet_id).
+  const { data: history, refetch: refetchHistory } = useQuery({
+    queryKey: ["hint-image-history", sheet?.id],
+    queryFn: async () => {
+      if (!sheet?.id) return [];
+      const { data, error } = await supabase
+        .from("media_assets")
+        .select("id, url, preview_url, model, effective_model, provider, fallback, created_at")
+        .eq("source_hint_sheet_id", sheet.id)
+        .not("url", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(24);
+      if (error) throw error;
+      return (data ?? []) as ImageHistoryRow[];
+    },
+    enabled: !!sheet?.id,
+  });
+
+  const generate = async () => {
+    const prompt = draftPrompt.trim();
+    if (!prompt) {
+      toast.error("Click Create prompt first, or type a prompt in the Final prompt tab");
+      return;
+    }
     setGenerating(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -261,12 +299,50 @@ function HintSheetBlock({ projectId, stage, sheet }: { projectId: string; stage:
       }
       toast.success(`Stage ${stage} hint sheet generated`);
       setOpen(false);
+      qc.invalidateQueries({ queryKey: ["hint_sheets", projectId] });
+      refetchHistory();
     } finally {
       setGenerating(false);
     }
   };
 
-  const history = (sheet?.prompt_history ?? []).slice(0, 8);
+  const uploadSheet = async (file: File) => {
+    if (!sheet?.id) {
+      toast.error("Generate the sheet first, or it will be created on first generation");
+      return;
+    }
+    const path = `${projectId}/hint-sheet-${stage}-${Date.now()}-${file.name}`;
+    const { error } = await supabase.storage.from("media").upload(path, file, { upsert: true });
+    if (error) return toast.error(error.message);
+    const { data } = supabase.storage.from("media").getPublicUrl(path);
+    await supabase.from("hint_sheets").update({ uploaded_image_url: data.publicUrl, active_version: "uploaded" }).eq("id", sheet.id);
+    qc.invalidateQueries({ queryKey: ["hint_sheets", projectId] });
+    toast.success("Upload set as the active hint sheet");
+  };
+
+  const restoreFromHistory = async (item: ImageHistoryRow) => {
+    if (!sheet?.id || !item.url) return;
+    await supabase.from("hint_sheets").update({
+      image_url: item.url,
+      effective_model: item.effective_model ?? item.model,
+      fallback: item.fallback ?? null,
+      active_version: "generated",
+    }).eq("id", sheet.id);
+    qc.invalidateQueries({ queryKey: ["hint_sheets", projectId] });
+    toast.success("Hint sheet restored as active");
+  };
+
+  const setActiveVersion = async (v: string) => {
+    if (!sheet?.id) return;
+    await supabase.from("hint_sheets").update({ active_version: v }).eq("id", sheet.id);
+    qc.invalidateQueries({ queryKey: ["hint_sheets", projectId] });
+  };
+
+  const activeUrl = sheet?.active_version === "uploaded"
+    ? (sheet?.uploaded_image_url ?? sheet?.image_url ?? null)
+    : (sheet?.image_url ?? sheet?.uploaded_image_url ?? null);
+
+  const fileRef = (el: HTMLInputElement | null) => { fileInput[1](el); };
 
   return (
     <div className="border-t bg-muted/20 px-5 py-4 space-y-3">
@@ -274,34 +350,38 @@ function HintSheetBlock({ projectId, stage, sheet }: { projectId: string; stage:
         <div className="flex items-center gap-2 text-sm font-medium">
           <ImageIcon className="h-4 w-4 text-muted-foreground" />
           <span>Printable hint sheet</span>
-          {sheet?.image_url && (
+          {activeUrl && (
             <span className="text-[10px] uppercase tracking-wider text-muted-foreground">— ready</span>
           )}
         </div>
         <Button
           size="sm"
-          variant={sheet?.image_url ? "outline" : "default"}
+          variant={activeUrl ? "outline" : "default"}
           className="gap-1.5"
           onClick={() => setOpen((o) => !o)}
         >
-          {sheet?.image_url ? "Regenerate hint sheet" : "Create hint sheet"}
+          {activeUrl ? "Regenerate hint sheet" : "Create hint sheet"}
           <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
         </Button>
       </div>
 
-      {sheet?.image_url && (
-        <div className="relative inline-block group">
+      {activeUrl && (
+        <button
+          type="button"
+          onClick={() => setPreviewOpen(true)}
+          className="relative inline-block group rounded-lg overflow-hidden border bg-background"
+        >
           <img
-            src={sheet.image_url}
+            src={activeUrl}
             alt={`Stage ${stage} hint sheet`}
-            className="rounded-lg border max-h-72 object-contain bg-background"
+            className="max-h-72 object-contain"
           />
           <AiOriginBadge
-            info={{ effective: sheet.effective_model, fallback: sheet.fallback }}
+            info={{ effective: sheet?.effective_model, fallback: sheet?.fallback }}
             position="absolute"
             hoverOnly
           />
-        </div>
+        </button>
       )}
 
       {open && (
@@ -312,16 +392,25 @@ function HintSheetBlock({ projectId, stage, sheet }: { projectId: string; stage:
             </Label>
             <ImageModelPicker surface="hint" defaultModel="chatgpt-image" className="w-[260px]" />
           </div>
-          <PromptPanel
+          <ImagePromptAssistant
             projectId={projectId}
             surface="hint"
             category="hint-sheet"
-            initialPrompt={sheet?.prompt ?? ""}
-            onGenerate={generate}
-            generating={generating}
-            mode="inline"
+            targetId={sheet?.id ?? `stage-${stage}`}
             hint={`Stage ${stage} of the hint ladder.`}
+            prompt={draftPrompt}
+            onChange={setDraftPrompt}
           />
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={generate} disabled={generating || !draftPrompt.trim()} className="gap-2">
+              {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
+              Generate hint sheet
+            </Button>
+            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadSheet(e.target.files[0])} />
+            <Button size="sm" variant="outline" className="gap-2" onClick={() => fileInput[0]?.click()}>
+              <Upload className="h-3.5 w-3.5" /> Upload sheet
+            </Button>
+          </div>
           {generating && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" /> Generating stage {stage} hint sheet…
@@ -330,29 +419,36 @@ function HintSheetBlock({ projectId, stage, sheet }: { projectId: string; stage:
         </div>
       )}
 
-      {history.length > 1 && (
-        <div>
-          <button
-            type="button"
-            onClick={() => setHistoryOpen((o) => !o)}
-            className="text-[11px] uppercase tracking-wider text-muted-foreground hover:text-foreground flex items-center gap-1.5"
-          >
-            <ChevronDown className={`h-3 w-3 transition-transform ${historyOpen ? "rotate-180" : ""}`} />
-            Previous prompts ({history.length})
-          </button>
-          {historyOpen && (
-            <ul className="mt-2 space-y-2">
-              {history.map((h, i) => (
-                <li key={i} className="text-[11px] p-2 rounded-md bg-background border">
-                  <div className="text-muted-foreground mb-1">
-                    {new Date(h.at).toLocaleString()} — {h.effective_model ?? "?"}
-                  </div>
-                  <div className="font-mono whitespace-pre-wrap line-clamp-3">{h.prompt}</div>
-                </li>
-              ))}
-            </ul>
+      {sheet && (
+        <>
+          <ImageHistoryStrip
+            items={history ?? []}
+            currentUrl={sheet.image_url}
+            onRestore={restoreFromHistory}
+            title={`Stage ${stage} history`}
+          />
+          {(sheet.image_url || sheet.uploaded_image_url) && (
+            <FinalAssetPicker
+              value={sheet.active_version}
+              onChange={setActiveVersion}
+              generatedUrl={sheet.image_url}
+              uploadedUrl={sheet.uploaded_image_url}
+              generatedLabel="Generated sheet"
+              uploadedLabel="Uploaded sheet"
+            />
           )}
-        </div>
+        </>
+      )}
+
+      {activeUrl && (
+        <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+          <DialogContent className="max-w-4xl p-4">
+            <div className="relative rounded-lg bg-muted overflow-hidden border">
+              <img src={activeUrl} alt={`Stage ${stage} hint sheet preview`} className="max-h-[80vh] w-full object-contain" />
+              <AiOriginBadge info={{ effective: sheet?.effective_model, fallback: sheet?.fallback }} />
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );
