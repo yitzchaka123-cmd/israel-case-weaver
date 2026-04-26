@@ -1058,23 +1058,50 @@ async function executeTool(
       const wasApproved = !!current?.logic_approved_at;
       const summaryChanged = previousSummary !== summary;
       let approvalCleared = false;
+      let logicWiped = false;
       if (markApproved) {
         patch.logic_approved_at = new Date().toISOString();
-      } else if (wasApproved && summaryChanged) {
-        patch.logic_approved_at = null;
-        approvalCleared = true;
+        // Re-approval moves the user back into the production phase.
+        patch.phase = "production";
+      } else if (summaryChanged) {
+        // Any new/edited summary text invalidates the existing flow & approval.
+        // Snap the project state back to "summary" so the top progress bar
+        // reflects that we're effectively redoing this step.
+        if (wasApproved) {
+          patch.logic_approved_at = null;
+          approvalCleared = true;
+        }
+        patch.phase = "summary";
+
+        // Wipe the stale Logic Flow board (and the Final/production map, which
+        // is downstream of it). The user can rebuild from the new summary.
+        const { count: logicNodeCount } = await supa
+          .from("canvas_nodes")
+          .select("id", { count: "exact", head: true })
+          .eq("project_id", projectId)
+          .eq("board", "logic");
+        if ((logicNodeCount ?? 0) > 0) {
+          await supa.from("canvas_edges").delete().eq("project_id", projectId).eq("board", "logic");
+          await supa.from("canvas_nodes").delete().eq("project_id", projectId).eq("board", "logic");
+          await supa.from("canvas_edges").delete().eq("project_id", projectId).eq("board", "final");
+          await supa.from("canvas_nodes").delete().eq("project_id", projectId).eq("board", "final");
+          logicWiped = true;
+        }
       }
       const { error } = await supa.from("projects").update(patch).eq("id", projectId);
       if (error) throw error;
       const wordCount = summary.split(/\s+/).filter(Boolean).length;
-      const approvalNote = approvalCleared
-        ? " ⚠️ The previous logic approval was cleared because the summary changed — rebuild the Logic Flow and re-approve to unlock document generation again."
+      const noteParts: string[] = [];
+      if (approvalCleared) noteParts.push("the previous logic approval was cleared");
+      if (logicWiped) noteParts.push("the old Logic Flow board was wiped (it was built from the previous summary)");
+      const changeNote = noteParts.length
+        ? ` ⚠️ Because the summary changed, ${noteParts.join(" and ")}. Offer the user the rebuild buttons (SUMMARY-REWRITE RULE) so they can regenerate and re-approve.`
         : "";
       return {
         ok: true,
         message: markApproved
           ? `Solution summary saved & logic approved (${wordCount} words). Visible on Case Board.`
-          : `Solution summary saved (${wordCount} words). Visible on Case Board's Solution-summary button.${approvalNote}`,
+          : `Solution summary saved (${wordCount} words). Visible on Case Board's Solution-summary button.${changeNote}`,
       };
     }
     if (name === "add_suspect") {
