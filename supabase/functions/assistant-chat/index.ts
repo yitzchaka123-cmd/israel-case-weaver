@@ -940,9 +940,56 @@ async function executeTool(
     const withMessage = (payload: Record<string, unknown>) => (
       messageId ? { ...payload, created_by_message_id: messageId } : payload
     );
-    if (!messageId && ["add_document", "update_document", "add_suspect", "update_suspect", "add_canvas_node", "update_canvas_node"].includes(name)) {
+    if (!messageId && ["add_document", "update_document", "add_suspect", "update_suspect", "add_canvas_node", "update_canvas_node", "add_canvas_edge"].includes(name)) {
       return { ok: false, message: "Assistant message could not be saved, so I did not create linked project rows. Please retry this step." };
     }
+    // Helper: when the project has already been logic-approved, any edit to the
+    // logic graph (add/update node, add edge) means the saved solution_summary
+    // and any existing Final Flow are now potentially stale. We attach a
+    // `requires_followup` payload to the receipt so the assistant must surface
+    // it as quick-reply buttons in the same turn (see POST-APPROVAL EDIT RULE).
+    const buildPostApprovalFollowup = async (changeKind: string): Promise<{ requires_followup: { reason: string; stale: string[]; offer: Array<{ key: string; label: string; send: string }> } } | Record<string, never>> => {
+      const { data: proj } = await supa
+        .from("projects")
+        .select("logic_approved_at, solution_summary, proposed_document_set_status")
+        .eq("id", projectId)
+        .single();
+      if (!proj?.logic_approved_at) return {};
+      const { count: finalNodeCount } = await supa
+        .from("canvas_nodes")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", projectId)
+        .eq("board", "final");
+      const stale: string[] = [];
+      if (proj.solution_summary) stale.push("solution_summary");
+      if ((finalNodeCount ?? 0) > 0) stale.push("final_flow");
+      if (proj.proposed_document_set_status === "approved") stale.push("proposed_document_set");
+      const offer: Array<{ key: string; label: string; send: string }> = [];
+      offer.push({
+        key: "rewrite_summary",
+        label: "Update the case summary",
+        send: "Rewrite the case summary now to reflect the change I just made, then call set_solution_summary with the new text.",
+      });
+      if ((finalNodeCount ?? 0) > 0) {
+        offer.push({
+          key: "rebuild_final_flow",
+          label: "Rebuild the Final Flow",
+          send: "Rebuild the Final Flow / production map now using create_final_documents_map so it reflects the change.",
+        });
+      }
+      offer.push({
+        key: "leave_as_is",
+        label: "Leave as-is for now",
+        send: "Leave the summary and Final Flow as-is for now. I'll resync later.",
+      });
+      return {
+        requires_followup: {
+          reason: `${changeKind} after Logic Flow was approved`,
+          stale,
+          offer,
+        },
+      };
+    };
     if (name === "update_project") {
       // Merge per-field origins so each updated field points to this message.
       const { data: current } = await supa
