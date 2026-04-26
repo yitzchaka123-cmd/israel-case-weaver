@@ -80,7 +80,7 @@ export function StatusIndicator({ status, className }: { status: AutoSaveStatus;
       className={cn(
         "pointer-events-none flex items-center gap-1 text-[10px] font-medium tabular-nums",
         status === "saving" && "text-muted-foreground",
-        status === "saved" && "text-emerald-600 dark:text-emerald-400",
+        status === "saved" && "text-primary",
         status === "error" && "text-destructive",
         className,
       )}
