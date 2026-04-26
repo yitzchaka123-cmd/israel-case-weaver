@@ -331,7 +331,7 @@ function EnvelopeCard({
   playbookCount: number;
   gameLanguage: string;
 }) {
-  const [draftingPrompt, setDraftingPrompt] = useState(false);
+  
   const [generatingImage, setGeneratingImage] = useState(false);
 
   const linkedIds = (value("linked_document_ids") as string[] | null) ?? [];
