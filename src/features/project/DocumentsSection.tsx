@@ -15,6 +15,7 @@ import { ImageModelPicker, getStoredImageModel } from "@/components/ImageModelPi
 import { PromptWriterModelPicker, getStoredWriterModel } from "@/components/PromptWriterModelPicker";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
 import { Sparkles } from "lucide-react";
+import { DocumentPromptAssistant } from "@/components/DocumentPromptAssistant";
 import { Badge } from "@/components/ui/badge";
 
 const DESIGN_PLACEHOLDER = `Describe EXACTLY how this document should look. The more specific, the better the result.
@@ -100,7 +101,7 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
   const { data: project } = useQuery({
     queryKey: ["project", projectId],
     queryFn: async () => {
-      const { data, error } = await supabase.from("projects").select("logic_approved_at, solution_summary").eq("id", projectId).single();
+      const { data, error } = await supabase.from("projects").select("logic_approved_at, solution_summary, game_language").eq("id", projectId).single();
       if (error) throw error;
       return data;
     },
