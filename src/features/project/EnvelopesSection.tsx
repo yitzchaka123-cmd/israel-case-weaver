@@ -55,6 +55,7 @@ import { PromptWriterModelPicker, getStoredWriterModel } from "@/components/Prom
 import { useProjectNotifications } from "./notifications/useProjectNotifications";
 import { notifyEnvelopesDrafted } from "./notifications/triggers";
 import { resolvePlaybook } from "@/lib/assistant-playbook";
+import { DocumentPromptAssistant } from "@/components/DocumentPromptAssistant";
 
 interface Envelope {
   id: string;
