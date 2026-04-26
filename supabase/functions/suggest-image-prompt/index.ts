@@ -55,7 +55,16 @@ interface Body {
   currentPrompt?: string; // if revising
   writerModel?: string;   // override key from PLANNING_MODEL (per-image dropdown)
   userId?: string;        // for global "image prompt assistant instructions"
+  // Structured-doc mode (Documents + Envelopes only)
+  documentId?: string;
+  envelopeId?: string;
+  userInstructions?: string; // free-text steering from Tab 1 of the new assistant
+  currentDesign?: string;    // existing design_instructions to revise
+  currentContent?: string;   // existing content (hebrew_content / envelope task) to revise
 }
+
+const STRUCTURED_DOC = "document-structured";
+const STRUCTURED_ENV = "envelope-structured";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
