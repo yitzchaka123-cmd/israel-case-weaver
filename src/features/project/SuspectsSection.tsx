@@ -143,7 +143,6 @@ export function SuspectsSection({ projectId }: { projectId: string }) {
 
 function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose: () => void }) {
   const [draft, setDraft] = useState<Suspect | null>(suspect);
-  const [generating, setGenerating] = useState(false);
   const [portraitPrompt, setPortraitPrompt] = useState<string>("");
   const [previewOpen, setPreviewOpen] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
