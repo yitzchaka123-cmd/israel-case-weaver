@@ -556,6 +556,13 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
       });
       if (driftNotifyErr) console.error("logic_regenerated notification insert", driftNotifyErr);
     }
+
+    return new Response(JSON.stringify({
+      ok: true,
+      summary: useApproved ? approvedSummary : (parsed?.summary ?? ""),
+      usedApprovedSummary: useApproved,
+      newLogicVersionId,
+      nodeCount: insertedNodeCount,
       edgeCount: insertedEdgeCount,
       scaffoldedEnvelopes: noEnvelopes ? envelopesForLinking.length : 0,
       streamed: useStreaming && !streamingErr,
