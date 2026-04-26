@@ -285,31 +285,54 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
         </DialogHeader>
         <div className="grid md:grid-cols-[170px_1fr] gap-6">
           <div>
-            <div className="aspect-[3/4] rounded-xl overflow-hidden border bg-muted">
-              {draft.thumbnail_url ? (
-                <img src={draft.thumbnail_url} alt={draft.name} className="w-full h-full object-cover" />
+            <button type="button" onClick={() => activeUrl && setPreviewOpen(true)} className="block w-full aspect-[3/4] rounded-xl overflow-hidden border bg-muted relative group">
+              {activeUrl ? (
+                <>
+                  <img src={activeUrl} alt={draft.name} className="w-full h-full object-cover" />
+                  <AiOriginBadge
+                    info={{ requested: null, effective: draft.thumbnail_effective_model ?? null, fallback: draft.thumbnail_fallback ?? null }}
+                    hoverOnly
+                  />
+                </>
               ) : (
                 <div className="h-full flex items-center justify-center">
                   <UserCircle2 className="h-10 w-10 text-muted-foreground/40" />
                 </div>
               )}
-            </div>
+            </button>
             <input ref={fileInput} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadThumb(e.target.files[0])} />
-            <div className="mt-2 space-y-1.5">
+            <div className="mt-2 space-y-2">
               <ImageModelPicker surface="suspect" defaultModel="nano-banana-2" className="w-full" />
-              <PromptPanel
+              <ImagePromptAssistant
                 projectId={suspect.project_id}
                 surface="suspect"
                 category="external"
+                targetId={suspect.id}
                 hint={[draft.name && `Name: ${draft.name}`, draft.role_in_case && `Role: ${draft.role_in_case}`, draft.summary && `About: ${draft.summary}`].filter(Boolean).join(". ")}
-                initialPrompt={portraitPrompt}
-                generating={generating}
-                onGenerate={(p) => generatePortrait(p)}
-                mode={draft.thumbnail_url ? "archive" : "inline"}
+                prompt={draft.thumbnail_prompt ?? portraitPrompt ?? ""}
+                onChange={(next) => update({ thumbnail_prompt: next })}
               />
+              <Button size="sm" variant="outline" className="w-full gap-2" onClick={generatePortrait} disabled={generating}>
+                {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserCircle2 className="h-3.5 w-3.5" />}
+                Generate portrait
+              </Button>
               <Button variant="outline" size="sm" className="w-full gap-2" onClick={() => fileInput.current?.click()}>
                 <Upload className="h-3.5 w-3.5" /> Upload
               </Button>
+              <ImageHistoryStrip
+                items={history ?? []}
+                currentUrl={draft.thumbnail_url}
+                onRestore={restoreFromHistory}
+                title="Portrait history"
+              />
+              <FinalAssetPicker
+                value={draft.active_version}
+                onChange={(v) => update({ active_version: v })}
+                generatedUrl={draft.thumbnail_url}
+                uploadedUrl={draft.uploaded_thumbnail_url}
+                generatedLabel="Generated portrait"
+                uploadedLabel="Uploaded photo"
+              />
             </div>
           </div>
           <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
