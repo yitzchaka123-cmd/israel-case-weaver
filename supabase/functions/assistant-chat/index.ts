@@ -1800,6 +1800,7 @@ async function processConversation(
       const stage = isFinalRound ? "writing reply" : lastTool ? `after ${lastTool}…` : "thinking…";
       flushProgress(stage);
     }
+    flushProgress(isFinalRound ? `writing reply (round ${round + 1})…` : `calling model (round ${round + 1})…`);
 
     const roundStartedAt = Date.now();
     const resp = await chatCompletions(body);
@@ -2151,6 +2152,7 @@ Deno.serve(async (req) => {
         const lastTool = executedTools[executedTools.length - 1]?.name;
         flushProgress(isFinalRound ? "writing reply" : lastTool ? `after ${lastTool}…` : "thinking…");
       }
+      flushProgress(isFinalRound ? `writing reply (round ${round + 1})…` : `calling model (round ${round + 1})…`);
 
       const roundStartedAt = Date.now();
       const resp = await chatCompletions(body);
