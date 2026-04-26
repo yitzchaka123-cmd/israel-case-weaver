@@ -512,7 +512,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
                     <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       <span className="inline-flex items-center gap-1.5">
-                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
                         {stage ? stage : "Thinking…"}
                       </span>
                     </div>
