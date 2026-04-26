@@ -1193,7 +1193,42 @@ async function executeTool(
         .select("id, title")
         .single();
       if (error) throw error;
-      return { ok: true, message: `Canvas node added: ${data.title}`, id: data.id };
+      const followup = await buildPostApprovalFollowup(`add_canvas_node (${data.title})`);
+      return { ok: true, message: `Canvas node added: ${data.title}. ${('requires_followup' in followup) ? "REMEMBER: also call add_canvas_edge to wire it into the graph, then surface the post-approval follow-up buttons." : "REMEMBER: if there are existing nodes this should connect to, call add_canvas_edge in the same turn."}`, id: data.id, ...followup };
+    }
+    if (name === "add_canvas_edge") {
+      const sourceId = String((args as { source_id?: string }).source_id ?? "").trim();
+      const targetId = String((args as { target_id?: string }).target_id ?? "").trim();
+      const label = (args as { label?: string }).label;
+      const board = String((args as { board?: string }).board ?? "logic").trim();
+      if (!sourceId || !targetId) return { ok: false, message: "source_id and target_id are required" };
+      if (sourceId === targetId) return { ok: false, message: "source_id and target_id must be different nodes" };
+      // Verify both nodes exist on the same board within this project.
+      const { data: nodes, error: lookupErr } = await supa
+        .from("canvas_nodes")
+        .select("id, board, title")
+        .in("id", [sourceId, targetId])
+        .eq("project_id", projectId);
+      if (lookupErr) throw lookupErr;
+      if (!nodes || nodes.length !== 2) {
+        return { ok: false, message: "One or both node ids were not found in this project. Pass valid ids from the Existing canvas nodes roster." };
+      }
+      const { data, error } = await supa
+        .from("canvas_edges")
+        .insert({
+          source_id: sourceId,
+          target_id: targetId,
+          label: label ?? null,
+          board,
+          project_id: projectId,
+        })
+        .select("id")
+        .single();
+      if (error) throw error;
+      const src = nodes.find((n) => n.id === sourceId)?.title ?? sourceId;
+      const tgt = nodes.find((n) => n.id === targetId)?.title ?? targetId;
+      const followup = await buildPostApprovalFollowup(`add_canvas_edge (${src} → ${tgt})`);
+      return { ok: true, message: `Edge created: ${src} → ${tgt}${label ? ` ("${label}")` : ""}`, id: data.id, ...followup };
     }
     if (name === "propose_options") {
       // No state mutation — this tool exists purely so the model can attach
