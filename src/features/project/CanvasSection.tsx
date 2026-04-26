@@ -621,7 +621,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
             className="gap-2 h-9 rounded-r-none border-r-0"
             onClick={() => arrangeNodes("deterministic")}
             disabled={arranging || nodes.length === 0}
-            title="Smart arrange — instant context-aware layout. For the Final Flow it places the logic chain on the left, documents in the middle aligned with the logic node they came from, and envelopes on the right in numerical order."
+            title="Smart arrange — instant context-aware layout. Press repeatedly to cycle through different smart layouts (lanes / columns / suspect bands / chain-packed for the Logic board; bands / stacked / grouped-by-envelope for the Final board)."
           >
             {arranging ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
             Arrange
