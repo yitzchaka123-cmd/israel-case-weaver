@@ -320,6 +320,7 @@ function EnvelopeCard({
   docs,
   projectId,
   playbookCount,
+  gameLanguage,
 }: {
   slot: { n: number; label: string };
   env: Envelope | undefined;
@@ -328,6 +329,7 @@ function EnvelopeCard({
   docs: DocOption[];
   projectId: string;
   playbookCount: number;
+  gameLanguage: string;
 }) {
   const [draftingPrompt, setDraftingPrompt] = useState(false);
   const [generatingImage, setGeneratingImage] = useState(false);
