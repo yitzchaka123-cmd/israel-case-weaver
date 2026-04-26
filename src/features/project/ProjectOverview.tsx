@@ -597,8 +597,8 @@ export function ProjectOverview({ project }: { project: any }) {
               prompt={draft.cover_prompt ?? ""}
               onChange={setCoverPrompt}
             />
-            <Button onClick={generateCover} disabled={genCover || !(draft.cover_prompt ?? "").trim()} className="w-full gap-2">
-              {genCover ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+            <Button onClick={generateCover} disabled={coverJob.isPending || !(draft.cover_prompt ?? "").trim()} className="w-full gap-2">
+              {coverJob.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
               Generate cover
             </Button>
             <Button variant="outline" className="w-full" onClick={() => fileInput.current?.click()}>
