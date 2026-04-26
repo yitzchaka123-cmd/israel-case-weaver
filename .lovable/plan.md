@@ -1,78 +1,67 @@
-## Why arrange is slow + random today
+## Two fixes — Doc 0 and envelope descriptions
 
-Looking at `supabase/functions/arrange-canvas/index.ts` and `CanvasSection.tsx`:
+### Fix 1 — Doc 0: plain white inventory sheet, no realism
 
-1. **Every press calls an LLM** with a 75 s hard timeout. On the final flow this round-trip dominates the wall clock — the user waits 10–60 s every click.
-2. **The LLM frequently fails the 80 % coverage check** (`pos.length < ceil(nodes.length * 0.8)`) or returns invalid coords → silent fall through to `fallbackLayout`, which is the generic lane layout. That is the "random-looking" output you're seeing.
-3. **The fallback isn't role-aware for the final flow.** `create-final-documents-map` already stamps each node with `finalMapRole: "logic" | "document"`, `sourceLogicNodeId`, `envelopeNumber`, `docNumber`, `sourceLogicNodeIds`, `linkedLogicTitles` — the fallback ignores all of that and treats final-flow nodes the same as logic-flow nodes.
-4. The model used (`gemini-3-flash` default) is non-reasoning so it's not actually planning a story — it just shuffles columns, which reads as random.
-5. Each position write is a separate UPDATE (already parallel, but still N round-trips to Postgres).
+Doc 0 is currently fed through the same prompt as every other evidence document, which means it inherits:
+- The huge "ADDITIONAL REALISM DETAILS — include AT LEAST 20 concrete period-appropriate details" block (`generate-document/index.ts` line 502)
+- The "photorealistic, print-ready image of a [doc_type]" framing (line 494)
+- "real-world physical document photographed or scanned" / paper aging / fold lines / stamps / coffee rings / classification banners / etc.
 
-## Fix — three-tier strategy
+Doc 0 isn't part of the in-world fiction — it's the player's box-contents checklist. It should look like a plain printer-paper inventory.
 
-### Tier 1: Deterministic, context-aware layout (default, instant)
+**Changes in `supabase/functions/generate-document/index.ts`:**
 
-Run a real layout algorithm in the edge function — **no LLM** by default. Returns in <1 s.
+1. **Image prompt for Doc 0** (lines 488–514): when `doc0` is true, replace the "photorealistic prop" framing and the entire "ADDITIONAL REALISM DETAILS" fallback with a Doc-0-specific brief:
+   - "Plain white A4 sheet, clean modern layout, crisp digital print look — NOT an in-world prop."
+   - "No paper aging, no fold lines, no stamps, no coffee rings, no period typography, no signatures, no classification marks, no realism details of any kind."
+   - "Numbered list of every game document. One line per item: number — title. No commentary, no flavor text, no spoilers."
+   - Keep the "render content in `${gameLanguage}`, `${isRtl ? "RTL" : "LTR"}`, fully legible" rule.
+   - Keep the user's global `image_prompt_instructions` block at the top (still highest priority if they wrote one).
 
-**For the LOGIC board** — keep current 7 lanes but make column assignment smarter:
-- Topologically sort the DAG (suspects/clues feed deductions feed solution; envelopes pin to the trigger node).
-- Use longest-path layering to pick a `column` per node (so an A→B→C chain becomes 3 columns, not 3 rows).
-- Sort within each lane by column to align connected items vertically.
+2. **Text-mode prompt for Doc 0** (lines 304–319): tighten the system + user prompt so the body is a bare numbered list:
+   - System: "You write Doc 0… Output ONLY a clean numbered checklist of every planned document. One line per document: `<number>. <title>`. No introduction, no commentary, no envelope groupings, no spoilers, no realism flavor."
+   - User: drop the "Group by envelope/section when possible" guidance — that line currently nudges the model to add structure that reads as flavor.
 
-**For the FINAL board** — use the data the generator already stamps:
-- Read `finalMapRole`, `envelopeNumber`, `docNumber`, `sourceLogicNodeIds` for every node.
-- Layout becomes 3 vertical bands left-to-right:
-  - **Band A (left): logic chain** — laid out by topological depth using existing logic-flow positions if present (so the final board mirrors the logic board the user already approved).
-  - **Band B (middle): documents** — each document sits in the row of its `sourceLogicNodeIds[0]` (the logic beat it materialises). Multiple docs per beat stack vertically with `ROW_GAP` between them. Doc 0 (contents) anchors at the top of its envelope's column.
-  - **Band C (right): envelopes** — each envelope sits in the row of its highest-numbered document, sorted top-to-bottom by `envelopeNumber`.
-- This produces a clean **suspects/clues → deduction → "becomes document" → "physical insert in envelope N"** reading flow that matches how the case actually plays.
+3. **PDF / direct-file prompt for Doc 0** (lines 388–390): same treatment — remove "premium mystery game" framing in favor of "plain white inventory sheet, numbered list only, no styling beyond a title and the list."
 
-Both boards use a final overlap-resolution pass (sweep nodes; if two centers are within `NODE_W + 40` × `NODE_H + 60`, push the later one down a row).
+4. Leave the "must come from Final Flow" guard and the `loadDoc0InventoryContext` source-of-truth feed untouched — only the styling/realism instructions change.
 
-Performance: pure JS, runs server-side in tens of milliseconds. Replace the per-node `Promise.all(updates)` with a single batched `upsert` (one round-trip).
+### Fix 2 — Envelope canvas nodes: no spoiler description
 
-### Tier 2: Single batched DB write
+Envelope nodes on the Final / Logic canvas currently display a 3-line description that the model is *required* to write:
 
-Replace this:
-```ts
-const updates = await Promise.all(
-  Object.entries(positions).map(([id, p]) =>
-    supa.from("canvas_nodes").update({ position_x: p.x, position_y: p.y }).eq("id", id),
-  ),
-);
 ```
-with one `upsert(rows, { onConflict: "id" })` containing all rows. Cuts ~N×30 ms of round-trips down to one.
+Task: <what the player does>
+Relevant clues: <which loose-pile clues they should already be holding>
+Why it matters: <what this gate confirms or unlocks next>
+```
 
-### Tier 3: AI polish as an opt-in second click ("Refine with AI")
+The last two lines are spoilers — they basically narrate the solution path. Even the first line ("Task") often leaks the beat.
 
-Keep the LLM path but stop running it by default. Add a second toolbar button next to **Smart arrange**:
+**Changes in `supabase/functions/generate-logic-flow/index.ts`** (lines 122–124, the two `envelopesBlock` branches):
 
-- **Smart arrange** (instant, deterministic) — the new default.
-- **Refine with AI** (slower, optional) — feeds the *already-laid-out* board to the model and asks it only to make small adjustments (group by suspect, shorten edge label collisions). Because the model now has a good starting layout it returns much better results, and we can keep the timeout at ~30 s instead of 75 s. If it fails or returns <80 % coverage we just keep the deterministic layout — no visible regression.
+- Remove the "For EVERY envelope node, the `description` field is REQUIRED and MUST contain exactly three lines…" block from both branches (existing-envelopes and scaffolding).
+- Replace with: "For envelope nodes, leave the `description` field empty (or set it to a single short non-spoiler label like the envelope's task title). Never describe relevant clues, deductions, the unlocked beat, or anything that hints at the solution path on the envelope node itself — that information lives on the Envelopes tab, not on the canvas."
+- Keep the rest of the envelope model rules (sealed task gates, "relevant to" edge labels, env_n → env_{n+1} chain) intact.
 
-This way: the default press is instant + sensible. The "AI" press is for polish, not the critical path.
+**Changes in `src/features/project/canvas/CanvasNodeTypes.tsx`** (around line 200–206):
 
-## Files to change
+- For `isEnvelope` nodes, suppress the `data.description` rendering entirely — just show `Envelope #N` and the title. This is a defensive belt so legacy envelope nodes that already have a spoilery description in the DB don't keep leaking until the next regen.
 
-- `supabase/functions/arrange-canvas/index.ts` — rewrite:
-  - New `deterministicLogicLayout(nodes, edges)` (topological lanes + longest-path columns).
-  - New `deterministicFinalLayout(nodes, edges)` (uses `finalMapRole`, `sourceLogicNodeIds`, `envelopeNumber` to build the 3-band layout).
-  - New `mode` param: `"deterministic"` (default) | `"ai-refine"`.
-  - Batched `upsert` instead of N updates.
-  - Drop the 80 % coverage retry loop on the deterministic path (it's always 100 %).
-- `src/features/project/CanvasSection.tsx` — split the toolbar button:
-  - Rename current button to **Smart arrange** (calls with `mode: "deterministic"`).
-  - Add **Refine with AI** dropdown item that calls with `mode: "ai-refine"` and uses the existing `logicModel`.
-  - Keep optimistic local update + `qc.invalidateQueries` flow.
-- No DB schema changes.
-- No new dependencies.
+### Files to edit
+- `supabase/functions/generate-document/index.ts` — Doc 0 image / text / file prompts
+- `supabase/functions/generate-logic-flow/index.ts` — envelope description requirement
+- `src/features/project/canvas/CanvasNodeTypes.tsx` — hide description on envelope nodes
 
-## What you'll see after
+### Edge functions to redeploy
+- `generate-document`
+- `generate-logic-flow`
 
-- Pressing **Smart arrange** on either board returns in <1 s.
-- The **final flow** specifically reads as: logic chain on the left, documents in the middle aligned with the logic node they came from, envelopes on the right in numerical order — the exact "review the game structure" view you asked for.
-- The AI refine button is still there if you want to spend the 20 s on a polish pass for a screenshot.
+### What stays the same
+- Doc 0 still pulls its inventory from the Final Flow (no fabricated docs).
+- Envelopes tab (`EnvelopesSection.tsx`) still shows full task / opening trigger / design — that's the production-side view and is fine.
+- All other documents keep the existing realism rules.
+- No DB migration needed — existing Doc 0 / envelope rows can simply be regenerated to pick up the new prompts.
 
-## Open question
-
-The current code defaults to model `gemini-3-flash` for arrange even though your logic-flow model is `openai-5.2`. After this change AI refine will reuse `logicModel` (which is what the toolbar already sends), so an `openai-5.2` press will route through your OpenAI key. Want me to keep that, or hard-pin AI refine to a faster model (e.g. `gemini-3-flash`) so it stays cheap regardless of the logic-flow setting?
+### Open question
+For envelope canvas nodes with already-generated spoilery descriptions, do you want me to also run a one-time clear (set `description = null` on existing `node_type = 'envelope'` rows on the current project, or all projects)? Default if you don't say: just hide them in the UI and let them get cleared naturally on the next logic-flow regen.

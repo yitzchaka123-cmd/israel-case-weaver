@@ -197,10 +197,10 @@ export function CaseNode({ data, selected }: NodeProps<CaseNodeData>) {
             </div>
           </>
         ) : (
-          data.description && (
+          data.description && !isEnvelope && (
             <div
               className={`mt-1.5 text-[11px] text-muted-foreground leading-snug whitespace-pre-line ${
-                isEnvelope || isSolution ? "line-clamp-6" : "line-clamp-2"
+                isSolution ? "line-clamp-6" : "line-clamp-2"
               }`}
             >
               {data.description}

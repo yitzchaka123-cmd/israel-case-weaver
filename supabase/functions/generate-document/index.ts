@@ -302,7 +302,7 @@ Deno.serve(async (req) => {
       }
       const planned = doc0 ? null : await loadPlannedDocContext(supa, doc.project_id, documentId);
       const sys = doc0
-        ? `You write Doc 0 for premium printable mystery games. Doc 0 is NEVER evidence and NEVER a normal memo. It is the player-facing box contents / case-file inventory. Output ONLY the document body in ${gameLanguage}, ${isRtl ? "RTL-ready" : "properly formatted"}. Use the supplied Final Flow document nodes as the authoritative inventory. Group by envelope/section when possible. No solution spoilers. Do not invent documents not present in the Final Flow.`
+        ? `You write Doc 0: a plain, player-facing box-contents inventory for a printable mystery game. Doc 0 is NOT in-world evidence. It is NOT a case memo. It is NOT styled like an aged document. Treat it as a clean printer-paper checklist.\n\nOUTPUT: ONLY a numbered list of every game document, one per line, in ${gameLanguage}, ${isRtl ? "RTL-ready" : "properly formatted"}. Format each line as exactly "<number>. <title>" — nothing else. No introduction, no headers beyond a single short title line, no envelope groupings, no descriptions, no flavor text, no realism details, no solution hints, no commentary about what each document does. Use the supplied Final Flow document nodes as the authoritative inventory. Do not invent documents that are not in the Final Flow.`
         : `You are a senior mystery-game writer producing one in-world evidence document for a premium printable detective game.
 
 CONTENT IS REASONED, NOT TEMPLATED. Read the case brief, the approved solution summary, the suspects, and the Logic Flow nodes this specific document is meant to support. Then write the document so it delivers ITS planned clue / role inside the case — not a generic example of its document type. The 'document type' field is ONLY a hint about FORMAT and visual style (interrogation transcript, autopsy report, letter, receipt, photograph caption, etc.). It is NOT a template for the body. Two documents of the same type in the same case must read very differently because the underlying evidence and characters are different.
@@ -316,7 +316,7 @@ OUTPUT RULES:
 - For interrogation transcripts: include pauses, body language, hesitations, contradictions, real back-and-forth.
 - Length and tone should match a real-world example of this document type, but the substance must come from THIS case.`;
       const userPrompt = doc0
-        ? `Case: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nPlayer role: ${project?.player_role ?? ""}\nCase goal: ${project?.case_goal ?? ""}\nYear: ${project?.year ?? ""}\nSetting: ${project?.setting ?? ""}\n\nDocument to produce:\nTitle: ${doc.title}\nType: contents checklist / box inventory\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\n\n${inventory?.text ?? ""}\n\nWrite Doc 0 now as a clean player-facing checklist of every planned game document and physical insert. Include Doc 0 itself, opening/instruction pieces, envelopes, suspects/cast sheets if present, and all planned document nodes. Do not reveal answers, culprits, hidden logic, or generation status.`
+        ? `Game: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nDocument to produce: Doc 0 — contents inventory (plain white printer paper).\nPrint size: ${doc.print_size ?? "A4"}\n\n${inventory?.text ?? ""}\n\nProduce ONLY a clean numbered list of every game document and physical insert (including Doc 0 itself), one per line, formatted as "<number>. <title>". No descriptions, no spoilers, no flavor, no envelope groupings, no realism styling.`
         : `${planned?.text ?? ""}\n\nDOCUMENT TO PRODUCE:\n- Title: ${doc.title}\n- Format style hint (NOT a content template): ${doc.doc_type ?? "evidence document"}\n- Print size: ${doc.print_size ?? "A4"}\n- Design / layout notes: ${doc.design_instructions ?? "—"}\n${planned?.purpose ? `- Planned clue / role: ${planned.purpose}\n` : ""}\nWrite the full ${gameLanguage} body now. Reason from the case brief and Logic Flow above — do NOT fall back on a generic '${doc.doc_type ?? "document"}' template. Make sure the content this document delivers is the planned clue / role for THIS case.`;
 
       const startedAt = Date.now();
@@ -386,7 +386,7 @@ OUTPUT RULES:
       }
       const plannedFile = doc0 ? null : await loadPlannedDocContext(supa, doc.project_id, documentId);
       const directFilePrompt = doc0
-        ? `Create the final ${documentFormat.toUpperCase()} document directly if your API supports returning generated files. If you cannot return an actual file, say exactly: UNABLE_TO_CREATE_FILE.\n\nThis is Doc 0 for a premium mystery game. Doc 0 is a player-facing box contents / case-file inventory, not evidence and not a case memo. Use the Final Flow inventory below as the source of truth. Do not invent documents and do not reveal solution spoilers.\n\nCase: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nDocument title: ${doc.title}\nType: contents checklist / box inventory\nPrint size: ${doc.print_size ?? inventory?.doc0?.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\n\n${inventory?.text ?? ""}\n\nPlayer-facing content to place in the file:\n${doc.hebrew_content ?? ""}`
+        ? `Create the final ${documentFormat.toUpperCase()} directly if your API supports returning generated files. If you cannot return an actual file, say exactly: UNABLE_TO_CREATE_FILE.\n\nThis is Doc 0: a plain white printer-paper inventory sheet for a printable mystery game. NOT in-world evidence. NOT a styled prop. Use a clean modern layout: white background, simple sans-serif body, one short title line at the top, then a numbered list — one document per line, "<number>. <title>". No paper aging, no fold lines, no stamps, no coffee rings, no period typography, no signatures, no classification marks, no realism details of any kind. No descriptions or flavor next to each item.\n\nGame: ${project?.title ?? ""}\nLanguage: ${gameLanguage}\nDocument title: ${doc.title}\nPrint size: ${doc.print_size ?? inventory?.doc0?.print_size ?? "A4"}\n\nPlayer-facing content to lay out:\n${doc.hebrew_content ?? ""}`
         : `Create the final ${documentFormat.toUpperCase()} document directly if your API supports returning generated files. If you cannot return an actual file, say exactly: UNABLE_TO_CREATE_FILE.\n\nThe document type is ONLY a visual / format hint (interrogation transcript, autopsy report, letter, etc.) — NOT a content template. The body content below was reasoned from the case's Logic Flow and is the source of truth. Lay it out faithfully in the chosen format.\n\nCase: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nDocument title: ${doc.title}\nFormat style hint: ${doc.doc_type ?? "evidence document"}\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\n${plannedFile?.purpose ? `Planned clue / role this document delivers: ${plannedFile.purpose}\n` : ""}\nContent:\n${doc.hebrew_content ?? ""}`;
       const startedAt = Date.now();
       const callerUserId = await getUserIdFromAuth(req);
@@ -485,33 +485,58 @@ OUTPUT RULES:
       const contentExcerpt = (doc.hebrew_content ?? "").trim().slice(0, doc0 ? 2400 : 1200);
       const userImageInstructions = (project?.image_prompt_instructions as string ?? "").trim();
 
-      const imgPrompt = [
-        userImageInstructions
-          ? `USER GLOBAL IMAGE INSTRUCTIONS (apply to every image in this project — highest priority):\n${userImageInstructions}\n`
-          : "",
-        doc0
-          ? `Create a single high-resolution, print-ready image of Doc 0: the player-facing contents checklist / case-file inventory for a premium mystery / detective game. This is not evidence; it is the box inventory.`
-          : `Create a single high-resolution, photorealistic, print-ready image of a ${doc.doc_type ?? "document"} for a premium mystery / detective game.`,
-        `Game title: "${project?.title ?? ""}"${project?.subtitle ? ` — ${project.subtitle}` : ""}.`,
-        `Era / setting: ${project?.year ?? "—"}, ${project?.setting ?? "Israeli setting"}.`,
-        `Genre: ${project?.genre ?? "mystery"}. Mystery type: ${project?.mystery_type ?? "—"}.`,
-        `Document title (visible if appropriate): "${doc.title}".`,
-        `Final print size: ${doc.print_size ?? "A4"} — compose to that aspect ratio with safe margins.`,
-        ``,
-        `STRICT DESIGN & GRAPHIC INSTRUCTIONS (FOLLOW EVERY DETAIL — this is the primary brief):`,
-        designNotes ? designNotes : `Authentic, period-correct, high-detail. Treat as a real-world physical prop: realistic paper texture, period-correct typography, believable headers/stamps/signatures.\n\nADDITIONAL REALISM DETAILS — include AT LEAST 20 concrete, period-appropriate details visible on the document. Pick from (and add similar): slight paper yellowing, faint horizontal fold across the center, mild edge wear, punch-hole marks on the left margin, one or two intake/filing stamps with era-correct date format, a typed reference number, a distribution list at the bottom, a small handwritten marginal note in pen or pencil, a signature scribble above a typed name, slightly uneven line spacing, faint photocopy shadowing along one edge, a classification stamp in dark red ink, a smaller box stamp near the lower third, a discreet fictitious seal (never a real emblem), a paperclip or staple shadow, a coffee/ink ring, smudged ribbon impression, carbon-copy bleed-through where applicable, a tape-repaired tear, a tiny fingerprint smudge, perforation marks if it's a tear-off form. Every detail must be concrete and visible — not a vague "looks aged".\n\nIf this document is an unusual / creative prop (map, diagram, hand-drawn note, cipher, blueprint, matchbook, ransom note, photo collage, evidence tag, ship/building map, etc.) instead include 8–15 CREATIVE in-world touches: hand annotations, torn-and-taped corners, smudged compass roses, coded margin doodles, crayon arrows, crossed-out misspellings, hidden symbols, unusual aspect ratios, attached Polaroids, etc. — tactile prop-style authenticity over bureaucratic realism.\n\nNo cartoon style. No watermark text. No copyright marks. No real emblems, real names, or real signatures.`,
-        ``,
-        `CONTENT TO RENDER (${gameLanguage}, ${isRtl ? "RTL" : "LTR"}, grammatically correct, fully legible):`,
-        contentExcerpt ? contentExcerpt : doc0 ? `Create a non-spoiler checklist from this authoritative inventory:\n${inventory?.text ?? ""}` : `Use plausible ${gameLanguage} text appropriate to the document type. All ${gameLanguage} must be perfectly readable and correctly laid out ${isRtl ? "right-to-left" : "left-to-right"}.`,
-        ``,
-        `RULES:`,
-        `- Render as a real-world physical document photographed or scanned, not a UI mockup.`,
-        `- All visible player-facing text must be in ${gameLanguage} unless the document type explicitly calls for another language.`,
-        `- Do NOT include English placeholder text like "Lorem ipsum".`,
-        `- Do NOT add modern watermarks, logos of real companies, or AI-generated artifacts.`,
-        `- High dynamic range, sharp focus on the document, neutral lighting, color-accurate.`,
-        `- Output ONE image only. Fill the frame with the document.`,
-      ].filter(Boolean).join("\n");
+      const imgPrompt = doc0
+        ? [
+            userImageInstructions
+              ? `USER GLOBAL IMAGE INSTRUCTIONS (apply to every image in this project — highest priority):\n${userImageInstructions}\n`
+              : "",
+            `Create a single high-resolution image of Doc 0: a plain white printer-paper inventory sheet for a printable mystery game. Doc 0 is NOT in-world evidence and NOT a styled prop.`,
+            `Game: "${project?.title ?? ""}". Language: ${gameLanguage}, ${isRtl ? "RTL" : "LTR"}.`,
+            `Final print size: ${doc.print_size ?? "A4"} — compose to that aspect ratio with generous safe margins.`,
+            ``,
+            `STYLE — STRICT:`,
+            `- Plain white background. Clean modern sans-serif typography. Crisp digital print look, like a freshly printed page.`,
+            `- ABSOLUTELY NO realism details: no paper aging, no yellowing, no fold lines, no edge wear, no punch holes, no stamps, no signatures, no classification marks, no coffee/ink rings, no smudges, no staples or paperclips, no period typewriter look, no carbon-copy bleed, no tape, no fingerprints, no perforation, no dog-eared corners. None.`,
+            `- No props, no desk surface, no shadows, no photographic framing — render as the page itself, edge to edge, fill the frame.`,
+            ``,
+            `LAYOUT:`,
+            `- One short title line at the top (e.g. the document title).`,
+            `- Below it: a numbered list, one document per line, formatted "<number>. <title>".`,
+            `- One item per line. Generous line spacing. No descriptions, no flavor text, no commentary, no envelope groupings, no spoilers.`,
+            ``,
+            `CONTENT TO RENDER (${gameLanguage}, ${isRtl ? "RTL" : "LTR"}, fully legible):`,
+            contentExcerpt ? contentExcerpt : `Render this inventory as the numbered list:\n${inventory?.text ?? ""}`,
+            ``,
+            `RULES:`,
+            `- All visible text in ${gameLanguage}.`,
+            `- No English placeholder text. No watermarks. No logos. No real emblems.`,
+            `- Output ONE image only.`,
+          ].filter(Boolean).join("\n")
+        : [
+            userImageInstructions
+              ? `USER GLOBAL IMAGE INSTRUCTIONS (apply to every image in this project — highest priority):\n${userImageInstructions}\n`
+              : "",
+            `Create a single high-resolution, photorealistic, print-ready image of a ${doc.doc_type ?? "document"} for a premium mystery / detective game.`,
+            `Game title: "${project?.title ?? ""}"${project?.subtitle ? ` — ${project.subtitle}` : ""}.`,
+            `Era / setting: ${project?.year ?? "—"}, ${project?.setting ?? "Israeli setting"}.`,
+            `Genre: ${project?.genre ?? "mystery"}. Mystery type: ${project?.mystery_type ?? "—"}.`,
+            `Document title (visible if appropriate): "${doc.title}".`,
+            `Final print size: ${doc.print_size ?? "A4"} — compose to that aspect ratio with safe margins.`,
+            ``,
+            `STRICT DESIGN & GRAPHIC INSTRUCTIONS (FOLLOW EVERY DETAIL — this is the primary brief):`,
+            designNotes ? designNotes : `Authentic, period-correct, high-detail. Treat as a real-world physical prop: realistic paper texture, period-correct typography, believable headers/stamps/signatures.\n\nADDITIONAL REALISM DETAILS — include AT LEAST 20 concrete, period-appropriate details visible on the document. Pick from (and add similar): slight paper yellowing, faint horizontal fold across the center, mild edge wear, punch-hole marks on the left margin, one or two intake/filing stamps with era-correct date format, a typed reference number, a distribution list at the bottom, a small handwritten marginal note in pen or pencil, a signature scribble above a typed name, slightly uneven line spacing, faint photocopy shadowing along one edge, a classification stamp in dark red ink, a smaller box stamp near the lower third, a discreet fictitious seal (never a real emblem), a paperclip or staple shadow, a coffee/ink ring, smudged ribbon impression, carbon-copy bleed-through where applicable, a tape-repaired tear, a tiny fingerprint smudge, perforation marks if it's a tear-off form. Every detail must be concrete and visible — not a vague "looks aged".\n\nIf this document is an unusual / creative prop (map, diagram, hand-drawn note, cipher, blueprint, matchbook, ransom note, photo collage, evidence tag, ship/building map, etc.) instead include 8–15 CREATIVE in-world touches: hand annotations, torn-and-taped corners, smudged compass roses, coded margin doodles, crayon arrows, crossed-out misspellings, hidden symbols, unusual aspect ratios, attached Polaroids, etc. — tactile prop-style authenticity over bureaucratic realism.\n\nNo cartoon style. No watermark text. No copyright marks. No real emblems, real names, or real signatures.`,
+            ``,
+            `CONTENT TO RENDER (${gameLanguage}, ${isRtl ? "RTL" : "LTR"}, grammatically correct, fully legible):`,
+            contentExcerpt ? contentExcerpt : `Use plausible ${gameLanguage} text appropriate to the document type. All ${gameLanguage} must be perfectly readable and correctly laid out ${isRtl ? "right-to-left" : "left-to-right"}.`,
+            ``,
+            `RULES:`,
+            `- Render as a real-world physical document photographed or scanned, not a UI mockup.`,
+            `- All visible player-facing text must be in ${gameLanguage} unless the document type explicitly calls for another language.`,
+            `- Do NOT include English placeholder text like "Lorem ipsum".`,
+            `- Do NOT add modern watermarks, logos of real companies, or AI-generated artifacts.`,
+            `- High dynamic range, sharp focus on the document, neutral lighting, color-accurate.`,
+            `- Output ONE image only. Fill the frame with the document.`,
+          ].filter(Boolean).join("\n");
 
       let mime = "image/png";
       let bytes: Uint8Array;
