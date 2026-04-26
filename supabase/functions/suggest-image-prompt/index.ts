@@ -216,6 +216,8 @@ Deno.serve(async (req) => {
         ``,
         `Part 2 — CONTENT (${gameLanguage}, ${isRtl ? "RTL" : "LTR"}): the EXACT final text that appears on the ${isEnv ? "envelope" : "document"}. Ready to typeset. No meta-commentary, no English explanations inside the content, no placeholders like "[insert name here]", no markdown headings — just the actual prop text in ${gameLanguage}. Names, dates, numbers, quotes — all final.`,
         ``,
+        `USER STEERING RULE: Any user instruction is highest priority and applies to the COMBINED final prompt: both DESIGN_INSTRUCTIONS and CONTENT together. If the user sets a limit (for example "keep under 20 words"), the total of design_instructions + content must obey that limit, even if it conflicts with the default preference for extreme detail.`,
+        ``,
         isEnv
           ? `Envelope-specific rules: the content is what's printed on the OUTSIDE of the envelope (label + opening trigger / task). Keep it short, bold, non-spoilery. Never reveal the case solution.`
           : `Document-specific rules: stay in-world; do not reveal the full solution; honor the document's planned role inside the case. For Doc 0 / contents inventory, the design must be a plain white printer-paper sheet (no realism), and content is a numbered list of every game document.`,
@@ -236,12 +238,12 @@ Deno.serve(async (req) => {
         targetBlock,
         ``,
         userInstructions?.trim()
-          ? `USER STEERING (highest priority — apply faithfully):\n${userInstructions.trim()}`
+          ? `USER STEERING FOR THE COMBINED FINAL PROMPT (highest priority — apply to design_instructions AND content as one combined output):\n${userInstructions.trim()}\n\nIf this steering includes length, tone, wording, or content constraints, obey it across both returned fields together.`
           : `USER STEERING: (none — use project context and the target's title/type to decide everything)`,
         currentDesign?.trim() ? `\nCURRENT DESIGN INSTRUCTIONS (revise / improve, don't repeat verbatim):\n${currentDesign.trim()}` : "",
         currentContent?.trim() ? `\nCURRENT CONTENT (revise / improve, don't repeat verbatim):\n${currentContent.trim()}` : "",
         ``,
-        `Now produce the JSON object with design_instructions (English, very detailed) and content (${gameLanguage}, exact final text).`,
+        `Now produce the JSON object. Obey USER STEERING across design_instructions + content together; only be very detailed when that does not conflict with the user's instruction.`,
       ].filter(Boolean).join("\n");
 
       const supportsTempStruct = !model.startsWith("openai/");

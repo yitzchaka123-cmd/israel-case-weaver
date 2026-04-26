@@ -2,63 +2,20 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, FileText, Trash2, Upload, Wand2, Image as ImageIcon, Loader2, FileDown, FileType, Copy } from "lucide-react";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Plus, FileText, Trash2, Upload, Image as ImageIcon, Loader2, FileDown, Copy } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
 
-import { ImageModelPicker, getStoredImageModel } from "@/components/ImageModelPicker";
+import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
+import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { DocumentPromptAssistant } from "@/components/DocumentPromptAssistant";
 import { Badge } from "@/components/ui/badge";
-
-const DESIGN_PLACEHOLDER = `Describe EXACTLY how this document should look. The more specific, the better the result.
-
-Recommended structure (copy + adapt):
-
-GOAL: One fictional in-world prop — e.g. a 1987 "Top Secret" internal letter from the Prime Minister's Office. Cinematic, serious, authentic. Must remain fictional (no real names, emblems, addresses).
-
-CRITICAL TEXT QUALITY:
-- All Hebrew real, fluent, grammatical, RTL.
-- No gibberish, mirrored letters, lorem ipsum.
-- The exact Hebrew below must appear cleanly.
-
-OUTPUT FORMAT:
-- Single A4 portrait page, 2480x3508px, 300 DPI.
-- Flat archival scan, no hands/desk/background.
-
-VISUAL STYLE:
-- Late 1980s Israeli bureaucracy.
-- Off-white aged paper, faint fold marks, mild edge wear.
-- Typewriter-style body, dark red classification stamps.
-- Subtle scan softness, fully legible.
-- Punch-hole marks left margin, faint horizontal fold center.
-
-LAYOUT:
-1. Top center: header lines.
-2. Top right: date, classification, reference number.
-3. Top left: recipient block.
-4. Bold subject line.
-5. 3 formal body paragraphs.
-6. Closing + signature block.
-7. Distribution list + footer code.
-8. Diagonal red stamp "סודי ביותר".
-9. Smaller box stamp "לעיני הנמען בלבד".
-10. Handwritten marginal note.
-
-TYPOGRAPHY:
-- Bold formal Hebrew header.
-- Classic serif/typewriter body.
-- Distressed red ink stamps.
-
-EXACT HEBREW TEXT TO PLACE:
-[paste your full Hebrew block here]
-
-AUTHENTICITY: photocopied 1987 archival memo, NOT modern Canva design.`;
 
 const DOC_TYPES = [
   "Memo", "Interrogation transcript", "Suspect profile", "Map", "Chat log",
@@ -229,12 +186,8 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
   const [genText, setGenText] = useState(false);
   const [genImage, setGenImage] = useState(false);
   const [genDocument, setGenDocument] = useState(false);
-  
-  const [imageQuality, setImageQuality] = useState<"low" | "medium" | "high">("medium");
-  const [documentFormat, setDocumentFormat] = useState<"pdf" | "docx" | "pptx" | "xlsx">("pdf");
-  const [selectedImageModel, setSelectedImageModel] = useState<string>(
-    () => getStoredImageModel("document", "chatgpt-image"),
-  );
+  const [fileGeneration, setFileGeneration] = useState<"pdf" | "image" | "both">("image");
+  const [imagePreviewOpen, setImagePreviewOpen] = useState(false);
   const saveTimer = useRef<number | undefined>(undefined);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -274,15 +227,25 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
     enabled: !!doc?.id,
   });
 
-  useEffect(() => setDraft(doc), [doc?.id]);
+  const { data: latestImageAttempt } = useQuery({
+    queryKey: ["document-image-attempt", doc?.id],
+    queryFn: async () => {
+      if (!doc) return null;
+      const { data, error } = await supabase
+        .from("media_assets")
+        .select("provider, model, effective_model, fallback, created_at")
+        .eq("source_document_id", doc.id)
+        .eq("asset_type", "image")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data as { provider: string | null; model: string | null; effective_model: string | null; fallback: string | null; created_at: string } | null;
+    },
+    enabled: !!doc?.id,
+  });
 
-  // Refresh selected image model whenever the picker writes back to localStorage
-  useEffect(() => {
-    if (!doc) return;
-    const tick = () => setSelectedImageModel(getStoredImageModel("document", "chatgpt-image"));
-    const i = window.setInterval(tick, 800);
-    return () => window.clearInterval(i);
-  }, [doc?.id]);
+  useEffect(() => setDraft(doc), [doc?.id]);
 
   if (!doc || !draft) return null;
 
@@ -324,8 +287,8 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
           documentId: doc.id,
           mode,
           imageModelOverride: mode === "image" ? getStoredImageModel("document", "chatgpt-image") : undefined,
-          quality: mode === "image" ? imageQuality : undefined,
-          documentFormat: mode === "document" ? documentFormat : undefined,
+          quality: mode === "image" ? getStoredImageQuality("document", "medium") : undefined,
+          documentFormat: mode === "document" ? "pdf" : undefined,
         }),
       });
 
@@ -352,7 +315,7 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
         setDraft((d) => d ? { ...d, generated_asset_url: payload.url!, active_version: "generated", status: "review" } : d);
       }
       if (mode === "document" && payload.documentUrl) {
-        setDraft((d) => d ? { ...d, generated_document_url: payload.documentUrl!, document_format: documentFormat, status: "review" } : d);
+        setDraft((d) => d ? { ...d, generated_document_url: payload.documentUrl!, document_format: "pdf", status: "review" } : d);
       }
       toast.success(mode === "text" ? "Hebrew content generated" : mode === "image" ? "Document image generated" : "Document file generated");
     } catch (e) {
@@ -363,13 +326,13 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
     }
   };
 
-  const generateOutputType = async (type: "image" | "document" | "both") => {
-    if (type === "both") {
+  const generateSelectedFile = async () => {
+    if (fileGeneration === "both") {
       await generate("document");
       await generate("image");
       return;
     }
-    await generate(type);
+    await generate(fileGeneration === "pdf" ? "document" : "image");
   };
 
   const copyFilePrompt = async () => {
@@ -429,6 +392,7 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
   };
 
   return (
+    <>
     <Dialog open={!!doc} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
@@ -466,89 +430,55 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
               design={draft.design_instructions ?? ""}
               content={draft.hebrew_content ?? ""}
               onChange={({ design, content }) => update({ design_instructions: design, hebrew_content: content })}
-              onAutoGenerate={async () => { await generate("image"); }}
               gameLanguage={gameLanguage}
               mode="inline"
             />
-            {!draft.design_instructions && (
-              <div className="mt-2 flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-[11px]"
-                  onClick={() => update({ design_instructions: DESIGN_PLACEHOLDER })}
-                >
-                  Insert template
-                </Button>
-                <span className="text-[10px] text-muted-foreground">
-                  Or just type instructions above and click <strong>Generate prompt</strong>.
-                </span>
-              </div>
-            )}
           </div>
           <div className="md:col-span-2">
-            <FieldBlock label="Generate output">
+            <FieldBlock label="File generation">
               <div className="flex flex-wrap items-center gap-2" dir="ltr">
-                <ImageModelPicker surface="document" defaultModel="chatgpt-image" />
-                <Select value={imageQuality} onValueChange={(v) => setImageQuality(v as "low" | "medium" | "high")}>
-                  <SelectTrigger className="h-8 w-[110px] text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="low">Low (fastest)</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="high">High (slow)</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button size="sm" variant="outline" className="gap-2" onClick={() => generate("image")} disabled={genImage}>
-                  {genImage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
-                  Generate document image
-                </Button>
-                <Select value={documentFormat} onValueChange={(v) => setDocumentFormat(v as "pdf" | "docx" | "pptx" | "xlsx")}>
-                  <SelectTrigger className="h-8 w-[98px] text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="pdf">PDF</SelectItem>
-                    <SelectItem value="docx">DOCX</SelectItem>
-                    <SelectItem value="pptx">PPTX</SelectItem>
-                    <SelectItem value="xlsx">XLSX</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button size="sm" variant="outline" className="gap-2" onClick={() => generate("document")} disabled={genDocument}>
-                  {genDocument ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileType className="h-3.5 w-3.5" />}
-                  Generate file
+                <ToggleGroup
+                  type="single"
+                  value={fileGeneration}
+                  onValueChange={(value) => value && setFileGeneration(value as "pdf" | "image" | "both")}
+                  className="justify-start"
+                >
+                  <ToggleGroupItem value="pdf" size="sm" className="h-8 text-xs">PDF</ToggleGroupItem>
+                  <ToggleGroupItem value="image" size="sm" className="h-8 text-xs">Image</ToggleGroupItem>
+                  <ToggleGroupItem value="both" size="sm" className="h-8 text-xs">PDF + image</ToggleGroupItem>
+                </ToggleGroup>
+                {(fileGeneration === "image" || fileGeneration === "both") && (
+                  <ImageModelPicker surface="document" defaultModel="chatgpt-image" className="min-w-[220px]" />
+                )}
+                <Button size="sm" variant="outline" className="gap-2" onClick={generateSelectedFile} disabled={genImage || genDocument}>
+                  {genImage || genDocument ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
+                  Generate {fileGeneration === "both" ? "PDF + image" : fileGeneration}
                 </Button>
               </div>
-              <div className="mt-2 flex flex-wrap items-center gap-2" dir="ltr">
-                <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Combined</span>
-                <Button size="sm" variant="outline" className="h-7 gap-1.5 text-[11px]" onClick={() => generateOutputType("both")} disabled={genImage || genDocument}><Wand2 className="h-3 w-3" /> Image + file</Button>
-                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-[11px]" onClick={() => generate("text")} disabled={genText} title="Legacy: regenerate just the content text using the old single-prompt flow.">
-                  {genText ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
-                  Regenerate content only
-                </Button>
-              </div>
-              {selectedImageModel === "chatgpt-image-2" && (
-                <div className="mt-2 text-[11px] text-muted-foreground rounded-md border border-warning/30 bg-warning/5 px-2.5 py-1.5" dir="ltr">
-                  <strong className="text-warning">Heads up:</strong> <code>chatgpt-image-2</code> requires a <em>verified OpenAI organization</em> and is slower at High quality. If generation fails or times out, switch the model to <strong>ChatGPT Image 1</strong> or <strong>Nano Banana</strong>, or drop quality to Medium.
-                </div>
-              )}
             </FieldBlock>
           </div>
           {draft.generated_asset_url && (
             <div className="md:col-span-2">
               <div className="flex items-center justify-between mb-2">
-                <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Generated document image</Label>
+                <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Final asset image</Label>
                 <Button size="sm" variant="outline" className="gap-2" onClick={saveAsPdf}>
                   <FileDown className="h-3.5 w-3.5" /> Save as PDF
                 </Button>
               </div>
-              <img src={draft.generated_asset_url} alt="" className="rounded-lg border w-full max-h-96 object-contain bg-muted" />
+              <button type="button" onClick={() => setImagePreviewOpen(true)} className="group relative block w-full rounded-lg border bg-muted overflow-hidden">
+                <img src={draft.generated_asset_url} alt="Generated document image" className="w-full max-h-96 object-contain" />
+                <AiOriginBadge
+                  info={{ requested: latestImageAttempt?.model ?? draft.document_model, effective: latestImageAttempt?.effective_model ?? latestImageAttempt?.model ?? draft.document_model, provider: latestImageAttempt?.provider ?? draft.document_provider, fallback: latestImageAttempt?.fallback ?? "none" }}
+                  hoverOnly
+                />
+              </button>
             </div>
           )}
           {(draft.generated_document_url || draft.generated_pdf_url) && (
             <div className="md:col-span-2 rounded-lg border bg-muted/30 p-3 space-y-3">
               <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Generated document file</Label>
+                <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Final asset file</Label>
                 <p className="text-sm truncate">{(draft.document_format ?? "file").toUpperCase()} • {draft.document_model ?? draft.document_provider ?? "Selected model"}</p>
               </div>
               <a href={draft.generated_document_url ?? draft.generated_pdf_url ?? "#"} target="_blank" rel="noreferrer" className="text-sm text-accent underline shrink-0">Open file</a>
@@ -612,6 +542,19 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
         </div>
       </DialogContent>
     </Dialog>
+    {draft.generated_asset_url && (
+      <Dialog open={imagePreviewOpen} onOpenChange={setImagePreviewOpen}>
+        <DialogContent className="max-w-5xl p-4">
+          <div className="relative rounded-lg bg-muted overflow-hidden border">
+            <img src={draft.generated_asset_url} alt="Generated document image preview" className="max-h-[82vh] w-full object-contain" />
+            <AiOriginBadge
+              info={{ requested: latestImageAttempt?.model ?? draft.document_model, effective: latestImageAttempt?.effective_model ?? latestImageAttempt?.model ?? draft.document_model, provider: latestImageAttempt?.provider ?? draft.document_provider, fallback: latestImageAttempt?.fallback ?? "none" }}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+    )}
+    </>
   );
 }
 
