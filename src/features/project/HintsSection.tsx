@@ -231,10 +231,22 @@ export function HintsSection({ projectId }: { projectId: string }) {
 function HintSheetBlock({ projectId, stage, sheet }: { projectId: string; stage: number; sheet: HintSheet | null }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [generating, setGenerating] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [draftPrompt, setDraftPrompt] = useState<string>(sheet?.prompt ?? "");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const sheetJob = useBackgroundImageJob({
+    projectId,
+    target: "hint-sheet",
+    targetId: String(stage),
+    onDone: () => {
+      toast.success(`Stage ${stage} hint sheet generated`);
+      setOpen(false);
+      qc.invalidateQueries({ queryKey: ["hint_sheets", projectId] });
+      refetchHistory();
+    },
+    onError: (msg) => toast.error(msg, { duration: 15000 }),
+  });
 
   useEffect(() => { setDraftPrompt(sheet?.prompt ?? ""); }, [sheet?.id, sheet?.prompt]);
 
