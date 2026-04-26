@@ -323,6 +323,8 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
     return () => { cancelled = true; window.clearInterval(interval); };
   }, [pendingJobId, refetchImageHistory]);
 
+  useEffect(() => setDraft(doc), [doc?.id]);
+
   if (!doc || !draft) return null;
 
   const update = (patch: Partial<Doc>) => {
