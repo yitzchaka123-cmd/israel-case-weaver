@@ -1,10 +1,11 @@
-// Tracks whether the Logic Flow board is being actively streamed by the AI.
+// Tracks whether either case board (Logic or Final) is being actively streamed
+// by the AI.
 //
 // We listen to realtime INSERT events on canvas_nodes / canvas_edges for this
 // project and flip on a "live growth" window the instant a new row lands —
 // no debounced count refetch. This drives the green "live" dot on the Case
 // Board tab and the "Drawing live…" pill on the canvas toolbar, so the moment
-// the AI starts streaming the board, the dot lights up.
+// the AI starts streaming either board, the dot lights up.
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -21,10 +22,10 @@ export function useLogicFlowLive(projectId: string): boolean {
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "canvas_nodes", filter: `project_id=eq.${projectId}` },
         (payload) => {
-          // Only count logic-board inserts as "live drawing" — the Final
-          // board is a planning artifact, not the live AI canvas.
+          // Count both Logic Flow and Final Flow inserts as "live drawing" —
+          // both are AI-streamed boards the user wants to watch in real time.
           const board = (payload.new as { board?: string } | null)?.board;
-          if (board === "logic") setGrewAt(Date.now());
+          if (board === "logic" || board === "final") setGrewAt(Date.now());
         },
       )
       .on(
@@ -32,7 +33,7 @@ export function useLogicFlowLive(projectId: string): boolean {
         { event: "INSERT", schema: "public", table: "canvas_edges", filter: `project_id=eq.${projectId}` },
         (payload) => {
           const board = (payload.new as { board?: string } | null)?.board;
-          if (board === "logic") setGrewAt(Date.now());
+          if (board === "logic" || board === "final") setGrewAt(Date.now());
         },
       )
       .subscribe();

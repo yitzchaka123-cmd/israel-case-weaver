@@ -204,7 +204,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
     }
     lastNodeCountRef.current = next;
   }, [dbNodes]);
-  const isLiveBuilding = board === "logic" && nowTs - liveGrewAt < 8_000 && liveGrewAt > 0;
+  const isLiveBuilding = (board === "logic" || board === "final") && nowTs - liveGrewAt < 8_000 && liveGrewAt > 0;
   useEffect(() => {
     if (!isLiveBuilding) return;
     const t = window.setInterval(() => setNowTs(Date.now()), 1_000);
