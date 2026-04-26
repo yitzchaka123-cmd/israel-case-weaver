@@ -136,6 +136,15 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
     },
   });
 
+  const { data: project } = useQuery({
+    queryKey: ["project-language", projectId],
+    queryFn: async () => {
+      const { data } = await supabase.from("projects").select("game_language").eq("id", projectId).maybeSingle();
+      return data;
+    },
+  });
+  const gameLanguage = project?.game_language ?? "Hebrew";
+
   const { data: docs = [] } = useQuery({
     queryKey: ["envelope-doc-options", projectId],
     queryFn: async () => {
