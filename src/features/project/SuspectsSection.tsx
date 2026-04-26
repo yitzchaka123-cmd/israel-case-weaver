@@ -6,11 +6,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, Upload, Trash2, UserCircle2 } from "lucide-react";
+import { Plus, Upload, Trash2, UserCircle2, Loader2 } from "lucide-react";
 import { useRef, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
-import { PromptPanel } from "@/components/PromptPanel";
+import { ImagePromptAssistant } from "@/components/ImagePromptAssistant";
+import { ImageHistoryStrip, type ImageHistoryRow } from "@/components/ImageHistoryStrip";
+import { FinalAssetPicker } from "@/components/FinalAssetPicker";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
 
@@ -20,6 +22,8 @@ interface Suspect {
   name: string;
   thumbnail_url: string | null;
   alt_thumbnail_url: string | null;
+  uploaded_thumbnail_url: string | null;
+  active_version: string;
   summary: string | null;
   role_in_case: string | null;
   motives: string | null;
@@ -140,6 +144,7 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
   const [draft, setDraft] = useState<Suspect | null>(suspect);
   const [generating, setGenerating] = useState(false);
   const [portraitPrompt, setPortraitPrompt] = useState<string>("");
+  const [previewOpen, setPreviewOpen] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<number | undefined>(undefined);
 
@@ -166,6 +171,24 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
     return () => { cancelled = true; };
   }, [suspect?.id, suspect?.project_id, draft?.thumbnail_url]);
 
+  // Per-suspect generation history strip.
+  const { data: history, refetch: refetchHistory } = useQuery({
+    queryKey: ["suspect-image-history", suspect?.id],
+    queryFn: async () => {
+      if (!suspect) return [];
+      const { data, error } = await supabase
+        .from("media_assets")
+        .select("id, url, preview_url, model, effective_model, provider, fallback, created_at")
+        .eq("source_suspect_id", suspect.id)
+        .not("url", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(24);
+      if (error) throw error;
+      return (data ?? []) as ImageHistoryRow[];
+    },
+    enabled: !!suspect?.id,
+  });
+
   if (!suspect || !draft) return null;
 
   const update = (patch: Partial<Suspect>) => {
@@ -177,29 +200,45 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
         name: next.name, summary: next.summary, role_in_case: next.role_in_case,
         motives: next.motives, secrets: next.secrets, contradictions: next.contradictions,
         is_red_herring: next.is_red_herring,
+        thumbnail_prompt: next.thumbnail_prompt,
+        active_version: next.active_version,
+        uploaded_thumbnail_url: next.uploaded_thumbnail_url,
       }).eq("id", next.id);
     }, 500);
   };
 
   const uploadThumb = async (file: File) => {
-    const path = `${suspect.project_id}/${suspect.id}-${Date.now()}-${file.name}`;
+    const path = `${suspect.project_id}/${suspect.id}-uploaded-${Date.now()}-${file.name}`;
     const { error } = await supabase.storage.from("suspects").upload(path, file, { upsert: true });
     if (error) return toast.error(error.message);
     const { data } = supabase.storage.from("suspects").getPublicUrl(path);
-    await supabase.from("suspects").update({ thumbnail_url: data.publicUrl }).eq("id", suspect.id);
-    setDraft({ ...draft, thumbnail_url: data.publicUrl });
+    await supabase.from("suspects").update({ uploaded_thumbnail_url: data.publicUrl, active_version: "uploaded" }).eq("id", suspect.id);
+    setDraft({ ...draft, uploaded_thumbnail_url: data.publicUrl, active_version: "uploaded" });
+    toast.success("Upload set as the active portrait");
   };
 
-  const generatePortrait = async (promptOverride?: string): Promise<void> => {
-    const prompt = promptOverride?.trim();
+  const restoreFromHistory = async (item: ImageHistoryRow) => {
+    if (!item.url) return;
+    await supabase.from("suspects").update({
+      thumbnail_url: item.url,
+      thumbnail_effective_model: item.effective_model ?? item.model,
+      thumbnail_fallback: item.fallback ?? null,
+      active_version: "generated",
+    }).eq("id", suspect.id);
+    setDraft((d) => d ? { ...d, thumbnail_url: item.url!, active_version: "generated", thumbnail_effective_model: item.effective_model ?? item.model, thumbnail_fallback: item.fallback ?? null } : d);
+    toast.success("Portrait restored as active");
+  };
+
+  const generatePortrait = async (): Promise<void> => {
+    const prompt = (draft.thumbnail_prompt ?? "").trim();
     if (!prompt) {
-      toast.error("Write a prompt first (or click Generate prompt)");
+      toast.error("Click Create prompt first, or paste a prompt into the Final prompt tab");
       return;
     }
     setGenerating(true);
     const t = toast.loading("Generating portrait…");
     const ctrl = new AbortController();
-    const timer = window.setTimeout(() => ctrl.abort(), 120_000);
+    const timer = window.setTimeout(() => ctrl.abort(), 145_000);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const modelOverride = getStoredImageModel("suspect", "nano-banana-2");
@@ -212,8 +251,9 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
       });
       const json = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(json.error ?? `Failed (${resp.status})`);
-      setDraft({ ...draft, thumbnail_url: json.url });
+      setDraft({ ...draft, thumbnail_url: json.url, active_version: "generated", thumbnail_effective_model: json.effectiveModel ?? null, thumbnail_fallback: json.fallback ?? null });
       setPortraitPrompt(prompt);
+      refetchHistory();
       toast.success("Portrait ready", { id: t });
     } catch (e) {
       const msg = e instanceof Error
@@ -232,6 +272,8 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
     onClose();
   };
 
+  const activeUrl = draft.active_version === "uploaded" ? (draft.uploaded_thumbnail_url ?? draft.thumbnail_url) : (draft.thumbnail_url ?? draft.uploaded_thumbnail_url);
+
   return (
     <Dialog open={!!suspect} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-2xl">
@@ -243,31 +285,54 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
         </DialogHeader>
         <div className="grid md:grid-cols-[170px_1fr] gap-6">
           <div>
-            <div className="aspect-[3/4] rounded-xl overflow-hidden border bg-muted">
-              {draft.thumbnail_url ? (
-                <img src={draft.thumbnail_url} alt={draft.name} className="w-full h-full object-cover" />
+            <button type="button" onClick={() => activeUrl && setPreviewOpen(true)} className="block w-full aspect-[3/4] rounded-xl overflow-hidden border bg-muted relative group">
+              {activeUrl ? (
+                <>
+                  <img src={activeUrl} alt={draft.name} className="w-full h-full object-cover" />
+                  <AiOriginBadge
+                    info={{ requested: null, effective: draft.thumbnail_effective_model ?? null, fallback: draft.thumbnail_fallback ?? null }}
+                    hoverOnly
+                  />
+                </>
               ) : (
                 <div className="h-full flex items-center justify-center">
                   <UserCircle2 className="h-10 w-10 text-muted-foreground/40" />
                 </div>
               )}
-            </div>
+            </button>
             <input ref={fileInput} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadThumb(e.target.files[0])} />
-            <div className="mt-2 space-y-1.5">
+            <div className="mt-2 space-y-2">
               <ImageModelPicker surface="suspect" defaultModel="nano-banana-2" className="w-full" />
-              <PromptPanel
+              <ImagePromptAssistant
                 projectId={suspect.project_id}
                 surface="suspect"
                 category="external"
+                targetId={suspect.id}
                 hint={[draft.name && `Name: ${draft.name}`, draft.role_in_case && `Role: ${draft.role_in_case}`, draft.summary && `About: ${draft.summary}`].filter(Boolean).join(". ")}
-                initialPrompt={portraitPrompt}
-                generating={generating}
-                onGenerate={(p) => generatePortrait(p)}
-                mode={draft.thumbnail_url ? "archive" : "inline"}
+                prompt={draft.thumbnail_prompt ?? portraitPrompt ?? ""}
+                onChange={(next) => update({ thumbnail_prompt: next })}
               />
+              <Button size="sm" variant="outline" className="w-full gap-2" onClick={generatePortrait} disabled={generating}>
+                {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserCircle2 className="h-3.5 w-3.5" />}
+                Generate portrait
+              </Button>
               <Button variant="outline" size="sm" className="w-full gap-2" onClick={() => fileInput.current?.click()}>
                 <Upload className="h-3.5 w-3.5" /> Upload
               </Button>
+              <ImageHistoryStrip
+                items={history ?? []}
+                currentUrl={draft.thumbnail_url}
+                onRestore={restoreFromHistory}
+                title="Portrait history"
+              />
+              <FinalAssetPicker
+                value={draft.active_version}
+                onChange={(v) => update({ active_version: v })}
+                generatedUrl={draft.thumbnail_url}
+                uploadedUrl={draft.uploaded_thumbnail_url}
+                generatedLabel="Generated portrait"
+                uploadedLabel="Uploaded photo"
+              />
             </div>
           </div>
           <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
@@ -307,6 +372,16 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
           </div>
         </div>
       </DialogContent>
+      {activeUrl && (
+        <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+          <DialogContent className="max-w-4xl p-4">
+            <div className="relative rounded-lg bg-muted overflow-hidden border">
+              <img src={activeUrl} alt="Portrait preview" className="max-h-[80vh] w-full object-contain" />
+              <AiOriginBadge info={{ requested: null, effective: draft.thumbnail_effective_model ?? null, fallback: draft.thumbnail_fallback ?? null }} />
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </Dialog>
   );
 }

@@ -1,80 +1,155 @@
-## 1. Fix `gpt-image-2` High quality (no more 504)
+# Roll out the Documents prompt system everywhere
 
-**Root cause:** edge function aborts OpenAI at 110 s, but `gpt-image-2` at `quality: "high"` for A4 routinely takes 120–180 s.
+Bring the new Documents experience — **Prompt Assistant (single Design field) + Create-prompt button + 24-item history carousel with click-to-preview + AI-origin badge + Final-asset selector (image vs. uploaded) + async polling** — to **all four image-generation surfaces**.
 
-**Fix — move High to a background job:**
-- New table `image_generations` (id, project_id, source_document_id, source_envelope_id, prompt, model, provider, quality, status: `pending|generated|failed`, url, error_message, created_at, created_by_message_id, effective_model, fallback). Replaces ad-hoc usage of `media_assets` for documents/envelopes/covers/etc. — but we still write a row into `media_assets` on success for compatibility with existing surfaces.
-- In `generate-document/index.ts`:
-  - When `mode==="image"` AND `quality==="high"` AND OpenAI: insert a `pending` row, kick off `fetch(...)` with NO 110 s abort, return `{ jobId, pending: true }` immediately. Use `EdgeRuntime.waitUntil(...)` (Deno Deploy / Cloudflare Workers) so the function keeps running after responding. Up to ~5 min.
-  - When the OpenAI call returns: upload bytes, update document row + image_generations row to `generated`. On error: write `failed` + `error_message`.
-  - Medium / Low stay synchronous (current behavior).
-- Front end: when response includes `pending: true`, show a "Generating high-quality image (up to 3 min)…" inline state on the doc/envelope and poll `image_generations` by jobId every 4 s until `generated|failed`.
+---
 
-## 2. Image generation history (per document & per envelope)
+## 1. New shared component: `ImagePromptAssistant`
 
-- Already inserting into `media_assets` per generation. Add UI:
-  - Under the Final asset image card, a horizontal scrollable strip "**History**" showing every prior generated image (asset_type=image, source_document_id=doc.id), newest first, each thumbnail clickable to:
-    - Preview in lightbox (with model bubble — already wired).
-    - "Restore as final asset" → updates `documents.generated_asset_url` to that URL.
-- Same strip for envelopes once we mirror the storage pattern there.
+A trimmed cousin of `DocumentPromptAssistant` for image-only surfaces.
 
-## 3. "Create prompt" must clear the previous Final prompt
+**File:** `src/components/ImagePromptAssistant.tsx`
 
-In `DocumentPromptAssistant.tsx`, on `handleGeneratePrompt` click:
-- Immediately call `onChange({ design: "", content: "" })` BEFORE the fetch, so the saved row is wiped.
-- Switch to "Final prompt" tab and show a small spinner placeholder until the assistant returns.
-- When the assistant returns, fill in the new design+content (or restore empty + show error toast on failure).
+- Two tabs: **Instructions** (free-text steering, component state) and **Final prompt** (single editable Design field, persisted via `onChange`).
+- Single button: **Create prompt** → calls `suggest-image-prompt` with `category` and surface-specific context, clears the final prompt immediately, and fills it with the assistant's design output.
+- Per-surface `PromptWriterModelPicker`.
+- No "Generate automatically" / "Revise prompt" buttons (matches the Documents cleanup).
 
-## 4. Rewrite the system prompt so user instructions actually win
+The existing `suggest-image-prompt` edge function already returns a `design` string — we'll just consume `design_instructions` and ignore `content` when called from these surfaces.
 
-In `suggest-image-prompt/index.ts` (STRUCTURED_DOC / STRUCTURED_ENV branch):
+---
 
-- Move USER STEERING to the **top** of the user message (currently buried at the bottom).
-- Rewrite the system prompt's opening paragraph to:
-  > "You produce a graphic-design brief + final in-world content. **User instructions OVERRIDE every other rule below, including any demand for detail or length.** If the user writes 'for example', 'e.g.', or 'such as', treat what follows as an *illustration of intent only* — never copy it literally into the output. If the user sets a length / tone / style limit, obey it across design_instructions + content combined, even if the rest of this prompt asks for more detail."
-- Demote the "be exhaustive" bullets to "default behavior **only when the user gives no constraint**".
-- Add an explicit example inside the system prompt:
-  > User says: "tiny letters, for example only". → Output: design uses small typography (e.g. 8 pt body); the words "for example only" do NOT appear in the content; the brief stays short, not exhaustive.
+## 2. New shared component: `ImageHistoryStrip`
 
-## 5. Asset document slot (mirroring asset image)
+Extracted from the inline `HistoryStrip` in `DocumentsSection.tsx`.
 
-In `DocDialog`:
-- Always render two cards side by side or stacked: **Final asset image** and **Final asset document**. If empty, show "Empty — no document generated yet" placeholder.
-- Final asset document card shows: format badge, model bubble, Open / Download links, plus a **History** strip of every prior generated document file (`media_assets` where `asset_type='document'` AND `source_document_id=doc.id`), each row clickable to "Restore as final document".
+**File:** `src/components/ImageHistoryStrip.tsx`
 
-## 6. "Save as PDF" should also save into the PDF asset slot
+- Props: `items: MediaHistoryRow[]`, `currentUrl`, `onRestore(item)`, `title`.
+- Up to 24 thumbnails, click opens a `Dialog` lightbox with `AiOriginBadge` showing the model + provider + fallback.
+- Lightbox has a **Restore** button that calls `onRestore` (sets the row's image URL back + flips `active_version` to `generated`).
 
-In `saveAsPdf()`:
-- After `pdf.save(...)`, if `draft.generated_pdf_url` is empty:
-  - Convert the jsPDF blob to bytes, upload to `documents` bucket at `${projectId}/${docId}-${Date.now()}.pdf`.
-  - Update `documents.generated_pdf_url` and `document_format='pdf'`, `document_provider='client-jspdf'`, `document_model='jsPDF from image'`.
-  - Insert a `media_assets` row (`asset_type='document'`, `document_format='pdf'`, `generation_mode='client_image_to_pdf'`) so it appears in history.
-- Toast: "PDF saved locally + added as Final asset document".
+---
 
-## 7. Uploaded final file overrides generated assets + final asset selector
+## 3. New shared component: `FinalAssetPicker`
 
-- Keep existing upload (`uploadReplacement`). Already sets `active_version='uploaded'`.
-- Add a **Final asset selector** as a small radio group at the top of the Final asset section:
-  - "Generated image", "Generated document file", "Uploaded file"
-  - Disabled options grey out when that source is empty.
-  - Selection writes to `documents.active_version` (already exists; values `generated|generated_document|uploaded`).
-- Export menu (`ExportMenu.tsx`) reads `active_version` to pick the right URL per document. We'll update it so:
-  - `uploaded` → `uploaded_asset_url`
-  - `generated_document` → `generated_document_url || generated_pdf_url`
-  - `generated` → `generated_asset_url`
-  - Falls through in that priority if the chosen one is missing.
+Two-option `RadioGroup`: **Generated image** vs. **Uploaded file**. Disables options when the corresponding URL is null. Writes `active_version` back via `onChange`.
 
-## Files to change
+**File:** `src/components/FinalAssetPicker.tsx`
 
-- `supabase/migrations/<new>.sql` — create `image_generations` table + RLS.
-- `supabase/functions/generate-document/index.ts` — async path for High; insert/update job rows.
-- `supabase/functions/suggest-image-prompt/index.ts` — rewrite system prompt + reorder user message.
-- `src/components/DocumentPromptAssistant.tsx` — clear final prompt on Create.
-- `src/features/project/DocumentsSection.tsx` — history strips, asset document slot, final asset selector, save-as-pdf upload, polling for pending High jobs.
-- `src/features/project/EnvelopesSection.tsx` — same pattern as documents (history + selector). (Smaller scope; envelope only has cover image, no document file.)
-- `src/features/project/ExportMenu.tsx` — honor `active_version` priority.
+---
 
-## Out of scope (explicitly)
+## 4. Database migrations
 
-- Not touching covers / suspects / hints / media library in this pass — same patterns can be added later if you want.
-- Not changing Smart-arrange vs Refine-with-AI; only answered the question.
+Add `active_version` (`text`, default `'generated'`) and uploaded-asset slots where missing, plus `source_*` columns on `media_assets` so history can be queried per surface.
+
+**New migration file** under `supabase/migrations/`:
+
+```sql
+-- Suspects: track active asset + already have thumbnail_url + uploaded thumbnail
+ALTER TABLE public.suspects
+  ADD COLUMN IF NOT EXISTS active_version text NOT NULL DEFAULT 'generated',
+  ADD COLUMN IF NOT EXISTS uploaded_thumbnail_url text;
+
+-- Hint sheets
+ALTER TABLE public.hint_sheets
+  ADD COLUMN IF NOT EXISTS active_version text NOT NULL DEFAULT 'generated',
+  ADD COLUMN IF NOT EXISTS uploaded_image_url text;
+
+-- Projects already have cover_image_url. Add active_version + uploaded slot.
+ALTER TABLE public.projects
+  ADD COLUMN IF NOT EXISTS cover_active_version text NOT NULL DEFAULT 'generated',
+  ADD COLUMN IF NOT EXISTS uploaded_cover_url text;
+
+-- Media assets: enable per-surface history queries
+ALTER TABLE public.media_assets
+  ADD COLUMN IF NOT EXISTS source_suspect_id uuid,
+  ADD COLUMN IF NOT EXISTS source_hint_sheet_id uuid,
+  ADD COLUMN IF NOT EXISTS source_project_cover boolean NOT NULL DEFAULT false;
+
+CREATE INDEX IF NOT EXISTS media_assets_source_suspect_id_idx ON public.media_assets (source_suspect_id);
+CREATE INDEX IF NOT EXISTS media_assets_source_hint_sheet_id_idx ON public.media_assets (source_hint_sheet_id);
+```
+
+(No RLS changes — `media_assets` already has the permissive auth-all policies.)
+
+---
+
+## 5. Edge function: stamp the source on every image
+
+Update `supabase/functions/generate-image/index.ts` so that when it inserts a `media_assets` row it also sets the appropriate `source_suspect_id` / `source_hint_sheet_id` / `source_project_cover` based on `category` and the IDs already passed in the request body. Same change to the cover branch in `generate-document` is unnecessary (only documents/envelopes use it).
+
+Also extend `image_generations` (used for async high-quality jobs) so suspect/hint/cover async runs are tracked the same way as documents — add nullable `source_suspect_id`, `source_hint_sheet_id`, `source_project_cover` columns:
+
+```sql
+ALTER TABLE public.image_generations
+  ADD COLUMN IF NOT EXISTS source_suspect_id uuid,
+  ADD COLUMN IF NOT EXISTS source_hint_sheet_id uuid,
+  ADD COLUMN IF NOT EXISTS source_project_cover boolean NOT NULL DEFAULT false;
+```
+
+Then in `generate-image`, when running OpenAI High quality, kick off the same `EdgeRuntime.waitUntil` background job pattern that `generate-document` uses, and write to `image_generations` with the right source linkage. Return the `jobId` so the UI can poll.
+
+---
+
+## 6. Refactor each surface
+
+### a) `src/features/project/SuspectsSection.tsx`
+- Replace `<PromptPanel … surface="suspect">` with the new **Prompt Assistant** stack:
+  - `ImagePromptAssistant` writing to `suspect.thumbnail_prompt`.
+  - `ImageHistoryStrip` driven by `media_assets.source_suspect_id = suspect.id`.
+  - Click-to-preview lightbox with `AiOriginBadge`.
+  - `FinalAssetPicker` (Generated vs. Uploaded), bound to `active_version` + `uploaded_thumbnail_url`.
+- Polling for async jobs: subscribe to `image_generations` rows with matching `source_suspect_id` while a job is pending.
+
+### b) `src/features/project/HintsSection.tsx`
+- Same replacement, scoped per stage's `hint_sheet`.
+- History from `media_assets.source_hint_sheet_id`.
+- `FinalAssetPicker` writes to `hint_sheets.active_version` + `uploaded_image_url`.
+
+### c) `src/features/project/ProjectOverview.tsx` and `src/features/project/marketing/CoverAndVisuals.tsx`
+- Replace cover `PromptPanel` with the new stack.
+- History from `media_assets.source_project_cover = true AND project_id = …`.
+- `FinalAssetPicker` writes to `projects.cover_active_version` + `uploaded_cover_url`.
+- Keep the existing "Output type" PDF/image toggle in CoverAndVisuals unchanged.
+
+### d) `src/features/project/MediaSection.tsx` and marketing extras in `CoverAndVisuals.tsx`
+- For each generated media slot: same Prompt Assistant + history strip per `category`.
+- Final-asset selector applies only where the slot has both an uploaded and a generated asset; for ad-hoc gallery items (marketing extras), the selector is omitted because each item is its own asset.
+
+---
+
+## 7. Export priority
+
+`src/lib/export.ts` already has `pickActiveAsset` for documents. Mirror the same priority logic for suspect portraits, hint sheets, and the project cover so exports honor the new `active_version` columns. (One small helper per surface, called from wherever the export currently picks the URL.)
+
+---
+
+## 8. Files touched
+
+**New**
+- `src/components/ImagePromptAssistant.tsx`
+- `src/components/ImageHistoryStrip.tsx`
+- `src/components/FinalAssetPicker.tsx`
+- `supabase/migrations/<timestamp>_image_assistant_rollout.sql`
+
+**Edited**
+- `src/features/project/SuspectsSection.tsx`
+- `src/features/project/HintsSection.tsx`
+- `src/features/project/ProjectOverview.tsx`
+- `src/features/project/marketing/CoverAndVisuals.tsx`
+- `src/features/project/MediaSection.tsx`
+- `src/lib/export.ts`
+- `supabase/functions/generate-image/index.ts`
+- `src/integrations/supabase/types.ts` *(auto-regenerated)*
+
+**Untouched** (already on the new system)
+- `src/features/project/DocumentsSection.tsx`
+- `src/features/project/EnvelopesSection.tsx`
+
+---
+
+## What we are NOT doing
+- Not removing `PromptPanel.tsx` yet — once the four surfaces are switched over and verified, we can delete it in a follow-up to keep this change focused.
+- Not changing the assistant tweak / playbook plumbing — same `suggest-image-prompt` is reused.
+- Not adding a "Generated document file" option to the Final-asset selector on image-only surfaces (you confirmed image vs. uploaded only).
