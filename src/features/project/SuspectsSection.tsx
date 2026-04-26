@@ -6,11 +6,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, Upload, Trash2, UserCircle2 } from "lucide-react";
+import { Plus, Upload, Trash2, UserCircle2, Loader2 } from "lucide-react";
 import { useRef, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
-import { PromptPanel } from "@/components/PromptPanel";
+import { ImagePromptAssistant } from "@/components/ImagePromptAssistant";
+import { ImageHistoryStrip } from "@/components/ImageHistoryStrip";
+import { FinalAssetPicker } from "@/components/FinalAssetPicker";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
 
@@ -20,6 +22,8 @@ interface Suspect {
   name: string;
   thumbnail_url: string | null;
   alt_thumbnail_url: string | null;
+  uploaded_thumbnail_url: string | null;
+  active_version: string;
   summary: string | null;
   role_in_case: string | null;
   motives: string | null;
