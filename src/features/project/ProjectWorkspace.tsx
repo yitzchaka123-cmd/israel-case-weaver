@@ -107,6 +107,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "projects", filter: `id=eq.${projectId}` }, () => {
         qc.invalidateQueries({ queryKey: ["project", projectId] });
         qc.invalidateQueries({ queryKey: ["phase-bar-project-meta", projectId] });
+        qc.invalidateQueries({ queryKey: ["case-board-attention", projectId] });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "suspects", filter: `project_id=eq.${projectId}` }, () => {
         qc.invalidateQueries({ queryKey: ["suspects", projectId] });
