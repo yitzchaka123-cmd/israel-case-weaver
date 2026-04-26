@@ -160,28 +160,17 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     },
   });
 
-  const [approvingLogic, setApprovingLogic] = useState(false);
-  const approveLogicFromAssistant = async () => {
+  // Approving logic must hand off to the assistant — sending the canonical
+  // approval phrase makes the model run `set_solution_summary({mark_approved:
+  // true})` and continue with the Phase 4 hand-off (Final Flow proposal +
+  // propose_options). DB-only updates left the assistant blind, which is why
+  // clicking "Approve logic" used to feel like the conversation just stalled.
+  const approveLogicFromAssistant = () => {
     if (!project?.solution_summary?.trim()) {
       toast.error("Add a solution summary first (Canvas → Logic Flow)");
       return;
     }
-    setApprovingLogic(true);
-    try {
-      const { error } = await supabase
-        .from("projects")
-        .update({ logic_approved_at: new Date().toISOString(), phase: "production" })
-        .eq("id", projectId);
-      if (error) {
-        toast.error(error.message);
-        return;
-      }
-      toast.success("Logic approved — you can now generate documents");
-      qc.invalidateQueries({ queryKey: ["project-ai", projectId] });
-      qc.invalidateQueries({ queryKey: ["project", projectId] });
-    } finally {
-      setApprovingLogic(false);
-    }
+    void send("✅ Approve logic & start producing documents");
   };
 
   const planningModel = project?.ai_provider_planning ?? "openai-5.2";
