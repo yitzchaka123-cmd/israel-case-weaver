@@ -850,8 +850,8 @@ function MessageBubble({
               </div>
             </div>
           )}
-          {!editing && (msg.metadata?.reasoning?.length ?? 0) > 0 && (
-            <ThinkingDisclosure reasoning={msg.metadata!.reasoning!} />
+          {!editing && ((msg.metadata?.reasoning?.length ?? 0) > 0 || (msg.metadata?.stage_history?.length ?? 0) > 0) && (
+            <ThinkingDisclosure msgId={msg.id} reasoning={msg.metadata?.reasoning ?? []} stageHistory={msg.metadata?.stage_history ?? []} />
           )}
           {!editing && tools.length > 0 && <ToolReceipts tools={tools} onOpenAsset={onOpenAsset} />}
           {!editing && tools.length > 0 && <GeneratedAssetsStrip tools={tools} onOpenAsset={onOpenAsset} />}
