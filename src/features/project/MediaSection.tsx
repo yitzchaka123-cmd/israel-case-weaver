@@ -510,7 +510,7 @@ function AssetDialog({
                     onClick={() => setShowHistory((s) => !s)}
                     className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
                   >
-                    <History className="h-3 w-3" />
+                    <HistoryIcon className="h-3 w-3" />
                     {showHistory ? "Hide" : "Show"} previous prompts ({asset.prompt_history.length})
                   </button>
                   {showHistory && (
