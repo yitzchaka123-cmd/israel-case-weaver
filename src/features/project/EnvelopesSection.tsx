@@ -302,6 +302,7 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
                 docs={docs}
                 projectId={projectId}
                 playbookCount={playbook.envelopes.count}
+                gameLanguage={gameLanguage}
               />
             );
           })}
