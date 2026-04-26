@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Trash2, LayoutDashboard, Sparkles, Network, Users, FileText, Mail, Lightbulb, Image as ImageIcon, Megaphone } from "lucide-react";
+import { ArrowLeft, Trash2, LayoutDashboard, Sparkles, Network, Users, FileText, Mail, Lightbulb, Image as ImageIcon, Megaphone, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { ProjectOverview } from "./ProjectOverview";
 import { SuspectsSection } from "./SuspectsSection";
@@ -72,6 +72,34 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     },
   });
 
+  // Derive whether the Case Board needs attention. Truthful, data-driven:
+  // - Summary saved but no logic nodes yet → user must (re)generate logic flow.
+  // - Logic nodes exist but approval is missing → awaiting user approval.
+  // No badge before a summary exists, or after logic is approved.
+  const { data: caseBoardAttention } = useQuery({
+    queryKey: ["case-board-attention", projectId],
+    queryFn: async () => {
+      const [{ data: proj }, nodes] = await Promise.all([
+        supabase
+          .from("projects")
+          .select("solution_summary, logic_approved_at")
+          .eq("id", projectId)
+          .single(),
+        supabase
+          .from("canvas_nodes")
+          .select("id", { count: "exact", head: true })
+          .eq("project_id", projectId)
+          .in("board", ["logic", "final"]),
+      ]);
+      const summaryDone = !!proj?.solution_summary?.trim();
+      const logicApproved = !!proj?.logic_approved_at;
+      const nodeCount = nodes.count ?? 0;
+      if (!summaryDone || logicApproved) return { needsAttention: false, reason: "" };
+      if (nodeCount === 0) return { needsAttention: true, reason: "Summary saved — generate the logic flow" };
+      return { needsAttention: true, reason: `Logic flow has ${nodeCount} nodes — awaiting your approval` };
+    },
+  });
+
   // Realtime subscription keeps project state in sync across users/tabs
   useEffect(() => {
     const channel = supabase
@@ -79,6 +107,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "projects", filter: `id=eq.${projectId}` }, () => {
         qc.invalidateQueries({ queryKey: ["project", projectId] });
         qc.invalidateQueries({ queryKey: ["phase-bar-project-meta", projectId] });
+        qc.invalidateQueries({ queryKey: ["case-board-attention", projectId] });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "suspects", filter: `project_id=eq.${projectId}` }, () => {
         qc.invalidateQueries({ queryKey: ["suspects", projectId] });
@@ -94,6 +123,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
         qc.invalidateQueries({ queryKey: ["nodes", projectId] });
         qc.invalidateQueries({ queryKey: ["production-dashboard", projectId] });
         qc.invalidateQueries({ queryKey: ["phase-bar-counts", projectId] });
+        qc.invalidateQueries({ queryKey: ["case-board-attention", projectId] });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "canvas_edges", filter: `project_id=eq.${projectId}` }, () => {
         qc.invalidateQueries({ queryKey: ["edges", projectId] });
@@ -212,6 +242,8 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
                 const Icon = t.icon;
                 const showPulse = t.v === "assistant" && assistantRunning;
                 const showLiveDot = t.v === "canvas" && canvasLive;
+                const showAttention =
+                  t.v === "canvas" && !canvasLive && !!caseBoardAttention?.needsAttention;
                 return (
                   <TabsTrigger
                     key={t.v}
@@ -235,6 +267,15 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
                           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-80" />
                           <span className="absolute inline-flex h-full w-full animate-pulse rounded-full bg-success opacity-60" />
                           <span className="relative inline-flex h-2 w-2 rounded-full bg-success ring-2 ring-success/40 shadow-[0_0_8px_rgba(34,197,94,0.7)]" />
+                        </span>
+                      )}
+                      {showAttention && (
+                        <span
+                          className="absolute -top-2 -right-2 flex items-center justify-center h-3.5 w-3.5 rounded-full bg-destructive text-destructive-foreground ring-2 ring-background shadow-[0_0_6px_rgba(220,38,38,0.6)]"
+                          title={caseBoardAttention?.reason || "Case Board needs your attention"}
+                          aria-label={caseBoardAttention?.reason || "Case Board needs your attention"}
+                        >
+                          <AlertCircle className="h-2.5 w-2.5" strokeWidth={3} />
                         </span>
                       )}
                     </span>
