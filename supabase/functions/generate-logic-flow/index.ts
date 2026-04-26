@@ -1,8 +1,19 @@
 // Generate a proposed game-solving logic flow (clues, red herrings, suspects, summary)
 // for a project. Writes nodes/edges into the "logic" board and the solution_summary on the project.
+//
+// As of this revision, when the chosen model supports SSE streaming (OpenAI
+// or the Lovable AI Gateway), we stream the tool-call arguments and INSERT
+// each node / edge into the database the moment its JSON object closes. The
+// front-end Canvas is already subscribed to canvas_nodes/edges via realtime,
+// so users see the board paint itself live as the model writes.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { chatCompletions, providerLabel, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
 import { claudeSkillPromptBlock, loadClaudeSkillsForSurface, withClaudeSkills } from "../_shared/claude-skills.ts";
+import {
+  canStream,
+  extractCompletedArrayItems,
+  streamChatCompletionsToolCall,
+} from "../_shared/stream-tool-call.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -45,6 +56,24 @@ const NODE_COLORS: Record<string, string> = {
   hint: "oklch(0.78 0.16 75)",
 };
 
+interface NodeJson {
+  id: string;
+  type: string;
+  title: string;
+  description?: string;
+  envelope_number?: number;
+  x: number;
+  y: number;
+}
+interface EdgeJson { source: string; target: string; label?: string }
+interface EnvelopeJson { number: number; label: string; task: string; design_instructions?: string }
+interface ParsedFlow {
+  summary?: string;
+  envelopes?: EnvelopeJson[];
+  nodes: NodeJson[];
+  edges: EdgeJson[];
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -64,10 +93,8 @@ Deno.serve(async (req) => {
       });
     }
     const { data: suspects } = await supa.from("suspects").select("*").eq("project_id", projectId).order("position", { ascending: true });
-    const { data: existingEnvelopes } = await supa.from("envelopes").select("id, number, label, task, design_instructions, linked_document_ids").eq("project_id", projectId).order("number", { ascending: true });
+    const { data: existingEnvelopes } = await supa.from("envelopes").select("id, number, label, task, design_instructions, linked_node_ids").eq("project_id", projectId).order("number", { ascending: true });
 
-    // If no envelopes exist yet, ask the model to scaffold them. Derive a sensible
-    // default count from target_doc_count (≈ one envelope per 7 docs, clamped 4-7).
     const noEnvelopes = !existingEnvelopes || existingEnvelopes.length === 0;
     const targetDocs = Number(project.target_doc_count ?? 40);
     const scaffoldCount = noEnvelopes
@@ -83,8 +110,8 @@ Deno.serve(async (req) => {
     const useApproved = useExistingSummary === undefined ? !!approvedSummary : (useExistingSummary && !!approvedSummary);
 
     const sys = useApproved
-      ? `You are a senior mystery game designer. The user has ALREADY APPROVED the case's solution narrative — your job is to break that exact narrative into a printable case logic flow (clues, deductions, red herrings, edges). DO NOT invent a different culprit, motive, weapon, or chain of events. Every node and edge must directly support or mislead from the approved narrative. The output must be a single JSON tool call. No prose. ${gameLanguage} is allowed for short labels but English keys.\n\n${claudeSkillPromptBlock(enabledSkills, "analysis")}`
-      : `You are a senior mystery game designer. Produce a tight, solvable case logic flow for a printable detective game. The output must be a single JSON tool call. No prose. ${gameLanguage} is allowed for short labels but English keys.\n\n${claudeSkillPromptBlock(enabledSkills, "analysis")}`;
+      ? `You are a senior mystery game designer. The user has ALREADY APPROVED the case's solution narrative — your job is to break that exact narrative into a printable case logic flow (clues, deductions, red herrings, edges). DO NOT invent a different culprit, motive, weapon, or chain of events. Every node and edge must directly support or mislead from the approved narrative. The output must be a single JSON tool call. No prose. ${gameLanguage} is allowed for short labels but English keys.\n\nIMPORTANT FOR LIVE STREAMING: emit the tool call's arguments object with keys in this exact order — first "envelopes" (if any), then "nodes" (one element at a time, fully closed before moving to the next), then "edges" (also one fully-closed element at a time), and finally "summary". This lets the user's canvas paint progressively as you write.\n\n${claudeSkillPromptBlock(enabledSkills, "analysis")}`
+      : `You are a senior mystery game designer. Produce a tight, solvable case logic flow for a printable detective game. The output must be a single JSON tool call. No prose. ${gameLanguage} is allowed for short labels but English keys.\n\nIMPORTANT FOR LIVE STREAMING: emit the tool call's arguments object with keys in this exact order — first "envelopes" (if any), then "nodes" (one element at a time, fully closed before moving to the next), then "edges" (also one fully-closed element at a time), and finally "summary". This lets the user's canvas paint progressively as you write.\n\n${claudeSkillPromptBlock(enabledSkills, "analysis")}`;
 
     const approvedBlock = useApproved
       ? `\nAPPROVED SOLUTION (source of truth — your flow MUST match this exactly):\n"""\n${approvedSummary}\n"""\n\nYour job is NOT to write a new solution. Your job is to decompose the approved solution above into the nodes/edges below. The "summary" field you return should restate the approved solution faithfully (you may tighten wording but must not change facts, culprit, motive, or method).\n`
@@ -123,14 +150,13 @@ Position nodes in a left-to-right flow: hints far left (x ≈ -200), clues left 
 For envelope nodes specifically, set the node "id" to "env_<number>" matching its envelope number (env_1, env_2, …) so they can be cross-referenced.`;
 
     const tool = {
-      type: "function",
+      type: "function" as const,
       function: {
         name: "emit_logic_flow",
         description: "Return the case logic flow",
         parameters: {
           type: "object",
           properties: {
-            summary: { type: "string", description: "3-5 short paragraphs explaining how the case is solved" },
             envelopes: {
               type: "array",
               description: noEnvelopes
@@ -178,8 +204,9 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
                 additionalProperties: false,
               },
             },
+            summary: { type: "string", description: "3-5 short paragraphs explaining how the case is solved" },
           },
-          required: ["summary", "nodes", "edges"],
+          required: ["nodes", "edges", "summary"],
           additionalProperties: false,
         },
       },
@@ -187,113 +214,237 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
 
     const startedAt = Date.now();
     const callerUserId = await getUserIdFromAuth(req);
-    const resp = await chatCompletions(withClaudeSkills({
-      model,
-      messages: [{ role: "system", content: sys }, { role: "user", content: userPrompt }],
-      tools: [tool],
-      tool_choice: { type: "function", function: { name: "emit_logic_flow" } },
-    }, enabledSkills));
-    const fb = extractFallback(resp, model);
 
-    if (!resp.ok) {
-      const provider = model.startsWith("openai/") ? "OpenAI"
-        : model.startsWith("anthropic/") ? "Anthropic"
-        : model.startsWith("gemini-direct/") ? "Google Gemini"
-        : "Lovable AI";
-      const t = await resp.text().catch(() => "");
-      console.error(`logic-flow ${provider} error`, resp.status, t);
-      await logAiRun({
-        userId: callerUserId, projectId, surface: "generate-logic-flow",
-        requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
-        status: "error", latencyMs: Date.now() - startedAt,
-        errorMessage: `${provider} ${resp.status}: ${t.slice(0, 200)}`, promptExcerpt: userPrompt,
-      });
-      if (resp.status === 429) return new Response(JSON.stringify({ error: `${provider} rate limit — try again shortly.` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      if (resp.status === 402) {
-        const hint = provider === "Lovable AI"
-          ? "Add credits in Settings → Workspace → Usage, or switch this project's planning provider in Settings → AI provider routing."
-          : `Check your ${provider} account billing.`;
-        return new Response(JSON.stringify({ error: `${provider} credits/key issue. ${hint}` }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
-      if (resp.status === 401) return new Response(JSON.stringify({ error: `${provider} authentication failed — check the API key in Settings → API keys.` }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      return new Response(JSON.stringify({ error: `${provider} error (status ${resp.status})${t ? ": " + t.slice(0, 200) : ""}` }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
-
-    const data = await resp.json();
-    const call = data.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
-    if (!call) {
-      return new Response(JSON.stringify({ error: "No structured output returned" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
-    const parsed = JSON.parse(call) as {
-      summary: string;
-      envelopes?: { number: number; label: string; task: string; design_instructions?: string }[];
-      nodes: { id: string; type: string; title: string; description?: string; envelope_number?: number; x: number; y: number }[];
-      edges: { source: string; target: string; label?: string }[];
-    };
-
+    // Clear the board up-front so the user sees it fill in live (instead of a
+    // stale board sitting there until the new one arrives).
     if (replace) {
       await supa.from("canvas_edges").delete().eq("project_id", projectId).eq("board", "logic");
       await supa.from("canvas_nodes").delete().eq("project_id", projectId).eq("board", "logic");
     }
 
-    // If envelopes were scaffolded, insert them BEFORE nodes so we can link them.
+    // Shared state populated by either the streaming or batch path.
+    let parsed: ParsedFlow | null = null;
     let envelopesForLinking = existingEnvelopes ?? [];
-    if (noEnvelopes && parsed.envelopes && parsed.envelopes.length > 0) {
-      const envRows = parsed.envelopes
-        .sort((a, b) => a.number - b.number)
-        .map((e) => ({
+    const idMap = new Map<string, string>(); // model id (e.g. "clue_1") → DB uuid
+    const nodeOrderForEnvelopeLink: { modelId: string; rowId: string; envelope_number?: number; type: string }[] = [];
+    let insertedNodeCount = 0;
+    let insertedEdgeCount = 0;
+    let effectiveModelOverride: string | undefined;
+    let streamingErr: { status: number; text: string } | null = null;
+
+    // Helpers used by both paths.
+    async function insertEnvelopeRow(env: EnvelopeJson) {
+      const { data: insertedEnv, error: envErr } = await supa
+        .from("envelopes")
+        .insert({
           project_id: projectId,
-          number: e.number,
-          label: e.label ?? null,
-          task: e.task ?? null,
-          design_instructions: e.design_instructions ?? null,
+          number: env.number,
+          label: env.label ?? null,
+          task: env.task ?? null,
+          design_instructions: env.design_instructions ?? null,
           status: "draft",
-        }));
-      const { data: insertedEnvs, error: envErr } = await supa.from("envelopes").insert(envRows).select("id, number, label, task, design_instructions, linked_node_ids");
+        })
+        .select("id, number, label, task, design_instructions, linked_node_ids")
+        .single();
       if (envErr) {
         console.error("envelope scaffold insert", envErr);
-      } else if (insertedEnvs) {
-        envelopesForLinking = insertedEnvs.sort((a, b) => (a.number ?? 0) - (b.number ?? 0));
+        return;
+      }
+      if (insertedEnv) {
+        envelopesForLinking = [...envelopesForLinking, insertedEnv].sort(
+          (a, b) => (a.number ?? 0) - (b.number ?? 0),
+        );
       }
     }
 
-    const idMap = new Map<string, string>();
-    const nodeRows = parsed.nodes.map((n) => {
+    async function insertNodeRow(n: NodeJson) {
       const data: Record<string, unknown> = {};
       if (n.type === "envelope" && typeof n.envelope_number === "number") {
         data.envelopeNumber = n.envelope_number;
       }
-      return {
-        project_id: projectId,
-        board: "logic",
-        node_type: n.type,
-        title: n.title.slice(0, 200),
-        description: n.description ?? null,
-        color: NODE_COLORS[n.type] ?? null,
-        position_x: n.x,
-        position_y: n.y,
-        data,
-      };
-    });
-    const { data: insertedNodes, error: nErr } = await supa.from("canvas_nodes").insert(nodeRows).select();
-    if (nErr) {
-      console.error("node insert", nErr);
-      return new Response(JSON.stringify({ error: nErr.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const { data: row, error: nErr } = await supa
+        .from("canvas_nodes")
+        .insert({
+          project_id: projectId,
+          board: "logic",
+          node_type: n.type,
+          title: (n.title ?? "").slice(0, 200),
+          description: n.description ?? null,
+          color: NODE_COLORS[n.type] ?? null,
+          position_x: typeof n.x === "number" ? n.x : 0,
+          position_y: typeof n.y === "number" ? n.y : 0,
+          data,
+        })
+        .select("id")
+        .single();
+      if (nErr || !row) {
+        console.error("node insert", nErr);
+        return;
+      }
+      idMap.set(n.id, row.id);
+      nodeOrderForEnvelopeLink.push({ modelId: n.id, rowId: row.id, envelope_number: n.envelope_number, type: n.type });
+      insertedNodeCount += 1;
     }
-    insertedNodes?.forEach((row, i) => idMap.set(parsed.nodes[i].id, row.id));
 
-    // Cross-link envelope nodes ↔ envelope rows by matching envelope_number
-    // (falling back to order-of-appearance for older clients that don't emit it).
-    if (envelopesForLinking.length > 0 && insertedNodes) {
-      const envNodes = parsed.nodes
-        .map((n, i) => ({ n, rowId: insertedNodes[i]?.id }))
-        .filter((x) => x.n.type === "envelope" && x.rowId);
+    // Edges whose endpoints haven't streamed yet are queued and retried.
+    const pendingEdges: EdgeJson[] = [];
+    async function tryFlushEdges(extra: EdgeJson[] = []) {
+      const all = [...pendingEdges, ...extra];
+      pendingEdges.length = 0;
+      const ready: { project_id: string; board: string; source_id: string; target_id: string; label: string | null }[] = [];
+      for (const e of all) {
+        const s = idMap.get(e.source);
+        const t = idMap.get(e.target);
+        if (s && t) {
+          ready.push({ project_id: projectId, board: "logic", source_id: s, target_id: t, label: e.label ?? null });
+        } else {
+          pendingEdges.push(e);
+        }
+      }
+      if (ready.length > 0) {
+        const { error: eErr } = await supa.from("canvas_edges").insert(ready);
+        if (eErr) console.error("edge insert", eErr);
+        else insertedEdgeCount += ready.length;
+      }
+    }
 
+    // ─── Streaming path ──────────────────────────────────────────────────
+    const useStreaming = canStream(model);
+    if (useStreaming) {
+      console.log(`[generate-logic-flow] streaming via ${model}`);
+
+      let envOffset = 0;
+      let nodeOffset = 0;
+      let edgeOffset = 0;
+      // Serialize all stream-driven DB writes so we don't fire 50 inserts in
+      // parallel from inside onChunk.
+      let pump: Promise<void> = Promise.resolve();
+
+      const result = await streamChatCompletionsToolCall(
+        {
+          model,
+          messages: [
+            { role: "system", content: sys },
+            { role: "user", content: userPrompt },
+          ],
+          tool,
+        },
+        (fullArgs) => {
+          pump = pump.then(async () => {
+            // Envelopes (only matters when noEnvelopes is true).
+            if (noEnvelopes) {
+              const envRes = extractCompletedArrayItems<EnvelopeJson>(fullArgs, "envelopes", envOffset);
+              envOffset = envRes.nextOffset || envOffset;
+              for (const env of envRes.items) {
+                if (env && typeof env.number === "number") await insertEnvelopeRow(env);
+              }
+            }
+            // Nodes.
+            const nodeRes = extractCompletedArrayItems<NodeJson>(fullArgs, "nodes", nodeOffset);
+            nodeOffset = nodeRes.nextOffset || nodeOffset;
+            for (const n of nodeRes.items) {
+              if (n && n.id && n.type && n.title) await insertNodeRow(n);
+            }
+            // Edges.
+            const edgeRes = extractCompletedArrayItems<EdgeJson>(fullArgs, "edges", edgeOffset);
+            edgeOffset = edgeRes.nextOffset || edgeOffset;
+            if (edgeRes.items.length) await tryFlushEdges(edgeRes.items);
+            else if (pendingEdges.length) await tryFlushEdges();
+          }).catch((err) => {
+            console.error("[generate-logic-flow] stream pump error", err);
+          });
+        },
+      );
+
+      await pump;
+
+      if (!result.ok) {
+        streamingErr = { status: result.status, text: result.errorText ?? "stream failed" };
+        // Fall through to batch path below as a safety net (only if NOTHING
+        // streamed through). If we did get partial data, keep what landed.
+      }
+
+      if (result.effectiveModel) effectiveModelOverride = result.effectiveModel;
+
+      // Try to parse the full final args for the summary + a final reconciliation.
+      if (result.finalArguments) {
+        try {
+          parsed = JSON.parse(result.finalArguments) as ParsedFlow;
+        } catch {
+          // Partial JSON — try to salvage what we already inserted; summary
+          // may be missing.
+          parsed = { nodes: [], edges: [], summary: "" } as ParsedFlow;
+        }
+      }
+    }
+
+    // ─── Batch fallback ──────────────────────────────────────────────────
+    // Used when the model can't stream OR when streaming returned zero data.
+    const needsBatchFallback = !useStreaming || (streamingErr && insertedNodeCount === 0);
+    if (needsBatchFallback) {
+      console.log(`[generate-logic-flow] batch path via ${model}`);
+      const resp = await chatCompletions(withClaudeSkills({
+        model,
+        messages: [{ role: "system", content: sys }, { role: "user", content: userPrompt }],
+        tools: [tool],
+        tool_choice: { type: "function", function: { name: "emit_logic_flow" } },
+      }, enabledSkills));
+      const fb = extractFallback(resp, model);
+
+      if (!resp.ok) {
+        const provider = model.startsWith("openai/") ? "OpenAI"
+          : model.startsWith("anthropic/") ? "Anthropic"
+          : model.startsWith("gemini-direct/") ? "Google Gemini"
+          : "Lovable AI";
+        const t = await resp.text().catch(() => "");
+        console.error(`logic-flow ${provider} error`, resp.status, t);
+        await logAiRun({
+          userId: callerUserId, projectId, surface: "generate-logic-flow",
+          requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
+          status: "error", latencyMs: Date.now() - startedAt,
+          errorMessage: `${provider} ${resp.status}: ${t.slice(0, 200)}`, promptExcerpt: userPrompt,
+        });
+        if (resp.status === 429) return new Response(JSON.stringify({ error: `${provider} rate limit — try again shortly.` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        if (resp.status === 402) {
+          const hint = provider === "Lovable AI"
+            ? "Add credits in Settings → Workspace → Usage, or switch this project's planning provider in Settings → AI provider routing."
+            : `Check your ${provider} account billing.`;
+          return new Response(JSON.stringify({ error: `${provider} credits/key issue. ${hint}` }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        if (resp.status === 401) return new Response(JSON.stringify({ error: `${provider} authentication failed — check the API key in Settings → API keys.` }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ error: `${provider} error (status ${resp.status})${t ? ": " + t.slice(0, 200) : ""}` }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      const data = await resp.json();
+      const call = data.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
+      if (!call) {
+        return new Response(JSON.stringify({ error: "No structured output returned" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      parsed = JSON.parse(call) as ParsedFlow;
+      effectiveModelOverride = fb.effectiveModel;
+
+      // Insert envelopes (when scaffolding) so we can link.
+      if (noEnvelopes && parsed.envelopes && parsed.envelopes.length > 0) {
+        for (const env of parsed.envelopes.sort((a, b) => a.number - b.number)) {
+          await insertEnvelopeRow(env);
+        }
+      }
+      // Insert nodes.
+      for (const n of parsed.nodes) await insertNodeRow(n);
+      // Insert edges.
+      await tryFlushEdges(parsed.edges);
+    }
+
+    // Final flush of any edges still waiting.
+    await tryFlushEdges();
+
+    // ─── Post-processing (envelope cross-link + hint scaffold + summary) ──
+    if (envelopesForLinking.length > 0 && nodeOrderForEnvelopeLink.length > 0) {
+      const envNodes = nodeOrderForEnvelopeLink.filter((x) => x.type === "envelope");
       for (let i = 0; i < envNodes.length; i += 1) {
-        const { n, rowId } = envNodes[i];
-        // Match by envelope_number first, then fall back to ordinal
-        const env = (typeof n.envelope_number === "number"
-          ? envelopesForLinking.find((e) => e.number === n.envelope_number)
+        const { rowId, envelope_number } = envNodes[i];
+        const env = (typeof envelope_number === "number"
+          ? envelopesForLinking.find((e) => e.number === envelope_number)
           : null) ?? envelopesForLinking[i];
         if (!env || !rowId) continue;
         const existing = (env.linked_node_ids ?? []) as string[];
@@ -302,44 +453,29 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
       }
     }
 
-    // For every emitted hint node, scaffold an empty 3-rung row set in the
-    // `hints` table so the Hints tab is pre-populated.
-    if (insertedNodes) {
-      const hintNodes = parsed.nodes.filter((n) => n.type === "hint");
-      if (hintNodes.length > 0) {
-        const { data: existingHints } = await supa
-          .from("hints").select("stage").eq("project_id", projectId);
-        const maxStage = (existingHints ?? []).reduce(
-          (acc, r) => Math.max(acc, Number((r as { stage?: number }).stage ?? 0)), 0,
-        );
-        const hintRows: { project_id: string; stage: number; level: number; text: string }[] = [];
-        hintNodes.forEach((_, i) => {
-          const stage = maxStage + i + 1;
-          for (let level = 1; level <= 3; level += 1) {
-            hintRows.push({ project_id: projectId, stage, level, text: "" });
-          }
-        });
-        if (hintRows.length > 0) {
-          const { error: hErr } = await supa.from("hints").insert(hintRows);
-          if (hErr) console.error("hint scaffold insert", hErr);
+    // Hint scaffolding — one 3-rung row per hint node.
+    const hintNodeCount = nodeOrderForEnvelopeLink.filter((x) => x.type === "hint").length;
+    if (hintNodeCount > 0) {
+      const { data: existingHints } = await supa
+        .from("hints").select("stage").eq("project_id", projectId);
+      const maxStage = (existingHints ?? []).reduce(
+        (acc, r) => Math.max(acc, Number((r as { stage?: number }).stage ?? 0)), 0,
+      );
+      const hintRows: { project_id: string; stage: number; level: number; text: string }[] = [];
+      for (let i = 0; i < hintNodeCount; i += 1) {
+        const stage = maxStage + i + 1;
+        for (let level = 1; level <= 3; level += 1) {
+          hintRows.push({ project_id: projectId, stage, level, text: "" });
         }
+      }
+      if (hintRows.length > 0) {
+        const { error: hErr } = await supa.from("hints").insert(hintRows);
+        if (hErr) console.error("hint scaffold insert", hErr);
       }
     }
 
-    const edgeRows = parsed.edges
-      .map((e) => {
-        const s = idMap.get(e.source);
-        const t = idMap.get(e.target);
-        if (!s || !t) return null;
-        return { project_id: projectId, board: "logic", source_id: s, target_id: t, label: e.label ?? null };
-      })
-      .filter(Boolean) as { project_id: string; board: string; source_id: string; target_id: string; label: string | null }[];
-    if (edgeRows.length) {
-      const { error: eErr } = await supa.from("canvas_edges").insert(edgeRows);
-      if (eErr) console.error("edge insert", eErr);
-    }
-
-    if (!useApproved) {
+    // Solution summary (only when not running in "approved-mode").
+    if (!useApproved && parsed?.summary) {
       await supa.from("projects").update({ solution_summary: parsed.summary }).eq("id", projectId);
     }
 
@@ -354,19 +490,20 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
 
     await logAiRun({
       userId: callerUserId, projectId, surface: "generate-logic-flow",
-      requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
+      requestedModel: model, effectiveModel: effectiveModelOverride, fallback: streamingErr ? "stream-error" : "none",
       status: "ok", latencyMs: Date.now() - startedAt, promptExcerpt: userPrompt,
     });
+
     return new Response(JSON.stringify({
       ok: true,
-      summary: useApproved ? approvedSummary : parsed.summary,
+      summary: useApproved ? approvedSummary : (parsed?.summary ?? ""),
       usedApprovedSummary: useApproved,
-      nodeCount: parsed.nodes.length,
-      edgeCount: edgeRows.length,
-      scaffoldedEnvelopes: noEnvelopes ? (parsed.envelopes?.length ?? 0) : 0,
+      nodeCount: insertedNodeCount,
+      edgeCount: insertedEdgeCount,
+      scaffoldedEnvelopes: noEnvelopes ? envelopesForLinking.length : 0,
+      streamed: useStreaming && !streamingErr,
       model,
-      effectiveModel: fb.effectiveModel,
-      fallback: fb.fallback,
+      effectiveModel: effectiveModelOverride,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

@@ -137,6 +137,36 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
   const posTimers = useRef<Record<string, number>>({});
   const arrangePressRef = useRef(0);
 
+  // Detect live streaming of the logic flow: when the node count for this
+  // board ticks up via realtime, mark a "last grew" timestamp. If the board
+  // grew within the last 8s we show a "Drawing live…" pill in the toolbar
+  // so the user knows the AI is actively writing nodes onto their canvas.
+  const lastNodeCountRef = useRef<number>(0);
+  const initialLoadRef = useRef<boolean>(true);
+  const [liveGrewAt, setLiveGrewAt] = useState<number>(0);
+  const [nowTs, setNowTs] = useState<number>(() => Date.now());
+  useEffect(() => {
+    const next = dbNodes?.length ?? 0;
+    if (initialLoadRef.current) {
+      // Don't treat the first hydration as growth.
+      if (dbNodes !== undefined) {
+        initialLoadRef.current = false;
+        lastNodeCountRef.current = next;
+      }
+      return;
+    }
+    if (next > lastNodeCountRef.current) {
+      setLiveGrewAt(Date.now());
+    }
+    lastNodeCountRef.current = next;
+  }, [dbNodes]);
+  const isLiveBuilding = board === "logic" && nowTs - liveGrewAt < 8_000 && liveGrewAt > 0;
+  useEffect(() => {
+    if (!isLiveBuilding) return;
+    const t = window.setInterval(() => setNowTs(Date.now()), 1_000);
+    return () => window.clearInterval(t);
+  }, [isLiveBuilding]);
+
   // Pick up changes made from Settings → AI provider routing → Logic Flow.
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -561,6 +591,15 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
           </DropdownMenuContent>
         </DropdownMenu>
 
+        {board === "logic" && isLiveBuilding && (
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-2.5 py-1 text-xs text-primary animate-pulse"
+            title="The AI is streaming new nodes and edges onto this board right now"
+          >
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Drawing live…
+          </span>
+        )}
         {board === "logic" && (
           <>
             <Select
