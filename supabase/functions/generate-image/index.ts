@@ -122,7 +122,119 @@ async function getUserIdFromAuth(req: Request): Promise<string | null> {
   }
 }
 
+// Inserts a pending image_generations row, kicks the heavy work via
+// EdgeRuntime.waitUntil so the worker keeps running even if the browser
+// closes, and returns the job id immediately. The UI subscribes via realtime
+// to flip from `pending` → `done`/`error`.
+async function handleBackground(req: Request, body: Body, rawBody: string): Promise<Response> {
+  const supa = createClient(SUPABASE_URL, SERVICE);
+  const sourceCols = jobSourceColumns(body.target ?? "media", body.targetId, body.projectId);
+
+  const { data: job, error: jobErr } = await supa
+    .from("image_generations")
+    .insert({
+      project_id: body.projectId,
+      prompt: body.prompt,
+      status: "pending",
+      model: body.modelOverride ?? null,
+      quality: body.quality ?? null,
+      ...sourceCols,
+    } as any)
+    .select("id")
+    .single();
+
+  if (jobErr || !job) {
+    return new Response(JSON.stringify({ error: jobErr?.message ?? "Could not create job" }), {
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const jobId = job.id as string;
+
+  // Run the rest of the work in the background. We rebuild a synthetic Request
+  // so the existing sync handler can re-parse the body via req.json(). We do
+  // NOT await this — the response goes back to the client right away.
+  const synthetic = new Request(req.url, {
+    method: req.method,
+    headers: req.headers,
+    body: rawBody,
+  });
+
+  const work = (async () => {
+    try {
+      const resp = await runImageGeneration(synthetic);
+      const text = await resp.clone().text();
+      let parsed: Record<string, unknown> = {};
+      try { parsed = JSON.parse(text); } catch { /* leave empty */ }
+
+      if (resp.ok && typeof parsed.url === "string") {
+        await supa.from("image_generations").update({
+          status: "done",
+          url: parsed.url as string,
+          effective_model: (parsed.effectiveModel as string) ?? null,
+          fallback: (parsed.fallback as string) ?? null,
+          provider: (parsed.provider as string) ?? null,
+          updated_at: new Date().toISOString(),
+        } as any).eq("id", jobId);
+      } else {
+        const msg = (parsed.error as string) || `Failed (${resp.status})`;
+        await supa.from("image_generations").update({
+          status: "error",
+          error_message: msg,
+          updated_at: new Date().toISOString(),
+        } as any).eq("id", jobId);
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Background image worker crashed";
+      console.error("background image worker error", msg);
+      await supa.from("image_generations").update({
+        status: "error",
+        error_message: msg,
+        updated_at: new Date().toISOString(),
+      } as any).eq("id", jobId);
+    }
+  })();
+
+  // Tell the runtime to keep this Worker alive until the work resolves.
+  // Without this, returning the response would cancel the in-flight fetches.
+  // deno-lint-ignore no-explicit-any
+  const ER = (globalThis as any).EdgeRuntime;
+  if (ER && typeof ER.waitUntil === "function") {
+    ER.waitUntil(work);
+  }
+
+  return new Response(
+    JSON.stringify({ jobId, status: "pending" }),
+    { status: 202, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+  );
+}
+
+// Top-level handler: peeks the body to decide between background and sync
+// modes. Background mode short-circuits and returns a job id; sync mode runs
+// the legacy code path inline and returns the full result.
 Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  const rawBody = await req.text();
+  let parsed: Body | null = null;
+  try { parsed = JSON.parse(rawBody) as Body; } catch { /* fall through */ }
+
+  if (parsed?.mode === "background" && parsed.projectId && parsed.prompt) {
+    return await handleBackground(req, parsed, rawBody);
+  }
+
+  const synthetic = new Request(req.url, {
+    method: req.method,
+    headers: req.headers,
+    body: rawBody,
+  });
+  return await runImageGeneration(synthetic);
+});
+
+// The legacy synchronous image-generation pipeline. Unchanged logic — just
+// renamed from the inline Deno.serve handler so background mode can also call
+// it from inside EdgeRuntime.waitUntil().
+async function runImageGeneration(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   const startedAt = Date.now();
