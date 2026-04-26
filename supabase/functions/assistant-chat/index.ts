@@ -2212,14 +2212,28 @@ Deno.serve(async (req) => {
       const thinkingBlocks = (msg as { thinking_blocks?: Array<{ type: "thinking"; text: string; signature?: string }> }).thinking_blocks;
 
       if (toolCalls && toolCalls.length > 0) {
+        if (!Array.isArray(msgReasoning) || msgReasoning.length === 0) {
+          const segs: ReasoningSegment[] = toolCalls.map((c) => {
+            let preview = "";
+            try {
+              const obj = JSON.parse(c.function.arguments || "{}") as Record<string, unknown>;
+              const keys = Object.keys(obj).slice(0, 4);
+              preview = keys.map((k) => {
+                const v = obj[k];
+                const s = typeof v === "string" ? v : JSON.stringify(v);
+                return `${k}: ${s.length > 60 ? s.slice(0, 57) + "…" : s}`;
+              }).join(", ");
+            } catch { /* ignore */ }
+            return { type: "thinking", text: `Calling ${c.function.name}${preview ? ` — ${preview}` : ""}` };
+          });
+          if (segs.length) reasoningRounds.push({ round, segments: segs });
+        }
         convo.push({ role: "assistant", content: msg.content ?? "", tool_calls: toolCalls, ...(thinkingBlocks?.length ? { thinking: thinkingBlocks } : {}) });
         for (const call of toolCalls) {
           let args: Record<string, unknown> = {};
           try { args = JSON.parse(call.function.arguments || "{}"); } catch { /* ignore */ }
+          flushProgress(`running ${call.function.name}…`);
           const result = await executeTool(supa, projectId, call.function.name, args, toolMessageId, playbook);
-          // Persist args alongside name+result so the UI receipt can render the
-          // exact field values that changed (e.g. project field updates).
-          // Strip propose_options args — they're already echoed via result.options.
           const argsForUi = call.function.name === "propose_options" ? undefined : args;
           executedTools.push({ name: call.function.name, args: argsForUi, result });
           convo.push({
@@ -2227,6 +2241,7 @@ Deno.serve(async (req) => {
             tool_call_id: call.id,
             content: JSON.stringify(result),
           });
+          flushProgress(`finished ${call.function.name}`);
         }
         continue;
       }
