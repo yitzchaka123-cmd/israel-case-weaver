@@ -180,13 +180,13 @@ When the user's NEXT message is "✅ Approve logic & start producing documents" 
 Never tell the user "click Approve logic on the Canvas" if you can offer this button — the in-chat approval IS the canonical path. Mention the Canvas button only as a fallback if the user prefers to review the board first.
 
 SUMMARY-REWRITE RULE — REBUILDING THE LOGIC FLOW IS MANDATORY AFTER ANY SUMMARY REWRITE:
-A new solution_summary invalidates the existing Logic Flow because the chain of clues, deductions, red herrings and connecting edges depends directly on the summary. Whenever you call \`set_solution_summary\` AND the project already has any logic-board canvas nodes (see "Logic flow exists" in the rosters block above), you MUST in the SAME assistant turn — regardless of whether \`mark_approved\` was true or false:
-  1. Tell the user in 1–2 sentences that the summary changed and the existing Logic Flow board no longer matches it (stale clues, broken connections), so it needs to be redrawn from the new summary.
+A new solution_summary invalidates the existing Logic Flow because the chain of clues, deductions, red herrings and connecting edges depends directly on the summary. The backend now AUTOMATICALLY clears \`logic_approved_at\` whenever \`set_solution_summary\` is called with new text and \`mark_approved\` is not true — so the green "Logic approved" badge on the Case Board disappears the instant you rewrite the summary. This is intentional. Whenever you call \`set_solution_summary\` AND the project already has any logic-board canvas nodes (see "Logic flow exists" in the rosters block above), you MUST in the SAME assistant turn — regardless of whether \`mark_approved\` was true or false:
+  1. Tell the user in 1–2 sentences that the summary changed, the existing Logic Flow board no longer matches it (stale clues, broken connections), AND that the prior logic approval has been cleared, so it needs to be redrawn from the new summary and re-approved before document generation will run again.
   2. Call \`propose_options\` with EXACTLY these two buttons (label / send identical):
-       • "🔁 Rebuild logic flow from new summary"
-       • "Keep old logic flow for now"
+       • "🔁 Rebuild logic flow from new summary (and re-approve)"
+       • "Keep old logic flow — I'll re-approve later"
   3. Wait for the user's choice.
-When the user's NEXT message is "🔁 Rebuild logic flow from new summary" (substring "Rebuild logic flow" is enough), you MUST immediately call \`generate_logic_flow\` with \`use_existing_summary: true\`, then in one short sentence tell them to open Canvas → Logic Flow to watch it draw itself live (it usually settles within 2-3 minutes), and that you'll ping them when it's done. Do NOT call \`generate_logic_flow\` more than once per turn.
+When the user's NEXT message contains "Rebuild logic flow" (substring match is enough), you MUST immediately call \`generate_logic_flow\` with \`use_existing_summary: true\`, then in one short sentence tell them to open Canvas → Logic Flow to watch it draw itself live (it usually settles within 2-3 minutes), and that you'll ping them when it's done so they can re-approve. Do NOT call \`generate_logic_flow\` more than once per turn.
 Never quietly leave a stale flow in place after a summary rewrite — the user's #1 expectation is that summary edits flow through to the board.
 
 Phase 4 Documents: Doc 0 = master inventory of every document in the box; then randomized doc numbers, varied types & print sizes, bodies in the selected Game language. Interrogations must be long, realistic, with pauses & body language. Doc 0 lists EVERY document the player has from the start (organized by topic / type / investigative area, NOT by envelope) plus the sealed task envelopes as separate items with their trigger conditions. Documents are NOT distributed by envelope — leave \`envelope_number\` null on documents unless the user explicitly wants a document physically tucked inside a task envelope (rare).
@@ -1045,21 +1045,36 @@ async function executeTool(
       if (!summary) return { ok: false, message: "summary is required" };
       const { data: current } = await supa
         .from("projects")
-        .select("assistant_origins")
+        .select("assistant_origins, solution_summary, logic_approved_at")
         .eq("id", projectId)
         .single();
       const origins = { ...(current?.assistant_origins as Record<string, string> ?? {}) };
       if (messageId) origins.solution_summary = messageId;
       const patch: Record<string, unknown> = { solution_summary: summary, assistant_origins: origins };
-      if (markApproved) patch.logic_approved_at = new Date().toISOString();
+      // Approval is bound to the EXACT summary text it approved. Any rewrite
+      // (without an explicit re-approval in the same call) invalidates the
+      // prior approval so the Case Board no longer shows a stale green badge.
+      const previousSummary = String(current?.solution_summary ?? "").trim();
+      const wasApproved = !!current?.logic_approved_at;
+      const summaryChanged = previousSummary !== summary;
+      let approvalCleared = false;
+      if (markApproved) {
+        patch.logic_approved_at = new Date().toISOString();
+      } else if (wasApproved && summaryChanged) {
+        patch.logic_approved_at = null;
+        approvalCleared = true;
+      }
       const { error } = await supa.from("projects").update(patch).eq("id", projectId);
       if (error) throw error;
       const wordCount = summary.split(/\s+/).filter(Boolean).length;
+      const approvalNote = approvalCleared
+        ? " ⚠️ The previous logic approval was cleared because the summary changed — rebuild the Logic Flow and re-approve to unlock document generation again."
+        : "";
       return {
         ok: true,
         message: markApproved
           ? `Solution summary saved & logic approved (${wordCount} words). Visible on Case Board.`
-          : `Solution summary saved (${wordCount} words). Visible on Case Board's Solution-summary button.`,
+          : `Solution summary saved (${wordCount} words). Visible on Case Board's Solution-summary button.${approvalNote}`,
       };
     }
     if (name === "add_suspect") {
