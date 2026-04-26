@@ -397,7 +397,6 @@ function AssetDialog({
 }) {
   const [editPrompt, setEditPrompt] = useState("");
   const [retrying, setRetrying] = useState(false);
-  const [regenPrompt, setRegenPrompt] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
