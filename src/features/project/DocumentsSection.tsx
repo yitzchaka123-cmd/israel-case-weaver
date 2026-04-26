@@ -372,7 +372,7 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
 
       // Try to parse JSON safely — when the worker is killed mid-response the
       // body can be malformed and would otherwise blow up the dialog.
-      let payload: { error?: string; hebrew_content?: string; url?: string; documentUrl?: string } = {};
+      let payload: { error?: string; hebrew_content?: string; url?: string; documentUrl?: string; pending?: boolean; jobId?: string } = {};
       try {
         payload = await resp.json();
       } catch {
@@ -386,21 +386,28 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
         else toast.error(payload.error ?? "Generation failed", { duration: 8000 });
         return;
       }
+      if (payload.pending && payload.jobId) {
+        setPendingJobId(payload.jobId);
+        toast.message("Generating high-quality image (up to 3 min)…", { duration: 6000 });
+        return; // keep setter true; polling effect will clear it
+      }
       if (mode === "text" && payload.hebrew_content) {
         setDraft((d) => d ? { ...d, hebrew_content: payload.hebrew_content!, status: "review" } : d);
       }
       if (mode === "image" && payload.url) {
         setDraft((d) => d ? { ...d, generated_asset_url: payload.url!, active_version: "generated", status: "review" } : d);
+        refetchImageHistory();
       }
       if (mode === "document" && payload.documentUrl) {
         setDraft((d) => d ? { ...d, generated_document_url: payload.documentUrl!, document_format: "pdf", status: "review" } : d);
+        refetchDocumentHistory();
       }
       toast.success(mode === "text" ? "Hebrew content generated" : mode === "image" ? "Document image generated" : "Document file generated");
     } catch (e) {
       console.error("generate-document call failed", e);
       toast.error(e instanceof Error ? e.message : "Generation failed", { duration: 8000 });
     } finally {
-      setter(false);
+      if (!pendingJobId) setter(false);
     }
   };
 
