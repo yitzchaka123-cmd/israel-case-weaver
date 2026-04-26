@@ -262,37 +262,60 @@ export function ProjectOverview({ project }: { project: any }) {
   };
 
   const [genCover, setGenCover] = useState(false);
-  const [coverPrompt, setCoverPrompt] = useState<string>("");
+  const [coverPreviewOpen, setCoverPreviewOpen] = useState(false);
 
-  // Load the most recent cover prompt so users can see what produced the
-  // current image (and edit it for a regen).
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const { data } = await supabase
-        .from("prompts")
-        .select("original_prompt, final_prompt")
+  // Per-project cover history (filtered by source_project_cover).
+  const { data: coverHistory, refetch: refetchCoverHistory } = useQuery({
+    queryKey: ["project-cover-history", project.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("media_assets")
+        .select("id, url, preview_url, model, effective_model, provider, fallback, created_at")
         .eq("project_id", project.id)
-        .eq("scope", "project-cover")
+        .eq("source_project_cover", true)
+        .not("url", "is", null)
         .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (cancelled) return;
-      setCoverPrompt(data?.original_prompt ?? data?.final_prompt ?? "");
-    })();
-    return () => { cancelled = true; };
-  }, [project.id, draft.cover_image_url]);
+        .limit(24);
+      if (error) throw error;
+      return (data ?? []) as ImageHistoryRow[];
+    },
+  });
 
-  const generateCover = async (promptOverride?: string): Promise<void> => {
-    const promptToUse = promptOverride?.trim();
+  const setCoverPrompt = (next: string) => {
+    setDraft({ ...draft, cover_prompt: next });
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(async () => {
+      await supabase.from("projects").update({ cover_prompt: next }).eq("id", project.id);
+    }, 500);
+  };
+
+  const setCoverActiveVersion = async (v: string) => {
+    setDraft({ ...draft, cover_active_version: v });
+    await supabase.from("projects").update({ cover_active_version: v }).eq("id", project.id);
+  };
+
+  const restoreCoverFromHistory = async (item: ImageHistoryRow) => {
+    if (!item.url) return;
+    await supabase.from("projects").update({
+      cover_image_url: item.url,
+      cover_effective_model: item.effective_model ?? item.model,
+      cover_fallback: item.fallback ?? null,
+      cover_active_version: "generated",
+    }).eq("id", project.id);
+    setDraft({ ...draft, cover_image_url: item.url, cover_active_version: "generated", cover_effective_model: item.effective_model ?? item.model, cover_fallback: item.fallback ?? null });
+    toast.success("Cover restored as active");
+  };
+
+  const generateCover = async (): Promise<void> => {
+    const promptToUse = (draft.cover_prompt ?? "").trim();
     if (!promptToUse) {
-      toast.error("Write a prompt first");
+      toast.error("Click Create prompt first, or write a prompt in the Final prompt tab");
       return;
     }
     setGenCover(true);
     const t = toast.loading("Generating cover…");
     const ctrl = new AbortController();
-    const timer = window.setTimeout(() => ctrl.abort(), 120_000);
+    const timer = window.setTimeout(() => ctrl.abort(), 145_000);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const modelOverride = getStoredImageModel("cover", "chatgpt-image");
@@ -305,8 +328,8 @@ export function ProjectOverview({ project }: { project: any }) {
       });
       const json = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(json.error ?? `Failed (${resp.status})`);
-      setDraft({ ...draft, cover_image_url: json.url });
-      setCoverPrompt(promptToUse);
+      setDraft({ ...draft, cover_image_url: json.url, cover_active_version: "generated", cover_effective_model: json.effectiveModel ?? null, cover_fallback: json.fallback ?? null });
+      refetchCoverHistory();
       toast.success("Cover ready", { id: t });
     } catch (e) {
       const msg = e instanceof Error
