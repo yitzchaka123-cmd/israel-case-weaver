@@ -14,6 +14,8 @@ import { ImageHistoryStrip, type ImageHistoryRow } from "@/components/ImageHisto
 import { FinalAssetPicker } from "@/components/FinalAssetPicker";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
+import { useBackgroundImageJob } from "@/features/project/useBackgroundImageJob";
+import { GenerationTimer } from "@/features/project/GenerationTimer";
 
 interface Suspect {
   id: string;
@@ -141,7 +143,6 @@ export function SuspectsSection({ projectId }: { projectId: string }) {
 
 function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose: () => void }) {
   const [draft, setDraft] = useState<Suspect | null>(suspect);
-  const [generating, setGenerating] = useState(false);
   const [portraitPrompt, setPortraitPrompt] = useState<string>("");
   const [previewOpen, setPreviewOpen] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -228,40 +229,37 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
     toast.success("Portrait restored as active");
   };
 
+  // Background-safe portrait generation. The edge function inserts a pending
+  // image_generations row, then keeps running on Supabase via
+  // EdgeRuntime.waitUntil — closing the tab no longer cancels the work. The
+  // hook subscribes via realtime and shows a live mm:ss timer that survives
+  // refresh and reopen.
+  const portraitJob = useBackgroundImageJob({
+    projectId: suspect?.project_id ?? "",
+    target: "suspect-thumbnail",
+    targetId: suspect?.id,
+    onDone: (url) => {
+      setDraft((d) => d ? { ...d, thumbnail_url: url, active_version: "generated" } : d);
+      setPortraitPrompt(draft?.thumbnail_prompt ?? "");
+      refetchHistory();
+      toast.success("Portrait ready");
+    },
+    onError: (msg) => toast.error(msg, { duration: 15000 }),
+  });
+
   const generatePortrait = async (): Promise<void> => {
-    const prompt = (draft.thumbnail_prompt ?? "").trim();
+    const prompt = (draft?.thumbnail_prompt ?? "").trim();
     if (!prompt) {
       toast.error("Click Create prompt first, or paste a prompt into the Final prompt tab");
       return;
     }
-    setGenerating(true);
-    const t = toast.loading("Generating portrait…");
-    const ctrl = new AbortController();
-    const timer = window.setTimeout(() => ctrl.abort(), 145_000);
+    const modelOverride = getStoredImageModel("suspect", "nano-banana-2");
+    const quality = getStoredImageQuality("suspect", "medium");
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const modelOverride = getStoredImageModel("suspect", "nano-banana-2");
-      const quality = getStoredImageQuality("suspect", "medium");
-      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-image`, {
-        method: "POST",
-        signal: ctrl.signal,
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
-        body: JSON.stringify({ projectId: suspect.project_id, prompt, target: "suspect-thumbnail", targetId: suspect.id, modelOverride, aspect: "portrait", quality }),
-      });
-      const json = await resp.json().catch(() => ({}));
-      if (!resp.ok) throw new Error(json.error ?? `Failed (${resp.status})`);
-      setDraft({ ...draft, thumbnail_url: json.url, active_version: "generated", thumbnail_effective_model: json.effectiveModel ?? null, thumbnail_fallback: json.fallback ?? null });
-      setPortraitPrompt(prompt);
-      refetchHistory();
-      toast.success("Portrait ready", { id: t });
-    } catch (e) {
-      const msg = e instanceof Error
-        ? (e.name === "AbortError" ? "Image generation timed out (>2 min). Try Medium/Low quality or a Gemini model." : e.message)
-        : "Failed";
-      toast.error(msg, { id: t, duration: 15000 });
-    } finally {
-      window.clearTimeout(timer);
-      setGenerating(false);
+      await portraitJob.start({ prompt, modelOverride, aspect: "portrait", quality });
+      toast.message("Generating in the background — you can close the tab.");
+    } catch {
+      // start() already showed a toast via onError
     }
   };
 
@@ -298,6 +296,9 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
                   <UserCircle2 className="h-10 w-10 text-muted-foreground/40" />
                 </div>
               )}
+              {portraitJob.isPending && (
+                <GenerationTimer elapsedSec={portraitJob.state.elapsedSec} label="Generating portrait" />
+              )}
             </button>
             <input ref={fileInput} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadThumb(e.target.files[0])} />
             <div className="mt-2 space-y-2">
@@ -311,8 +312,8 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
                 prompt={draft.thumbnail_prompt ?? portraitPrompt ?? ""}
                 onChange={(next) => update({ thumbnail_prompt: next })}
               />
-              <Button size="sm" variant="outline" className="w-full gap-2" onClick={generatePortrait} disabled={generating}>
-                {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserCircle2 className="h-3.5 w-3.5" />}
+              <Button size="sm" variant="outline" className="w-full gap-2" onClick={generatePortrait} disabled={portraitJob.isPending}>
+                {portraitJob.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserCircle2 className="h-3.5 w-3.5" />}
                 Generate portrait
               </Button>
               <Button variant="outline" size="sm" className="w-full gap-2" onClick={() => fileInput.current?.click()}>
