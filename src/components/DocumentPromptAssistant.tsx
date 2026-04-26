@@ -1,14 +1,12 @@
-// 2-tab assistant for Documents and Envelopes.
+// 2-tab prompt assistant for Documents and Envelopes.
 // Tab 1 — "Instructions": free-text steering the user types ("make it very
 //   detailed", "add a coffee stain", "keep it under 200 words").
 // Tab 2 — "Final prompt": the assembled output, split into Design (English)
 //   and Content (project language). Both editable. This is what actually
 //   gets persisted to the row + fed to image / file generators.
 //
-// Two action buttons:
-//   • Generate prompt          — fills Tab 2, no generation. User reviews.
-//   • Generate automatically   — fills Tab 2 then immediately runs the
-//                                downstream generator (image or document file).
+// One action button:
+//   • Create prompt — fills Tab 2, no generation. User reviews.
 //
 // Other surfaces (cover, suspect, media, hint) keep using PromptPanel.
 import { useEffect, useState } from "react";
@@ -17,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Sparkles, Wand2, Palette, FileText, ChevronDown, Zap } from "lucide-react";
+import { Loader2, Sparkles, Wand2, Palette, FileText, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { PromptWriterModelPicker, getStoredWriterModel } from "./PromptWriterModelPicker";
 
@@ -33,9 +31,6 @@ interface Props {
   content: string;
   /** Persist edits to Tab 2 fields. Called immediately on user edit. */
   onChange: (next: { design: string; content: string }) => void;
-  /** Optional: run the downstream generator (image / file). Called by
-   *  "Generate automatically" after the assistant fills Tab 2. */
-  onAutoGenerate?: () => Promise<void> | void;
   /** Language of the content half (Hebrew / English / etc.) for labels + dir. */
   gameLanguage?: string;
   /** Collapsed by default in archive mode. Inline = always open. */
@@ -49,7 +44,6 @@ export function DocumentPromptAssistant({
   design,
   content,
   onChange,
-  onAutoGenerate,
   gameLanguage = "Hebrew",
   mode = "inline",
   className,
@@ -57,7 +51,6 @@ export function DocumentPromptAssistant({
   const [tab, setTab] = useState<"instructions" | "final">("instructions");
   const [instructions, setInstructions] = useState("");
   const [drafting, setDrafting] = useState(false);
-  const [autoRunning, setAutoRunning] = useState(false);
   const [open, setOpen] = useState(mode === "inline");
 
   const isRtl = /^(hebrew|arabic|persian|farsi|urdu|yiddish)$/i.test(gameLanguage);
@@ -110,27 +103,9 @@ export function DocumentPromptAssistant({
       if (!result) return;
       onChange({ design: result.design, content: result.content });
       setTab("final");
-      toast.success("Final prompt drafted — review or edit before generating");
+      toast.success("Prompt created — review or edit before file generation");
     } finally {
       setDrafting(false);
-    }
-  };
-
-  const handleGenerateAutomatically = async () => {
-    if (!onAutoGenerate) {
-      toast.error("Auto-generate is not configured for this surface");
-      return;
-    }
-    setAutoRunning(true);
-    try {
-      const result = await callAssistant();
-      if (!result) return;
-      onChange({ design: result.design, content: result.content });
-      // Give parent a tick to persist before downstream generator reads the row.
-      await new Promise((r) => setTimeout(r, 350));
-      await onAutoGenerate();
-    } finally {
-      setAutoRunning(false);
     }
   };
 
@@ -139,7 +114,7 @@ export function DocumentPromptAssistant({
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <Label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium flex items-center gap-1.5">
           <Sparkles className="h-3 w-3" />
-          {target.kind === "envelope" ? "Envelope assistant" : "Document assistant"}
+          Prompt assistant
         </Label>
         <div className="flex items-center gap-1.5 flex-wrap">
           <PromptWriterModelPicker surface="document" />
@@ -149,25 +124,12 @@ export function DocumentPromptAssistant({
             variant="ghost"
             className="h-7 gap-1.5 text-[11px]"
             onClick={handleGeneratePrompt}
-            disabled={drafting || autoRunning}
-            title="Draft Design + Content into the Final prompt tab. Doesn't generate the image yet."
+            disabled={drafting}
+            title="Create Design + Content in the Final prompt tab using the instructions."
           >
             {drafting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-            {design.trim() || content.trim() ? "Revise prompt" : "Generate prompt"}
+            Create prompt
           </Button>
-          {onAutoGenerate && (
-            <Button
-              type="button"
-              size="sm"
-              className="h-7 gap-1.5 text-[11px]"
-              onClick={handleGenerateAutomatically}
-              disabled={drafting || autoRunning}
-              title="Draft Design + Content AND run the generator in one click."
-            >
-              {autoRunning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
-              Generate automatically
-            </Button>
-          )}
         </div>
       </div>
 
@@ -239,7 +201,7 @@ export function DocumentPromptAssistant({
       >
         <span className="flex items-center gap-1.5">
           <Sparkles className="h-3 w-3" />
-          {target.kind === "envelope" ? "Envelope assistant" : "Document assistant"}
+          Prompt assistant
         </span>
         <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
