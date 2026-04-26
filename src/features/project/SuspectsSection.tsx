@@ -296,6 +296,9 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
                   <UserCircle2 className="h-10 w-10 text-muted-foreground/40" />
                 </div>
               )}
+              {portraitJob.isPending && (
+                <GenerationTimer elapsedSec={portraitJob.state.elapsedSec} label="Generating portrait" />
+              )}
             </button>
             <input ref={fileInput} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadThumb(e.target.files[0])} />
             <div className="mt-2 space-y-2">
@@ -309,8 +312,8 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
                 prompt={draft.thumbnail_prompt ?? portraitPrompt ?? ""}
                 onChange={(next) => update({ thumbnail_prompt: next })}
               />
-              <Button size="sm" variant="outline" className="w-full gap-2" onClick={generatePortrait} disabled={generating}>
-                {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserCircle2 className="h-3.5 w-3.5" />}
+              <Button size="sm" variant="outline" className="w-full gap-2" onClick={generatePortrait} disabled={portraitJob.isPending}>
+                {portraitJob.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserCircle2 className="h-3.5 w-3.5" />}
                 Generate portrait
               </Button>
               <Button variant="outline" size="sm" className="w-full gap-2" onClick={() => fileInput.current?.click()}>
