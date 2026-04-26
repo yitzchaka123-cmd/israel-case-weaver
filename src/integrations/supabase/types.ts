@@ -630,6 +630,66 @@ export type Database = {
           },
         ]
       }
+      image_generations: {
+        Row: {
+          created_at: string
+          created_by_message_id: string | null
+          effective_model: string | null
+          error_message: string | null
+          fallback: string | null
+          id: string
+          mime_type: string | null
+          model: string | null
+          project_id: string
+          prompt: string | null
+          provider: string | null
+          quality: string | null
+          source_document_id: string | null
+          source_envelope_id: string | null
+          status: string
+          updated_at: string
+          url: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by_message_id?: string | null
+          effective_model?: string | null
+          error_message?: string | null
+          fallback?: string | null
+          id?: string
+          mime_type?: string | null
+          model?: string | null
+          project_id: string
+          prompt?: string | null
+          provider?: string | null
+          quality?: string | null
+          source_document_id?: string | null
+          source_envelope_id?: string | null
+          status?: string
+          updated_at?: string
+          url?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by_message_id?: string | null
+          effective_model?: string | null
+          error_message?: string | null
+          fallback?: string | null
+          id?: string
+          mime_type?: string | null
+          model?: string | null
+          project_id?: string
+          prompt?: string | null
+          provider?: string | null
+          quality?: string | null
+          source_document_id?: string | null
+          source_envelope_id?: string | null
+          status?: string
+          updated_at?: string
+          url?: string | null
+        }
+        Relationships: []
+      }
       invite_codes: {
         Row: {
           code: string

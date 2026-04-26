@@ -98,11 +98,15 @@ export function DocumentPromptAssistant({
 
   const handleGeneratePrompt = async () => {
     setDrafting(true);
+    // Clear the saved Final prompt immediately — user sees the wipe, and
+    // a stale prompt won't linger next to a brand-new instruction if the
+    // assistant call fails. New content fills in when the call returns.
+    onChange({ design: "", content: "" });
+    setTab("final");
     try {
       const result = await callAssistant();
       if (!result) return;
       onChange({ design: result.design, content: result.content });
-      setTab("final");
       toast.success("Prompt created — review or edit before file generation");
     } finally {
       setDrafting(false);
