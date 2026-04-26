@@ -789,7 +789,7 @@ Deno.serve(async (req) => {
       fallback: fallbackTag,
       status: writeErr ? "error" : "ok",
       latencyMs: Date.now() - startedAt,
-      promptExcerpt: `${nodes.length} nodes, ${edges.length} edges, mode=${mode}, board=${board}`,
+      promptExcerpt: `${nodes.length} nodes, ${edges.length} edges, mode=${mode}, board=${board}, variant=${chosenVariant}`,
       errorMessage: writeErr ? writeErr.message : undefined,
     });
 
@@ -799,6 +799,9 @@ Deno.serve(async (req) => {
         positions,
         count: Object.keys(positions).length,
         source,
+        variant: chosenVariant,
+        variantIndex: idx,
+        variantCount: variants.length,
         notes: aiNotes,
         model: usedModel,
         effectiveModel,
