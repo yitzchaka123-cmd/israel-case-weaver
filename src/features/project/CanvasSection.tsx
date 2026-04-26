@@ -823,7 +823,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
             >
               Save draft
             </Button>
-            <Button className="gap-2" onClick={approveLogic}>
+            <Button className="gap-2" onClick={() => approveLogic()}>
               <CheckCircle2 className="h-4 w-4" />
               {approved ? "Re-approve & continue" : "Approve & start producing documents"}
             </Button>
