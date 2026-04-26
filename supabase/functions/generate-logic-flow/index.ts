@@ -314,12 +314,12 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
     async function tryFlushEdges(extra: EdgeJson[] = []) {
       const all = [...pendingEdges, ...extra];
       pendingEdges.length = 0;
-      const ready: { project_id: string; board: string; source_id: string; target_id: string; label: string | null }[] = [];
+      const ready: { project_id: string; board: string; source_id: string; target_id: string; label: string | null; logic_version_id: string }[] = [];
       for (const e of all) {
         const s = idMap.get(e.source);
         const t = idMap.get(e.target);
         if (s && t) {
-          ready.push({ project_id: projectId, board: "logic", source_id: s, target_id: t, label: e.label ?? null });
+          ready.push({ project_id: projectId, board: "logic", source_id: s, target_id: t, label: e.label ?? null, logic_version_id: newLogicVersionId });
         } else {
           pendingEdges.push(e);
         }
