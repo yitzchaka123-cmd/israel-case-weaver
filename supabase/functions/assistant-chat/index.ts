@@ -356,6 +356,22 @@ Canvas edges: ${rosters.canvas_edges_count ?? 0}${rosters.logic_dirty_since_appr
 Logic flow exists: ${rosters.canvas_nodes.some((n) => n.board === "logic") ? `YES (${rosters.canvas_nodes.filter((n) => n.board === "logic").length} logic-board nodes — IF YOU REWRITE solution_summary YOU MUST OFFER TO REBUILD THE FLOW, see SUMMARY-REWRITE RULE)` : "NO"}
 Final Flow mapped: ${rosters.canvas_nodes.some((n) => n.board === "final" && n.node_type === "document") ? `YES (${rosters.canvas_nodes.filter((n) => n.board === "final").length} final-board nodes)` : "NO — ask to create the Final Flow before final documents"}
 Solution summary set: ${project.solution_summary ? "YES" : "NO"}
+${project.solution_summary ? `\n--- BEGIN solution_summary (paste this back verbatim if the user asks "what's the summary") ---\n${project.solution_summary}\n--- END solution_summary ---\n` : ""}
+${(() => {
+  const set = (project as { proposed_document_set?: unknown }).proposed_document_set;
+  if (!Array.isArray(set) || set.length === 0) return "";
+  const status = (project as { proposed_document_set_status?: string }).proposed_document_set_status ?? "proposed";
+  const lines = (set as Array<Record<string, unknown>>).map((d, i) => {
+    const num = (d.doc_number as number | undefined) ?? i + 1;
+    const title = String(d.title ?? "(untitled)");
+    const dt = String(d.doc_type ?? "");
+    const ps = String(d.print_size ?? "");
+    const purpose = String(d.purpose ?? "");
+    const meta = [dt, ps].filter(Boolean).join(", ");
+    return `  ${num}. ${title}${meta ? ` (${meta})` : ""} — ${purpose}`;
+  }).join("\n");
+  return `Proposed document set (status: ${status}, count: ${set.length} — paste this back if the user asks "show me the documents" or "what was proposed"):\n${lines}\n`;
+})()}
 Doc generation mode: ${project.doc_generation_mode ? `"${project.doc_generation_mode}"` : "NOT YET CHOSEN — ask the user with propose_options before the first add_document in Phase 4 (see DOCUMENT GENERATION WORKFLOW)"}
 
 ${(() => {
