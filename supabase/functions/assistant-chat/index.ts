@@ -187,7 +187,7 @@ Once the Final Flow is built, the map contains one \`document\` node per planned
 Doc 0 hard rule: before creating or generating Doc 0, use the Final Flow as the source of truth. When calling \`add_document\` for Doc 0, set doc_number=0, doc_type="contents checklist", and write hebrew_content as a non-spoiler MASTER INVENTORY: list every document in the box (grouped by topic / document type / investigative area — NOT by envelope) and then list each sealed task envelope as a separate item with its trigger condition (when the player should open it). The player has access to all documents from the start; envelopes are opened only at the matching case beat.
 If the user asks to see/show/build the final flow, final board, production map, document map, or mapped final documents, and Logic Flow is already approved but no proposal exists yet, call \`propose_document_set\` first (do NOT skip the planning gate). For older existing cases that already have a Final board but no proposal, you may call \`create_final_documents_map\` directly to refresh from existing data.
 The Final Flow is a major production artifact: it must include the approved logic nodes, suspects, sealed task envelopes (drawn as gates pinned to the beat that unlocks each one), planned document nodes, and connecting lines between them. When the Final Flow already exists, acknowledge it before document generation: "I see the Final Flow is created; I'll generate documents from those mapped nodes."
-If the user asks you to generate the Logic Flow from chat, call \`generate_logic_flow\`. After it finishes, tell the user to review/edit the Canvas Logic Flow and click Approve logic before final-document generation.
+If the user asks you to generate the Logic Flow from chat, call \`generate_logic_flow\`. The tool returns immediately because regeneration runs in the background (~2-3 minutes). Tell the user the regeneration has STARTED and to refresh Canvas → Logic Flow shortly to review and approve the new board — never claim the flow is already regenerated in the same turn.
 
 Each project remembers a \`doc_generation_mode\` choice that controls how aggressive you are when producing documents:
   • "drafts"  — write the row only (title + design_instructions + hebrew_content). Do NOT call generate_document_assets. The user clicks Generate themselves.
@@ -257,7 +257,7 @@ When the user approves a change, you MUST persist it by calling the appropriate 
 - set_solution_summary: AS SOON as the user approves the Phase 2 case summary (or whenever they approve a revised end-to-end solution narrative), call this tool with the full summary text. This single source of truth feeds the Case Board's "Solution summary" button, the Logic Flow generator, and every future document. NEVER skip this step after an approval — without it, the Canvas summary button will be empty and document generation will refuse to run.
 - add_suspect / update_suspect: manage cast.
 - add_document / update_document: create or edit a document record.
-- generate_logic_flow: generate/replace the Canvas Logic Flow from chat when the user asks, then tell them to review and approve it on the Canvas.
+- generate_logic_flow: KICKS OFF Canvas Logic Flow regeneration in the background (returns immediately, real job takes ~2-3 minutes). Always describe the result as STARTED, never as already done; tell the user to refresh Canvas → Logic Flow in a couple of minutes and approve it once it appears. Do not call this tool more than once per turn.
 - add_canvas_node / update_canvas_node: add or edit a logic/clue/deduction/envelope/solution node. CRITICAL: when you add a clue/deduction/contradiction/red_herring/document/solution node and the project already has other nodes, you MUST in the SAME turn call add_canvas_edge at least once to wire it into the graph — a floating, unconnected node breaks the Logic Flow.
 - add_canvas_edge: connect two existing nodes (source → target) with an optional descriptive label ("reveals", "contradicts", "supports"). Use right after add_canvas_node, or any time the user asks you to link/connect/draw a line between existing nodes.
 - add_envelope / update_envelope: manage the 5 fixed envelopes (only update_envelope exists for editing labels/tasks/notes).
@@ -1180,14 +1180,34 @@ async function executeTool(
       return { ok: true, message: `Final Flow created with ${payload.nodeCount ?? 0} nodes, including ${payload.documentNodeCount ?? 0} planned documents and ${payload.edgeCount ?? 0} connecting lines${hasProposal ? " (built from your approved proposal)" : ""}. Review the Final board before creating document rows.` };
     }
     if (name === "generate_logic_flow") {
-      const resp = await fetch(`${SUPABASE_URL}/functions/v1/generate-logic-flow`, {
+      // generate-logic-flow can take 2-3 minutes (heavy planning model call),
+      // which exceeds the subrequest timeout when awaited synchronously from
+      // here. Kick it off as a background task and tell the assistant to
+      // report it as STARTED, not COMPLETE, so the LLM doesn't claim it
+      // failed when the underlying job is still working.
+      const body = JSON.stringify({
+        projectId,
+        replace: true,
+        useExistingSummary: (args as { use_existing_summary?: boolean }).use_existing_summary !== false,
+      });
+      const fireAndForget = fetch(`${SUPABASE_URL}/functions/v1/generate-logic-flow`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
-        body: JSON.stringify({ projectId, replace: true, useExistingSummary: (args as { use_existing_summary?: boolean }).use_existing_summary !== false }),
+        body,
+      }).catch((err) => {
+        console.error("[assistant-chat] generate-logic-flow background fetch failed", err);
       });
-      const payload = await resp.json().catch(() => ({}));
-      if (!resp.ok) return { ok: false, message: payload.error ?? "Logic Flow generation failed" };
-      return { ok: true, message: `Logic Flow generated with ${payload.nodeCount ?? 0} nodes and ${payload.edgeCount ?? 0} connections. The user must review and approve it on the Canvas before documents or Final Flow generation.` };
+      // Keep the worker alive long enough to send the request without blocking
+      // the assistant turn on the full 2-3 min response.
+      const runtime = (globalThis as { EdgeRuntime?: { waitUntil: (p: Promise<unknown>) => void } }).EdgeRuntime;
+      if (runtime?.waitUntil) runtime.waitUntil(fireAndForget);
+      return {
+        ok: true,
+        message:
+          "Logic Flow regeneration STARTED in the background (uses your planning model — typically 2-3 minutes). It is NOT done yet. " +
+          "Tell the user: the new board will appear automatically on Canvas → Logic Flow when it finishes; refresh that view in a couple of minutes. " +
+          "Do NOT claim the flow is already regenerated, and do NOT call this tool again in the same turn.",
+      };
     }
     if (name === "add_canvas_node") {
       const { data, error } = await supa
