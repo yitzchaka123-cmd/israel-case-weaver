@@ -1,44 +1,64 @@
-## Problem
+# Three fixes for the Case Board badge, the 10-doc proposal, and the silent assistant
 
-You clicked **Approve logic** (the green button next to the composer in the Assistant panel, or the **Approve logic** button on the Canvas → Logic Flow board). Both buttons:
+I checked your project (`f2dee7e6…`) directly. The DB confirms:
+- `logic_approved_at` **is set** (10:09 UTC) and `node_count = 29` — so the red badge should not be showing.
+- `target_doc_count = 0` — that's why the assistant proposed only 10 documents (it had no target to aim for).
+- `proposed_document_set_status = 'proposed'` (10 entries) — never approved, so nothing was generated yet.
+- The assistant's last chat turn only listed document titles in shorthand, never recapped the full summary or discussed any document body.
 
-1. Set `logic_approved_at = now()` and flip `phase = "production"` directly in the database.
-2. Show a toast.
-3. **Stop there.**
+Here's what I'll change:
 
-They do **not** post anything into the chat, so the assistant has no idea anything happened. The conversation just sits there waiting for you to type something. Only the *in-chat* path that the assistant proposes via `propose_options` (`"✅ Approve logic & start producing documents"`) actually triggers `send(...)`, which is what the system already documents as the canonical hand-off path.
+## 1. Red exclamation point lingers after approval (Case Board tab)
 
-## Diagnosis (file references)
+**Root cause:** `caseBoardAttention` is a TanStack query that only refreshes via the realtime invalidation in `ProjectWorkspace`. If the Realtime event for the `projects` UPDATE is dropped (or the query was seeded before subscription attached), the cached `{needsAttention: true}` survives even though `logic_approved_at` is set.
 
-- `src/features/project/AssistantSection.tsx` lines 164–185 — `approveLogicFromAssistant`: DB update only, no `send(...)` call. Button rendered at line 558.
-- `src/features/project/CanvasSection.tsx` lines 403–422 — `approveLogic` from the Canvas board: DB update only, no chat hand-off. Button rendered at line 715.
-- `supabase/functions/assistant-chat/index.ts` line 180 already says: *"Never tell the user 'click Approve logic on the Canvas' if you can offer this button — the in-chat approval IS the canonical path."* But when the user **does** click the Canvas/composer button, the assistant is never told.
+**Fix in `src/features/project/ProjectWorkspace.tsx`:**
+- Drop the separate `case-board-attention` query and **derive `needsAttention` directly from the already-fetched `project` and a lightweight `nodes` query** that's keyed alongside the existing canvas nodes invalidation. This way the badge state is computed from the same source of truth as the rest of the UI — no second cache to go stale.
+- Add `staleTime: 0` and `refetchOnWindowFocus: true` to the `project` query so re-focusing the tab guarantees a fresh read.
+- Add a belt-and-suspenders `refetchInterval` (15s) on the lightweight node-count query while a project is in `phase IN ('summary','logic')` so the badge can never sit wrong for more than 15 seconds even if Realtime drops.
 
-## Fix
+## 2. Only 10 documents proposed (should be ~30–40)
 
-Wire BOTH out-of-chat approval buttons through the same `send(...)` path the in-chat option uses, so the assistant actually receives the approval and continues the conversation (recap → Final Flow proposal → propose_options).
+**Root cause:** Two things compound:
+- Your project's `target_doc_count` is `0`. The assistant has no target to plan against, so it freelances a small list.
+- The Phase 4 planning prompt doesn't enforce a minimum or echo the target back to the model.
 
-### 1. `src/features/project/AssistantSection.tsx`
-Change `approveLogicFromAssistant` so that — instead of writing `logic_approved_at` directly — it calls `send("✅ Approve logic & start producing documents")`. The backend `set_solution_summary({mark_approved: true})` flow already stamps `logic_approved_at` and the assistant already knows the next-turn instructions for that exact phrase (lines 173–180 of the edge function). This makes the composer-side button behave identically to clicking the bubble button. Remove the now-unused direct-update path and `approvingLogic` state, or keep the spinner tied to `sending`.
+**Fixes in `supabase/functions/assistant-chat/index.ts`:**
+- In the system prompt's Phase 4 planning gate (around line 203), add an explicit instruction: *"Aim for the user's `target_doc_count`. If `target_doc_count` is missing or 0, you MUST first ask the user how many documents the case should have (suggest 30–40 as the standard for an Unsolved Case Files–style box) and call `update_project({target_doc_count})` before calling `propose_document_set`. Never propose fewer than `target_doc_count − 5` or more than `target_doc_count + 5` documents."*
+- In the runtime context block that's injected each turn (around line 328), add a hard line: `Target document count: ${project.target_doc_count || "NOT SET — ask the user before proposing the document set"}`.
+- In the `propose_document_set` tool description, add: *"The number of `documents` entries should be within ±5 of `target_doc_count`. If `target_doc_count` is 0 or missing, do NOT call this tool — ask the user first."*
+- Backfill your current project: I'll set `target_doc_count = 35` for `f2dee7e6…` so the next assistant turn can replan with a realistic count. (Only this one project; the change is scoped.)
 
-### 2. `src/features/project/CanvasSection.tsx`
-After the Canvas-side `approveLogic` succeeds (it stays as-is because the user may approve from the board without ever opening chat), also insert a synthetic user chat message — `"✅ Approve logic & start producing documents (approved from Canvas)"` — into `chat_messages` for this project, then trigger an assistant run. Two equivalent options:
-- **Preferred:** use the same edge function `assistant-chat` invocation pattern that `useAssistantRun.send` uses, so the assistant immediately picks up the conversation.
-- **Lighter-weight alternative:** insert a `role: "user"` row directly via supabase and rely on the existing realtime subscription, plus call the edge function once to actually run the model.
+**Also: add a "Show me the full proposed list" affordance**
+- In `src/features/project/AssistantSection.tsx`, when the project has `proposed_document_set_status IN ('proposed','approved')`, render a small **"📋 View proposed document set (N)"** button above the composer that opens a panel listing every entry with its `title`, `doc_type`, `purpose`, and linked logic node ids. Right now the only way to see the list is to scroll the chat — and the chat only ever showed titles.
 
-Whichever we pick, the goal is identical: the next time the user opens the assistant panel (or if it's already open, instantly), they see *"Logic approved — drafting the document set now."* followed by the standard `propose_options` (Approve & build Final Flow / Just build it / Revise the plan), exactly as the playbook on lines 179 & 204 of `assistant-chat/index.ts` demands.
+## 3. Assistant doesn't discuss summary / document contents in chat
 
-### 3. Backend safety net (`supabase/functions/assistant-chat/index.ts`)
-The current `set_solution_summary` already handles `mark_approved: true` correctly. No change needed there. We should, however, double-check that the rosters block (`Logic flow approved: YES (...)`) is regenerated before the response so the assistant sees the freshly-stamped timestamp on this same turn. That logic already exists (line 339), so this is just a verification step, not a code change.
+**Root cause:** The system prompt focuses on tool-calling discipline but never tells the model to *share the artifact text in chat*. After it writes a summary or drafts a document, it announces "done" and moves on. You want to read and discuss the actual content.
 
-### 4. Acceptance check
-After the change:
-- Click the green **Approve logic** chip above the composer → a `"✅ Approve logic & start producing documents"` user bubble appears, the assistant streams a recap and the next propose_options.
-- Click **Approve logic** on the Canvas board → switch back to Assistant tab → same recap + propose_options is already there (or streaming).
-- The progress bar advances from Logic Flow to Documents in both cases (it already did, this part isn't broken).
+**Fixes in `supabase/functions/assistant-chat/index.ts` system prompt:**
+Add a new "TRANSPARENCY RULE" block:
+
+> Whenever you create, rewrite, or update one of these artifacts via a tool call, you MUST in the SAME turn show its full text to the user in chat (markdown), then explicitly invite discussion before moving on:
+> - `set_solution_summary` → paste the full summary back, ask "Does this match what you had in mind? Any beats to tweak?"
+> - `propose_document_set` → list every document as `**N. Title** (doc_type, print_size) — purpose. Supports nodes: …`, then ask the user to approve / revise.
+> - `add_document` (or batch) → for each created document, show a 2–4 sentence content sketch (what the player will read on the page) and ask which one to draft first.
+> - `generate_document` → after the body is written, paste the full body text in chat and ask for edits.
+> - `update_project` for `packaging_notes` / `image_prompt_instructions` / `video_prompt_instructions` → echo the new text and ask for confirmation.
+>
+> Never just say "done" or "saved". The chat is the workshop — the user must always be able to read what you wrote without leaving the conversation.
+
+Also add to Phase 4: *"After `propose_document_set`, your prose MUST list every single proposed document by number with its purpose, not a summarized 'and 30 more like this'."*
+
+## 4. Cleanup
+
+- Backfill `target_doc_count = 35` on the current project (data fix only).
+- Redeploy the `assistant-chat` edge function so the new prompt rules take effect.
+- Verify after deploy: open the project, confirm the red badge is gone, ask the assistant to "regenerate the document set", and confirm it (a) asks about the count if needed, (b) proposes ~35, (c) lists every entry in chat, (d) recaps the summary on demand.
 
 ## Files to edit
-- `src/features/project/AssistantSection.tsx`
-- `src/features/project/CanvasSection.tsx`
 
-No DB migration. No edge function change.
+- `src/features/project/ProjectWorkspace.tsx` — derive attention from already-fetched data, drop the separate stale query, add focus refetch.
+- `src/features/project/AssistantSection.tsx` — add "View proposed document set" panel/button.
+- `supabase/functions/assistant-chat/index.ts` — Phase 4 target-count enforcement + Transparency Rule for in-chat content sharing.
+- (Data fix) `UPDATE projects SET target_doc_count = 35 WHERE id = 'f2dee7e6…'`.
