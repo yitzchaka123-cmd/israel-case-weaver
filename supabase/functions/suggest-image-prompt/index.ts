@@ -200,9 +200,24 @@ Deno.serve(async (req) => {
 
       const isEnv = category === STRUCTURED_ENV;
       const structuredSystem = [
-        `You are a master prop designer AND in-world writer for a premium boxed murder-mystery game. You think about ONE ${isEnv ? "envelope" : "document"} at a time. You produce TWO things in a single JSON response:`,
+        `You are a master prop designer AND in-world writer for a premium boxed murder-mystery game. You produce TWO things in a single JSON response: a graphic-design brief and the final printable content.`,
         ``,
-        `Part 1 — DESIGN_INSTRUCTIONS (English): an extremely detailed graphic-design brief. Cover EVERY relevant element:`,
+        `╔══════════════════════════════════════════════════════════════════╗`,
+        `║ ABSOLUTE RULE #1 — USER INSTRUCTIONS OVERRIDE EVERYTHING BELOW. ║`,
+        `╚══════════════════════════════════════════════════════════════════╝`,
+        `If the user gives ANY instruction (length cap, tone, wording, "tiny letters", "one sentence only", "no stamps", etc.), that instruction is law. It overrides every default rule in this prompt — including the default preference for extreme detail. The instruction applies to the COMBINED output: design_instructions + content together. If the user says "keep under 20 words", the TOTAL word count of both fields combined must be ≤ 20. No exceptions.`,
+        ``,
+        `EXAMPLES OF USER INSTRUCTIONS — handle them like this:`,
+        `  • "for example", "e.g.", "such as", "like for instance" → what follows is an ILLUSTRATION OF INTENT ONLY. Do NOT copy those literal words or examples into the output. Use them to understand the user's taste, then write your own original equivalent.`,
+        `    User: "tiny letters, for example only" → Design uses very small typography (e.g. 7–8 pt body). The phrase "for example only" NEVER appears in the output.`,
+        `  • "keep it short" → Both fields stay short. Skip the exhaustive bullet list.`,
+        `  • "no realism" → Design says "no stamps, no aging, no fold lines, clean printer-paper look".`,
+        ``,
+        `═══════════════════════════════════════════════════════════════════`,
+        `DEFAULT BEHAVIOR — applies ONLY when the user gave no relevant instruction:`,
+        `═══════════════════════════════════════════════════════════════════`,
+        ``,
+        `Part 1 — DESIGN_INSTRUCTIONS (English): a detailed graphic-design brief covering whichever of these are relevant:`,
         `  • Document type / output format (e.g. "single A4 portrait page, 2480x3508px, 300 DPI, flat archival scan").`,
         `  • Paper stock (weight, finish, age, color).`,
         `  • Look & feel (administrative / dramatic / aged / clean / etc.) and how strongly to apply realism.`,
@@ -212,23 +227,27 @@ Deno.serve(async (req) => {
         `  • Stamps, handwriting, signatures, marginalia, holes, fold lines, tape, smudges — INCLUDE ONLY if the document calls for them. For clean admin docs, explicitly say "no stamps, no handwriting, no realism details".`,
         `  • Footer / header rules.`,
         `  • Explicit "do NOT include" rules (e.g. no real names, no real emblems, no modern Canva styling, no watermark text).`,
-        `  Be exhaustive. Think like a senior print designer briefing an illustrator.`,
+        `  Default to exhaustive senior-print-designer detail — but ONLY when the user did not ask for brevity.`,
         ``,
         `Part 2 — CONTENT (${gameLanguage}, ${isRtl ? "RTL" : "LTR"}): the EXACT final text that appears on the ${isEnv ? "envelope" : "document"}. Ready to typeset. No meta-commentary, no English explanations inside the content, no placeholders like "[insert name here]", no markdown headings — just the actual prop text in ${gameLanguage}. Names, dates, numbers, quotes — all final.`,
-        ``,
-        `USER STEERING RULE: Any user instruction is highest priority and applies to the COMBINED final prompt: both DESIGN_INSTRUCTIONS and CONTENT together. If the user sets a limit (for example "keep under 20 words"), the total of design_instructions + content must obey that limit, even if it conflicts with the default preference for extreme detail.`,
         ``,
         isEnv
           ? `Envelope-specific rules: the content is what's printed on the OUTSIDE of the envelope (label + opening trigger / task). Keep it short, bold, non-spoilery. Never reveal the case solution.`
           : `Document-specific rules: stay in-world; do not reveal the full solution; honor the document's planned role inside the case. For Doc 0 / contents inventory, the design must be a plain white printer-paper sheet (no realism), and content is a numbered list of every game document.`,
         ``,
-        `OUTPUT: a single strict JSON object with EXACTLY these two string keys: {"design_instructions": "...", "content": "..."}. No prose around it, no markdown fences, no extra keys.`,
+        `OUTPUT FORMAT: a single strict JSON object with EXACTLY these two string keys: {"design_instructions": "...", "content": "..."}. No prose around it, no markdown fences, no extra keys.`,
         globalAssistantInstructions
-          ? `\nUSER GLOBAL STYLE GUIDE (highest priority — apply to every brief you write):\n${globalAssistantInstructions}`
+          ? `\nWORKSPACE STYLE GUIDE (apply to every brief unless the per-doc user instruction overrides it):\n${globalAssistantInstructions}`
           : "",
       ].filter(Boolean).join("\n");
 
+      // Put USER STEERING at the TOP of the user message so it's the first thing the model reads.
       const structuredUser = [
+        userInstructions?.trim()
+          ? `╔════════════════════════════════════════════════════════════╗\n║  USER INSTRUCTIONS FOR THIS ${isEnv ? "ENVELOPE" : "DOCUMENT"} — HIGHEST PRIORITY  ║\n╚════════════════════════════════════════════════════════════╝\n${userInstructions.trim()}\n\nThese instructions OVERRIDE every default rule. They apply to design_instructions + content COMBINED. If they conflict with "be detailed" or any other default, the user wins. Phrases like "for example" / "e.g." / "such as" mean the example is an illustration of intent — do NOT copy those literal example words into the output.`
+          : `USER INSTRUCTIONS FOR THIS ${isEnv ? "ENVELOPE" : "DOCUMENT"}: (none — use project context and the target's title/type to decide everything; default to detailed)`,
+        ``,
+        `─────────────────────────────────────────────────────────────`,
         `PROJECT CONTEXT:`,
         ctx || "(no context yet)",
         ``,
@@ -236,14 +255,10 @@ Deno.serve(async (req) => {
         solutionSummary ? `\nSOLUTION SUMMARY (for coherence — do NOT reveal in this artifact):\n${solutionSummary}` : "",
         ``,
         targetBlock,
-        ``,
-        userInstructions?.trim()
-          ? `USER STEERING FOR THE COMBINED FINAL PROMPT (highest priority — apply to design_instructions AND content as one combined output):\n${userInstructions.trim()}\n\nIf this steering includes length, tone, wording, or content constraints, obey it across both returned fields together.`
-          : `USER STEERING: (none — use project context and the target's title/type to decide everything)`,
         currentDesign?.trim() ? `\nCURRENT DESIGN INSTRUCTIONS (revise / improve, don't repeat verbatim):\n${currentDesign.trim()}` : "",
         currentContent?.trim() ? `\nCURRENT CONTENT (revise / improve, don't repeat verbatim):\n${currentContent.trim()}` : "",
         ``,
-        `Now produce the JSON object. Obey USER STEERING across design_instructions + content together; only be very detailed when that does not conflict with the user's instruction.`,
+        `Now produce the JSON object. The USER INSTRUCTIONS at the top of this message are absolute — obey them across design_instructions + content combined.`,
       ].filter(Boolean).join("\n");
 
       const supportsTempStruct = !model.startsWith("openai/");
