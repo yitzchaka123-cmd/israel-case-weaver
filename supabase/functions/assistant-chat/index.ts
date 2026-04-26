@@ -1726,29 +1726,52 @@ async function processConversation(
   // the project has ai_reasoning_effort != 'none' AND the model supports it.
   type ReasoningSegment = { type: "thinking" | "summary"; text: string };
   const reasoningRounds: Array<{ round: number; segments: ReasoningSegment[] }> = [];
+  const stageHistory: Array<{ at: string; label: string }> = [];
+  const pushStage = (label: string) => {
+    const last = stageHistory[stageHistory.length - 1];
+    if (last?.label === label) return;
+    stageHistory.push({ at: new Date().toISOString(), label });
+  };
+  // Push live progress (reasoning + tool receipts + stage history) to the
+  // placeholder row so the UI can render the "Thinking…" disclosure live
+  // instead of only after the run completes. Fire-and-forget — never block.
+  const flushProgress = (stage: string) => {
+    pushStage(stage);
+    void supa.from("chat_messages")
+      .update({
+        metadata: {
+          in_progress: true,
+          model,
+          stage,
+          stage_history: stageHistory,
+          partial_tools: executedTools.length,
+          tools: executedTools,
+          ...(reasoningRounds.length ? { reasoning: reasoningRounds } : {}),
+        },
+      })
+      .eq("id", assistantMessageId);
+  };
   // Default to "low" — chat is short turn-by-turn and tool calls don't need
   // heavy reasoning. Users who want deeper thinking can crank ai_reasoning_effort.
   const baseEffort = String((project as { ai_reasoning_effort?: string }).ai_reasoning_effort ?? "low");
   const TOOLS = buildTools(playbook);
   const MAX_ROUNDS = 4;
   let lastFb: { effectiveModel: string; fallback: string } = { effectiveModel: model, fallback: "none" };
+  flushProgress("thinking…");
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const isFinalRound = round === MAX_ROUNDS - 1;
-    // Tool-only rounds (everything but the last) get the cheapest reasoning
-    // tier — picking the next tool call doesn't need deep thought. Save the
-    // user's chosen `baseEffort` for the final prose round.
-    const roundEffort = isFinalRound ? baseEffort : "low";
+    // Tool-only rounds get a cheaper reasoning tier than the final prose
+    // round, but never go below the user's chosen baseEffort — otherwise
+    // models silently return zero reasoning segments and the "Show thinking"
+    // panel never has anything to display.
+    const roundEffort = isFinalRound ? baseEffort : (baseEffort === "high" ? "medium" : baseEffort === "medium" ? "low" : baseEffort);
     const body: Record<string, unknown> = { model, messages: convo, stream: false, reasoningEffort: roundEffort, ...claudeSkillRequestShape(claudeChatSkills) };
     if (!isFinalRound) body.tools = TOOLS;
 
-    // Surface progress to the UI between rounds via the placeholder row's
-    // metadata.stage. The chat_messages realtime subscription picks this up.
     if (round > 0) {
       const lastTool = executedTools[executedTools.length - 1]?.name;
       const stage = isFinalRound ? "writing reply" : lastTool ? `after ${lastTool}…` : "thinking…";
-      void supa.from("chat_messages")
-        .update({ metadata: { in_progress: true, model, stage, partial_tools: executedTools.length } })
-        .eq("id", assistantMessageId);
+      flushProgress(stage);
     }
 
     const roundStartedAt = Date.now();
