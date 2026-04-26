@@ -1872,15 +1872,16 @@ Deno.serve(async (req) => {
     const executedTools: Array<{ name: string; args?: Record<string, unknown>; result: unknown }> = [];
     type ReasoningSegment = { type: "thinking" | "summary"; text: string };
     const reasoningRounds: Array<{ round: number; segments: ReasoningSegment[] }> = [];
-    const reasoningEffort = String((project as { ai_reasoning_effort?: string }).ai_reasoning_effort ?? "medium");
+    const baseEffort = String((project as { ai_reasoning_effort?: string }).ai_reasoning_effort ?? "low");
     const TOOLS = buildTools(playbook);
 
-    const MAX_ROUNDS = 8;
+    const MAX_ROUNDS = 4;
     const callerUserId = await getUserIdFromAuth(req);
     let lastFb: { effectiveModel: string; fallback: string } = { effectiveModel: model, fallback: "none" };
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const isFinalRound = round === MAX_ROUNDS - 1;
-      const body: Record<string, unknown> = { model, messages: convo, stream: false, reasoningEffort, ...claudeSkillRequestShape(claudeChatSkills) };
+      const roundEffort = isFinalRound ? baseEffort : "low";
+      const body: Record<string, unknown> = { model, messages: convo, stream: false, reasoningEffort: roundEffort, ...claudeSkillRequestShape(claudeChatSkills) };
       if (!isFinalRound) body.tools = TOOLS;
 
       const roundStartedAt = Date.now();
