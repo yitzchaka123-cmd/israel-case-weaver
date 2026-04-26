@@ -467,35 +467,30 @@ function AssetDialog({
           <video src={asset.url} controls className="w-full rounded-lg" />
         )}
 
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium flex items-center gap-1.5">
-              <FileText className="h-3 w-3" /> Prompt — edit and retry
-            </Label>
-            {isImageAsset && (
-              <div className="flex items-center gap-1.5">
-                <PromptWriterModelPicker surface="media" />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 gap-1.5 text-xs"
-                  onClick={handleRegeneratePrompt}
-                  disabled={regenPrompt}
-                >
-                  {regenPrompt ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                  Revise prompt with AI
-                </Button>
-              </div>
-            )}
-          </div>
-          <Textarea
-            value={editPrompt}
-            onChange={(e) => setEditPrompt(e.target.value)}
-            rows={8}
-            className="font-mono text-xs leading-relaxed"
-            placeholder={asset.prompt ? undefined : "No prompt was saved with this asset. You can write one and retry."}
-          />
+        <div className="space-y-2">
+          {isImageAsset ? (
+            <ImagePromptAssistant
+              projectId={projectId}
+              surface="media"
+              category={asset.category ?? category}
+              prompt={editPrompt}
+              onChange={setEditPrompt}
+              targetId={asset.id}
+            />
+          ) : (
+            <>
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium flex items-center gap-1.5">
+                <FileText className="h-3 w-3" /> Prompt
+              </Label>
+              <Textarea
+                value={editPrompt}
+                onChange={(e) => setEditPrompt(e.target.value)}
+                rows={8}
+                className="font-mono text-xs leading-relaxed"
+                placeholder={asset.prompt ? undefined : "No prompt was saved with this asset. You can write one and retry."}
+              />
+            </>
+          )}
           {(asset.model || asset.effective_model) && (
             <div className="text-[11px] text-muted-foreground space-y-1 pt-1">
               <div className="flex items-center gap-2 flex-wrap">
