@@ -326,7 +326,7 @@ Player role: ${project.player_role ?? "—"}
 Case goal: ${project.case_goal ?? "—"}
 Setting: ${project.setting ?? "—"}
 Extra selling point: ${project.selling_point ?? "—"}
-Target documents: ${project.target_doc_count && project.target_doc_count >= 10 ? project.target_doc_count : `NOT SET (currently ${project.target_doc_count ?? "—"}) — you MUST ask the user before calling propose_document_set; suggest 30/35/40 with propose_options, then call update_project({target_doc_count}) before proposing`}
+Target documents: ${(() => { const n = Number((project as { target_doc_count?: unknown }).target_doc_count ?? 0); return n >= 10 ? n : `NOT SET (currently ${n || "—"}) — you MUST ask the user before calling propose_document_set; suggest 30/35/40 with propose_options, then call update_project({target_doc_count: N}) before proposing`; })()}
 Packaging notes: ${truncate(project.packaging_notes, 120)}
 Image prompt style: ${truncate(project.image_prompt_instructions, 120)}
 Video prompt style: ${truncate(project.video_prompt_instructions, 120)}
