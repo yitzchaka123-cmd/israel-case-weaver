@@ -998,11 +998,13 @@ function LiveReasoningSegment({
   type,
   text,
   live,
+  compact = false,
 }: {
   segId: string;
   type: "thinking" | "summary";
   text: string;
   live: boolean;
+  compact?: boolean;
 }) {
   const alreadyRevealed = REVEALED_SEGMENT_IDS.has(segId);
   const shouldAnimate = live && !alreadyRevealed;
