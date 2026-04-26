@@ -6,14 +6,25 @@
 // already-good layout (instead of building one from scratch), with a much
 // shorter timeout.
 //
-// Two layouts are produced depending on the board:
-//   • "logic"  — 7 horizontal lanes (suspects, clues, documents, envelopes,
-//                 deductions, distractions, solution) with topological-depth
-//                 columns so chains read left→right.
-//   • "final"  — 3 vertical bands (logic chain | documents | envelopes) where
-//                 each document sits in the row of the logic node it
-//                 materialises (`sourceLogicNodeIds[0]`), and each envelope
-//                 sits at the row of its highest-numbered document.
+// Each board has a CYCLE of smart layout variants. Pressing "Smart arrange"
+// repeatedly walks through the variants so the user can preview the same
+// case from different structural angles. Each variant is still deterministic
+// and context-aware (uses node_type, finalMapRole, envelopeNumber, edges).
+//
+// Logic-board variants (cycled in order):
+//   0 "lanes"   — 7 horizontal lanes by node_type, columns from longest-path.
+//   1 "columns" — vertical lanes (lane = column, depth = row). Same role
+//                 grouping but reads top→bottom.
+//   2 "suspects"— grouped by primary suspect (data.suspectId / suspectName),
+//                 each suspect getting their own horizontal swimlane band.
+//   3 "compact" — depth-first chain layout: follow each chain root through
+//                 its successors, packing chains tightly into rows.
+//
+// Final-board variants (cycled in order):
+//   0 "bands"      — Logic | Documents | Envelopes left→right (default).
+//   1 "stacked"    — Logic top, Documents middle, Envelopes bottom (rows).
+//   2 "envelope"   — grouped by envelope: each envelope owns a column of
+//                    its documents, with the logic chain spread along top.
 //
 // All position writes are committed in a single batched upsert.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
