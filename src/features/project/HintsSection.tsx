@@ -12,6 +12,8 @@ import { ImageHistoryStrip, type ImageHistoryRow } from "@/components/ImageHisto
 import { FinalAssetPicker } from "@/components/FinalAssetPicker";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
+import { useBackgroundImageJob } from "@/features/project/useBackgroundImageJob";
+import { GenerationTimer } from "@/features/project/GenerationTimer";
 
 interface Hint {
   id: string;
@@ -229,10 +231,22 @@ export function HintsSection({ projectId }: { projectId: string }) {
 function HintSheetBlock({ projectId, stage, sheet }: { projectId: string; stage: number; sheet: HintSheet | null }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [generating, setGenerating] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [draftPrompt, setDraftPrompt] = useState<string>(sheet?.prompt ?? "");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const sheetJob = useBackgroundImageJob({
+    projectId,
+    target: "hint-sheet",
+    targetId: String(stage),
+    onDone: () => {
+      toast.success(`Stage ${stage} hint sheet generated`);
+      setOpen(false);
+      qc.invalidateQueries({ queryKey: ["hint_sheets", projectId] });
+      refetchHistory();
+    },
+    onError: (msg) => toast.error(msg, { duration: 15000 }),
+  });
 
   useEffect(() => { setDraftPrompt(sheet?.prompt ?? ""); }, [sheet?.id, sheet?.prompt]);
 
@@ -270,39 +284,19 @@ function HintSheetBlock({ projectId, stage, sheet }: { projectId: string; stage:
       toast.error("Click Create prompt first, or type a prompt in the Final prompt tab");
       return;
     }
-    setGenerating(true);
+    const model = getStoredImageModel("hint", "chatgpt-image");
+    const quality = getStoredImageQuality("hint", "medium");
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const model = getStoredImageModel("hint", "chatgpt-image");
-      const quality = getStoredImageQuality("hint", "medium");
-      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-image`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-        },
-        body: JSON.stringify({
-          projectId,
-          prompt,
-          target: "hint-sheet",
-          targetId: String(stage),
-          modelOverride: model,
-          quality,
-          aspect: "portrait",
-          category: "hint-sheet",
-        }),
+      await sheetJob.start({
+        prompt,
+        modelOverride: model,
+        quality,
+        aspect: "portrait",
+        category: "hint-sheet",
       });
-      const json = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        toast.error(json.error ?? "Hint sheet generation failed");
-        return;
-      }
-      toast.success(`Stage ${stage} hint sheet generated`);
-      setOpen(false);
-      qc.invalidateQueries({ queryKey: ["hint_sheets", projectId] });
-      refetchHistory();
-    } finally {
-      setGenerating(false);
+      toast.message("Generating in the background — you can close the tab.");
+    } catch {
+      // start() already showed an error toast
     }
   };
 
@@ -381,6 +375,9 @@ function HintSheetBlock({ projectId, stage, sheet }: { projectId: string; stage:
             position="absolute"
             hoverOnly
           />
+          {sheetJob.isPending && (
+            <GenerationTimer elapsedSec={sheetJob.state.elapsedSec} label={`Regenerating stage ${stage}`} />
+          )}
         </button>
       )}
 
@@ -402,8 +399,8 @@ function HintSheetBlock({ projectId, stage, sheet }: { projectId: string; stage:
             onChange={setDraftPrompt}
           />
           <div className="flex items-center gap-2">
-            <Button size="sm" onClick={generate} disabled={generating || !draftPrompt.trim()} className="gap-2">
-              {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
+            <Button size="sm" onClick={generate} disabled={sheetJob.isPending || !draftPrompt.trim()} className="gap-2">
+              {sheetJob.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
               Generate hint sheet
             </Button>
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadSheet(e.target.files[0])} />
@@ -411,9 +408,9 @@ function HintSheetBlock({ projectId, stage, sheet }: { projectId: string; stage:
               <Upload className="h-3.5 w-3.5" /> Upload sheet
             </Button>
           </div>
-          {generating && (
+          {sheetJob.isPending && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Generating stage {stage} hint sheet…
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Generating stage {stage} hint sheet… <span className="tabular-nums">({Math.floor(sheetJob.state.elapsedSec / 60)}:{(sheetJob.state.elapsedSec % 60).toString().padStart(2, "0")})</span>
             </div>
           )}
         </div>

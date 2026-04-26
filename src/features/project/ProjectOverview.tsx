@@ -20,6 +20,8 @@ import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { ProductionDashboard } from "./ProductionDashboard";
 import { ProposalStatusStrip } from "./ProposalStatusStrip";
+import { useBackgroundImageJob } from "@/features/project/useBackgroundImageJob";
+import { GenerationTimer } from "@/features/project/GenerationTimer";
 import { normalizePhase } from "./PhaseStatusBar";
 import { useProjectNotifications } from "./notifications/useProjectNotifications";
 import { notifyForFieldChange, type TriggerableField } from "./notifications/triggers";
@@ -262,7 +264,16 @@ export function ProjectOverview({ project }: { project: any }) {
     toast.success("Upload set as the active cover");
   };
 
-  const [genCover, setGenCover] = useState(false);
+  const coverJob = useBackgroundImageJob({
+    projectId: project.id,
+    target: "project-cover",
+    onDone: (url) => {
+      setDraft((d: typeof draft) => ({ ...d, cover_image_url: url, cover_active_version: "generated" }));
+      refetchCoverHistory();
+      toast.success("Cover ready");
+    },
+    onError: (msg) => toast.error(msg, { duration: 15000 }),
+  });
   const [coverPreviewOpen, setCoverPreviewOpen] = useState(false);
 
   // Per-project cover history (filtered by source_project_cover).
@@ -313,33 +324,13 @@ export function ProjectOverview({ project }: { project: any }) {
       toast.error("Click Create prompt first, or write a prompt in the Final prompt tab");
       return;
     }
-    setGenCover(true);
-    const t = toast.loading("Generating cover…");
-    const ctrl = new AbortController();
-    const timer = window.setTimeout(() => ctrl.abort(), 145_000);
+    const modelOverride = getStoredImageModel("cover", "chatgpt-image");
+    const quality = getStoredImageQuality("cover", "medium");
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const modelOverride = getStoredImageModel("cover", "chatgpt-image");
-      const quality = getStoredImageQuality("cover", "medium");
-      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-image`, {
-        method: "POST",
-        signal: ctrl.signal,
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
-        body: JSON.stringify({ projectId: project.id, prompt: promptToUse, target: "project-cover", modelOverride, aspect: "portrait", quality }),
-      });
-      const json = await resp.json().catch(() => ({}));
-      if (!resp.ok) throw new Error(json.error ?? `Failed (${resp.status})`);
-      setDraft({ ...draft, cover_image_url: json.url, cover_active_version: "generated", cover_effective_model: json.effectiveModel ?? null, cover_fallback: json.fallback ?? null });
-      refetchCoverHistory();
-      toast.success("Cover ready", { id: t });
-    } catch (e) {
-      const msg = e instanceof Error
-        ? (e.name === "AbortError" ? "Image generation timed out (>2 min). Try Medium/Low quality or a Gemini model." : e.message)
-        : "Failed";
-      toast.error(msg, { id: t, duration: 15000 });
-    } finally {
-      window.clearTimeout(timer);
-      setGenCover(false);
+      await coverJob.start({ prompt: promptToUse, modelOverride, aspect: "portrait", quality });
+      toast.message("Generating in the background — you can close the tab.");
+    } catch {
+      // start() already showed a toast via onError
     }
   };
 
@@ -591,6 +582,9 @@ export function ProjectOverview({ project }: { project: any }) {
                     <Upload className="h-8 w-8 opacity-30" />
                   </div>
                 )}
+                {coverJob.isPending && (
+                  <GenerationTimer elapsedSec={coverJob.state.elapsedSec} label="Generating cover" />
+                )}
               </button>
             );
           })()}
@@ -606,8 +600,8 @@ export function ProjectOverview({ project }: { project: any }) {
               prompt={draft.cover_prompt ?? ""}
               onChange={setCoverPrompt}
             />
-            <Button onClick={generateCover} disabled={genCover || !(draft.cover_prompt ?? "").trim()} className="w-full gap-2">
-              {genCover ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+            <Button onClick={generateCover} disabled={coverJob.isPending || !(draft.cover_prompt ?? "").trim()} className="w-full gap-2">
+              {coverJob.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
               Generate cover
             </Button>
             <Button variant="outline" className="w-full" onClick={() => fileInput.current?.click()}>
