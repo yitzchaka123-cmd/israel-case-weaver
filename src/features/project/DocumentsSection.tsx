@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Plus, FileText, Trash2, Upload, Image as ImageIcon, Loader2, FileDown, Copy } from "lucide-react";
+import { Plus, FileText, Trash2, Upload, Image as ImageIcon, Loader2, FileDown, Copy, RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
@@ -16,6 +16,18 @@ import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { DocumentPromptAssistant } from "@/components/DocumentPromptAssistant";
 import { Badge } from "@/components/ui/badge";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+
+interface MediaHistoryRow {
+  id: string;
+  url: string | null;
+  preview_url: string | null;
+  model: string | null;
+  effective_model: string | null;
+  provider: string | null;
+  document_format: string | null;
+  created_at: string;
+}
 
 const DOC_TYPES = [
   "Memo", "Interrogation transcript", "Suspect profile", "Map", "Chat log",
@@ -186,8 +198,10 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
   const [genText, setGenText] = useState(false);
   const [genImage, setGenImage] = useState(false);
   const [genDocument, setGenDocument] = useState(false);
+  const [pendingJobId, setPendingJobId] = useState<string | null>(null);
   const [fileGeneration, setFileGeneration] = useState<"pdf" | "image" | "both">("image");
   const [imagePreviewOpen, setImagePreviewOpen] = useState(false);
+  const [historyPreview, setHistoryPreview] = useState<MediaHistoryRow | null>(null);
   const saveTimer = useRef<number | undefined>(undefined);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -245,6 +259,70 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
     enabled: !!doc?.id,
   });
 
+  const { data: imageHistory, refetch: refetchImageHistory } = useQuery({
+    queryKey: ["document-image-history", doc?.id],
+    queryFn: async () => {
+      if (!doc) return [];
+      const { data, error } = await supabase
+        .from("media_assets")
+        .select("id, url, preview_url, model, effective_model, provider, document_format, created_at")
+        .eq("source_document_id", doc.id)
+        .eq("asset_type", "image")
+        .not("url", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(24);
+      if (error) throw error;
+      return (data ?? []) as MediaHistoryRow[];
+    },
+    enabled: !!doc?.id,
+  });
+
+  const { data: documentHistory, refetch: refetchDocumentHistory } = useQuery({
+    queryKey: ["document-file-history", doc?.id],
+    queryFn: async () => {
+      if (!doc) return [];
+      const { data, error } = await supabase
+        .from("media_assets")
+        .select("id, url, preview_url, model, effective_model, provider, document_format, created_at")
+        .eq("source_document_id", doc.id)
+        .eq("asset_type", "document")
+        .not("url", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(24);
+      if (error) throw error;
+      return (data ?? []) as MediaHistoryRow[];
+    },
+    enabled: !!doc?.id,
+  });
+
+  // Poll a pending High-quality image generation job until it resolves.
+  useEffect(() => {
+    if (!pendingJobId) return;
+    let cancelled = false;
+    const tick = async () => {
+      const { data: job } = await supabase
+        .from("image_generations")
+        .select("status, url, error_message, model, effective_model, provider")
+        .eq("id", pendingJobId)
+        .maybeSingle();
+      if (cancelled || !job) return;
+      if (job.status === "generated" && job.url) {
+        setDraft((d) => d ? { ...d, generated_asset_url: job.url, active_version: "generated", status: "review" } : d);
+        setPendingJobId(null);
+        setGenImage(false);
+        toast.success("High-quality image ready");
+        refetchImageHistory();
+      } else if (job.status === "failed") {
+        setPendingJobId(null);
+        setGenImage(false);
+        toast.error(job.error_message ?? "High-quality image generation failed", { duration: 8000 });
+      }
+    };
+    const interval = window.setInterval(tick, 4000);
+    tick();
+    return () => { cancelled = true; window.clearInterval(interval); };
+  }, [pendingJobId, refetchImageHistory]);
+
   useEffect(() => setDraft(doc), [doc?.id]);
 
   if (!doc || !draft) return null;
@@ -294,7 +372,7 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
 
       // Try to parse JSON safely — when the worker is killed mid-response the
       // body can be malformed and would otherwise blow up the dialog.
-      let payload: { error?: string; hebrew_content?: string; url?: string; documentUrl?: string } = {};
+      let payload: { error?: string; hebrew_content?: string; url?: string; documentUrl?: string; pending?: boolean; jobId?: string } = {};
       try {
         payload = await resp.json();
       } catch {
@@ -308,21 +386,28 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
         else toast.error(payload.error ?? "Generation failed", { duration: 8000 });
         return;
       }
+      if (payload.pending && payload.jobId) {
+        setPendingJobId(payload.jobId);
+        toast.message("Generating high-quality image (up to 3 min)…", { duration: 6000 });
+        return; // keep setter true; polling effect will clear it
+      }
       if (mode === "text" && payload.hebrew_content) {
         setDraft((d) => d ? { ...d, hebrew_content: payload.hebrew_content!, status: "review" } : d);
       }
       if (mode === "image" && payload.url) {
         setDraft((d) => d ? { ...d, generated_asset_url: payload.url!, active_version: "generated", status: "review" } : d);
+        refetchImageHistory();
       }
       if (mode === "document" && payload.documentUrl) {
         setDraft((d) => d ? { ...d, generated_document_url: payload.documentUrl!, document_format: "pdf", status: "review" } : d);
+        refetchDocumentHistory();
       }
       toast.success(mode === "text" ? "Hebrew content generated" : mode === "image" ? "Document image generated" : "Document file generated");
     } catch (e) {
       console.error("generate-document call failed", e);
       toast.error(e instanceof Error ? e.message : "Generation failed", { duration: 8000 });
     } finally {
-      setter(false);
+      if (!pendingJobId) setter(false);
     }
   };
 
@@ -384,11 +469,72 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
       const x = (pageW - w) / 2;
       const y = (pageH - h) / 2;
       pdf.addImage(dataUrl, "PNG", x, y, w, h);
-      pdf.save(`${(draft.title || "document").replace(/[^\p{L}\p{N}_\- ]+/gu, "_")}.pdf`);
+      const safeName = (draft.title || "document").replace(/[^\p{L}\p{N}_\- ]+/gu, "_");
+      pdf.save(`${safeName}.pdf`);
+
+      // Also auto-save into the Final asset document slot (only when empty)
+      // so users get a real PDF in the asset stack without an extra click.
+      if (!draft.generated_document_url && !draft.generated_pdf_url) {
+        try {
+          const pdfBlob = pdf.output("blob");
+          const path = `${doc.project_id}/${doc.id}-${Date.now()}-client.pdf`;
+          const up = await supabase.storage.from("documents").upload(path, pdfBlob, { upsert: true, contentType: "application/pdf" });
+          if (!up.error) {
+            const { data: pub } = supabase.storage.from("documents").getPublicUrl(path);
+            await supabase.from("documents").update({
+              generated_pdf_url: pub.publicUrl,
+              document_format: "pdf",
+              document_provider: "client-jspdf",
+              document_model: "jsPDF from image",
+            }).eq("id", doc.id);
+            await supabase.from("media_assets").insert({
+              project_id: doc.project_id,
+              source_document_id: doc.id,
+              asset_type: "document",
+              category: "document",
+              document_format: "pdf",
+              generation_mode: "client_image_to_pdf",
+              provider: "client-jspdf",
+              model: "jsPDF from image",
+              url: pub.publicUrl,
+              status: "generated",
+              title: draft.title,
+            });
+            setDraft((d) => d ? { ...d, generated_pdf_url: pub.publicUrl, document_format: "pdf", document_provider: "client-jspdf", document_model: "jsPDF from image" } : d);
+            refetchDocumentHistory();
+            toast.success("PDF saved locally + added as Final asset document", { id: "pdf" });
+            return;
+          }
+        } catch (uploadErr) {
+          console.warn("Auto-upload of client PDF failed", uploadErr);
+        }
+      }
       toast.success("PDF saved", { id: "pdf" });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "PDF failed", { id: "pdf" });
     }
+  };
+
+  const restoreImageFromHistory = async (item: MediaHistoryRow) => {
+    if (!item.url) return;
+    await supabase.from("documents").update({
+      generated_asset_url: item.url,
+      active_version: "generated",
+    }).eq("id", doc.id);
+    setDraft((d) => d ? { ...d, generated_asset_url: item.url!, active_version: "generated" } : d);
+    toast.success("Image restored as Final asset image");
+  };
+
+  const restoreDocumentFromHistory = async (item: MediaHistoryRow) => {
+    if (!item.url) return;
+    await supabase.from("documents").update({
+      generated_document_url: item.url,
+      document_format: item.document_format ?? "pdf",
+      document_provider: item.provider ?? null,
+      document_model: item.model ?? null,
+    }).eq("id", doc.id);
+    setDraft((d) => d ? { ...d, generated_document_url: item.url!, document_format: item.document_format ?? "pdf", document_provider: item.provider ?? null, document_model: item.model ?? null } : d);
+    toast.success("Document restored as Final asset document");
   };
 
   return (
@@ -457,14 +603,28 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
               </div>
             </FieldBlock>
           </div>
-          {draft.generated_asset_url && (
-            <div className="md:col-span-2">
-              <div className="flex items-center justify-between mb-2">
-                <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Final asset image</Label>
+          {/* Pending high-quality job placeholder */}
+          {pendingJobId && (
+            <div className="md:col-span-2 rounded-lg border border-accent/40 bg-accent/5 p-4 flex items-center gap-3">
+              <Loader2 className="h-4 w-4 animate-spin text-accent" />
+              <div className="text-sm">
+                <p className="font-medium">Generating high-quality image…</p>
+                <p className="text-xs text-muted-foreground">This can take up to 3 minutes. You can keep working — we'll update the image when it's ready.</p>
+              </div>
+            </div>
+          )}
+
+          {/* Final asset image */}
+          <div className="md:col-span-2">
+            <div className="flex items-center justify-between mb-2">
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Final asset image</Label>
+              {draft.generated_asset_url && (
                 <Button size="sm" variant="outline" className="gap-2" onClick={saveAsPdf}>
                   <FileDown className="h-3.5 w-3.5" /> Save as PDF
                 </Button>
-              </div>
+              )}
+            </div>
+            {draft.generated_asset_url ? (
               <button type="button" onClick={() => setImagePreviewOpen(true)} className="group relative block w-full rounded-lg border bg-muted overflow-hidden">
                 <img src={draft.generated_asset_url} alt="Generated document image" className="w-full max-h-96 object-contain" />
                 <AiOriginBadge
@@ -472,26 +632,59 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
                   hoverOnly
                 />
               </button>
-            </div>
-          )}
-          {(draft.generated_document_url || draft.generated_pdf_url) && (
-            <div className="md:col-span-2 rounded-lg border bg-muted/30 p-3 space-y-3">
-              <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Final asset file</Label>
-                <p className="text-sm truncate">{(draft.document_format ?? "file").toUpperCase()} • {draft.document_model ?? draft.document_provider ?? "Selected model"}</p>
+            ) : (
+              <div className="rounded-lg border border-dashed bg-muted/30 p-6 text-center text-xs text-muted-foreground">
+                Empty — no image generated yet.
               </div>
-              <a href={draft.generated_document_url ?? draft.generated_pdf_url ?? "#"} target="_blank" rel="noreferrer" className="text-sm text-accent underline shrink-0">Open file</a>
+            )}
+            {imageHistory && imageHistory.length > 1 && (
+              <HistoryStrip
+                label="History"
+                items={imageHistory}
+                activeUrl={draft.generated_asset_url}
+                onPreview={(item) => setHistoryPreview(item)}
+                onRestore={restoreImageFromHistory}
+                kind="image"
+              />
+            )}
+          </div>
+
+          {/* Final asset document */}
+          <div className="md:col-span-2">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Final asset document</Label>
+            {(draft.generated_document_url || draft.generated_pdf_url) ? (
+              <div className="mt-2 rounded-lg border bg-muted/30 p-3 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm truncate">{(draft.document_format ?? "file").toUpperCase()} • {draft.document_model ?? draft.document_provider ?? "Selected model"}</p>
+                  </div>
+                  <a href={draft.generated_document_url ?? draft.generated_pdf_url ?? "#"} target="_blank" rel="noreferrer" className="text-sm text-accent underline shrink-0">Open file</a>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {draft.document_format && <Badge variant="outline" className="text-[10px]">{draft.document_format.toUpperCase()}</Badge>}
+                  {draft.document_provider && <Badge variant="outline" className="text-[10px]">{draft.document_provider}</Badge>}
+                  {draft.document_model && <Badge variant="secondary" className="text-[10px]">{draft.document_model}</Badge>}
+                  {draft.document_skill_id && <Badge variant="outline" className="text-[10px]">Skill {draft.document_skill_id}</Badge>}
+                </div>
+                {latestDocumentAttempt?.preview_url && <img src={latestDocumentAttempt.preview_url} alt="Document preview" className="max-h-56 w-full rounded-md border bg-background object-contain" />}
               </div>
-              <div className="flex flex-wrap gap-1.5">
-                {draft.document_format && <Badge variant="outline" className="text-[10px]">{draft.document_format.toUpperCase()}</Badge>}
-                {draft.document_provider && <Badge variant="outline" className="text-[10px]">{draft.document_provider}</Badge>}
-                {draft.document_model && <Badge variant="secondary" className="text-[10px]">{draft.document_model}</Badge>}
-                {draft.document_skill_id && <Badge variant="outline" className="text-[10px]">Skill {draft.document_skill_id}</Badge>}
+            ) : (
+              <div className="mt-2 rounded-lg border border-dashed bg-muted/30 p-6 text-center text-xs text-muted-foreground">
+                Empty — no document generated yet.
               </div>
-              {latestDocumentAttempt?.preview_url && <img src={latestDocumentAttempt.preview_url} alt="Document preview" className="max-h-56 w-full rounded-md border bg-background object-contain" />}
-            </div>
-          )}
+            )}
+            {documentHistory && documentHistory.length > 0 && (
+              <HistoryStrip
+                label="History"
+                items={documentHistory}
+                activeUrl={draft.generated_document_url ?? draft.generated_pdf_url ?? null}
+                onPreview={(item) => item.url && window.open(item.url, "_blank")}
+                onRestore={restoreDocumentFromHistory}
+                kind="document"
+              />
+            )}
+          </div>
+
           {latestDocumentAttempt?.status === "failed" && (
             <div className="md:col-span-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 space-y-2">
               <div className="flex flex-wrap items-center gap-1.5">
@@ -517,9 +710,20 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
               <p className="max-h-28 overflow-auto whitespace-pre-wrap rounded-md bg-background/60 p-2 text-[11px] leading-relaxed text-muted-foreground">{filePrompt.final_prompt}</p>
             </div>
           )}
-          <div className="md:col-span-2 border-t pt-4">
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Final asset</Label>
-            <div className="mt-2 flex gap-2 items-center">
+
+          {/* Final asset selector + uploaded file */}
+          <div className="md:col-span-2 border-t pt-4 space-y-3">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Final asset for export</Label>
+            <RadioGroup
+              value={draft.active_version}
+              onValueChange={(v) => update({ active_version: v })}
+              className="grid grid-cols-1 sm:grid-cols-3 gap-2"
+            >
+              <FinalAssetOption value="generated" label="Generated image" disabled={!draft.generated_asset_url} current={draft.active_version} />
+              <FinalAssetOption value="generated_document" label="Generated document file" disabled={!draft.generated_document_url && !draft.generated_pdf_url} current={draft.active_version} />
+              <FinalAssetOption value="uploaded" label="Uploaded file" disabled={!draft.uploaded_asset_url} current={draft.active_version} />
+            </RadioGroup>
+            <div className="flex gap-2 items-center">
               <input ref={fileInput} type="file" className="hidden" onChange={(e) => e.target.files?.[0] && uploadReplacement(e.target.files[0])} />
               <Button variant="outline" className="gap-2" onClick={() => fileInput.current?.click()}>
                 <Upload className="h-4 w-4" /> Upload final file
@@ -529,10 +733,8 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
                   View uploaded file
                 </a>
               )}
-              <span className="ml-auto text-[11px] text-muted-foreground uppercase tracking-widest">
-                Active: {draft.active_version}
-              </span>
             </div>
+            <p className="text-[11px] text-muted-foreground">Exports ({"Documents only"}, full zip, etc.) use the asset selected above. Uploaded files always take precedence over generated ones when picked.</p>
           </div>
         </div>
         <div className="flex justify-end pt-4 border-t">
@@ -554,7 +756,89 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
         </DialogContent>
       </Dialog>
     )}
+    {historyPreview?.url && (
+      <Dialog open={!!historyPreview} onOpenChange={(o) => !o && setHistoryPreview(null)}>
+        <DialogContent className="max-w-5xl p-4">
+          <div className="relative rounded-lg bg-muted overflow-hidden border">
+            <img src={historyPreview.url} alt="History preview" className="max-h-[78vh] w-full object-contain" />
+            <AiOriginBadge
+              info={{ requested: historyPreview.model, effective: historyPreview.effective_model ?? historyPreview.model, provider: historyPreview.provider, fallback: "none" }}
+            />
+          </div>
+          <div className="flex justify-end pt-2">
+            <Button size="sm" className="gap-2" onClick={() => { restoreImageFromHistory(historyPreview); setHistoryPreview(null); }}>
+              <RotateCcw className="h-3.5 w-3.5" /> Restore as Final asset image
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    )}
     </>
+  );
+}
+
+function HistoryStrip({
+  label,
+  items,
+  activeUrl,
+  onPreview,
+  onRestore,
+  kind,
+}: {
+  label: string;
+  items: MediaHistoryRow[];
+  activeUrl: string | null;
+  onPreview: (item: MediaHistoryRow) => void;
+  onRestore: (item: MediaHistoryRow) => void | Promise<void>;
+  kind: "image" | "document";
+}) {
+  return (
+    <div className="mt-3 space-y-1.5">
+      <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">{label}</p>
+      <div className="flex gap-2 overflow-x-auto pb-2">
+        {items.map((item) => {
+          const isActive = item.url === activeUrl;
+          return (
+            <div key={item.id} className={`relative shrink-0 rounded-md border ${isActive ? "border-accent ring-2 ring-accent/40" : "border-border"} bg-muted overflow-hidden`}>
+              <button
+                type="button"
+                onClick={() => onPreview(item)}
+                className="block w-20 h-20"
+                title={item.model ?? "Open"}
+              >
+                {kind === "image" && item.url ? (
+                  <img src={item.preview_url ?? item.url} alt="History thumbnail" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex flex-col items-center justify-center text-[10px] text-muted-foreground">
+                    <FileText className="h-5 w-5 mb-1" />
+                    {(item.document_format ?? "FILE").toUpperCase()}
+                  </div>
+                )}
+              </button>
+              {!isActive && (
+                <button
+                  type="button"
+                  onClick={() => onRestore(item)}
+                  className="absolute bottom-0 inset-x-0 bg-background/85 hover:bg-background text-[9px] uppercase tracking-wider py-0.5 text-center transition-colors"
+                  title="Restore as final asset"
+                >
+                  Restore
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function FinalAssetOption({ value, label, disabled, current }: { value: string; label: string; disabled: boolean; current: string }) {
+  return (
+    <label className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm cursor-pointer ${disabled ? "opacity-50 cursor-not-allowed" : current === value ? "border-accent bg-accent/5" : "hover:bg-muted/50"}`}>
+      <RadioGroupItem value={value} disabled={disabled} />
+      <span>{label}</span>
+    </label>
   );
 }
 
