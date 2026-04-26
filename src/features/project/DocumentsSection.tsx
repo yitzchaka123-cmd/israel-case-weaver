@@ -187,9 +187,6 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
   const [genImage, setGenImage] = useState(false);
   const [genDocument, setGenDocument] = useState(false);
   const [fileGeneration, setFileGeneration] = useState<"pdf" | "image" | "both">("image");
-  const [selectedImageModel, setSelectedImageModel] = useState<string>(
-    () => getStoredImageModel("document", "chatgpt-image"),
-  );
   const [imagePreviewOpen, setImagePreviewOpen] = useState(false);
   const saveTimer = useRef<number | undefined>(undefined);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -231,14 +228,6 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
   });
 
   useEffect(() => setDraft(doc), [doc?.id]);
-
-  // Refresh selected image model whenever the picker writes back to localStorage
-  useEffect(() => {
-    if (!doc) return;
-    const tick = () => setSelectedImageModel(getStoredImageModel("document", "chatgpt-image"));
-    const i = window.setInterval(tick, 800);
-    return () => window.clearInterval(i);
-  }, [doc?.id]);
 
   if (!doc || !draft) return null;
 
@@ -422,25 +411,9 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
               design={draft.design_instructions ?? ""}
               content={draft.hebrew_content ?? ""}
               onChange={({ design, content }) => update({ design_instructions: design, hebrew_content: content })}
-              onAutoGenerate={async () => { await generate("image"); }}
               gameLanguage={gameLanguage}
               mode="inline"
             />
-            {!draft.design_instructions && (
-              <div className="mt-2 flex items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-[11px]"
-                  onClick={() => update({ design_instructions: DESIGN_PLACEHOLDER })}
-                >
-                  Insert template
-                </Button>
-                <span className="text-[10px] text-muted-foreground">
-                  Or just type instructions above and click <strong>Generate prompt</strong>.
-                </span>
-              </div>
-            )}
           </div>
           <div className="md:col-span-2">
             <FieldBlock label="Generate output">
