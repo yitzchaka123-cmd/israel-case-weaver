@@ -547,10 +547,10 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
                 <Button
                   size="sm"
                   onClick={approveLogicFromAssistant}
-                  disabled={approvingLogic}
+                  disabled={sending}
                   className="h-8 gap-1.5"
                 >
-                  {approvingLogic ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                  {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
                   Approve logic
                 </Button>
               </div>
