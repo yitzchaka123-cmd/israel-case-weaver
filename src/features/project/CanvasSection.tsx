@@ -340,7 +340,10 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
       return;
     }
     setArranging(true);
-    arrangePressRef.current++;
+    // Each press cycles through smart-layout variants on the server. AI refine
+    // always polishes the *current* variant (don't bump the counter).
+    const variantIndex = mode === "deterministic" ? arrangePressRef.current : Math.max(0, arrangePressRef.current - 1);
+    if (mode === "deterministic") arrangePressRef.current++;
     const label = mode === "ai-refine" ? `AI is refining ${nodes.length} nodes…` : `Arranging ${nodes.length} nodes…`;
     const t = toast.loading(label);
     try {
@@ -358,6 +361,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
             board,
             mode,
             modelOverride: logicModel,
+            variantIndex,
           }),
         },
       );
@@ -376,12 +380,17 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
         }),
       );
       qc.invalidateQueries({ queryKey: ["nodes", projectId, board] });
+      const variantLabel = json.variant ? ` · ${json.variant}` : "";
+      const variantHint =
+        mode === "deterministic" && json.variantCount > 1
+          ? ` (${(json.variantIndex ?? 0) + 1}/${json.variantCount} — press again for another)`
+          : "";
       const sourceLabel =
-        json.source === "ai-refine" ? "AI refined"
-        : json.source === "ai-refine-fallback" ? "AI refine failed — kept smart layout"
-        : "Smart layout";
+        json.source === "ai-refine" ? `AI refined${variantLabel}`
+        : json.source === "ai-refine-fallback" ? `AI refine failed — kept smart layout${variantLabel}`
+        : `Smart layout${variantLabel}`;
       toast.success(
-        `Arranged ${json.count ?? nodes.length} nodes (${sourceLabel}).${json.notes ? ` ${json.notes}` : ""}`,
+        `Arranged ${json.count ?? nodes.length} nodes (${sourceLabel})${variantHint}.${json.notes ? ` ${json.notes}` : ""}`,
         { id: t, duration: 4000 },
       );
     } catch (err) {
