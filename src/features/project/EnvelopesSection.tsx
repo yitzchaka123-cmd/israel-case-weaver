@@ -334,7 +334,16 @@ function EnvelopeCard({
   gameLanguage: string;
 }) {
   
-  const [generatingImage, setGeneratingImage] = useState(false);
+  const coverJob = useBackgroundImageJob({
+    projectId,
+    target: "envelope",
+    targetId: env?.id,
+    onDone: async (url) => {
+      await onUpdate({ status: "review", cover_image_url: url });
+      toast.success("Envelope mock-up ready");
+    },
+    onError: (msg) => toast.error(msg, { duration: 15000 }),
+  });
 
   const linkedIds = (value("linked_document_ids") as string[] | null) ?? [];
   const linkedSet = new Set(linkedIds);
