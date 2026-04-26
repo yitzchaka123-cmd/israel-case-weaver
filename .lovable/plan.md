@@ -1,56 +1,44 @@
-## The contradiction you spotted
+I found the likely reason it still does not feel live: the UI depends on live updates to `chat_messages`, but that table does not appear to be enabled for realtime updates. Also, the backend only flushes actual reasoning after each model call returns, so there is no visible typing during the long first wait.
 
-When the assistant rewrites `solution_summary` (without `mark_approved: true`), the backend currently does **not** clear `logic_approved_at`. So:
+Plan to bulletproof live thinking:
 
-- The assistant correctly tells you "the Logic Flow may be stale — rebuild or keep?"
-- But the Case Board still shows a green **"Logic approved"** chip and a green ✓ next to the Logic Flow tab.
+1. Enable true realtime for assistant chat updates
+   - Add `chat_messages` to the realtime publication.
+   - Set full row replication for `chat_messages` so the UI reliably receives metadata updates while the assistant is still running.
+   - This is the missing piece that should make the existing live placeholder updates actually arrive before the final answer.
 
-That's the bug. Approval should be tied to the *current* summary; rewriting the summary must invalidate the prior approval.
+2. Show a live thinking bubble immediately, even before model reasoning arrives
+   - Change the in-progress assistant bubble so it always opens a visible live panel as soon as the assistant starts.
+   - It will type status lines like:
+     - `Starting reasoning...`
+     - `Reading current case state...`
+     - `Planning the next action...`
+     - `Waiting for model reasoning...`
+   - This prevents the current dead-silence gap while the model is working.
 
-## Plan
+3. Add a real typewriter stream for progress and reasoning
+   - Extend the thinking panel to animate both stage history and reasoning segments, not just reasoning segments.
+   - Make each new line type out once, with a cursor, instead of appearing all at once.
+   - Fix the current segment IDs so different assistant messages cannot accidentally share the same `0-0`, `1-0` animation key.
 
-### 1. Backend: invalidate approval on summary rewrite (`supabase/functions/assistant-chat/index.ts`)
+4. Flush backend progress more aggressively
+   - Update the assistant backend to write a new progress line before model calls, after model calls, before tools, after tools, and while writing the final reply.
+   - Add a deterministic fallback reasoning trail when the model does not return provider-native reasoning, so the panel still fills live with useful action summaries.
 
-In the `set_solution_summary` handler:
+5. Make the UI resilient if realtime is late
+   - Add short polling while an assistant run is active as a fallback, so live thinking still updates even if realtime drops an event.
+   - Avoid waiting for the final `assistant_runs` completion event to refresh the chat.
 
-- If the new summary text **differs** from the saved one AND `mark_approved` is **not true**, also set `logic_approved_at = null` in the same UPDATE.
-- (If `mark_approved: true` is passed, behaviour is unchanged — the new summary is auto-approved as today.)
-- Update the SUMMARY-REWRITE RULE prompt so the assistant knows that rewriting a summary now also un-approves the logic, and the rebuild prompt should mention "logic approval has been cleared — rebuild + re-approve to unlock document generation again."
-- Also bump `rosters.logic_dirty_since_approval` semantics so the assistant's "stale" warnings in the rosters block reflect summary-driven invalidation too.
+6. Verify with a real assistant turn
+   - Test a prompt that triggers tools and confirm:
+     - The thinking panel appears immediately.
+     - Lines type while the assistant is still running.
+     - Tool/status lines update before the final answer.
+     - The final answer does not duplicate the live bubble.
 
-### 2. Frontend: Case Board reflects the cleared approval (`src/features/project/CanvasSection.tsx`)
-
-Already wired correctly — `approved = !!project?.logic_approved_at` reads live from the project query, which is invalidated via realtime. Once the backend clears it, the Logic Flow tab ✓, the green "Logic approved" pill, and the "Re-approve & continue" button automatically reflect "not approved" with the existing **Approve logic** button. No UI changes needed here, but I'll verify by re-reading after the backend change.
-
-### 3. Top progress bar: add Summary + Logic Flow steps (`src/features/project/PhaseStatusBar.tsx`)
-
-The current bar has steps: Setup → **Summary** → Structure → Documents → Envelopes → Hints → Packaging → Done. You want **Summary** and **Logic Flow** to both be visible steps.
-
-- Replace the single `Structure` step with **Logic Flow** (the structure phase already maps to the canvas tab, so it's literally the same thing — just renamed for clarity).
-- Keep `Summary` as its own step (already present).
-- Drive completion by:
-  - **Summary**: complete when `project.solution_summary` is set.
-  - **Logic Flow**: complete when `project.logic_approved_at` is set; "current" when summary is set but logic is not approved.
-- This means even if `phase` is still `"setup"` server-side, the bar will visually advance Summary→Logic Flow→Documents the moment the underlying data is there, which matches what's actually in the case file.
-- Tooltips will read e.g. "Logic Flow · approved" / "Logic Flow · awaiting approval" / "Logic Flow · 12 nodes, not approved".
-- Clicking Summary or Logic Flow jumps to the **canvas** tab (so the user lands on the Solution Summary button + Approve logic button right there).
-
-### 4. Assistant prompt tweak (small)
-
-In the SUMMARY-REWRITE RULE block, change the proposed `propose_options` wording to make it explicit:
-
-> "🔁 Rebuild logic flow from new summary (and re-approve)"
-> "Keep old logic flow — I'll re-approve later"
-
-So the user understands the green badge is gone on purpose, and what restores it.
-
-### Files touched
-
-- `supabase/functions/assistant-chat/index.ts` — invalidate `logic_approved_at` on summary rewrite + prompt wording.
-- `src/features/project/PhaseStatusBar.tsx` — rename `Structure` → `Logic Flow`, derive Summary/Logic Flow completion from project fields, refine tooltips.
-- (Read-only verify) `src/features/project/CanvasSection.tsx` — confirm the existing "not approved" state + Approve button rendering picks up the cleared approval automatically.
-
-### Out of scope
-
-- I'm not touching the live green dot on the Case Board tab — that's the streaming indicator and is working as you described.
-- I'm not changing how `phase` is stamped server-side; the progress bar will derive Summary/Logic Flow visually so it stays accurate even when `phase` lags.
+Technical details
+- Files to update:
+  - `src/features/project/AssistantSection.tsx`
+  - `supabase/functions/assistant-chat/index.ts`
+  - a new database migration for realtime on `chat_messages`
+- The fix will not expose private chain-of-thought. It will show a safe, live “work log” / reasoning summary and action trail, which is what the app can reliably display across providers.
