@@ -1,16 +1,19 @@
 // Panel A — shows the project cover prominently and lets the user generate
-// additional marketing images (back of box, marketing-extra). Reuses
-// PromptPanel + suggest-image-prompt + generate-image like the Media tab.
+// additional marketing images (back of box, marketing-extra). Uses the new
+// ImagePromptAssistant + history strip + FinalAssetPicker stack so the cover
+// here stays in sync with Overview.
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { PromptPanel } from "@/components/PromptPanel";
+import { ImagePromptAssistant } from "@/components/ImagePromptAssistant";
+import { ImageHistoryStrip, type ImageHistoryRow } from "@/components/ImageHistoryStrip";
+import { FinalAssetPicker } from "@/components/FinalAssetPicker";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
-import { Copy, Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2 } from "lucide-react";
+import { Copy, Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 type OutputType = "image" | "document" | "both";
