@@ -219,7 +219,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
   // Realtime sync for chat messages
   useEffect(() => {
     const ch = supabase
-      .channel(`chat-${projectId}`)
+      .channel(`chat-${projectId}-${Math.random().toString(36).slice(2, 8)}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "chat_messages", filter: `project_id=eq.${projectId}` },
@@ -230,6 +230,17 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
       supabase.removeChannel(ch);
     };
   }, [projectId, qc]);
+
+  // Polling fallback while a run is active — guarantees the live "thinking"
+  // panel keeps updating even if realtime drops a message. Stops as soon as
+  // the run finishes.
+  useEffect(() => {
+    if (!sending) return;
+    const id = window.setInterval(() => {
+      qc.invalidateQueries({ queryKey: ["chat", projectId] });
+    }, 1500);
+    return () => window.clearInterval(id);
+  }, [sending, projectId, qc]);
 
   // Track when an external focus request is in flight, so the
   // auto-scroll-to-bottom effect doesn't yank the user away from the
@@ -505,6 +516,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
               const liveTools = inFlight?.metadata?.tools ?? [];
               const liveReasoning = inFlight?.metadata?.reasoning ?? [];
               const stageHistory = inFlight?.metadata?.stage_history ?? [];
+              const liveMsgId = inFlight?.id ?? "pending";
               return (
                 <div className="flex gap-3 items-start">
                   <Avatar role="assistant" />
@@ -513,16 +525,17 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       <span className="inline-flex items-center gap-1.5">
                         <span className="inline-block h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
-                        {stage ? stage : "Thinking…"}
+                        {stage ? stage : "Starting…"}
                       </span>
                     </div>
-                    {(liveReasoning.length > 0 || stageHistory.length > 1) && (
-                      <ThinkingDisclosure
-                        reasoning={liveReasoning}
-                        stageHistory={stageHistory}
-                        live
-                      />
-                    )}
+                    <ThinkingDisclosure
+                      key={liveMsgId}
+                      msgId={liveMsgId}
+                      reasoning={liveReasoning}
+                      stageHistory={stageHistory}
+                      live
+                      defaultOpen
+                    />
                     {liveTools.length > 0 && (
                       <ToolReceipts tools={liveTools} onOpenAsset={setLightbox} />
                     )}
@@ -848,8 +861,8 @@ function MessageBubble({
               </div>
             </div>
           )}
-          {!editing && (msg.metadata?.reasoning?.length ?? 0) > 0 && (
-            <ThinkingDisclosure reasoning={msg.metadata!.reasoning!} />
+          {!editing && ((msg.metadata?.reasoning?.length ?? 0) > 0 || (msg.metadata?.stage_history?.length ?? 0) > 0) && (
+            <ThinkingDisclosure msgId={msg.id} reasoning={msg.metadata?.reasoning ?? []} stageHistory={msg.metadata?.stage_history ?? []} />
           )}
           {!editing && tools.length > 0 && <ToolReceipts tools={tools} onOpenAsset={onOpenAsset} />}
           {!editing && tools.length > 0 && <GeneratedAssetsStrip tools={tools} onOpenAsset={onOpenAsset} />}
@@ -860,23 +873,27 @@ function MessageBubble({
 }
 
 function ThinkingDisclosure({
+  msgId,
   reasoning,
   stageHistory = [],
   live = false,
+  defaultOpen = false,
 }: {
+  msgId: string;
   reasoning: ReasoningRound[];
   stageHistory?: StageEvent[];
   live?: boolean;
+  defaultOpen?: boolean;
 }) {
   // Default-open while the run is live so users actually see thinking stream
   // in. Once the run finishes the next render keeps whatever state they had.
-  const [open, setOpen] = useState(live);
+  const [open, setOpen] = useState(live || defaultOpen);
   const totalSegments = reasoning.reduce((acc, r) => acc + r.segments.length, 0);
   const totalChars = reasoning.reduce(
     (acc, r) => acc + r.segments.reduce((a, s) => a + s.text.length, 0),
     0,
   );
-  if (totalSegments === 0 && stageHistory.length === 0) return null;
+  if (totalSegments === 0 && stageHistory.length === 0 && !live) return null;
 
   const fullText = reasoning
     .map((r) => {
@@ -897,7 +914,7 @@ function ThinkingDisclosure({
   };
 
   const label = live
-    ? open ? "Hide thinking" : "Show live thinking"
+    ? open ? "Hide live thinking" : "Show live thinking"
     : open ? "Hide thinking" : "Show thinking";
 
   return (
@@ -915,6 +932,9 @@ function ThinkingDisclosure({
               · {totalSegments} segment{totalSegments === 1 ? "" : "s"} · {totalChars.toLocaleString()} chars
             </span>
           )}
+          {totalSegments === 0 && live && (
+            <span className="opacity-70">· streaming…</span>
+          )}
         </button>
         {open && totalSegments > 0 && (
           <button
@@ -930,13 +950,25 @@ function ThinkingDisclosure({
       {open && (
         <div className="mt-2 space-y-3 rounded-md border border-border/60 bg-muted/30 p-3">
           {stageHistory.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground/80">
-              {stageHistory.map((s, i) => (
-                <span key={i} className="inline-flex items-center gap-1">
-                  {i > 0 && <ChevronRight className="h-2.5 w-2.5 opacity-50" />}
-                  <span className="rounded bg-background/60 px-1.5 py-0.5 border border-border/40">{s.label}</span>
-                </span>
-              ))}
+            <div className="space-y-1">
+              {stageHistory.map((s, i) => {
+                const isLast = i === stageHistory.length - 1;
+                return (
+                  <LiveReasoningSegment
+                    key={`stage-${i}`}
+                    segId={`${msgId}::stage-${i}-${s.label}`}
+                    type="summary"
+                    text={s.label}
+                    live={live && isLast}
+                    compact
+                  />
+                );
+              })}
+            </div>
+          )}
+          {totalSegments === 0 && live && (
+            <div className="text-[11px] italic text-muted-foreground/70">
+              Waiting for the model's reasoning to come back…
             </div>
           )}
           {reasoning.map((round, i) => (
@@ -950,7 +982,7 @@ function ThinkingDisclosure({
               {round.segments.map((seg, j) => (
                 <LiveReasoningSegment
                   key={`${round.round}-${j}`}
-                  segId={`${round.round}-${j}`}
+                  segId={`${msgId}::${round.round}-${j}`}
                   type={seg.type}
                   text={seg.text}
                   live={live}
@@ -977,11 +1009,13 @@ function LiveReasoningSegment({
   type,
   text,
   live,
+  compact = false,
 }: {
   segId: string;
   type: "thinking" | "summary";
   text: string;
   live: boolean;
+  compact?: boolean;
 }) {
   const alreadyRevealed = REVEALED_SEGMENT_IDS.has(segId);
   const shouldAnimate = live && !alreadyRevealed;
@@ -1038,13 +1072,13 @@ function LiveReasoningSegment({
   const stillTyping = revealedChars < text.length;
 
   return (
-    <div className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-foreground/75">
+    <div className={`whitespace-pre-wrap font-mono leading-relaxed text-foreground/75 ${compact ? "text-[10.5px]" : "text-[11px]"}`}>
       <span
         className={`mr-1.5 rounded px-1 py-0.5 text-[9px] font-semibold uppercase ${
           type === "summary" ? "bg-accent/20 text-accent" : "bg-primary/15 text-primary"
         }`}
       >
-        {type}
+        {compact ? "step" : type}
       </span>
       {shown}
       {stillTyping && (

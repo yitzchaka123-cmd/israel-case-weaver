@@ -1783,7 +1783,8 @@ async function processConversation(
   const TOOLS = buildTools(playbook);
   const MAX_ROUNDS = 4;
   let lastFb: { effectiveModel: string; fallback: string } = { effectiveModel: model, fallback: "none" };
-  flushProgress("thinking…");
+  flushProgress("preparing prompt…");
+  flushProgress("contacting model…");
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const isFinalRound = round === MAX_ROUNDS - 1;
     // Tool-only rounds get a cheaper reasoning tier than the final prose
@@ -1799,6 +1800,7 @@ async function processConversation(
       const stage = isFinalRound ? "writing reply" : lastTool ? `after ${lastTool}…` : "thinking…";
       flushProgress(stage);
     }
+    flushProgress(isFinalRound ? `writing reply (round ${round + 1})…` : `calling model (round ${round + 1})…`);
 
     const roundStartedAt = Date.now();
     const resp = await chatCompletions(body);
@@ -2139,7 +2141,8 @@ Deno.serve(async (req) => {
     const MAX_ROUNDS = 4;
     const callerUserId = await getUserIdFromAuth(req);
     let lastFb: { effectiveModel: string; fallback: string } = { effectiveModel: model, fallback: "none" };
-    flushProgress("thinking…");
+    flushProgress("preparing prompt…");
+    flushProgress("contacting model…");
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const isFinalRound = round === MAX_ROUNDS - 1;
       const roundEffort = isFinalRound ? baseEffort : (baseEffort === "high" ? "medium" : baseEffort === "medium" ? "low" : baseEffort);
@@ -2149,6 +2152,7 @@ Deno.serve(async (req) => {
         const lastTool = executedTools[executedTools.length - 1]?.name;
         flushProgress(isFinalRound ? "writing reply" : lastTool ? `after ${lastTool}…` : "thinking…");
       }
+      flushProgress(isFinalRound ? `writing reply (round ${round + 1})…` : `calling model (round ${round + 1})…`);
 
       const roundStartedAt = Date.now();
       const resp = await chatCompletions(body);
