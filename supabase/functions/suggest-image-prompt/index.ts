@@ -324,19 +324,7 @@ Deno.serve(async (req) => {
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const ctx = [
-      project.title && `Title: ${project.title}`,
-      project.subtitle && `Subtitle: ${project.subtitle}`,
-      project.genre && `Genre: ${project.genre}`,
-      project.mystery_type && `Mystery type: ${project.mystery_type}`,
-      project.setting && `Setting: ${project.setting}`,
-      project.year && `Year: ${project.year}`,
-      project.player_role && `Player role: ${project.player_role}`,
-      project.case_goal && `Case goal: ${project.case_goal}`,
-      project.selling_point && `Selling point: ${project.selling_point}`,
-      project.image_prompt_instructions && `Project image style notes: ${project.image_prompt_instructions}`,
-      suspects?.length && `Key characters: ${suspects.map((s) => `${s.name}${s.role_in_case ? ` (${s.role_in_case})` : ""}`).join("; ")}`,
-    ].filter(Boolean).join("\n");
+    // ctx is defined above (shared with structured-doc mode).
 
     const guidance = CATEGORY_GUIDANCE[category] ?? CATEGORY_GUIDANCE.external;
 
