@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { AutoSaveInput } from "@/components/AutoSave";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -549,7 +550,7 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
         </DialogHeader>
         <div className="grid md:grid-cols-2 gap-4 max-h-[78vh] overflow-y-auto pr-2">
           <FieldBlock label="Title">
-            <Input value={draft.title} onChange={(e) => update({ title: e.target.value })} />
+            <AutoSaveInput value={draft.title} onSave={(v) => update({ title: v })} />
           </FieldBlock>
           <FieldBlock label="Type">
             <Select value={draft.doc_type ?? ""} onValueChange={(v) => update({ doc_type: v })}>
