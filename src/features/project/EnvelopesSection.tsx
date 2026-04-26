@@ -610,8 +610,8 @@ function EnvelopeCard({
           />
 
           <div className="flex flex-wrap gap-2">
-            <Button className="gap-2" onClick={generateImage} disabled={generatingImage || !env?.id}>
-              {generatingImage ? (
+            <Button className="gap-2" onClick={generateImage} disabled={coverJob.isPending || !env?.id}>
+              {coverJob.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <ImagePlus className="h-4 w-4" />
@@ -643,6 +643,9 @@ function EnvelopeCard({
                 }}
                 hoverOnly
               />
+              {coverJob.isPending && (
+                <GenerationTimer elapsedSec={coverJob.state.elapsedSec} label="Generating mock-up" />
+              )}
             </a>
           ) : (
             <div className="rounded-lg border border-dashed bg-muted/20 px-3 py-6 text-center text-xs text-muted-foreground">
