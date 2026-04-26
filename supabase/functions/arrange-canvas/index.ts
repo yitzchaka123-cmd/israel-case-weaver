@@ -701,7 +701,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { projectId, board = "logic", modelOverride, mode = "deterministic" } = await req.json();
+    const { projectId, board = "logic", modelOverride, mode = "deterministic", variantIndex = 0, variant: variantName } = await req.json();
     if (!projectId) {
       return new Response(JSON.stringify({ error: "projectId required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
