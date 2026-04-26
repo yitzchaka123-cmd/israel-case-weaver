@@ -160,6 +160,25 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     },
   });
 
+  // Number of nodes on the LOGIC board specifically. The "Approve logic"
+  // banner must hide when the logic flow is empty — there's nothing to
+  // approve. Polled lightly so it self-corrects if a Realtime event drops.
+  const { data: logicNodeCount } = useQuery({
+    queryKey: ["logic-node-count", projectId],
+    queryFn: async () => {
+      const { count } = await supabase
+        .from("canvas_nodes")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", projectId)
+        .eq("board", "logic");
+      return count ?? 0;
+    },
+    enabled: !!projectId,
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
+  });
+
   // Approving logic must hand off to the assistant — sending the canonical
   // approval phrase makes the model run `set_solution_summary({mark_approved:
   // true})` and continue with the Phase 4 hand-off (Final Flow proposal +
@@ -168,6 +187,10 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
   const approveLogicFromAssistant = () => {
     if (!project?.solution_summary?.trim()) {
       toast.error("Add a solution summary first (Canvas → Logic Flow)");
+      return;
+    }
+    if ((logicNodeCount ?? 0) === 0) {
+      toast.error("Generate the Logic Flow first — there's nothing to approve yet.");
       return;
     }
     void send("✅ Approve logic & start producing documents");
