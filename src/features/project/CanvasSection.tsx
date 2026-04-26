@@ -20,6 +20,50 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { nodeTypes as caseNodeTypes, getNodeMeta, NODE_META } from "./canvas/CanvasNodeTypes";
 
+// Hand the user's Canvas-side approval over to the assistant so the chat
+// continues automatically. Mirrors useAssistantRun.send() in background mode:
+// inserts the canonical approval phrase as a user message and kicks off a run.
+// Fire-and-forget — the realtime subscription on chat_messages + assistant_runs
+// will surface the assistant's reply in the Assistant tab as soon as it streams.
+async function notifyAssistantOfApproval(projectId: string) {
+  try {
+    // Pull the last 16 messages so the assistant has context (matches the
+    // trim window used by the in-chat composer).
+    const { data: priorRows } = await supabase
+      .from("chat_messages")
+      .select("role, content")
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: false })
+      .limit(16);
+    const prior = (priorRows ?? []).reverse() as { role: "user" | "assistant"; content: string }[];
+    const convo = [
+      ...prior,
+      {
+        role: "user" as const,
+        content: "✅ Approve logic & start producing documents (approved from Canvas)",
+      },
+    ];
+    const { data: { session } } = await supabase.auth.getSession();
+    const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/assistant-chat`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+      },
+      body: JSON.stringify({ projectId, messages: convo, mode: "background" }),
+    });
+    if (!resp.ok) {
+      // 409 means a run is already in progress — the assistant will pick this
+      // up on its next turn anyway, so we just swallow the error quietly.
+      if (resp.status === 429 || resp.status === 402) {
+        toast.error("Approved, but the assistant couldn't start a follow-up turn (rate limit / credits). Open the Assistant tab and say 'continue'.");
+      }
+    }
+  } catch {
+    // Best-effort hand-off; the user can always type in the Assistant tab.
+  }
+}
+
 // Per-device default. Overridable from Settings → AI provider routing → Logic flow.
 // Stored in localStorage so it persists per-browser. Note: "openai-5.2" routes
 // through your OpenAI key directly (not Lovable AI credits) — see ai-router.ts.
