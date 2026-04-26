@@ -252,13 +252,13 @@ export function ProjectOverview({ project }: { project: any }) {
   };
 
   const uploadCover = async (file: File) => {
-    const path = `${project.id}/${Date.now()}-${file.name}`;
+    const path = `${project.id}/uploaded-${Date.now()}-${file.name}`;
     const { error } = await supabase.storage.from("covers").upload(path, file, { upsert: true });
     if (error) return toast.error(error.message);
     const { data } = supabase.storage.from("covers").getPublicUrl(path);
-    await supabase.from("projects").update({ cover_image_url: data.publicUrl }).eq("id", project.id);
-    setDraft({ ...draft, cover_image_url: data.publicUrl });
-    toast.success("Cover updated");
+    await supabase.from("projects").update({ uploaded_cover_url: data.publicUrl, cover_active_version: "uploaded" }).eq("id", project.id);
+    setDraft({ ...draft, uploaded_cover_url: data.publicUrl, cover_active_version: "uploaded" });
+    toast.success("Upload set as the active cover");
   };
 
   const [genCover, setGenCover] = useState(false);
@@ -561,47 +561,94 @@ export function ProjectOverview({ project }: { project: any }) {
       <div className="space-y-6">
         <Panel>
           <SectionTitle>Cover</SectionTitle>
-          <div className="group aspect-[3/4] rounded-xl overflow-hidden border bg-gradient-soft relative">
-            {draft.cover_image_url ? (
-              <>
-                <img src={draft.cover_image_url} alt="Cover" className="w-full h-full object-cover" />
-                {(draft.cover_effective_model || draft.cover_fallback) && (
-                  <AiOriginBadge
-                    hoverOnly
-                    info={{
-                      requested: draft.ai_provider_images ?? null,
-                      effective: draft.cover_effective_model ?? null,
-                      fallback: draft.cover_fallback ?? "none",
-                    }}
-                  />
+          {(() => {
+            const activeCover = draft.cover_active_version === "uploaded"
+              ? (draft.uploaded_cover_url ?? draft.cover_image_url)
+              : (draft.cover_image_url ?? draft.uploaded_cover_url);
+            return (
+              <button
+                type="button"
+                onClick={() => activeCover && setCoverPreviewOpen(true)}
+                className="block w-full group aspect-[3/4] rounded-xl overflow-hidden border bg-gradient-soft relative"
+              >
+                {activeCover ? (
+                  <>
+                    <img src={activeCover} alt="Cover" className="w-full h-full object-cover" />
+                    {(draft.cover_effective_model || draft.cover_fallback) && (
+                      <AiOriginBadge
+                        hoverOnly
+                        info={{
+                          requested: draft.ai_provider_images ?? null,
+                          effective: draft.cover_effective_model ?? null,
+                          fallback: draft.cover_fallback ?? "none",
+                        }}
+                      />
+                    )}
+                  </>
+                ) : (
+                  <div className="h-full flex items-center justify-center text-muted-foreground">
+                    <Upload className="h-8 w-8 opacity-30" />
+                  </div>
                 )}
-              </>
-            ) : (
-              <div className="h-full flex items-center justify-center text-muted-foreground">
-                <Upload className="h-8 w-8 opacity-30" />
-              </div>
-            )}
-          </div>
+              </button>
+            );
+          })()}
           <input ref={fileInput} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadCover(e.target.files[0])} />
           <div className="mt-3 space-y-3">
             <ImageModelPicker surface="cover" defaultModel="chatgpt-image" className="w-full" />
-            <PromptPanel
+            <ImagePromptAssistant
               projectId={project.id}
               surface="cover"
               category="cover"
-              initialPrompt={coverPrompt}
-              generating={genCover}
-              onGenerate={(p) => generateCover(p)}
-              mode={draft.cover_image_url ? "archive" : "inline"}
+              targetId={project.id}
+              hint={[draft.title && `Title: ${draft.title}`, draft.subtitle && `Subtitle: ${draft.subtitle}`, draft.mystery_type && `Mystery type: ${draft.mystery_type}`, draft.setting && `Setting: ${draft.setting}`].filter(Boolean).join(". ")}
+              prompt={draft.cover_prompt ?? ""}
+              onChange={setCoverPrompt}
             />
-            <Button variant="outline" className="w-full" onClick={() => fileInput.current?.click()}>
-              {draft.cover_image_url ? "Replace cover" : "Upload cover"}
+            <Button onClick={generateCover} disabled={genCover || !(draft.cover_prompt ?? "").trim()} className="w-full gap-2">
+              {genCover ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+              Generate cover
             </Button>
+            <Button variant="outline" className="w-full" onClick={() => fileInput.current?.click()}>
+              {(draft.cover_image_url || draft.uploaded_cover_url) ? "Upload replacement" : "Upload cover"}
+            </Button>
+            <ImageHistoryStrip
+              items={coverHistory ?? []}
+              currentUrl={draft.cover_image_url}
+              onRestore={restoreCoverFromHistory}
+              title="Cover history"
+            />
+            {(draft.cover_image_url || draft.uploaded_cover_url) && (
+              <FinalAssetPicker
+                value={draft.cover_active_version ?? "generated"}
+                onChange={setCoverActiveVersion}
+                generatedUrl={draft.cover_image_url}
+                uploadedUrl={draft.uploaded_cover_url}
+                generatedLabel="Generated cover"
+                uploadedLabel="Uploaded cover"
+              />
+            )}
           </div>
           <p className="text-xs text-muted-foreground mt-2">
             The cover becomes your dashboard thumbnail.
           </p>
+          {(() => {
+            const activeCover = draft.cover_active_version === "uploaded"
+              ? (draft.uploaded_cover_url ?? draft.cover_image_url)
+              : (draft.cover_image_url ?? draft.uploaded_cover_url);
+            return activeCover ? (
+              <Dialog open={coverPreviewOpen} onOpenChange={setCoverPreviewOpen}>
+                <DialogContent className="max-w-4xl p-4">
+                  <div className="relative rounded-lg bg-muted overflow-hidden border">
+                    <img src={activeCover} alt="Cover preview" className="max-h-[80vh] w-full object-contain" />
+                    <AiOriginBadge info={{ effective: draft.cover_effective_model, fallback: draft.cover_fallback }} />
+                  </div>
+                </DialogContent>
+              </Dialog>
+            ) : null;
+          })()}
         </Panel>
+
 
         <Panel>
           <SectionTitle>Autosave</SectionTitle>
