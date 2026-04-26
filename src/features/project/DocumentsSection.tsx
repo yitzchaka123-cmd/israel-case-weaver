@@ -756,7 +756,89 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
         </DialogContent>
       </Dialog>
     )}
+    {historyPreview?.url && (
+      <Dialog open={!!historyPreview} onOpenChange={(o) => !o && setHistoryPreview(null)}>
+        <DialogContent className="max-w-5xl p-4">
+          <div className="relative rounded-lg bg-muted overflow-hidden border">
+            <img src={historyPreview.url} alt="History preview" className="max-h-[78vh] w-full object-contain" />
+            <AiOriginBadge
+              info={{ requested: historyPreview.model, effective: historyPreview.effective_model ?? historyPreview.model, provider: historyPreview.provider, fallback: "none" }}
+            />
+          </div>
+          <div className="flex justify-end pt-2">
+            <Button size="sm" className="gap-2" onClick={() => { restoreImageFromHistory(historyPreview); setHistoryPreview(null); }}>
+              <RotateCcw className="h-3.5 w-3.5" /> Restore as Final asset image
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    )}
     </>
+  );
+}
+
+function HistoryStrip({
+  label,
+  items,
+  activeUrl,
+  onPreview,
+  onRestore,
+  kind,
+}: {
+  label: string;
+  items: MediaHistoryRow[];
+  activeUrl: string | null;
+  onPreview: (item: MediaHistoryRow) => void;
+  onRestore: (item: MediaHistoryRow) => void | Promise<void>;
+  kind: "image" | "document";
+}) {
+  return (
+    <div className="mt-3 space-y-1.5">
+      <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">{label}</p>
+      <div className="flex gap-2 overflow-x-auto pb-2">
+        {items.map((item) => {
+          const isActive = item.url === activeUrl;
+          return (
+            <div key={item.id} className={`relative shrink-0 rounded-md border ${isActive ? "border-accent ring-2 ring-accent/40" : "border-border"} bg-muted overflow-hidden`}>
+              <button
+                type="button"
+                onClick={() => onPreview(item)}
+                className="block w-20 h-20"
+                title={item.model ?? "Open"}
+              >
+                {kind === "image" && item.url ? (
+                  <img src={item.preview_url ?? item.url} alt="History thumbnail" className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full flex flex-col items-center justify-center text-[10px] text-muted-foreground">
+                    <FileText className="h-5 w-5 mb-1" />
+                    {(item.document_format ?? "FILE").toUpperCase()}
+                  </div>
+                )}
+              </button>
+              {!isActive && (
+                <button
+                  type="button"
+                  onClick={() => onRestore(item)}
+                  className="absolute bottom-0 inset-x-0 bg-background/85 hover:bg-background text-[9px] uppercase tracking-wider py-0.5 text-center transition-colors"
+                  title="Restore as final asset"
+                >
+                  Restore
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function FinalAssetOption({ value, label, disabled, current }: { value: string; label: string; disabled: boolean; current: string }) {
+  return (
+    <label className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm cursor-pointer ${disabled ? "opacity-50 cursor-not-allowed" : current === value ? "border-accent bg-accent/5" : "hover:bg-muted/50"}`}>
+      <RadioGroupItem value={value} disabled={disabled} />
+      <span>{label}</span>
+    </label>
   );
 }
 
