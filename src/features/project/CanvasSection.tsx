@@ -641,6 +641,28 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
                 />
               ) : null}
             </Button>
+            {project?.solution_summary?.trim() && !approved && (
+              <Button
+                className="gap-2 shadow-pop"
+                onClick={() => {
+                  setSummaryDraft(approvedSummary);
+                  approveLogic();
+                }}
+                title="Lock the current solution summary as the approved logic and unlock document generation"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                Approve logic
+              </Button>
+            )}
+            {approved && (
+              <span
+                className="inline-flex items-center gap-1.5 rounded-md border border-success/40 bg-success/10 px-2 py-1 text-xs text-foreground"
+                title={`Logic approved on ${new Date(project!.logic_approved_at!).toLocaleString()}`}
+              >
+                <CheckCircle2 className="h-3.5 w-3.5 text-success" />
+                Logic approved
+              </span>
+            )}
           </>
         )}
 
