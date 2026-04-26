@@ -79,11 +79,11 @@ export function useAssistantRun(projectId: string) {
       if (!cur.isRunning && dbRunning) setRunState(qc, projectId, { isRunning: true });
     })();
 
-    // Unique channel name per effect run — avoids "cannot add callbacks after
-    // subscribe()" when React Strict Mode (or fast refresh) re-runs the effect
-    // and the prior channel hasn't been GC'd yet.
+    // Stable channel name per project — supabase.removeChannel in the cleanup
+    // below tears down the prior channel before React Strict Mode / fast
+    // refresh re-runs the effect, so we never end up with two live subscribers.
     const channel = supabase
-      .channel(`assistant-runs-${projectId}-${Math.random().toString(36).slice(2, 10)}`)
+      .channel(`assistant-runs-${projectId}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "assistant_runs", filter: `project_id=eq.${projectId}` },
