@@ -466,16 +466,25 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
               );
             })}
 
-            {sending && (
-              <div className="flex gap-3 items-start">
-                <Avatar role="assistant" />
-                <div className="flex-1 pt-1.5">
-                  <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Thinking…
+            {sending && (() => {
+              // Find the most recent in-progress assistant placeholder so we
+              // can surface its `stage` (e.g. "after add_suspect…") instead
+              // of just spinning silently. The placeholder is updated between
+              // tool rounds via realtime UPDATE on chat_messages.metadata.
+              const inFlight = [...messages].reverse().find((m) => m.role === "assistant" && m.metadata?.in_progress);
+              const stage = inFlight?.metadata?.stage ?? null;
+              return (
+                <div className="flex gap-3 items-start">
+                  <Avatar role="assistant" />
+                  <div className="flex-1 pt-1.5">
+                    <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>{stage ? `${stage}` : "Thinking…"}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         </div>
 
