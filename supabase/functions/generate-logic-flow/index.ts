@@ -296,6 +296,7 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
           position_x: typeof n.x === "number" ? n.x : 0,
           position_y: typeof n.y === "number" ? n.y : 0,
           data,
+          logic_version_id: newLogicVersionId,
         })
         .select("id")
         .single();
