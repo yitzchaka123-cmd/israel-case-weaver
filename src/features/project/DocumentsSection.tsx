@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Plus, FileText, Trash2, Upload, Image as ImageIcon, Loader2, FileDown, Copy } from "lucide-react";
+import { Plus, FileText, Trash2, Upload, Image as ImageIcon, Loader2, FileDown, Copy, RotateCcw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
@@ -16,6 +16,18 @@ import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { DocumentPromptAssistant } from "@/components/DocumentPromptAssistant";
 import { Badge } from "@/components/ui/badge";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+
+interface MediaHistoryRow {
+  id: string;
+  url: string | null;
+  preview_url: string | null;
+  model: string | null;
+  effective_model: string | null;
+  provider: string | null;
+  document_format: string | null;
+  created_at: string;
+}
 
 const DOC_TYPES = [
   "Memo", "Interrogation transcript", "Suspect profile", "Map", "Chat log",
