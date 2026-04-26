@@ -342,7 +342,7 @@ function HintSheetBlock({ projectId, stage, sheet }: { projectId: string; stage:
     ? (sheet?.uploaded_image_url ?? sheet?.image_url ?? null)
     : (sheet?.image_url ?? sheet?.uploaded_image_url ?? null);
 
-  const fileRef = (el: HTMLInputElement | null) => { fileInput[1](el); };
+  
 
   return (
     <div className="border-t bg-muted/20 px-5 py-4 space-y-3">
@@ -406,8 +406,8 @@ function HintSheetBlock({ projectId, stage, sheet }: { projectId: string; stage:
               {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
               Generate hint sheet
             </Button>
-            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadSheet(e.target.files[0])} />
-            <Button size="sm" variant="outline" className="gap-2" onClick={() => fileInput[0]?.click()}>
+            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadSheet(e.target.files[0])} />
+            <Button size="sm" variant="outline" className="gap-2" onClick={() => fileInputRef.current?.click()}>
               <Upload className="h-3.5 w-3.5" /> Upload sheet
             </Button>
           </div>
