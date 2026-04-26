@@ -494,6 +494,22 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
       status: "ok", latencyMs: Date.now() - startedAt, promptExcerpt: userPrompt,
     });
 
+    // Drop a notification so the user gets a clear "ready for approval" ping
+    // once the live build has finished. Clicking it in the bell opens the
+    // assistant with a starter prompt that asks them to approve the board.
+    if (insertedNodeCount > 0) {
+      const { error: notifyErr } = await supa.from("project_notifications").insert({
+        project_id: projectId,
+        kind: "logic_flow_ready",
+        title: "Logic Flow finished — ready for your approval.",
+        body: `Drew ${insertedNodeCount} nodes and ${insertedEdgeCount} edges. Open Canvas → Logic Flow to review, then approve to unlock document generation.`,
+        starter_prompt: "The Logic Flow just finished drawing. Walk me through it and ask me to approve.",
+        status: "unread",
+        created_by: "assistant",
+      });
+      if (notifyErr) console.error("logic_flow_ready notification insert", notifyErr);
+    }
+
     return new Response(JSON.stringify({
       ok: true,
       summary: useApproved ? approvedSummary : (parsed?.summary ?? ""),

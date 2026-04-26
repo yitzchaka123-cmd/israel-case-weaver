@@ -20,6 +20,7 @@ import { ExportMenu } from "./ExportMenu";
 import { PhaseStatusBar } from "./PhaseStatusBar";
 import { NotificationBell } from "./notifications/NotificationBell";
 import { useAssistantRunStatus } from "./assistant/useAssistantRun";
+import { useLogicFlowLive } from "./canvas/useLogicFlowLive";
 import { ProjectHistoryPanel } from "./ProjectHistoryPanel";
 import { trashProject } from "@/lib/project-versions";
 
@@ -29,6 +30,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const [tab, setTab] = useState("overview");
   const [focusMessageId, setFocusMessageId] = useState<string | null>(null);
   const assistantRunning = useAssistantRunStatus(projectId);
+  const canvasLive = useLogicFlowLive(projectId);
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   useEffect(() => {
@@ -208,6 +210,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
               ].map((t) => {
                 const Icon = t.icon;
                 const showPulse = t.v === "assistant" && assistantRunning;
+                const showLiveDot = t.v === "canvas" && canvasLive;
                 return (
                   <TabsTrigger
                     key={t.v}
@@ -221,6 +224,15 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
                         <span className="absolute -top-0.5 -right-1 flex h-1.5 w-1.5">
                           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-75" />
                           <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-accent" />
+                        </span>
+                      )}
+                      {showLiveDot && (
+                        <span
+                          className="absolute -top-0.5 -right-1 flex h-1.5 w-1.5"
+                          title="Logic Flow is being drawn live"
+                        >
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
+                          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-success" />
                         </span>
                       )}
                     </span>
