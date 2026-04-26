@@ -324,33 +324,13 @@ export function ProjectOverview({ project }: { project: any }) {
       toast.error("Click Create prompt first, or write a prompt in the Final prompt tab");
       return;
     }
-    setGenCover(true);
-    const t = toast.loading("Generating cover…");
-    const ctrl = new AbortController();
-    const timer = window.setTimeout(() => ctrl.abort(), 145_000);
+    const modelOverride = getStoredImageModel("cover", "chatgpt-image");
+    const quality = getStoredImageQuality("cover", "medium");
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const modelOverride = getStoredImageModel("cover", "chatgpt-image");
-      const quality = getStoredImageQuality("cover", "medium");
-      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-image`, {
-        method: "POST",
-        signal: ctrl.signal,
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
-        body: JSON.stringify({ projectId: project.id, prompt: promptToUse, target: "project-cover", modelOverride, aspect: "portrait", quality }),
-      });
-      const json = await resp.json().catch(() => ({}));
-      if (!resp.ok) throw new Error(json.error ?? `Failed (${resp.status})`);
-      setDraft({ ...draft, cover_image_url: json.url, cover_active_version: "generated", cover_effective_model: json.effectiveModel ?? null, cover_fallback: json.fallback ?? null });
-      refetchCoverHistory();
-      toast.success("Cover ready", { id: t });
-    } catch (e) {
-      const msg = e instanceof Error
-        ? (e.name === "AbortError" ? "Image generation timed out (>2 min). Try Medium/Low quality or a Gemini model." : e.message)
-        : "Failed";
-      toast.error(msg, { id: t, duration: 15000 });
-    } finally {
-      window.clearTimeout(timer);
-      setGenCover(false);
+      await coverJob.start({ prompt: promptToUse, modelOverride, aspect: "portrait", quality });
+      toast.message("Generating in the background — you can close the tab.");
+    } catch {
+      // start() already showed a toast via onError
     }
   };
 
