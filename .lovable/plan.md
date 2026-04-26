@@ -1,72 +1,44 @@
-# Bulletproof Summary Regeneration
+## Problem
 
-## Problems Found
+You clicked **Approve logic** (the green button next to the composer in the Assistant panel, or the **Approve logic** button on the Canvas → Logic Flow board). Both buttons:
 
-I traced the flow end-to-end. Three real bugs are conspiring to produce the stale state you saw:
+1. Set `logic_approved_at = now()` and flip `phase = "production"` directly in the database.
+2. Show a toast.
+3. **Stop there.**
 
-### 1. Phase bar doesn't snap back to "Summary"
-`set_solution_summary` (in `supabase/functions/assistant-chat/index.ts`) clears `logic_approved_at` when the summary text changes — but it never touches the `phase` column. Meanwhile `approveLogic` in `CanvasSection.tsx` writes `phase: "production"` (which `PhaseStatusBar` normalizes to "documents"). And `PhaseStatusBar` uses `Math.max(serverIdx, derivedIdx)` — so the saved `production` phase **always** keeps the bar past Summary, even after approval is cleared.
+They do **not** post anything into the chat, so the assistant has no idea anything happened. The conversation just sits there waiting for you to type something. Only the *in-chat* path that the assistant proposes via `propose_options` (`"✅ Approve logic & start producing documents"`) actually triggers `send(...)`, which is what the system already documents as the canonical hand-off path.
 
-### 2. Old Logic Flow nodes/edges are left in place
-When the assistant rewrites the summary, only the approval timestamp is cleared. The actual `canvas_nodes` (board='logic') and `canvas_edges` from the old summary are untouched. The user sees a fully-drawn board that looks "done" but is no longer trustworthy.
+## Diagnosis (file references)
 
-### 3. "Using approved summary" badge lies
-The badge in `CanvasSection.tsx` shows whenever `project.solution_summary` exists — it has no concept of *which* summary the on-screen logic flow was actually generated from. After a rewrite without rebuild, the badge keeps claiming the flow uses the approved summary, but it doesn't.
+- `src/features/project/AssistantSection.tsx` lines 164–185 — `approveLogicFromAssistant`: DB update only, no `send(...)` call. Button rendered at line 558.
+- `src/features/project/CanvasSection.tsx` lines 403–422 — `approveLogic` from the Canvas board: DB update only, no chat hand-off. Button rendered at line 715.
+- `supabase/functions/assistant-chat/index.ts` line 180 already says: *"Never tell the user 'click Approve logic on the Canvas' if you can offer this button — the in-chat approval IS the canonical path."* But when the user **does** click the Canvas/composer button, the assistant is never told.
 
----
+## Fix
 
-## Fix Plan
+Wire BOTH out-of-chat approval buttons through the same `send(...)` path the in-chat option uses, so the assistant actually receives the approval and continues the conversation (recap → Final Flow proposal → propose_options).
 
-### A. Backend — `supabase/functions/assistant-chat/index.ts` (`set_solution_summary` handler)
+### 1. `src/features/project/AssistantSection.tsx`
+Change `approveLogicFromAssistant` so that — instead of writing `logic_approved_at` directly — it calls `send("✅ Approve logic & start producing documents")`. The backend `set_solution_summary({mark_approved: true})` flow already stamps `logic_approved_at` and the assistant already knows the next-turn instructions for that exact phrase (lines 173–180 of the edge function). This makes the composer-side button behave identically to clicking the bubble button. Remove the now-unused direct-update path and `approvingLogic` state, or keep the spinner tied to `sending`.
 
-When the summary text changes and `mark_approved` is **not** true:
-1. **Clear `logic_approved_at = null`** (already done — keep).
-2. **Reset `phase = "summary"`** so the top bar snaps back to the Summary step. Documents/envelopes/hints data is preserved (we only move the indicator), and the phase will move forward again automatically when the user re-approves logic.
-3. **Wipe the stale Logic Flow board**: delete all `canvas_nodes` where `project_id = projectId AND board = 'logic'` and all `canvas_edges` where `project_id = projectId AND board = 'logic'`. The `final` board (production map) is also stale, so wipe it too — but only if `logic_approved_at` was previously set (otherwise final never existed).
-4. Update the returned `message` so the assistant tells the user *exactly* what happened: "Summary saved. The previous Logic Flow was cleared because it was built from the old summary — say 'rebuild logic flow' to regenerate."
-5. Update the **SUMMARY-REWRITE RULE** prose in the system prompt to match the new behavior (no longer "may be stale" — it's actively cleared).
+### 2. `src/features/project/CanvasSection.tsx`
+After the Canvas-side `approveLogic` succeeds (it stays as-is because the user may approve from the board without ever opening chat), also insert a synthetic user chat message — `"✅ Approve logic & start producing documents (approved from Canvas)"` — into `chat_messages` for this project, then trigger an assistant run. Two equivalent options:
+- **Preferred:** use the same edge function `assistant-chat` invocation pattern that `useAssistantRun.send` uses, so the assistant immediately picks up the conversation.
+- **Lighter-weight alternative:** insert a `role: "user"` row directly via supabase and rely on the existing realtime subscription, plus call the edge function once to actually run the model.
 
-### B. Frontend — `src/features/project/CanvasSection.tsx`
+Whichever we pick, the goal is identical: the next time the user opens the assistant panel (or if it's already open, instantly), they see *"Logic approved — drafting the document set now."* followed by the standard `propose_options` (Approve & build Final Flow / Just build it / Revise the plan), exactly as the playbook on lines 179 & 204 of `assistant-chat/index.ts` demands.
 
-1. **Truthful "Using approved summary" badge**: The badge currently keys off `project.solution_summary` existing. Change the condition to also require `project.logic_approved_at` being set **and** the existing logic nodes being non-empty. When `logic_approved_at` is null (i.e., approval was cleared because the summary changed), replace the green badge with an **amber "Summary changed — logic not yet rebuilt"** chip that links to the regenerate button. This makes the indicator match reality in every state.
-2. **`generateLogicFlow` already replaces** nodes/edges, so the manual button path is fine — but add a small guard: when the user clicks "Regenerate from solution summary" and `logic_approved_at` is null but `phase === 'production'`, also reset `phase: 'summary'` before regenerating so the bar is consistent.
-3. **`approveLogic`**: keep writing `phase: 'production'` (advances the bar) — no change needed here; the approve action is what moves us forward.
+### 3. Backend safety net (`supabase/functions/assistant-chat/index.ts`)
+The current `set_solution_summary` already handles `mark_approved: true` correctly. No change needed there. We should, however, double-check that the rosters block (`Logic flow approved: YES (...)`) is regenerated before the response so the assistant sees the freshly-stamped timestamp on this same turn. That logic already exists (line 339), so this is just a verification step, not a code change.
 
-### C. Frontend — `src/features/project/PhaseStatusBar.tsx`
+### 4. Acceptance check
+After the change:
+- Click the green **Approve logic** chip above the composer → a `"✅ Approve logic & start producing documents"` user bubble appears, the assistant streams a recap and the next propose_options.
+- Click **Approve logic** on the Canvas board → switch back to Assistant tab → same recap + propose_options is already there (or streaming).
+- The progress bar advances from Logic Flow to Documents in both cases (it already did, this part isn't broken).
 
-Soften the `Math.max(serverIdx, derivedIdx)` rule so that **clearing approval pulls the bar back**:
-- If `logic_approved_at` is null, cap `currentIdx` at the **Logic Flow** step (don't let a stale `phase = 'production'` push it forward).
-- If `solution_summary` is empty, cap `currentIdx` at **Summary**.
-- This makes the bar always reflect the truth of the data, never an out-of-date `phase` column.
+## Files to edit
+- `src/features/project/AssistantSection.tsx`
+- `src/features/project/CanvasSection.tsx`
 
-### D. Realtime invalidation — `src/features/project/ProjectWorkspace.tsx`
-
-Already invalidates `phase-bar-project-meta`. Add invalidation of `nodes`/`edges` queries when `canvas_nodes`/`canvas_edges` rows are deleted (so the canvas immediately empties when the assistant wipes logic). Verify the existing realtime subscription covers DELETE events for both tables; add them if missing.
-
----
-
-## Self-Check (the "bulletproof" pass)
-
-After implementing, I'll verify each scenario produces the right UI state:
-
-| Scenario | Phase bar | Badge | Logic board |
-|---|---|---|---|
-| Fresh project | Setup | (none) | empty |
-| Summary saved, no logic yet | Summary | "Using approved summary" hidden until logic exists | empty |
-| Logic generated, not approved | Logic Flow | "Using approved summary" (green) | full |
-| Logic approved | Documents (or wherever phase is) | "Logic approved" green chip | full |
-| Assistant rewrites summary | **Summary** (snaps back) | **Amber "Summary changed — logic not yet rebuilt"** | **empty** (wiped) |
-| User clicks Regenerate from solution summary | Logic Flow | green "Using approved summary" | refreshed |
-
-I'll also run the Supabase linter after the migration-free code changes (no schema changes here — purely behavioral/data changes that go through existing RLS-allowed UPDATE/DELETE statements).
-
----
-
-## Files Touched
-
-- `supabase/functions/assistant-chat/index.ts` — wipe logic + reset phase in `set_solution_summary`; update system prompt rule.
-- `src/features/project/CanvasSection.tsx` — truthful badge, optional phase reset on manual regenerate.
-- `src/features/project/PhaseStatusBar.tsx` — derived-cap rules so the bar follows data, not the `phase` column.
-- `src/features/project/ProjectWorkspace.tsx` — ensure DELETE events on canvas tables invalidate the nodes/edges queries.
-
-No DB schema migration required.
+No DB migration. No edge function change.
