@@ -2082,17 +2082,44 @@ Deno.serve(async (req) => {
     const executedTools: Array<{ name: string; args?: Record<string, unknown>; result: unknown }> = [];
     type ReasoningSegment = { type: "thinking" | "summary"; text: string };
     const reasoningRounds: Array<{ round: number; segments: ReasoningSegment[] }> = [];
+    const stageHistory: Array<{ at: string; label: string }> = [];
+    const pushStage = (label: string) => {
+      const last = stageHistory[stageHistory.length - 1];
+      if (last?.label === label) return;
+      stageHistory.push({ at: new Date().toISOString(), label });
+    };
+    const flushProgress = (stage: string) => {
+      pushStage(stage);
+      void supa.from("chat_messages")
+        .update({
+          metadata: {
+            in_progress: true,
+            model,
+            stage,
+            stage_history: stageHistory,
+            partial_tools: executedTools.length,
+            tools: executedTools,
+            ...(reasoningRounds.length ? { reasoning: reasoningRounds } : {}),
+          },
+        })
+        .eq("id", assistantMessageId);
+    };
     const baseEffort = String((project as { ai_reasoning_effort?: string }).ai_reasoning_effort ?? "low");
     const TOOLS = buildTools(playbook);
 
     const MAX_ROUNDS = 4;
     const callerUserId = await getUserIdFromAuth(req);
     let lastFb: { effectiveModel: string; fallback: string } = { effectiveModel: model, fallback: "none" };
+    flushProgress("thinking…");
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const isFinalRound = round === MAX_ROUNDS - 1;
-      const roundEffort = isFinalRound ? baseEffort : "low";
+      const roundEffort = isFinalRound ? baseEffort : (baseEffort === "high" ? "medium" : baseEffort === "medium" ? "low" : baseEffort);
       const body: Record<string, unknown> = { model, messages: convo, stream: false, reasoningEffort: roundEffort, ...claudeSkillRequestShape(claudeChatSkills) };
       if (!isFinalRound) body.tools = TOOLS;
+      if (round > 0) {
+        const lastTool = executedTools[executedTools.length - 1]?.name;
+        flushProgress(isFinalRound ? "writing reply" : lastTool ? `after ${lastTool}…` : "thinking…");
+      }
 
       const roundStartedAt = Date.now();
       const resp = await chatCompletions(body);
