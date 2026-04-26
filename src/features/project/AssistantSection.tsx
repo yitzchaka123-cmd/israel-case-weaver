@@ -560,7 +560,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
 
         {/* Composer */}
         <div className="border-t bg-surface/60 backdrop-blur">
-          {!project?.logic_approved_at && project?.solution_summary?.trim() && (
+          {!project?.logic_approved_at && project?.solution_summary?.trim() && (logicNodeCount ?? 0) > 0 && (
             <div className="max-w-3xl mx-auto px-6 pt-3">
               <div className="flex items-center gap-3 rounded-lg border border-accent/30 bg-accent/10 px-3 py-2">
                 <CheckCircle2 className="h-4 w-4 text-accent shrink-0" />
