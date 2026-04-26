@@ -12,6 +12,8 @@ import { ImageHistoryStrip, type ImageHistoryRow } from "@/components/ImageHisto
 import { FinalAssetPicker } from "@/components/FinalAssetPicker";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
+import { useBackgroundImageJob } from "@/features/project/useBackgroundImageJob";
+import { GenerationTimer } from "@/features/project/GenerationTimer";
 
 interface Hint {
   id: string;
