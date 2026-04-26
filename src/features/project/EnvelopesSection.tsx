@@ -648,38 +648,23 @@ function EnvelopeCard({
 
         {/* RIGHT — design & generation */}
         <div className="space-y-4">
-          <div className="flex items-center justify-between gap-2">
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-              Design instructions
-            </Label>
-            <div className="flex items-center gap-2">
-              <PromptWriterModelPicker surface="envelope" />
-              <ImageModelPicker surface="envelope" defaultModel="chatgpt-image" />
-            </div>
+          <div className="flex items-center justify-end gap-2">
+            <ImageModelPicker surface="envelope" defaultModel="chatgpt-image" />
           </div>
-          <Textarea
-            rows={10}
-            value={(value("design_instructions") as string) ?? ""}
-            onChange={(e) => onUpdate({ design_instructions: e.target.value })}
-            placeholder={`Paper stock, wax seal, classification stamp, Hebrew label placement, era-correct typography…\n\nClick ✨ Draft prompt to start from the workspace template.`}
-            className="font-mono text-xs leading-relaxed"
+
+          <DocumentPromptAssistant
+            projectId={projectId}
+            target={{ kind: "envelope", envelopeId: env?.id ?? "" }}
+            design={(value("design_instructions") as string) ?? ""}
+            content={(value("task") as string) ?? ""}
+            onChange={({ design, content }) => onUpdate({ design_instructions: design, task: content })}
+            onAutoGenerate={env?.id ? generateImage : undefined}
+            gameLanguage={gameLanguage}
+            mode="inline"
           />
 
           <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              className="gap-2"
-              onClick={draftPrompt}
-              disabled={draftingPrompt}
-            >
-              {draftingPrompt ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Sparkles className="h-4 w-4" />
-              )}
-              Draft prompt
-            </Button>
-            <Button className="gap-2" onClick={generateImage} disabled={generatingImage}>
+            <Button className="gap-2" onClick={generateImage} disabled={generatingImage || !env?.id}>
               {generatingImage ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
