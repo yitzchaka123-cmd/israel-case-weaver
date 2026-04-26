@@ -469,7 +469,46 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
       const x = (pageW - w) / 2;
       const y = (pageH - h) / 2;
       pdf.addImage(dataUrl, "PNG", x, y, w, h);
-      pdf.save(`${(draft.title || "document").replace(/[^\p{L}\p{N}_\- ]+/gu, "_")}.pdf`);
+      const safeName = (draft.title || "document").replace(/[^\p{L}\p{N}_\- ]+/gu, "_");
+      pdf.save(`${safeName}.pdf`);
+
+      // Also auto-save into the Final asset document slot (only when empty)
+      // so users get a real PDF in the asset stack without an extra click.
+      if (!draft.generated_document_url && !draft.generated_pdf_url) {
+        try {
+          const pdfBlob = pdf.output("blob");
+          const path = `${doc.project_id}/${doc.id}-${Date.now()}-client.pdf`;
+          const up = await supabase.storage.from("documents").upload(path, pdfBlob, { upsert: true, contentType: "application/pdf" });
+          if (!up.error) {
+            const { data: pub } = supabase.storage.from("documents").getPublicUrl(path);
+            await supabase.from("documents").update({
+              generated_pdf_url: pub.publicUrl,
+              document_format: "pdf",
+              document_provider: "client-jspdf",
+              document_model: "jsPDF from image",
+            }).eq("id", doc.id);
+            await supabase.from("media_assets").insert({
+              project_id: doc.project_id,
+              source_document_id: doc.id,
+              asset_type: "document",
+              category: "document",
+              document_format: "pdf",
+              generation_mode: "client_image_to_pdf",
+              provider: "client-jspdf",
+              model: "jsPDF from image",
+              url: pub.publicUrl,
+              status: "generated",
+              title: draft.title,
+            });
+            setDraft((d) => d ? { ...d, generated_pdf_url: pub.publicUrl, document_format: "pdf", document_provider: "client-jspdf", document_model: "jsPDF from image" } : d);
+            refetchDocumentHistory();
+            toast.success("PDF saved locally + added as Final asset document", { id: "pdf" });
+            return;
+          }
+        } catch (uploadErr) {
+          console.warn("Auto-upload of client PDF failed", uploadErr);
+        }
+      }
       toast.success("PDF saved", { id: "pdf" });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "PDF failed", { id: "pdf" });
