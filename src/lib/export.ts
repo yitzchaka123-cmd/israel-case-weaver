@@ -91,10 +91,33 @@ async function buildProjectPackage(projectId: string): Promise<{ blob: Blob; fil
   for (const s of suspects ?? []) {
     const base = safeName(s.name);
     susFolder?.file(`${base}.json`, JSON.stringify(s, null, 2));
-    if (s.thumbnail_url) {
-      const blob = await fetchBlob(s.thumbnail_url);
+    const portrait = pickActiveImage(s.active_version, s.thumbnail_url, s.uploaded_thumbnail_url);
+    if (portrait) {
+      const blob = await fetchBlob(portrait);
       if (blob) susFolder?.file(`${base}.${(blob.type.split("/")[1] ?? "png").split(";")[0]}`, blob);
     }
+  }
+
+  // Hint sheets — honor active_version when picking generated vs uploaded image.
+  const { data: hintSheets } = await supabase.from("hint_sheets").select("*").eq("project_id", projectId);
+  if (hintSheets && hintSheets.length > 0) {
+    const hintsFolder = zip.folder("hint-sheets");
+    for (const h of hintSheets) {
+      const base = `stage-${h.stage}`;
+      const url = pickActiveImage(h.active_version, h.image_url, h.uploaded_image_url);
+      if (url) {
+        const blob = await fetchBlob(url);
+        if (blob) hintsFolder?.file(`${base}.${(blob.type.split("/")[1] ?? "png").split(";")[0]}`, blob);
+      }
+      if (h.prompt) hintsFolder?.file(`${base}.prompt.txt`, h.prompt);
+    }
+  }
+
+  // Project cover — honor cover_active_version (generated vs uploaded).
+  const coverUrl = pickActiveImage(project.cover_active_version, project.cover_image_url, project.uploaded_cover_url);
+  if (coverUrl) {
+    const blob = await fetchBlob(coverUrl);
+    if (blob) zip.file(`cover.${(blob.type.split("/")[1] ?? "png").split(";")[0]}`, blob);
   }
   const readme = `# ${project.title}\n\n${project.subtitle ?? ""}\n\nPhase: ${project.phase}\nDifficulty: ${project.difficulty ?? "—"}\nSuspects: ${(suspects ?? []).length}\nDocuments: ${(docs ?? []).length}\n`;
   zip.file("README.md", readme);
