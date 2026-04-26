@@ -231,7 +231,7 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
   const [genText, setGenText] = useState(false);
   const [genImage, setGenImage] = useState(false);
   const [genDocument, setGenDocument] = useState(false);
-  const [draftingPrompt, setDraftingPrompt] = useState(false);
+  
   const [imageQuality, setImageQuality] = useState<"low" | "medium" | "high">("medium");
   const [documentFormat, setDocumentFormat] = useState<"pdf" | "docx" | "pptx" | "xlsx">("pdf");
   const [selectedImageModel, setSelectedImageModel] = useState<string>(
