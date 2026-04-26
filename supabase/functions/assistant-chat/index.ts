@@ -1830,6 +1830,9 @@ async function processConversation(
     const msgReasoning = msg.reasoning as ReasoningSegment[] | undefined;
     if (Array.isArray(msgReasoning) && msgReasoning.length > 0) {
       reasoningRounds.push({ round, segments: msgReasoning });
+      // Flush immediately so the live "Thinking…" disclosure starts typing the
+      // moment this round's reasoning lands — don't wait for the next loop.
+      flushProgress(`thought through round ${round + 1}`);
     }
     const toolCalls = msg.tool_calls as Array<{ id: string; function: { name: string; arguments: string } }> | undefined;
     const thinkingBlocks = (msg as { thinking_blocks?: Array<{ type: "thinking"; text: string; signature?: string }> }).thinking_blocks;
@@ -2218,6 +2221,9 @@ Deno.serve(async (req) => {
       const msgReasoning = msg.reasoning as ReasoningSegment[] | undefined;
       if (Array.isArray(msgReasoning) && msgReasoning.length > 0) {
         reasoningRounds.push({ round, segments: msgReasoning });
+        // Flush immediately so the live "Thinking…" disclosure starts typing
+        // the moment this round's reasoning lands — don't wait for the next loop.
+        flushProgress(`thought through round ${round + 1}`);
       }
       const toolCalls = msg.tool_calls as Array<{ id: string; function: { name: string; arguments: string } }> | undefined;
       const thinkingBlocks = (msg as { thinking_blocks?: Array<{ type: "thinking"; text: string; signature?: string }> }).thinking_blocks;
