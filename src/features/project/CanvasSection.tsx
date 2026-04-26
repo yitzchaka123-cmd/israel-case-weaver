@@ -12,7 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Plus, Wand2, CheckCircle2, Loader2, ScrollText, Sparkles, FileText, ExternalLink, ChevronDown, AlertTriangle, X, Download, Image as ImageIcon, FileCode2 } from "lucide-react";
+import { Plus, Wand2, CheckCircle2, Loader2, ScrollText, Sparkles, FileText, ExternalLink, AlertTriangle, X, Download, Image as ImageIcon, FileCode2 } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -629,36 +629,16 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
                   <span className="h-1.5 w-1.5 rounded-full bg-success" />
                   Using approved summary
                 </button>
-                <div className="inline-flex rounded-md border bg-card shadow-soft overflow-hidden">
-                  <Button
-                    variant="ghost"
-                    className="gap-2 rounded-none border-r h-9"
-                    onClick={() => generateLogicFlow({ useExistingSummary: true })}
-                    disabled={generatingFlow}
-                  >
-                    {generatingFlow ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
-                    {nodes.length === 0 ? "Generate from approved summary" : "Re-generate from summary"}
-                  </Button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" className="rounded-none px-2 h-9" disabled={generatingFlow} title="More generation options">
-                        <ChevronDown className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-72">
-                      <DropdownMenuItem
-                        onClick={() => generateLogicFlow({ useExistingSummary: false })}
-                        className="gap-2 items-start"
-                      >
-                        <AlertTriangle className="h-4 w-4 mt-0.5 text-warning shrink-0" />
-                        <div className="flex flex-col">
-                          <span className="text-sm font-medium">Generate fresh (ignore summary)</span>
-                          <span className="text-xs text-muted-foreground">Replaces your approved solution summary with a new one.</span>
-                        </div>
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
+                <Button
+                  variant="outline"
+                  className="gap-2 h-9"
+                  onClick={() => generateLogicFlow({ useExistingSummary: true })}
+                  disabled={generatingFlow}
+                  title="Redraws the Logic Flow board strictly from the saved solution summary. Edits the assistant has already made to the summary will flow through to the board."
+                >
+                  {generatingFlow ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+                  {nodes.length === 0 ? "Generate from solution summary" : "Regenerate from solution summary"}
+                </Button>
               </>
             ) : (
               <Button

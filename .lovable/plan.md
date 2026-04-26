@@ -1,70 +1,71 @@
-## Why you only see thinking *after* (and only sometimes)
+# Three fixes: summary→logic chain, single regenerate button, livelier live dot
 
-I traced it. Two real bugs feeding the same symptom:
+## 1. Assistant: redoing the summary should ALWAYS chain into a logic-flow rebuild
 
-1. **Reasoning is held in memory and flushed at the very end.**
-   In `supabase/functions/assistant-chat/index.ts`, `reasoningRounds` is appended after every model round, but it's only written to the `chat_messages` row in the final `update(...)` call after the run completes. Between rounds we only patch `metadata.stage` (a one-line label like `"after add_suspect…"`). So the `ThinkingDisclosure` in `AssistantSection.tsx` literally has nothing to render until the bubble flips out of `in_progress`.
-2. **Many rounds return no `message.reasoning` at all.**
-   We call the model with `reasoningEffort: "low"` for tool-only rounds and the project default (`"low"`) for the final round. At low effort, several models (Gemini Flash, GPT-5 mini/nano, Claude Haiku) return zero reasoning segments → `reasoningRounds` stays empty → no "Show thinking" button ever appears. That's the "only sometimes" part.
+**Problem:** When the user asks the assistant to "redo the summary," it calls `set_solution_summary` and stops. The Logic Flow board still reflects the old story (no edges, stale nodes). The current rule only nudges the user to click "Approve logic" — it never triggers a rebuild.
 
-Plus the in-flight UI itself is just a spinner with one line of text, so even when reasoning *is* being collected mid-run, there's no place to show it live.
+**Fix in `supabase/functions/assistant-chat/index.ts` system prompt:**
+Add a hard rule under the "LOGIC APPROVAL" section that runs **whenever `set_solution_summary` is called and the project already has any `canvas_nodes` on the logic board** (i.e. a flow already exists):
 
-## Fix
+> Rewriting the solution summary invalidates the existing Logic Flow because the chain of clues, deductions, and red herrings depends directly on the summary. After every `set_solution_summary` call where canvas_nodes already exist for board='logic', you MUST in the SAME turn:
+> 1. Tell the user (1–2 sentences) that the summary changed and the Logic Flow now needs to be redrawn from it.
+> 2. Call `propose_options` with exactly two buttons:
+>    • "🔁 Rebuild logic flow from new summary" → on click, immediately call `generate_logic_flow` with `use_existing_summary: true` and tell them to open Canvas → Logic Flow to watch it draw live.
+>    • "Keep old logic flow for now" → no tool call, just acknowledge.
+> Never quietly leave a stale flow in place after a summary rewrite.
 
-### 1. Stream reasoning + tool trail into the placeholder row each round
+Also expose the current node count to the prompt so the model can branch correctly. The `rosters` block already includes `canvas_nodes_count` and `logic_dirty_since_approval`; surface a derived `logic_flow_exists` boolean in the same context block (lines ~325–335) so this rule fires reliably.
 
-In `supabase/functions/assistant-chat/index.ts`, in both the background and sync run paths (the `for (let round …)` loops around lines 1735 and 2046):
+## 2. Canvas: collapse the regenerate dropdown into a single "Regenerate from solution summary" button
 
-- After each round, write the **accumulated** `reasoningRounds` and the **full** `executedTools` array (not just the count) into the placeholder row's metadata, alongside the existing `stage`:
-  ```ts
-  void supa.from("chat_messages").update({
-    metadata: {
-      in_progress: true, model, stage,
-      partial_tools: executedTools.length,
-      tools: executedTools,                 // NEW — full receipts mid-flight
-      reasoning: reasoningRounds,           // NEW — accumulated thinking so far
-      stage_history: stageHistory,          // NEW — short append-only list of past stages
-    },
-  }).eq("id", assistantMessageId);
-  ```
-- Track a small `stageHistory: { at: string; label: string }[]` (push on every stage transition) so the live disclosure can show "thinking → after add_suspect → after generate_logic_flow → writing reply" as it happens.
-- Also patch metadata **before** the very first model call (round 0) so the bubble flips from a blank "Thinking…" spinner into a structured live panel within ~1s of sending.
+**Problem (in `src/features/project/CanvasSection.tsx` lines 621–662):**
+When a `solution_summary` exists, the toolbar shows a split button with a hidden chevron menu containing "Generate fresh (ignore summary)". This second option is dangerous (it overwrites the assistant-approved summary) and is exactly what the user does NOT want.
 
-### 2. Always have *something* to show under "Thinking" — even with no reasoning summary
+**Fix:**
+- Remove the entire `<DropdownMenu>` that wraps the chevron + "Generate fresh (ignore summary)" item.
+- Keep only the single primary button: **"Regenerate from approved summary"** (or "Generate from approved summary" when the board is empty), which always calls `generateLogicFlow({ useExistingSummary: true })`.
+- Remove the now-unused `useExistingSummary: false` confirm path inside `generateLogicFlow` (the function still accepts the param for the chat-tool code path, but the UI never sends `false`).
+- The "Generate fresh" capability stays available only via Settings or by clearing the summary first — it shouldn't be one accidental click away in the toolbar.
 
-When the model returns no `message.reasoning`, synthesize a fallback "thinking" segment from the tool calls themselves so the disclosure is never empty:
-- For each tool call in a round, push a synthetic segment like:
-  ```
-  { type: "thinking", text: "Calling add_suspect with {name: "Noam", role: "courier"} …" }
-  ```
-- That way models that don't expose reasoning still get a visible action trail, which is what users actually want to see ("what is it doing right now?").
+## 3. Make the green live dot on the Case Board tab feel actually live
 
-Also bump `roundEffort` for tool rounds from hardcoded `"low"` to the project's `ai_reasoning_effort` when it's set to `"medium"` or `"high"` — currently we override the user's choice for non-final rounds, which silently suppresses thinking on those rounds.
+**Root cause:** `canvas_nodes` is NOT in the `supabase_realtime` publication (verified — only `company_profiles`, `project_marketing`, `project_storyboards`, `user_access`, `user_roles`, `invite_codes`, `project_notifications`, `assistant_runs` are). The hook `useLogicFlowLive` subscribes to `postgres_changes` on `canvas_nodes` but those events never fire, so the dot only updates when the count happens to be re-fetched for some other reason (tab focus, parent invalidation cascade). That's why it appears late/sometimes.
 
-### 3. Render a live thinking panel on the in-flight bubble
+**Fix — three parts:**
 
-In `src/features/project/AssistantSection.tsx`:
+### 3a. Add `canvas_nodes` (and `canvas_edges`) to the realtime publication
+New migration:
+```sql
+ALTER PUBLICATION supabase_realtime ADD TABLE public.canvas_nodes;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.canvas_edges;
+ALTER TABLE public.canvas_nodes REPLICA IDENTITY FULL;
+ALTER TABLE public.canvas_edges REPLICA IDENTITY FULL;
+```
 
-- Replace the single-line spinner block at lines 495–513 with a **live in-flight bubble** that renders the placeholder row's metadata directly (we already find it as `inFlight`):
-  - Top line: existing spinner + current `stage`.
-  - Below it: a compact, **auto-expanded** `ThinkingDisclosure` showing accumulated `reasoning` segments + a `stage_history` timeline, updating in realtime via the existing `chat_messages` realtime subscription.
-  - Tool receipts: render the running `tools` array using the existing `ToolReceipts` component so the user sees "✓ add_suspect", "✓ set_solution_summary", etc., appear live.
-- Update the `Msg` metadata type at line 77 to include `stage_history?: { at: string; label: string }[]` and allow `tools`/`reasoning` to be present while `in_progress: true`.
-- Adjust `isHiddenAssistantPlaceholder` (line 587) so we no longer hide the in-progress bubble — it should *always* be visible when in flight, since it now carries useful content. The current "hide if empty" rule was only there because the placeholder was useless mid-run.
+### 3b. Make the hook react instantly to INSERT events (no debounced refetch)
+Update `src/features/project/canvas/useLogicFlowLive.ts`:
+- On every `INSERT` event (filter `event=INSERT`), bump `grewAt = Date.now()` immediately — no waiting for a count refetch.
+- Extend the live window slightly (12s instead of 8s) so brief gaps between streamed nodes don't extinguish the dot.
+- Also flip on when an edge insert lands.
 
-### 4. Small UX polish
+### 3c. Brighten the dot so it reads as "alive"
+In `src/features/project/ProjectWorkspace.tsx` (lines ~229–237):
+- Bump the dot from `h-1.5 w-1.5` to `h-2 w-2` so it's visible without squinting.
+- Keep the existing ping animation but add a second slower pulse ring for a heartbeat feel.
+- Add a tiny tooltip ("Logic Flow is being drawn live — open Case Board to watch") so hovering explains what it is.
+- Same brighten-up applied to the in-canvas "Drawing live…" pill (CanvasSection lines 594–602).
 
-- In `ThinkingDisclosure`, when `in_progress` is true, default `open` to `true` and show a tiny pulsing dot next to "Thinking…" so it's obvious it's still streaming. When the run finishes, collapse it back (preserving user's manual toggle if they touched it).
-- Keep the existing post-run "Show thinking" disclosure exactly as it is — same component, just now driven by data that arrives progressively.
+## Files to be edited
 
-## Files
+- `supabase/functions/assistant-chat/index.ts` — new chained-rebuild rule + `logic_flow_exists` context line
+- `src/features/project/CanvasSection.tsx` — drop the chevron dropdown; single regenerate button
+- `src/features/project/canvas/useLogicFlowLive.ts` — INSERT-driven live flag, longer window
+- `src/features/project/ProjectWorkspace.tsx` — slightly bigger / livelier dot
+- New migration: enable realtime on `canvas_nodes` + `canvas_edges`
+- Redeploy `assistant-chat`
 
-- `supabase/functions/assistant-chat/index.ts` — write reasoning/tools/stage_history into the placeholder row each round in both `runBackground` and `runSync` loops; synthesize fallback thinking segments from tool calls; respect `ai_reasoning_effort` on tool rounds.
-- `src/features/project/AssistantSection.tsx` — render the in-flight bubble using placeholder metadata (live `ThinkingDisclosure` + `ToolReceipts`); update `Msg` type; adjust `isHiddenAssistantPlaceholder`; auto-open disclosure while `in_progress`.
+## What you'll see after this lands
 
-No DB migration needed — `chat_messages.metadata` is already `jsonb` and the new keys (`stage_history`, plus mid-flight `tools`/`reasoning`) just slot in.
-
-## Out of scope (call out if you want either)
-
-- True token-by-token streaming of the assistant's final prose. Today we use `stream: false` and write the whole reply at the end. Switching to SSE streaming for the final round is a bigger change (proxy SSE through the edge function, partial-content updates) — happy to do it as a follow-up if you want the prose itself to type out live.
-- Surfacing thinking from the canvas/document generators (`generate-logic-flow`, `generate-document`, etc.). Those run in their own edge functions and would need the same pattern applied separately.
+1. Ask the assistant "redo the summary" → it rewrites + saves the summary, then immediately offers a **"🔁 Rebuild logic flow from new summary"** button. One click → board starts redrawing live.
+2. Canvas → Logic Flow toolbar has only one regenerate button: **"Regenerate from approved summary"**. The dangerous "ignore summary" option is gone.
+3. The green dot on the **Case Board** tab pops on within ~1 second of the first node landing and stays steady through the whole stream — no lag, no flicker.

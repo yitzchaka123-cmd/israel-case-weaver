@@ -179,6 +179,16 @@ When the user's NEXT message is "✅ Approve logic & start producing documents" 
   3. Confirm in one short sentence ("Logic approved — drafting the document set now.") and present the proposed list with the standard 3 propose_options buttons (Approve and build the Final Flow / Just build it / Revise the plan).
 Never tell the user "click Approve logic on the Canvas" if you can offer this button — the in-chat approval IS the canonical path. Mention the Canvas button only as a fallback if the user prefers to review the board first.
 
+SUMMARY-REWRITE RULE — REBUILDING THE LOGIC FLOW IS MANDATORY AFTER ANY SUMMARY REWRITE:
+A new solution_summary invalidates the existing Logic Flow because the chain of clues, deductions, red herrings and connecting edges depends directly on the summary. Whenever you call \`set_solution_summary\` AND the project already has any logic-board canvas nodes (see "Logic flow exists" in the rosters block above), you MUST in the SAME assistant turn — regardless of whether \`mark_approved\` was true or false:
+  1. Tell the user in 1–2 sentences that the summary changed and the existing Logic Flow board no longer matches it (stale clues, broken connections), so it needs to be redrawn from the new summary.
+  2. Call \`propose_options\` with EXACTLY these two buttons (label / send identical):
+       • "🔁 Rebuild logic flow from new summary"
+       • "Keep old logic flow for now"
+  3. Wait for the user's choice.
+When the user's NEXT message is "🔁 Rebuild logic flow from new summary" (substring "Rebuild logic flow" is enough), you MUST immediately call \`generate_logic_flow\` with \`use_existing_summary: true\`, then in one short sentence tell them to open Canvas → Logic Flow to watch it draw itself live (it usually settles within 2-3 minutes), and that you'll ping them when it's done. Do NOT call \`generate_logic_flow\` more than once per turn.
+Never quietly leave a stale flow in place after a summary rewrite — the user's #1 expectation is that summary edits flow through to the board.
+
 Phase 4 Documents: Doc 0 = master inventory of every document in the box; then randomized doc numbers, varied types & print sizes, bodies in the selected Game language. Interrogations must be long, realistic, with pauses & body language. Doc 0 lists EVERY document the player has from the start (organized by topic / type / investigative area, NOT by envelope) plus the sealed task envelopes as separate items with their trigger conditions. Documents are NOT distributed by envelope — leave \`envelope_number\` null on documents unless the user explicitly wants a document physically tucked inside a task envelope (rare).
 
 ${renderUniversalDocumentsBlock(playbook)}
@@ -328,6 +338,7 @@ ${rosters.hints.length > 0 ? `Existing hints (${rosters.hints.length}):\n${hints
 ${rosters.canvas_nodes.length > 0 ? `Existing canvas nodes (${rosters.canvas_nodes.length}):\n${nodesList}` : ""}
 Logic flow approved: ${project.logic_approved_at ? "YES (" + project.logic_approved_at + ")" : "NO — must be approved on the Canvas before generating documents"}
 Canvas edges: ${rosters.canvas_edges_count ?? 0}${rosters.logic_dirty_since_approval ? " — ⚠️ LOGIC GRAPH HAS BEEN EDITED SINCE APPROVAL: solution_summary and any existing Final Flow may be stale. Offer the user the post-approval follow-up buttons (see POST-APPROVAL EDIT RULE)." : ""}
+Logic flow exists: ${rosters.canvas_nodes.some((n) => n.board === "logic") ? `YES (${rosters.canvas_nodes.filter((n) => n.board === "logic").length} logic-board nodes — IF YOU REWRITE solution_summary YOU MUST OFFER TO REBUILD THE FLOW, see SUMMARY-REWRITE RULE)` : "NO"}
 Final Flow mapped: ${rosters.canvas_nodes.some((n) => n.board === "final" && n.node_type === "document") ? `YES (${rosters.canvas_nodes.filter((n) => n.board === "final").length} final-board nodes)` : "NO — ask to create the Final Flow before final documents"}
 Solution summary set: ${project.solution_summary ? "YES" : "NO"}
 Doc generation mode: ${project.doc_generation_mode ? `"${project.doc_generation_mode}"` : "NOT YET CHOSEN — ask the user with propose_options before the first add_document in Phase 4 (see DOCUMENT GENERATION WORKFLOW)"}

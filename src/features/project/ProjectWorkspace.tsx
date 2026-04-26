@@ -228,11 +228,12 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
                       )}
                       {showLiveDot && (
                         <span
-                          className="absolute -top-0.5 -right-1 flex h-1.5 w-1.5"
-                          title="Logic Flow is being drawn live"
+                          className="absolute -top-1 -right-1.5 flex h-2 w-2"
+                          title="Logic Flow is being drawn live — open Case Board to watch"
                         >
-                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
-                          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-success" />
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-80" />
+                          <span className="absolute inline-flex h-full w-full animate-pulse rounded-full bg-success opacity-60" />
+                          <span className="relative inline-flex h-2 w-2 rounded-full bg-success ring-2 ring-success/40 shadow-[0_0_8px_rgba(34,197,94,0.7)]" />
                         </span>
                       )}
                     </span>
