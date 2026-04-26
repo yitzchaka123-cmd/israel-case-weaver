@@ -79,6 +79,34 @@ interface Body {
   targetId?: string;
   aspect?: "portrait" | "landscape" | "square";
   quality?: Quality;
+  /**
+   * When "background", we insert a pending image_generations row, return its
+   * id immediately, and finish the work via EdgeRuntime.waitUntil. The browser
+   * can close — the function keeps running on Supabase. UI subscribes via
+   * realtime to flip status from `pending` → `done`/`error`.
+   *
+   * When "sync" (default), preserves the legacy synchronous behavior so older
+   * call sites keep working untouched.
+   */
+  mode?: "sync" | "background";
+}
+
+// Maps the request target to the source_* columns on image_generations so the
+// UI can subscribe by (project_id, source_*) and find its pending job after a
+// page refresh.
+function jobSourceColumns(target: Target, targetId: string | undefined, projectId: string): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (target === "suspect-thumbnail" || target === "suspect-alt-thumbnail") {
+    out.source_suspect_id = targetId ?? null;
+  } else if (target === "project-cover") {
+    out.source_project_cover = true;
+  } else if (target === "envelope") {
+    out.source_envelope_id = targetId ?? null;
+  } else if (target === "hint-sheet" && targetId) {
+    // store the stage in the prompt-history-style row by leaving source_hint_sheet_id
+    // null until the upsert resolves it later — we'll patch it inside the worker.
+  }
+  return out;
 }
 
 async function getUserIdFromAuth(req: Request): Promise<string | null> {
