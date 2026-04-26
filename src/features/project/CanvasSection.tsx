@@ -648,7 +648,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
                 <Sparkles className="h-4 w-4" />
                 <div className="flex flex-col">
                   <span className="font-medium">Smart arrange</span>
-                  <span className="text-[11px] text-muted-foreground">Instant · context-aware layout</span>
+                  <span className="text-[11px] text-muted-foreground">Instant · cycles through layout variants on repeat press</span>
                 </div>
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => arrangeNodes("ai-refine")} className="gap-2">
