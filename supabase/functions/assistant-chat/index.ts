@@ -1616,6 +1616,8 @@ async function processConversation(
     { data: envelopesRoster },
     { data: hintsRoster },
     { data: nodesRoster },
+    { count: edgesCount },
+    { data: latestNode },
   ] = await Promise.all([
     supa.from("projects").select("*").eq("id", projectId).single(),
     supa.from("suspects").select("id, name, role_in_case").eq("project_id", projectId).order("position", { ascending: true }).limit(25),
@@ -1623,6 +1625,8 @@ async function processConversation(
     supa.from("envelopes").select("id, number, label").eq("project_id", projectId).order("number", { ascending: true }).limit(25),
     supa.from("hints").select("id, stage, level").eq("project_id", projectId).order("stage", { ascending: true }).order("level", { ascending: true }).limit(25),
     supa.from("canvas_nodes").select("id, title, node_type, board").eq("project_id", projectId).order("created_at", { ascending: true }).limit(25),
+    supa.from("canvas_edges").select("id", { count: "exact", head: true }).eq("project_id", projectId),
+    supa.from("canvas_nodes").select("updated_at").eq("project_id", projectId).order("updated_at", { ascending: false }).limit(1).maybeSingle(),
   ]);
   if (!project) throw new Error("Project not found");
 
