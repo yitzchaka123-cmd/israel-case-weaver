@@ -242,6 +242,8 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
                 const Icon = t.icon;
                 const showPulse = t.v === "assistant" && assistantRunning;
                 const showLiveDot = t.v === "canvas" && canvasLive;
+                const showAttention =
+                  t.v === "canvas" && !canvasLive && !!caseBoardAttention?.needsAttention;
                 return (
                   <TabsTrigger
                     key={t.v}
@@ -265,6 +267,15 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
                           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-80" />
                           <span className="absolute inline-flex h-full w-full animate-pulse rounded-full bg-success opacity-60" />
                           <span className="relative inline-flex h-2 w-2 rounded-full bg-success ring-2 ring-success/40 shadow-[0_0_8px_rgba(34,197,94,0.7)]" />
+                        </span>
+                      )}
+                      {showAttention && (
+                        <span
+                          className="absolute -top-2 -right-2 flex items-center justify-center h-3.5 w-3.5 rounded-full bg-destructive text-destructive-foreground ring-2 ring-background shadow-[0_0_6px_rgba(220,38,38,0.6)]"
+                          title={caseBoardAttention?.reason || "Case Board needs your attention"}
+                          aria-label={caseBoardAttention?.reason || "Case Board needs your attention"}
+                        >
+                          <AlertCircle className="h-2.5 w-2.5" strokeWidth={3} />
                         </span>
                       )}
                     </span>
