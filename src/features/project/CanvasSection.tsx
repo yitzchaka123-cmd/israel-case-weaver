@@ -362,15 +362,16 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
     }
   };
 
-  const approveLogic = async () => {
-    if (!summaryDraft.trim()) {
+  const approveLogic = async (summaryOverride?: string) => {
+    const summary = (summaryOverride ?? summaryDraft).trim() || (project?.solution_summary ?? "").trim();
+    if (!summary) {
       toast.error("Add a solution summary before approving");
       return;
     }
     const { error } = await supabase
       .from("projects")
       .update({
-        solution_summary: summaryDraft,
+        solution_summary: summary,
         logic_approved_at: new Date().toISOString(),
         phase: "production",
       })
