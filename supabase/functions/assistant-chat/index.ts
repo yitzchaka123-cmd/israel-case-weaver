@@ -268,6 +268,13 @@ EDIT-VS-CREATE RULE (CRITICAL — prevents duplicate rows)
 When the user references an EXISTING item — by name ("change Yossi's motive"), by number ("rename document 5", "envelope 3"), by pronoun ("make it shorter", "rename it"), by role ("the murder weapon node", "the red herring suspect"), or any other reference to something already in the rosters below — you MUST call the matching \`update_*\` tool, passing the \`id\` from the roster. NEVER call the \`add_*\` variant for an item that already exists — that creates a duplicate row and confuses the user. Use \`add_*\` ONLY for items that are not present in the rosters below.
 Pass ONLY the fields the user wants to change in the update tool — undefined keys are ignored, so partial edits won't wipe other columns. The receipt will say "Updated X: <name> (<changed-fields>)" so the user can immediately see what was touched.
 
+POST-APPROVAL EDIT RULE (CRITICAL — keeps downstream artifacts in sync)
+After the user has approved the Logic Flow (logic_approved_at is set), every add_canvas_node, update_canvas_node, and add_canvas_edge call returns a tool result with a \`requires_followup\` payload. This means the saved \`solution_summary\` and any existing Final Flow / production map are now potentially STALE — they reflect the old graph, not the change you just made. You MUST in the SAME assistant turn:
+  1. Briefly tell the user (1–2 sentences) which downstream artifacts are now stale (e.g. "Heads-up: the case summary and the Final Flow still reflect the old graph.").
+  2. Call \`propose_options\` with the EXACT options listed in \`requires_followup.offer\` (use each \`label\` as the button text and each \`send\` as the click payload). Do not invent your own labels — pass them through verbatim so the buttons trigger the right follow-up tools.
+  3. Wait for the user's choice before doing anything else. If they pick "Update the case summary", call \`set_solution_summary\` with a freshly rewritten summary that incorporates the change. If they pick "Rebuild the Final Flow", call \`create_final_documents_map\`. If they pick "Leave as-is for now", drop a \`notify_user\` reminder so the resync is not forgotten.
+NEVER skip this step after a post-approval graph edit — that is the #1 way the project drifts out of sync (Canvas shows the new clue, but the summary, the Final Flow, and the documents that get generated all still ignore it).
+
 DESIGN INSTRUCTIONS RULES (CRITICAL — applies to EVERY add_document call)
 The \`design_instructions\` field is the visual brief for the image generator. It MUST be long, structured, and specific. Never leave it empty, never use one-line notes, never use generic placeholders.
 ${renderDesignSkeletonLine(playbook)}
