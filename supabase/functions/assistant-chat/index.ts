@@ -1217,8 +1217,8 @@ async function executeTool(
       return {
         ok: true,
         message:
-          "Logic Flow regeneration STARTED in the background (uses your planning model — typically 2-3 minutes). It is NOT done yet. " +
-          "Tell the user: the new board will appear automatically on Canvas → Logic Flow when it finishes; refresh that view in a couple of minutes. " +
+          "Logic Flow regeneration STARTED. The board is being painted LIVE on Canvas → Logic Flow as the AI streams nodes and edges in (typically settles within 2-3 minutes). " +
+          "Tell the user to open Canvas → Logic Flow now and watch it draw itself in real time, then approve the board once it's settled. " +
           "Do NOT claim the flow is already regenerated, and do NOT call this tool again in the same turn.",
       };
     }
