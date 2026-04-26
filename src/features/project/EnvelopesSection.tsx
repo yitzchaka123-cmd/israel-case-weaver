@@ -355,49 +355,8 @@ function EnvelopeCard({
       .eq("id", docId);
   };
 
-  const draftPrompt = async () => {
-    setDraftingPrompt(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const writerModel = getStoredWriterModel("envelope");
-      const hint = [
-        `Envelope #${slot.n} — ${slot.label}`,
-        value("label") && `Hebrew label: ${value("label") as string}`,
-        value("task") && `Hebrew task: ${value("task") as string}`,
-      ]
-        .filter(Boolean)
-        .join(". ");
-      const resp = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/suggest-image-prompt`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${
-              session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
-            }`,
-          },
-          body: JSON.stringify({
-            projectId,
-            category: "envelope",
-            hint: hint || undefined,
-            currentPrompt: (value("design_instructions") as string) || undefined,
-            writerModel: writerModel === "__project" ? undefined : writerModel,
-            userId: session?.user?.id,
-          }),
-        },
-      );
-      const json = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        toast.error(json.error ?? "Couldn't draft a prompt");
-        return;
-      }
-      await onUpdate({ design_instructions: json.prompt });
-      toast.success("Prompt drafted — review before generating");
-    } finally {
-      setDraftingPrompt(false);
-    }
-  };
+  // Legacy single-prompt drafter removed — DocumentPromptAssistant handles
+  // structured Design + Content drafting now.
 
   const generateImage = async () => {
     const prompt = (value("design_instructions") as string)?.trim();
