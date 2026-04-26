@@ -1896,6 +1896,8 @@ Deno.serve(async (req) => {
       { data: envelopesRoster },
       { data: hintsRoster },
       { data: nodesRoster },
+      { count: edgesCount },
+      { data: latestNode },
     ] = await Promise.all([
       supa.from("projects").select("*").eq("id", projectId).single(),
       supa.from("suspects")
@@ -1924,6 +1926,8 @@ Deno.serve(async (req) => {
         .eq("project_id", projectId)
         .order("created_at", { ascending: true })
         .limit(100),
+      supa.from("canvas_edges").select("id", { count: "exact", head: true }).eq("project_id", projectId),
+      supa.from("canvas_nodes").select("updated_at").eq("project_id", projectId).order("updated_at", { ascending: false }).limit(1).maybeSingle(),
     ]);
     if (!project) {
       return new Response(JSON.stringify({ error: "Project not found" }), {
