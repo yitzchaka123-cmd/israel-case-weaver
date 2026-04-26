@@ -619,7 +619,7 @@ const BASE_TOOLS = [
     type: "function",
     function: {
       name: "add_canvas_node",
-      description: "Add a node to the logic canvas.",
+      description: "Add a node to the logic canvas. CRITICAL: when the node is a clue, deduction, contradiction, red_herring, document, or solution and the project already has other nodes, you MUST in the SAME turn also call add_canvas_edge at least once to wire this node into the existing graph (otherwise it floats disconnected and breaks the Logic Flow). If logic_approved_at is set, you must also follow the POST-APPROVAL EDIT RULE.",
       parameters: {
         type: "object",
         properties: {
@@ -627,8 +627,27 @@ const BASE_TOOLS = [
           title: { type: "string" },
           description: { type: "string" },
           color: { type: "string" },
+          board: { type: "string", enum: ["logic", "final"], description: "Defaults to 'logic'. Use 'final' only when explicitly editing the production map." },
         },
         required: ["node_type", "title"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "add_canvas_edge",
+      description: "Connect two existing canvas nodes with a directional edge (source → target). Use immediately after add_canvas_node to wire the new node into the graph, or any time the user asks you to link / connect / draw a line between nodes. The label is optional but strongly recommended for logic clarity (e.g. 'leads to', 'contradicts', 'supports', 'reveals').",
+      parameters: {
+        type: "object",
+        properties: {
+          source_id: { type: "string", description: "Canvas node id the edge starts from (from the Existing canvas nodes roster)." },
+          target_id: { type: "string", description: "Canvas node id the edge points to." },
+          label: { type: "string", description: "Optional short label shown on the edge (e.g. 'reveals', 'contradicts', 'supports')." },
+          board: { type: "string", enum: ["logic", "final"], description: "Defaults to 'logic'." },
+        },
+        required: ["source_id", "target_id"],
         additionalProperties: false,
       },
     },
