@@ -375,6 +375,9 @@ function HintSheetBlock({ projectId, stage, sheet }: { projectId: string; stage:
             position="absolute"
             hoverOnly
           />
+          {sheetJob.isPending && (
+            <GenerationTimer elapsedSec={sheetJob.state.elapsedSec} label={`Regenerating stage ${stage}`} />
+          )}
         </button>
       )}
 
