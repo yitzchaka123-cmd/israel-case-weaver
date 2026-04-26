@@ -227,6 +227,24 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
     enabled: !!doc?.id,
   });
 
+  const { data: latestImageAttempt } = useQuery({
+    queryKey: ["document-image-attempt", doc?.id],
+    queryFn: async () => {
+      if (!doc) return null;
+      const { data, error } = await supabase
+        .from("media_assets")
+        .select("provider, model, effective_model, fallback, created_at")
+        .eq("source_document_id", doc.id)
+        .eq("asset_type", "image")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data as { provider: string | null; model: string | null; effective_model: string | null; fallback: string | null; created_at: string } | null;
+    },
+    enabled: !!doc?.id,
+  });
+
   useEffect(() => setDraft(doc), [doc?.id]);
 
   if (!doc || !draft) return null;
@@ -374,6 +392,7 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
   };
 
   return (
+    <>
     <Dialog open={!!doc} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
@@ -441,7 +460,7 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
           {draft.generated_asset_url && (
             <div className="md:col-span-2">
               <div className="flex items-center justify-between mb-2">
-                <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Generated document image</Label>
+                <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Final asset image</Label>
                 <Button size="sm" variant="outline" className="gap-2" onClick={saveAsPdf}>
                   <FileDown className="h-3.5 w-3.5" /> Save as PDF
                 </Button>
@@ -449,7 +468,7 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
               <button type="button" onClick={() => setImagePreviewOpen(true)} className="group relative block w-full rounded-lg border bg-muted overflow-hidden">
                 <img src={draft.generated_asset_url} alt="Generated document image" className="w-full max-h-96 object-contain" />
                 <AiOriginBadge
-                  info={{ requested: draft.document_model, effective: draft.document_model, provider: draft.document_provider, fallback: "none" }}
+                  info={{ requested: latestImageAttempt?.model ?? draft.document_model, effective: latestImageAttempt?.effective_model ?? latestImageAttempt?.model ?? draft.document_model, provider: latestImageAttempt?.provider ?? draft.document_provider, fallback: latestImageAttempt?.fallback ?? "none" }}
                   hoverOnly
                 />
               </button>
@@ -459,7 +478,7 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
             <div className="md:col-span-2 rounded-lg border bg-muted/30 p-3 space-y-3">
               <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Generated document file</Label>
+                <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Final asset file</Label>
                 <p className="text-sm truncate">{(draft.document_format ?? "file").toUpperCase()} • {draft.document_model ?? draft.document_provider ?? "Selected model"}</p>
               </div>
               <a href={draft.generated_document_url ?? draft.generated_pdf_url ?? "#"} target="_blank" rel="noreferrer" className="text-sm text-accent underline shrink-0">Open file</a>
@@ -523,6 +542,19 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
         </div>
       </DialogContent>
     </Dialog>
+    {draft.generated_asset_url && (
+      <Dialog open={imagePreviewOpen} onOpenChange={setImagePreviewOpen}>
+        <DialogContent className="max-w-5xl p-4">
+          <div className="relative rounded-lg bg-muted overflow-hidden border">
+            <img src={draft.generated_asset_url} alt="Generated document image preview" className="max-h-[82vh] w-full object-contain" />
+            <AiOriginBadge
+              info={{ requested: latestImageAttempt?.model ?? draft.document_model, effective: latestImageAttempt?.effective_model ?? latestImageAttempt?.model ?? draft.document_model, provider: latestImageAttempt?.provider ?? draft.document_provider, fallback: latestImageAttempt?.fallback ?? "none" }}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
+    )}
+    </>
   );
 }
 
