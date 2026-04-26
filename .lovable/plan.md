@@ -1,89 +1,80 @@
-# Planning Depth Modes for the Assistant
+# Make the assistant fast
 
-Add a per-project **Planning Depth** control with three modes that change how many questions the assistant asks before getting to the Logic Flow:
+The assistant is slow because of four compounding issues; this plan attacks each one. Target: typical turns drop from **15–30s** to **3–8s**.
 
-| Mode | Behavior |
-|---|---|
-| **⚡ Express** | Asks only for the case **title** (or auto-suggests one), confirms 1–2 absolute essentials (e.g. game language if not set), then auto-fills every other Phase 1 field with sensible defaults and jumps straight to generating the Logic Flow. No suspect interrogations, no per-clue questions. |
-| **🎯 Guided** *(default)* | Asks the basics only — title, mystery type, genre, difficulty, year/setting. Skips deep-dive questions like player role nuances, motives per suspect, secrets, contradictions. Roughly the current flow but trimmed. |
-| **🔬 Deep Dive** | Current "ask everything" experience PLUS deeper interrogation: walks the user through who did what, who stole what, every suspect's motive/secret/contradiction, red-herring rationale, clue-by-clue reasoning, and validates each beat before moving on. |
+---
 
-## 1. Database
+## 1. Drop reasoning effort to `low` for the assistant chat (BIGGEST WIN)
 
-Migration to add a column on `projects`:
-- `planning_depth text not null default 'guided'` (allowed: `express`, `guided`, `deep`)
+`supabase/functions/assistant-chat/index.ts` currently passes `reasoningEffort` from `project.ai_reasoning_effort` (default `"medium"`). Every Responses-API round on `gpt-5.2` spends ~2–4s "thinking" before emitting even a tiny tool call.
 
-No backfill needed — existing rows get `'guided'` which matches today's behavior closely.
+- Change the **default** for assistant chat to `"low"` (still good for picking next field / formatting Hebrew). Keep `medium`/`high` as opt-in via the existing setting.
+- Inside the tool loop, **force `low` for tool-only rounds** (rounds where the previous step was a tool result and we're just bouncing back for the next call). Save `medium` for the *final* prose round. This alone typically cuts 5–10s off a multi-tool turn.
 
-## 2. Shared playbook (`src/lib/assistant-playbook.ts` + `supabase/functions/_shared/assistant-playbook.ts`)
+**Expected impact:** −30 to −50% latency per turn.
 
-Add a new section to `Playbook`:
-```ts
-planning_depth: {
-  default: "express" | "guided" | "deep";
-  express: { skip_steps: string[]; auto_fill_defaults: Record<string,string>; jump_to: "logic_flow" };
-  guided:  { ask_steps: string[] };  // subset of phase1_setup.order keys
-  deep:    { extra_probes: string[] }; // e.g. ["per_suspect_motive","per_suspect_secret","per_clue_reasoning","red_herring_rationale"]
-}
-```
+---
 
-Defaults:
-- `express.skip_steps`: everything except `language` (only if unset) and a single title pick
-- `guided.ask_steps`: `["language","mystery_type","genre","titles","difficulty","year"]` (skip `role`, `goal`)
-- `deep.extra_probes`: per-suspect motive, per-suspect secret, per-suspect contradiction, per-clue reasoning gate, red-herring justification
+## 2. Stop re-sending the full conversation every turn
 
-## 3. Assistant system prompt (`supabase/functions/assistant-chat/index.ts`)
+`src/features/project/AssistantSection.tsx:265` sends every `chat_messages` row back. After ~25 turns this is huge.
 
-In `buildSystemPrompt`, inject a new **PLANNING DEPTH** block based on `project.planning_depth`:
+- Send only the **last 16 messages** (configurable). Older context is already baked into project rosters (suspects/docs/envelopes/hints/canvas nodes) which the server prompt re-renders fresh every turn.
+- Drop assistant messages that are pure tool-receipts (already-stored side effects) when building the wire payload — keep their final prose only. Implement a small `trimChatForWire(messages)` helper.
 
-- **Express mode block:**
-  > "User picked Express. Ask ONLY for the title (or propose 5 and let them pick). After title is locked, auto-fill missing identity fields with sensible defaults (mystery_type=Murder & Homicide, genre=Forensics, difficulty=medium, year=present day, game_language=Hebrew unless set), call `update_project` once with all of them, then immediately call `generate_logic_flow` and tell the user 'I'm jumping straight to the Logic Flow — review and approve it on the Canvas tab.' Do NOT ask about player role, case goal, setting, selling point, suspects' motives or secrets."
+**Expected impact:** −20 to −40% latency on long projects, plus lower token spend.
 
-- **Guided mode block:**
-  > "Ask only the basics: language (if unset), mystery_type, genre, title pick, difficulty, year. Skip player_role, case_goal, selling_point unless the user volunteers them. After year, propose Logic Flow generation."
+---
 
-- **Deep Dive mode block:**
-  > "Use the full setup ladder, then probe deeply during Structure phase: for every suspect ask separately about motive, secret, contradiction, and how they relate to the victim; for every clue confirm what it proves and what red herring it counters; require the user to validate the deduction chain before generating documents."
+## 3. Reduce `MAX_ROUNDS` from 8 → 4 and add an early-exit signal
 
-The existing "one question per turn / propose_options" rules continue to apply in all three modes.
+`assistant-chat/index.ts:1570`. 8 rounds is overkill — and when the model loops, each extra round is a 3–5s wall-clock cost.
 
-## 4. UI — model picker bar (`src/features/project/AssistantSection.tsx`)
+- Lower to **4** (3 tool rounds + 1 final prose round). Same as the legacy sync path already uses.
+- After round 2, append a short hidden system-style hint: *"You have one tool round left — make remaining calls in a single batch, then write your reply."* The model batches better when it knows.
 
-Add a third compact `Select` next to **Chat** and **Images** in the model bar:
+**Expected impact:** caps worst-case turns at ~4 round-trips instead of 8.
 
-```
-Depth: [⚡ Express ▾]  [🎯 Guided]  [🔬 Deep Dive]
-```
+---
 
-- Reads/writes `projects.planning_depth` via the existing `setProjectAi` helper (extended to accept `planning_depth`).
-- Tooltip on hover explains the three modes in one sentence each.
-- The `useQuery` selecting project columns adds `planning_depth`.
+## 4. Shrink the system prompt
 
-## 5. New-project default
+The prompt is ~30 stitched blocks plus 5 rosters plus claude-skill catalog plus depth picker. Concrete cuts:
 
-When a brand-new project is created with no chat history, the first assistant message includes a `propose_options` call with the three modes so the user picks depth up front before any other question. Implemented by adding a tiny pre-prompt in the system prompt: "If no chat_messages exist yet for this project AND planning_depth is still the default 'guided', your VERY FIRST message must offer the three depth options via propose_options before anything else."
+- **Skip the rosters when they're empty** (currently emit `"  (none yet)"` 5 times).
+- **Cap rosters at 25 rows** instead of 50/100 — the model only needs IDs + short titles to call tools; it doesn't read 100 documents.
+- **Inline only the depth block matching the current depth** (express / guided / deep). Today all three are concatenated via `renderPlanningDepthBlock`. Drop the unused two.
+- **Move the giant Phase-4 / document-mode lecture behind a phase gate** — only include it when `project.phase` is null/`phase_3`/`phase_3_5`/`phase_4`. Phase-1 turns don't need it.
+- **Drop the Claude-skills catalog when the model isn't Anthropic.** Already conditionally loaded but still rendered as a header.
 
-## 6. Settings page (`src/features/settings/SettingsPage.tsx`)
+**Expected impact:** −2 to −4s per round (less prompt = less prefill + cheaper reasoning).
 
-In the existing **AI routing / defaults** section, add a "Default planning depth for new projects" select bound to a new `profiles.default_planning_depth` column (same enum). New projects copy this value when created. Migration adds the column with default `'guided'`.
+---
 
-## 7. Files touched
+## 5. Show a "Thinking…" banner immediately
 
-**Created**
-- `supabase/migrations/<ts>_planning_depth.sql` — adds `projects.planning_depth` and `profiles.default_planning_depth`
+The placeholder INSERT happens but the bubble only renders content at the end. Add a tiny `metadata.stage` field that we update between rounds (`"thinking"`, `"calling update_project"`, `"writing reply"`). The realtime UPDATE on `chat_messages` already triggers a re-render, so the user sees motion within ~1s of pressing Send.
 
-**Edited**
-- `src/lib/assistant-playbook.ts` — add `planning_depth` defaults + types + cleaner
-- `supabase/functions/_shared/assistant-playbook.ts` — same (kept in sync)
-- `supabase/functions/assistant-chat/index.ts` — read `project.planning_depth`, inject the matching depth block into the system prompt, ensure new-project depth picker fires first
-- `src/features/project/AssistantSection.tsx` — depth select in the model bar, extend project query + `setProjectAi`
-- `src/features/settings/SettingsPage.tsx` — default depth selector
-- *(optional)* project create flow to seed `planning_depth` from `profiles.default_planning_depth`
+- New metadata field `stage` (string).
+- AssistantSection renders `stage` as a small italic line above the spinner when `in_progress=true`.
 
-**Deploy**
-- `assistant-chat` edge function
+**Expected impact:** perceived latency drops dramatically even before the actual numbers improve.
 
-## Open questions for you
+---
 
-1. Default for **existing** projects: leave at `guided` (matches today) — OK, or do you want me to flip them to `express`?
-2. In **Express** mode, should I auto-pick a title too (so it's truly one click → Logic Flow), or always ask the user to pick from 5?
+## 6. Small cleanups
+
+- Cache the resolved playbook + tweaks per `owner_id` for 60s (in-process Map). Right now every turn does an extra `profiles` SELECT.
+- Fix the realtime channel re-subscribe with `Math.random()` in `useAssistantRun.ts` — use a stable name `assistant-runs-${projectId}` and rely on `removeChannel` cleanup. The current code creates a new channel every effect cycle.
+- Memoize `buildTools(playbook)` per playbook hash so we don't `JSON.parse(JSON.stringify(...))` 30 tool defs every round.
+
+---
+
+## Files to edit
+
+- `supabase/functions/assistant-chat/index.ts` — reasoning tier per round, MAX_ROUNDS, stage updates, prompt trimming, playbook cache, memoized tools
+- `supabase/functions/_shared/assistant-playbook.ts` — single-depth `renderPlanningDepthBlock(depth, playbook)` (already takes depth, just stop concatenating all three)
+- `src/features/project/AssistantSection.tsx` — trim wire payload to last 16, render `stage` line
+- `src/features/project/assistant/useAssistantRun.ts` — stable realtime channel name
+
+No DB migration, no new secrets, no breaking change to existing chats. Models, tools, and behavior stay identical — just faster.
