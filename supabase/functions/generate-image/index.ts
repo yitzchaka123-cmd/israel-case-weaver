@@ -382,6 +382,45 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Always record into media_assets so EVERY surface (covers, suspects,
+    // hints, etc.) has a history strip without needing a separate per-surface
+    // history table. The `source_*` flags scope the history query.
+    if (target !== "media") {
+      const sourceColumns: Record<string, unknown> = {};
+      if (target === "suspect-thumbnail" || target === "suspect-alt-thumbnail") {
+        sourceColumns.source_suspect_id = targetId ?? null;
+      } else if (target === "project-cover") {
+        sourceColumns.source_project_cover = true;
+      } else if (target === "hint-sheet" && targetId) {
+        // targetId here is stage number; resolve it to the hint_sheets.id row.
+        const stageNum = Number.parseInt(targetId, 10);
+        if (Number.isFinite(stageNum)) {
+          const { data: hs } = await supa
+            .from("hint_sheets")
+            .select("id")
+            .eq("project_id", projectId)
+            .eq("stage", stageNum)
+            .maybeSingle();
+          if (hs?.id) sourceColumns.source_hint_sheet_id = hs.id;
+        }
+      }
+      await supa.from("media_assets").insert({
+        project_id: projectId,
+        category: target,
+        title: title ?? null,
+        url: pub.publicUrl,
+        prompt,
+        provider: providerLabel,
+        model,
+        effective_model: effectiveModel,
+        fallback: fallbackLabel,
+        prompt_history: [historyEntry],
+        mime_type: mime,
+        asset_type: "image",
+        ...sourceColumns,
+      } as any);
+    }
+
     await supa.from("prompts").insert({
       project_id: projectId,
       scope: target,
