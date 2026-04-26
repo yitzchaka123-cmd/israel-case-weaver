@@ -1,83 +1,70 @@
-## Goal
+## Why you only see thinking *after* (and only sometimes)
 
-Realign the Logic Flow generator and the Envelopes UI with the agreed game-flow model:
+I traced it. Two real bugs feeding the same symptom:
 
-- All documents live loose in the box from the start.
-- Envelopes are **sealed task gates** — they describe a beat the player has reached, list which loose-pile clues are *relevant* to that beat, and give a short task. They do **not** "contain" clues.
-- A true "drop inside the envelope" is reserved for ~1 envelope per game (a creative reveal — e.g. interrogation transcript) and only when the user explicitly opts in.
+1. **Reasoning is held in memory and flushed at the very end.**
+   In `supabase/functions/assistant-chat/index.ts`, `reasoningRounds` is appended after every model round, but it's only written to the `chat_messages` row in the final `update(...)` call after the run completes. Between rounds we only patch `metadata.stage` (a one-line label like `"after add_suspect…"`). So the `ThinkingDisclosure` in `AssistantSection.tsx` literally has nothing to render until the bubble flips out of `in_progress`.
+2. **Many rounds return no `message.reasoning` at all.**
+   We call the model with `reasoningEffort: "low"` for tool-only rounds and the project default (`"low"`) for the final round. At low effort, several models (Gemini Flash, GPT-5 mini/nano, Claude Haiku) return zero reasoning segments → `reasoningRounds` stays empty → no "Show thinking" button ever appears. That's the "only sometimes" part.
 
-## Root causes (already located in code)
+Plus the in-flight UI itself is just a spinner with one line of text, so even when reasoning *is* being collected mid-run, there's no place to show it live.
 
-1. `supabase/functions/generate-logic-flow/index.ts` (lines ~121–122)
-   - Forces every envelope node's `description` to use the 3-line format with a literal `Contains: …` line.
-   - Tells the model to draw edges as "clue → envelope" / "deduction → envelope" (wording: *"which clues / deductions belong inside it"*).
-2. `src/features/project/EnvelopesSection.tsx` (lines ~207, ~576, ~586, ~623)
-   - Linked-documents picker uses copy like *"No documents inside"*, *"only items literally sealed inside this envelope"*, *"Default: empty. Documents live loose in the box."* — half of that is correct, half still nudges the old model.
-   - The "Explain" prompt asks the AI "what should be **inside** it."
-3. (Already correct, leave alone) `supabase/functions/assistant-chat/index.ts` and `supabase/functions/generate-envelopes/index.ts` already articulate the correct model.
+## Fix
 
-## Changes
+### 1. Stream reasoning + tool trail into the placeholder row each round
 
-### 1. `supabase/functions/generate-logic-flow/index.ts`
+In `supabase/functions/assistant-chat/index.ts`, in both the background and sync run paths (the `for (let round …)` loops around lines 1735 and 2046):
 
-Rewrite the envelope-description requirement to:
+- After each round, write the **accumulated** `reasoningRounds` and the **full** `executedTools` array (not just the count) into the placeholder row's metadata, alongside the existing `stage`:
+  ```ts
+  void supa.from("chat_messages").update({
+    metadata: {
+      in_progress: true, model, stage,
+      partial_tools: executedTools.length,
+      tools: executedTools,                 // NEW — full receipts mid-flight
+      reasoning: reasoningRounds,           // NEW — accumulated thinking so far
+      stage_history: stageHistory,          // NEW — short append-only list of past stages
+    },
+  }).eq("id", assistantMessageId);
+  ```
+- Track a small `stageHistory: { at: string; label: string }[]` (push on every stage transition) so the live disclosure can show "thinking → after add_suspect → after generate_logic_flow → writing reply" as it happens.
+- Also patch metadata **before** the very first model call (round 0) so the bubble flips from a blank "Thinking…" spinner into a structured live panel within ~1s of sending.
 
-```
-Task: <what the player physically does with this envelope>
-Relevant clues / beat: <which loose-pile clues the player should already be holding / which deduction has just happened that unlocks this gate>
-Why it matters: <how it advances the case structure / what it confirms or unlocks next>
-```
+### 2. Always have *something* to show under "Thinking" — even with no reasoning summary
 
-Also rewrite the edges instruction:
+When the model returns no `message.reasoning`, synthesize a fallback "thinking" segment from the tool calls themselves so the disclosure is never empty:
+- For each tool call in a round, push a synthetic segment like:
+  ```
+  { type: "thinking", text: "Calling add_suspect with {name: "Noam", role: "courier"} …" }
+  ```
+- That way models that don't expose reasoning still get a visible action trail, which is what users actually want to see ("what is it doing right now?").
 
-- Replace *"draw edges showing which clues / deductions belong inside it (clue → envelope, deduction → envelope)"* with:
-  *"For each envelope node, draw `supports` edges from the clues/deductions that the player should already have figured out from the loose document pile before this gate opens. The label on these edges MUST be `relevant to` (NOT `inside`, NOT `contains`). These edges represent the beat that triggers the envelope, not physical contents."*
-- Keep `envelope_n → envelope_{n+1}` chain edges (label: `then`).
-- Add a single explicit reminder: *"Envelopes do NOT contain documents. All documents are in the box from the start. Only the final envelope physically contains the accusation form."*
+Also bump `roundEffort` for tool rounds from hardcoded `"low"` to the project's `ai_reasoning_effort` when it's set to `"medium"` or `"high"` — currently we override the user's choice for non-final rounds, which silently suppresses thinking on those rounds.
 
-Apply the same wording fix in both branches (existing-envelopes branch and scaffolding branch around lines 121–122).
+### 3. Render a live thinking panel on the in-flight bubble
 
-### 2. `src/features/project/EnvelopesSection.tsx`
+In `src/features/project/AssistantSection.tsx`:
 
-Update copy in the Linked Documents card so it stops implying envelopes are document containers by default:
+- Replace the single-line spinner block at lines 495–513 with a **live in-flight bubble** that renders the placeholder row's metadata directly (we already find it as `inFlight`):
+  - Top line: existing spinner + current `stage`.
+  - Below it: a compact, **auto-expanded** `ThinkingDisclosure` showing accumulated `reasoning` segments + a `stage_history` timeline, updating in realtime via the existing `chat_messages` realtime subscription.
+  - Tool receipts: render the running `tools` array using the existing `ToolReceipts` component so the user sees "✓ add_suspect", "✓ set_solution_summary", etc., appear live.
+- Update the `Msg` metadata type at line 77 to include `stage_history?: { at: string; label: string }[]` and allow `tools`/`reasoning` to be present while `in_progress: true`.
+- Adjust `isHiddenAssistantPlaceholder` (line 587) so we no longer hide the in-progress bubble — it should *always* be visible when in flight, since it now carries useful content. The current "hide if empty" rule was only there because the placeholder was useless mid-run.
 
-- Line ~207 (Explain prompt): *"Explain what each envelope's role is in THIS case, which clues from the loose document pile the player should already have when they open it, the task it gives, and the …"*
-- Line ~576: *"No documents tucked inside (default — all docs live loose in the box from the start)"*
-- Line ~586: *"Optional — only set this if you are physically sealing a document inside this envelope (rare, ~1 per game — e.g. a late interrogation reveal)"*
-- Line ~623: *"Default: empty. All documents live loose in the box from the start. Use this only for the rare creative drop where you are physically sealing a document inside this envelope."*
-- Rename the section header from "Linked documents" to **"Documents physically sealed inside (rare)"** to make the semantic crystal clear.
+### 4. Small UX polish
 
-### 3. `supabase/functions/explain-canvas-node/index.ts` (envelope branch)
+- In `ThinkingDisclosure`, when `in_progress` is true, default `open` to `true` and show a tiny pulsing dot next to "Thinking…" so it's obvious it's still streaming. When the run finishes, collapse it back (preserving user's manual toggle if they touched it).
+- Keep the existing post-run "Show thinking" disclosure exactly as it is — same component, just now driven by data that arrives progressively.
 
-Audit and update the explanation prompt for envelope nodes so the AI explicitly explains:
-- the **task** the envelope gives,
-- which **loose-pile clues** the player should already be holding,
-- the **beat** that unlocks it,
-- and clarifies it is a gate, not a container.
+## Files
 
-(Will inspect this file during implementation; small wording change.)
+- `supabase/functions/assistant-chat/index.ts` — write reasoning/tools/stage_history into the placeholder row each round in both `runBackground` and `runSync` loops; synthesize fallback thinking segments from tool calls; respect `ai_reasoning_effort` on tool rounds.
+- `src/features/project/AssistantSection.tsx` — render the in-flight bubble using placeholder metadata (live `ThinkingDisclosure` + `ToolReceipts`); update `Msg` type; adjust `isHiddenAssistantPlaceholder`; auto-open disclosure while `in_progress`.
 
-### 4. Backfill existing envelope node descriptions (data fix)
+No DB migration needed — `chat_messages.metadata` is already `jsonb` and the new keys (`stage_history`, plus mid-flight `tools`/`reasoning`) just slot in.
 
-Existing logic boards already on disk have the literal `Contains: …` line baked in. Two options — pick one during implementation:
+## Out of scope (call out if you want either)
 
-- **(Preferred)** Add a one-time safe rewrite when the Logic Flow regenerates: when overwriting envelope nodes, the new prompt naturally replaces the description.
-- For projects that won't regenerate soon, do nothing destructive — the new wording lands the next time the user re-runs Logic Flow. We will NOT mass-overwrite existing rows automatically.
-
-### 5. Assistant-chat reinforcement (small)
-
-Add one short line to the system prompt in `assistant-chat` so the assistant, when narrating an envelope to the user, never uses the word *"contains"* for clues — only for the rare physical drop. (Reinforces the rule we already have.)
-
-## Out of scope
-
-- No DB migrations.
-- No changes to envelope generation (`generate-envelopes`) — it is already correct.
-- No changes to the realtime live-dot work.
-
-## Verification
-
-After the change, ask the assistant to regenerate Logic Flow on a test project and confirm:
-
-- Envelope node descriptions read `Task / Relevant clues / Why it matters` (no `Contains:`).
-- Canvas edges into envelopes are labeled `relevant to`, not `inside`.
-- Envelopes panel "Linked documents" card defaults to empty and the helper copy reads as a rare exception.
+- True token-by-token streaming of the assistant's final prose. Today we use `stream: false` and write the whole reply at the end. Switching to SSE streaming for the final round is a bigger change (proxy SSE through the edge function, partial-content updates) — happy to do it as a follow-up if you want the prose itself to type out live.
+- Surfacing thinking from the canvas/document generators (`generate-logic-flow`, `generate-document`, etc.). Those run in their own edge functions and would need the same pattern applied separately.

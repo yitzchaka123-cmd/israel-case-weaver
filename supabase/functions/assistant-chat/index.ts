@@ -1726,29 +1726,52 @@ async function processConversation(
   // the project has ai_reasoning_effort != 'none' AND the model supports it.
   type ReasoningSegment = { type: "thinking" | "summary"; text: string };
   const reasoningRounds: Array<{ round: number; segments: ReasoningSegment[] }> = [];
+  const stageHistory: Array<{ at: string; label: string }> = [];
+  const pushStage = (label: string) => {
+    const last = stageHistory[stageHistory.length - 1];
+    if (last?.label === label) return;
+    stageHistory.push({ at: new Date().toISOString(), label });
+  };
+  // Push live progress (reasoning + tool receipts + stage history) to the
+  // placeholder row so the UI can render the "Thinking…" disclosure live
+  // instead of only after the run completes. Fire-and-forget — never block.
+  const flushProgress = (stage: string) => {
+    pushStage(stage);
+    void supa.from("chat_messages")
+      .update({
+        metadata: {
+          in_progress: true,
+          model,
+          stage,
+          stage_history: stageHistory,
+          partial_tools: executedTools.length,
+          tools: executedTools,
+          ...(reasoningRounds.length ? { reasoning: reasoningRounds } : {}),
+        },
+      })
+      .eq("id", assistantMessageId);
+  };
   // Default to "low" — chat is short turn-by-turn and tool calls don't need
   // heavy reasoning. Users who want deeper thinking can crank ai_reasoning_effort.
   const baseEffort = String((project as { ai_reasoning_effort?: string }).ai_reasoning_effort ?? "low");
   const TOOLS = buildTools(playbook);
   const MAX_ROUNDS = 4;
   let lastFb: { effectiveModel: string; fallback: string } = { effectiveModel: model, fallback: "none" };
+  flushProgress("thinking…");
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const isFinalRound = round === MAX_ROUNDS - 1;
-    // Tool-only rounds (everything but the last) get the cheapest reasoning
-    // tier — picking the next tool call doesn't need deep thought. Save the
-    // user's chosen `baseEffort` for the final prose round.
-    const roundEffort = isFinalRound ? baseEffort : "low";
+    // Tool-only rounds get a cheaper reasoning tier than the final prose
+    // round, but never go below the user's chosen baseEffort — otherwise
+    // models silently return zero reasoning segments and the "Show thinking"
+    // panel never has anything to display.
+    const roundEffort = isFinalRound ? baseEffort : (baseEffort === "high" ? "medium" : baseEffort === "medium" ? "low" : baseEffort);
     const body: Record<string, unknown> = { model, messages: convo, stream: false, reasoningEffort: roundEffort, ...claudeSkillRequestShape(claudeChatSkills) };
     if (!isFinalRound) body.tools = TOOLS;
 
-    // Surface progress to the UI between rounds via the placeholder row's
-    // metadata.stage. The chat_messages realtime subscription picks this up.
     if (round > 0) {
       const lastTool = executedTools[executedTools.length - 1]?.name;
       const stage = isFinalRound ? "writing reply" : lastTool ? `after ${lastTool}…` : "thinking…";
-      void supa.from("chat_messages")
-        .update({ metadata: { in_progress: true, model, stage, partial_tools: executedTools.length } })
-        .eq("id", assistantMessageId);
+      flushProgress(stage);
     }
 
     const roundStartedAt = Date.now();
@@ -1801,19 +1824,36 @@ async function processConversation(
     const thinkingBlocks = (msg as { thinking_blocks?: Array<{ type: "thinking"; text: string; signature?: string }> }).thinking_blocks;
 
     if (toolCalls && toolCalls.length > 0) {
+      // If the model returned no reasoning segments this round, synthesize a
+      // visible action trail from the tool calls so the "Show thinking" panel
+      // is never empty mid-flight (most fast/low-effort models skip reasoning).
+      if (!Array.isArray(msgReasoning) || msgReasoning.length === 0) {
+        const segs: ReasoningSegment[] = toolCalls.map((c) => {
+          let preview = "";
+          try {
+            const obj = JSON.parse(c.function.arguments || "{}") as Record<string, unknown>;
+            const keys = Object.keys(obj).slice(0, 4);
+            preview = keys.map((k) => {
+              const v = obj[k];
+              const s = typeof v === "string" ? v : JSON.stringify(v);
+              return `${k}: ${s.length > 60 ? s.slice(0, 57) + "…" : s}`;
+            }).join(", ");
+          } catch { /* ignore */ }
+          return { type: "thinking", text: `Calling ${c.function.name}${preview ? ` — ${preview}` : ""}` };
+        });
+        if (segs.length) reasoningRounds.push({ round, segments: segs });
+      }
       convo.push({ role: "assistant", content: msg.content ?? "", tool_calls: toolCalls, ...(thinkingBlocks?.length ? { thinking: thinkingBlocks } : {}) });
       for (const call of toolCalls) {
         let args: Record<string, unknown> = {};
         try { args = JSON.parse(call.function.arguments || "{}"); } catch { /* ignore */ }
+        flushProgress(`running ${call.function.name}…`);
         const result = await executeTool(supa, projectId, call.function.name, args, toolMessageId, playbook);
         const argsForUi = call.function.name === "propose_options" ? undefined : args;
         executedTools.push({ name: call.function.name, args: argsForUi, result });
         convo.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
+        flushProgress(`finished ${call.function.name}`);
       }
-      // After this round, warn the model that it's running out of tool rounds
-      // — encourages batching the rest and writing the prose reply instead of
-      // looping on micro-edits. (round index 1 → next call is index 2 → only
-      // index 3, the final prose round, remains.)
       if (round === MAX_ROUNDS - 3) {
         convo.push({ role: "system", content: "You have one tool round left. Make any remaining tool calls in a single batch this turn, then write your reply." });
       }
@@ -2042,17 +2082,44 @@ Deno.serve(async (req) => {
     const executedTools: Array<{ name: string; args?: Record<string, unknown>; result: unknown }> = [];
     type ReasoningSegment = { type: "thinking" | "summary"; text: string };
     const reasoningRounds: Array<{ round: number; segments: ReasoningSegment[] }> = [];
+    const stageHistory: Array<{ at: string; label: string }> = [];
+    const pushStage = (label: string) => {
+      const last = stageHistory[stageHistory.length - 1];
+      if (last?.label === label) return;
+      stageHistory.push({ at: new Date().toISOString(), label });
+    };
+    const flushProgress = (stage: string) => {
+      pushStage(stage);
+      void supa.from("chat_messages")
+        .update({
+          metadata: {
+            in_progress: true,
+            model,
+            stage,
+            stage_history: stageHistory,
+            partial_tools: executedTools.length,
+            tools: executedTools,
+            ...(reasoningRounds.length ? { reasoning: reasoningRounds } : {}),
+          },
+        })
+        .eq("id", assistantMessageId);
+    };
     const baseEffort = String((project as { ai_reasoning_effort?: string }).ai_reasoning_effort ?? "low");
     const TOOLS = buildTools(playbook);
 
     const MAX_ROUNDS = 4;
     const callerUserId = await getUserIdFromAuth(req);
     let lastFb: { effectiveModel: string; fallback: string } = { effectiveModel: model, fallback: "none" };
+    flushProgress("thinking…");
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const isFinalRound = round === MAX_ROUNDS - 1;
-      const roundEffort = isFinalRound ? baseEffort : "low";
+      const roundEffort = isFinalRound ? baseEffort : (baseEffort === "high" ? "medium" : baseEffort === "medium" ? "low" : baseEffort);
       const body: Record<string, unknown> = { model, messages: convo, stream: false, reasoningEffort: roundEffort, ...claudeSkillRequestShape(claudeChatSkills) };
       if (!isFinalRound) body.tools = TOOLS;
+      if (round > 0) {
+        const lastTool = executedTools[executedTools.length - 1]?.name;
+        flushProgress(isFinalRound ? "writing reply" : lastTool ? `after ${lastTool}…` : "thinking…");
+      }
 
       const roundStartedAt = Date.now();
       const resp = await chatCompletions(body);
@@ -2145,14 +2212,28 @@ Deno.serve(async (req) => {
       const thinkingBlocks = (msg as { thinking_blocks?: Array<{ type: "thinking"; text: string; signature?: string }> }).thinking_blocks;
 
       if (toolCalls && toolCalls.length > 0) {
+        if (!Array.isArray(msgReasoning) || msgReasoning.length === 0) {
+          const segs: ReasoningSegment[] = toolCalls.map((c) => {
+            let preview = "";
+            try {
+              const obj = JSON.parse(c.function.arguments || "{}") as Record<string, unknown>;
+              const keys = Object.keys(obj).slice(0, 4);
+              preview = keys.map((k) => {
+                const v = obj[k];
+                const s = typeof v === "string" ? v : JSON.stringify(v);
+                return `${k}: ${s.length > 60 ? s.slice(0, 57) + "…" : s}`;
+              }).join(", ");
+            } catch { /* ignore */ }
+            return { type: "thinking", text: `Calling ${c.function.name}${preview ? ` — ${preview}` : ""}` };
+          });
+          if (segs.length) reasoningRounds.push({ round, segments: segs });
+        }
         convo.push({ role: "assistant", content: msg.content ?? "", tool_calls: toolCalls, ...(thinkingBlocks?.length ? { thinking: thinkingBlocks } : {}) });
         for (const call of toolCalls) {
           let args: Record<string, unknown> = {};
           try { args = JSON.parse(call.function.arguments || "{}"); } catch { /* ignore */ }
+          flushProgress(`running ${call.function.name}…`);
           const result = await executeTool(supa, projectId, call.function.name, args, toolMessageId, playbook);
-          // Persist args alongside name+result so the UI receipt can render the
-          // exact field values that changed (e.g. project field updates).
-          // Strip propose_options args — they're already echoed via result.options.
           const argsForUi = call.function.name === "propose_options" ? undefined : args;
           executedTools.push({ name: call.function.name, args: argsForUi, result });
           convo.push({
@@ -2160,6 +2241,7 @@ Deno.serve(async (req) => {
             tool_call_id: call.id,
             content: JSON.stringify(result),
           });
+          flushProgress(`finished ${call.function.name}`);
         }
         continue;
       }
