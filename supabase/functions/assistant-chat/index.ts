@@ -1487,13 +1487,18 @@ async function executeTool(
       );
     }
     if (name === "update_canvas_node") {
-      return await runUpdate(
+      const result = await runUpdate(
         "canvas_nodes",
         "node",
         true,
         "id, title, data",
         (r) => String(r.title ?? "—"),
       );
+      if ((result as { ok?: boolean })?.ok) {
+        const followup = await buildPostApprovalFollowup("update_canvas_node");
+        return { ...(result as Record<string, unknown>), ...followup };
+      }
+      return result;
     }
     if (name === "add_hint") {
       const a = args as { stage?: number; level?: number; text?: string };
