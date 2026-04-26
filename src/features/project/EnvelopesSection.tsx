@@ -51,7 +51,7 @@ import {
   getStoredImageModel,
   getStoredImageQuality,
 } from "@/components/ImageModelPicker";
-import { PromptWriterModelPicker, getStoredWriterModel } from "@/components/PromptWriterModelPicker";
+
 import { useProjectNotifications } from "./notifications/useProjectNotifications";
 import { notifyEnvelopesDrafted } from "./notifications/triggers";
 import { resolvePlaybook } from "@/lib/assistant-playbook";
