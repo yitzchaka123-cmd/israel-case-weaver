@@ -396,8 +396,8 @@ function HintSheetBlock({ projectId, stage, sheet }: { projectId: string; stage:
             onChange={setDraftPrompt}
           />
           <div className="flex items-center gap-2">
-            <Button size="sm" onClick={generate} disabled={generating || !draftPrompt.trim()} className="gap-2">
-              {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
+            <Button size="sm" onClick={generate} disabled={sheetJob.isPending || !draftPrompt.trim()} className="gap-2">
+              {sheetJob.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
               Generate hint sheet
             </Button>
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && uploadSheet(e.target.files[0])} />
@@ -405,9 +405,9 @@ function HintSheetBlock({ projectId, stage, sheet }: { projectId: string; stage:
               <Upload className="h-3.5 w-3.5" /> Upload sheet
             </Button>
           </div>
-          {generating && (
+          {sheetJob.isPending && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Generating stage {stage} hint sheet…
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Generating stage {stage} hint sheet… <span className="tabular-nums">({Math.floor(sheetJob.state.elapsedSec / 60)}:{(sheetJob.state.elapsedSec % 60).toString().padStart(2, "0")})</span>
             </div>
           )}
         </div>
