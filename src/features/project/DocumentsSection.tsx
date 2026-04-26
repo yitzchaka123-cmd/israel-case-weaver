@@ -12,9 +12,7 @@ import { toast } from "sonner";
 import jsPDF from "jspdf";
 
 import { ImageModelPicker, getStoredImageModel } from "@/components/ImageModelPicker";
-import { PromptWriterModelPicker, getStoredWriterModel } from "@/components/PromptWriterModelPicker";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
-import { Sparkles } from "lucide-react";
 import { DocumentPromptAssistant } from "@/components/DocumentPromptAssistant";
 import { Badge } from "@/components/ui/badge";
 
@@ -216,17 +214,22 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
         </div>
       )}
 
-      <DocDialog key={sel?.id} doc={sel} onClose={() => { setSelected(null); refetch(); }} />
+      <DocDialog
+        key={sel?.id}
+        doc={sel}
+        gameLanguage={project?.game_language ?? "Hebrew"}
+        onClose={() => { setSelected(null); refetch(); }}
+      />
     </div>
   );
 }
 
-function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
+function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLanguage: string; onClose: () => void }) {
   const [draft, setDraft] = useState<Doc | null>(doc);
   const [genText, setGenText] = useState(false);
   const [genImage, setGenImage] = useState(false);
   const [genDocument, setGenDocument] = useState(false);
-  const [draftingPrompt, setDraftingPrompt] = useState(false);
+  
   const [imageQuality, setImageQuality] = useState<"low" | "medium" | "high">("medium");
   const [documentFormat, setDocumentFormat] = useState<"pdf" | "docx" | "pptx" | "xlsx">("pdf");
   const [selectedImageModel, setSelectedImageModel] = useState<string>(
@@ -381,45 +384,9 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
     onClose();
   };
 
-  // Draft a fresh design-instructions / image prompt for this document using
-  // the project context. Replaces any existing draft.
-  const draftPrompt = async () => {
-    setDraftingPrompt(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const writerModel = getStoredWriterModel("document");
-      const hint = [
-        draft.title && `Document title: ${draft.title}`,
-        draft.doc_type && `Type: ${draft.doc_type}`,
-        draft.print_size && `Print size: ${draft.print_size}`,
-        draft.hebrew_content && `Hebrew text to include: ${draft.hebrew_content}`,
-      ].filter(Boolean).join(". ");
-      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/suggest-image-prompt`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-        },
-        body: JSON.stringify({
-          projectId: doc.project_id,
-          category: "external",
-          hint: hint || undefined,
-          currentPrompt: draft.design_instructions ?? undefined,
-          writerModel: writerModel === "__project" ? undefined : writerModel,
-          userId: session?.user?.id,
-        }),
-      });
-      const json = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        toast.error(json.error ?? "Couldn't draft a prompt");
-        return;
-      }
-      update({ design_instructions: json.prompt });
-      toast.success("Prompt drafted — review before generating");
-    } finally {
-      setDraftingPrompt(false);
-    }
-  };
+  // Legacy single-prompt drafter removed — DocumentPromptAssistant handles
+  // structured Design + Content drafting now.
+
 
   const saveAsPdf = async () => {
     const url = draft.generated_asset_url;
@@ -493,100 +460,77 @@ function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
             </Select>
           </FieldBlock>
           <div className="md:col-span-2">
-            <FieldBlock label="Design / graphic instructions (this is the image prompt)">
-              <div className="flex items-center justify-between mb-1.5 gap-2 flex-wrap">
-                <p className="text-[11px] text-muted-foreground">
-                  Structure beats brevity. Include GOAL, FORMAT, VISUAL STYLE, LAYOUT, TYPOGRAPHY, EXACT HEBREW TEXT, AUTHENTICITY rules.
-                </p>
-                <div className="flex items-center gap-2 shrink-0">
-                  <PromptWriterModelPicker surface="document" />
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 text-[11px] gap-1.5"
-                    onClick={draftPrompt}
-                    disabled={draftingPrompt}
-                  >
-                    {draftingPrompt ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                    {draft.design_instructions ? "Revise with AI" : "Draft with AI"}
-                  </Button>
-                  <span className="text-[10px] text-muted-foreground tabular-nums">
-                    {(draft.design_instructions ?? "").length.toLocaleString()} chars
-                  </span>
-                  {!draft.design_instructions && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-[11px]"
-                      onClick={() => update({ design_instructions: DESIGN_PLACEHOLDER })}
-                    >
-                      Insert template
-                    </Button>
-                  )}
-                </div>
+            <DocumentPromptAssistant
+              projectId={doc.project_id}
+              target={{ kind: "document", documentId: doc.id }}
+              design={draft.design_instructions ?? ""}
+              content={draft.hebrew_content ?? ""}
+              onChange={({ design, content }) => update({ design_instructions: design, hebrew_content: content })}
+              onAutoGenerate={async () => { await generate("image"); }}
+              gameLanguage={gameLanguage}
+              mode="inline"
+            />
+            {!draft.design_instructions && (
+              <div className="mt-2 flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-[11px]"
+                  onClick={() => update({ design_instructions: DESIGN_PLACEHOLDER })}
+                >
+                  Insert template
+                </Button>
+                <span className="text-[10px] text-muted-foreground">
+                  Or just type instructions above and click <strong>Generate prompt</strong>.
+                </span>
               </div>
-              <Textarea
-                rows={28}
-                value={draft.design_instructions ?? ""}
-                onChange={(e) => update({ design_instructions: e.target.value })}
-                placeholder={DESIGN_PLACEHOLDER}
-                className="font-mono text-xs leading-relaxed min-h-[520px] resize-y"
-              />
-            </FieldBlock>
+            )}
           </div>
           <div className="md:col-span-2">
-            <FieldBlock label="Hebrew content" dir="rtl">
-              <div className="flex flex-wrap gap-2 mb-2 items-center" dir="ltr">
-                <Button size="sm" variant="outline" className="gap-2" onClick={() => generate("text")} disabled={genText}>
-                  {genText ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-                  Generate Hebrew content
+            <FieldBlock label="Generate output">
+              <div className="flex flex-wrap items-center gap-2" dir="ltr">
+                <ImageModelPicker surface="document" defaultModel="chatgpt-image" />
+                <Select value={imageQuality} onValueChange={(v) => setImageQuality(v as "low" | "medium" | "high")}>
+                  <SelectTrigger className="h-8 w-[110px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low (fastest)</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High (slow)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button size="sm" variant="outline" className="gap-2" onClick={() => generate("image")} disabled={genImage}>
+                  {genImage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
+                  Generate document image
                 </Button>
-                <div className="flex items-center gap-1.5 ml-auto flex-wrap justify-end">
-                  <ImageModelPicker
-                    surface="document"
-                    defaultModel="chatgpt-image"
-                  />
-                  <Select value={imageQuality} onValueChange={(v) => setImageQuality(v as "low" | "medium" | "high")}>
-                    <SelectTrigger className="h-8 w-[110px] text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="low">Low (fastest)</SelectItem>
-                      <SelectItem value="medium">Medium</SelectItem>
-                      <SelectItem value="high">High (slow)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button size="sm" variant="outline" className="gap-2" onClick={() => generate("image")} disabled={genImage}>
-                    {genImage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImageIcon className="h-3.5 w-3.5" />}
-                    Generate document image
-                  </Button>
-                  <Select value={documentFormat} onValueChange={(v) => setDocumentFormat(v as "pdf" | "docx" | "pptx" | "xlsx")}>
-                    <SelectTrigger className="h-8 w-[98px] text-xs"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="pdf">PDF</SelectItem>
-                      <SelectItem value="docx">DOCX</SelectItem>
-                      <SelectItem value="pptx">PPTX</SelectItem>
-                      <SelectItem value="xlsx">XLSX</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button size="sm" variant="outline" className="gap-2" onClick={() => generate("document")} disabled={genDocument}>
-                    {genDocument ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileType className="h-3.5 w-3.5" />}
-                    Generate file
-                  </Button>
-                </div>
+                <Select value={documentFormat} onValueChange={(v) => setDocumentFormat(v as "pdf" | "docx" | "pptx" | "xlsx")}>
+                  <SelectTrigger className="h-8 w-[98px] text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pdf">PDF</SelectItem>
+                    <SelectItem value="docx">DOCX</SelectItem>
+                    <SelectItem value="pptx">PPTX</SelectItem>
+                    <SelectItem value="xlsx">XLSX</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button size="sm" variant="outline" className="gap-2" onClick={() => generate("document")} disabled={genDocument}>
+                  {genDocument ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileType className="h-3.5 w-3.5" />}
+                  Generate file
+                </Button>
               </div>
-              <div className="mb-2 flex flex-wrap items-center gap-2" dir="ltr">
-                <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Output type</span>
-                <Button size="sm" variant="outline" className="h-7 gap-1.5 text-[11px]" onClick={() => generateOutputType("image")} disabled={genImage}><ImageIcon className="h-3 w-3" /> Image</Button>
-                <Button size="sm" variant="outline" className="h-7 gap-1.5 text-[11px]" onClick={() => generateOutputType("document")} disabled={genDocument}><FileType className="h-3 w-3" /> Document/file</Button>
-                <Button size="sm" variant="outline" className="h-7 gap-1.5 text-[11px]" onClick={() => generateOutputType("both")} disabled={genImage || genDocument}><Wand2 className="h-3 w-3" /> Both</Button>
+              <div className="mt-2 flex flex-wrap items-center gap-2" dir="ltr">
+                <span className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Combined</span>
+                <Button size="sm" variant="outline" className="h-7 gap-1.5 text-[11px]" onClick={() => generateOutputType("both")} disabled={genImage || genDocument}><Wand2 className="h-3 w-3" /> Image + file</Button>
+                <Button size="sm" variant="ghost" className="h-7 gap-1.5 text-[11px]" onClick={() => generate("text")} disabled={genText} title="Legacy: regenerate just the content text using the old single-prompt flow.">
+                  {genText ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
+                  Regenerate content only
+                </Button>
               </div>
               {selectedImageModel === "chatgpt-image-2" && (
-                <div className="mb-2 text-[11px] text-muted-foreground rounded-md border border-warning/30 bg-warning/5 px-2.5 py-1.5" dir="ltr">
+                <div className="mt-2 text-[11px] text-muted-foreground rounded-md border border-warning/30 bg-warning/5 px-2.5 py-1.5" dir="ltr">
                   <strong className="text-warning">Heads up:</strong> <code>chatgpt-image-2</code> requires a <em>verified OpenAI organization</em> and is slower at High quality. If generation fails or times out, switch the model to <strong>ChatGPT Image 1</strong> or <strong>Nano Banana</strong>, or drop quality to Medium.
                 </div>
               )}
-              <Textarea rows={6} value={draft.hebrew_content ?? ""} onChange={(e) => update({ hebrew_content: e.target.value })} dir="rtl" className="text-right" />
             </FieldBlock>
           </div>
           {draft.generated_asset_url && (

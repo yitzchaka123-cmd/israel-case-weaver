@@ -51,10 +51,11 @@ import {
   getStoredImageModel,
   getStoredImageQuality,
 } from "@/components/ImageModelPicker";
-import { PromptWriterModelPicker, getStoredWriterModel } from "@/components/PromptWriterModelPicker";
+
 import { useProjectNotifications } from "./notifications/useProjectNotifications";
 import { notifyEnvelopesDrafted } from "./notifications/triggers";
 import { resolvePlaybook } from "@/lib/assistant-playbook";
+import { DocumentPromptAssistant } from "@/components/DocumentPromptAssistant";
 
 interface Envelope {
   id: string;
@@ -134,6 +135,15 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
       return data as Envelope[];
     },
   });
+
+  const { data: project } = useQuery({
+    queryKey: ["project-language", projectId],
+    queryFn: async () => {
+      const { data } = await supabase.from("projects").select("game_language").eq("id", projectId).maybeSingle();
+      return data;
+    },
+  });
+  const gameLanguage = project?.game_language ?? "Hebrew";
 
   const { data: docs = [] } = useQuery({
     queryKey: ["envelope-doc-options", projectId],
@@ -292,6 +302,7 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
                 docs={docs}
                 projectId={projectId}
                 playbookCount={playbook.envelopes.count}
+                gameLanguage={gameLanguage}
               />
             );
           })}
@@ -309,6 +320,7 @@ function EnvelopeCard({
   docs,
   projectId,
   playbookCount,
+  gameLanguage,
 }: {
   slot: { n: number; label: string };
   env: Envelope | undefined;
@@ -317,8 +329,9 @@ function EnvelopeCard({
   docs: DocOption[];
   projectId: string;
   playbookCount: number;
+  gameLanguage: string;
 }) {
-  const [draftingPrompt, setDraftingPrompt] = useState(false);
+  
   const [generatingImage, setGeneratingImage] = useState(false);
 
   const linkedIds = (value("linked_document_ids") as string[] | null) ?? [];
@@ -342,49 +355,8 @@ function EnvelopeCard({
       .eq("id", docId);
   };
 
-  const draftPrompt = async () => {
-    setDraftingPrompt(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const writerModel = getStoredWriterModel("envelope");
-      const hint = [
-        `Envelope #${slot.n} — ${slot.label}`,
-        value("label") && `Hebrew label: ${value("label") as string}`,
-        value("task") && `Hebrew task: ${value("task") as string}`,
-      ]
-        .filter(Boolean)
-        .join(". ");
-      const resp = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/suggest-image-prompt`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${
-              session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
-            }`,
-          },
-          body: JSON.stringify({
-            projectId,
-            category: "envelope",
-            hint: hint || undefined,
-            currentPrompt: (value("design_instructions") as string) || undefined,
-            writerModel: writerModel === "__project" ? undefined : writerModel,
-            userId: session?.user?.id,
-          }),
-        },
-      );
-      const json = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        toast.error(json.error ?? "Couldn't draft a prompt");
-        return;
-      }
-      await onUpdate({ design_instructions: json.prompt });
-      toast.success("Prompt drafted — review before generating");
-    } finally {
-      setDraftingPrompt(false);
-    }
-  };
+  // Legacy single-prompt drafter removed — DocumentPromptAssistant handles
+  // structured Design + Content drafting now.
 
   const generateImage = async () => {
     const prompt = (value("design_instructions") as string)?.trim();
@@ -635,38 +607,23 @@ function EnvelopeCard({
 
         {/* RIGHT — design & generation */}
         <div className="space-y-4">
-          <div className="flex items-center justify-between gap-2">
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-              Design instructions
-            </Label>
-            <div className="flex items-center gap-2">
-              <PromptWriterModelPicker surface="envelope" />
-              <ImageModelPicker surface="envelope" defaultModel="chatgpt-image" />
-            </div>
+          <div className="flex items-center justify-end gap-2">
+            <ImageModelPicker surface="envelope" defaultModel="chatgpt-image" />
           </div>
-          <Textarea
-            rows={10}
-            value={(value("design_instructions") as string) ?? ""}
-            onChange={(e) => onUpdate({ design_instructions: e.target.value })}
-            placeholder={`Paper stock, wax seal, classification stamp, Hebrew label placement, era-correct typography…\n\nClick ✨ Draft prompt to start from the workspace template.`}
-            className="font-mono text-xs leading-relaxed"
+
+          <DocumentPromptAssistant
+            projectId={projectId}
+            target={{ kind: "envelope", envelopeId: env?.id ?? "" }}
+            design={(value("design_instructions") as string) ?? ""}
+            content={(value("task") as string) ?? ""}
+            onChange={({ design, content }) => onUpdate({ design_instructions: design, task: content })}
+            onAutoGenerate={env?.id ? generateImage : undefined}
+            gameLanguage={gameLanguage}
+            mode="inline"
           />
 
           <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              className="gap-2"
-              onClick={draftPrompt}
-              disabled={draftingPrompt}
-            >
-              {draftingPrompt ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Sparkles className="h-4 w-4" />
-              )}
-              Draft prompt
-            </Button>
-            <Button className="gap-2" onClick={generateImage} disabled={generatingImage}>
+            <Button className="gap-2" onClick={generateImage} disabled={generatingImage || !env?.id}>
               {generatingImage ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
