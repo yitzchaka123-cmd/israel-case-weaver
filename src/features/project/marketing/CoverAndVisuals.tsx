@@ -413,3 +413,23 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
     </section>
   );
 }
+
+function ExtraPromptBlock({ projectId, hint, onGenerate, generating }: { projectId: string; hint: string; onGenerate: (p: string) => void | Promise<void>; generating: boolean }) {
+  const [prompt, setPrompt] = useState("");
+  return (
+    <div className="space-y-2">
+      <ImagePromptAssistant
+        projectId={projectId}
+        surface="media"
+        category="marketing-extra"
+        hint={hint}
+        prompt={prompt}
+        onChange={setPrompt}
+      />
+      <Button onClick={() => onGenerate(prompt)} disabled={generating || !prompt.trim()} className="gap-2">
+        {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+        Generate marketing image
+      </Button>
+    </div>
+  );
+}
