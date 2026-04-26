@@ -1649,6 +1649,13 @@ async function processConversation(
         executedTools.push({ name: call.function.name, args: argsForUi, result });
         convo.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
       }
+      // After this round, warn the model that it's running out of tool rounds
+      // — encourages batching the rest and writing the prose reply instead of
+      // looping on micro-edits. (round index 1 → next call is index 2 → only
+      // index 3, the final prose round, remains.)
+      if (round === MAX_ROUNDS - 3) {
+        convo.push({ role: "system", content: "You have one tool round left. Make any remaining tool calls in a single batch this turn, then write your reply." });
+      }
       continue;
     }
 
