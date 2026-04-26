@@ -629,14 +629,13 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
             {project?.solution_summary ? (
               <>
                 {(() => {
-                  // The "Using approved summary" badge must reflect REALITY:
-                  // green only when (a) a summary is saved, (b) the logic flow
-                  // has been approved against it, AND (c) logic nodes exist.
-                  // Otherwise show an amber chip so the user knows the on-screen
-                  // board no longer matches the saved summary.
+                  // Truthful state badge. The backend wipes the logic board on
+                  // every summary rewrite, so any nodes that exist were drawn
+                  // FROM the current saved summary. Approval is the additional
+                  // "user signed off" layer.
                   const hasLogicNodes = nodes.length > 0;
-                  const trulyAligned = !!project?.logic_approved_at && hasLogicNodes;
-                  if (trulyAligned) {
+                  const approved = !!project?.logic_approved_at;
+                  if (approved && hasLogicNodes) {
                     return (
                       <button
                         type="button"
@@ -649,15 +648,28 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
                       </button>
                     );
                   }
+                  if (hasLogicNodes) {
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => setSummaryOpen(true)}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent/10 px-2 py-1 text-xs text-foreground hover:bg-accent/15 transition-colors"
+                        title="The Logic Flow was drawn from this summary but you haven't approved it yet. Approve to unlock document generation."
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+                        Drawn from summary — not yet approved
+                      </button>
+                    );
+                  }
                   return (
                     <button
                       type="button"
                       onClick={() => setSummaryOpen(true)}
                       className="inline-flex items-center gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-2 py-1 text-xs text-foreground hover:bg-warning/15 transition-colors"
-                      title="The summary was changed (or the logic flow has not been (re)approved against this version). Rebuild from the saved solution summary to align."
+                      title="A solution summary is saved but the Logic Flow is empty. Generate it from the saved summary to continue."
                     >
                       <span className="h-1.5 w-1.5 rounded-full bg-warning" />
-                      {hasLogicNodes ? "Logic flow is stale — rebuild from summary" : "Summary saved — generate logic flow"}
+                      Summary saved — generate logic flow
                     </button>
                   );
                 })()}
