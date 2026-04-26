@@ -7,9 +7,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Upload, Wand2, Loader2, Trash2, Image as ImageIcon, Video, Film, Newspaper, Package, ExternalLink, Sparkles, FileText, RefreshCw, History } from "lucide-react";
-import { PromptWriterModelPicker, getStoredWriterModel } from "@/components/PromptWriterModelPicker";
+import { Upload, Wand2, Loader2, Trash2, Image as ImageIcon, Video, Film, Newspaper, Package, ExternalLink, FileText, RefreshCw, History as HistoryIcon } from "lucide-react";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
+import { ImagePromptAssistant } from "@/components/ImagePromptAssistant";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { toast } from "sonner";
 
@@ -133,7 +133,6 @@ export function MediaSection({ projectId }: { projectId: string }) {
 
 function CategoryPanel({ projectId, category, items }: { projectId: string; category: string; items: MediaAsset[] }) {
   const [generating, setGenerating] = useState(false);
-  const [suggestingPrompt, setSuggestingPrompt] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [hint, setHint] = useState("");
   const [title, setTitle] = useState("");
@@ -160,31 +159,6 @@ function CategoryPanel({ projectId, category, items }: { projectId: string; cate
     if (e2) return toast.error(e2.message);
     toast.success("Uploaded");
     setTitle("");
-  };
-
-  const handleSuggestPrompt = async () => {
-    setSuggestingPrompt(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const writerModel = getStoredWriterModel("media");
-      const resp = await callEdge("suggest-image-prompt", {
-        projectId,
-        category,
-        hint: hint.trim() || undefined,
-        currentPrompt: prompt.trim() || undefined,
-        writerModel: writerModel === "__project" ? undefined : writerModel,
-        userId: session?.user?.id,
-      });
-      const json = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        toast.error(json.error ?? "Couldn't generate a prompt");
-        return;
-      }
-      setPrompt(json.prompt);
-      toast.success("Prompt generated — review or edit before generating the image");
-    } finally {
-      setSuggestingPrompt(false);
-    }
   };
 
   const saveDocumentAttempt = async () => {
@@ -257,34 +231,14 @@ function CategoryPanel({ projectId, category, items }: { projectId: string; cate
         </div>
 
         {isImage && (
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium flex items-center gap-1.5">
-                <FileText className="h-3 w-3" /> Image prompt — preview & edit before generating
-              </Label>
-              <div className="flex items-center gap-1.5">
-                <PromptWriterModelPicker surface="media" />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 gap-1.5 text-xs"
-                  onClick={handleSuggestPrompt}
-                  disabled={suggestingPrompt}
-                >
-                  {suggestingPrompt ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                  {prompt.trim() ? "Regenerate prompt" : "Generate prompt"}
-                </Button>
-              </div>
-            </div>
-            <Textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Click Generate Prompt for a contextual draft based on your case, or write your own."
-              rows={5}
-              className="font-mono text-xs leading-relaxed"
-            />
-          </div>
+          <ImagePromptAssistant
+            projectId={projectId}
+            surface="media"
+            category={category}
+            hint={hint || undefined}
+            prompt={prompt}
+            onChange={setPrompt}
+          />
         )}
 
         {isImage && (
@@ -443,7 +397,6 @@ function AssetDialog({
 }) {
   const [editPrompt, setEditPrompt] = useState("");
   const [retrying, setRetrying] = useState(false);
-  const [regenPrompt, setRegenPrompt] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
@@ -465,29 +418,7 @@ function AssetDialog({
 
   const isImageAsset = asset.mime_type?.startsWith("image");
 
-  const handleRegeneratePrompt = async () => {
-    setRegenPrompt(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const writerModel = getStoredWriterModel("media");
-      const resp = await callEdge("suggest-image-prompt", {
-        projectId,
-        category: asset.category ?? category,
-        currentPrompt: editPrompt.trim() || undefined,
-        writerModel: writerModel === "__project" ? undefined : writerModel,
-        userId: session?.user?.id,
-      });
-      const json = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        toast.error(json.error ?? "Couldn't generate a prompt");
-        return;
-      }
-      setEditPrompt(json.prompt);
-      toast.success("Prompt revised");
-    } finally {
-      setRegenPrompt(false);
-    }
-  };
+  // Prompt re-drafting is now handled inside <ImagePromptAssistant /> below.
 
   const handleRetry = async () => {
     if (!editPrompt.trim()) return toast.error("Prompt is empty");
@@ -536,35 +467,30 @@ function AssetDialog({
           <video src={asset.url} controls className="w-full rounded-lg" />
         )}
 
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium flex items-center gap-1.5">
-              <FileText className="h-3 w-3" /> Prompt — edit and retry
-            </Label>
-            {isImageAsset && (
-              <div className="flex items-center gap-1.5">
-                <PromptWriterModelPicker surface="media" />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 gap-1.5 text-xs"
-                  onClick={handleRegeneratePrompt}
-                  disabled={regenPrompt}
-                >
-                  {regenPrompt ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                  Revise prompt with AI
-                </Button>
-              </div>
-            )}
-          </div>
-          <Textarea
-            value={editPrompt}
-            onChange={(e) => setEditPrompt(e.target.value)}
-            rows={8}
-            className="font-mono text-xs leading-relaxed"
-            placeholder={asset.prompt ? undefined : "No prompt was saved with this asset. You can write one and retry."}
-          />
+        <div className="space-y-2">
+          {isImageAsset ? (
+            <ImagePromptAssistant
+              projectId={projectId}
+              surface="media"
+              category={asset.category ?? category}
+              prompt={editPrompt}
+              onChange={setEditPrompt}
+              targetId={asset.id}
+            />
+          ) : (
+            <>
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium flex items-center gap-1.5">
+                <FileText className="h-3 w-3" /> Prompt
+              </Label>
+              <Textarea
+                value={editPrompt}
+                onChange={(e) => setEditPrompt(e.target.value)}
+                rows={8}
+                className="font-mono text-xs leading-relaxed"
+                placeholder={asset.prompt ? undefined : "No prompt was saved with this asset. You can write one and retry."}
+              />
+            </>
+          )}
           {(asset.model || asset.effective_model) && (
             <div className="text-[11px] text-muted-foreground space-y-1 pt-1">
               <div className="flex items-center gap-2 flex-wrap">
@@ -584,7 +510,7 @@ function AssetDialog({
                     onClick={() => setShowHistory((s) => !s)}
                     className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
                   >
-                    <History className="h-3 w-3" />
+                    <HistoryIcon className="h-3 w-3" />
                     {showHistory ? "Hide" : "Show"} previous prompts ({asset.prompt_history.length})
                   </button>
                   {showHistory && (
