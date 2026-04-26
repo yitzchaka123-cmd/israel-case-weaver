@@ -204,7 +204,8 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
     const labels = playbook.envelopes.labels.slice(0, playbook.envelopes.count).join(", ");
     const prompt =
       `Walk me through the ${playbook.envelopes.count}-envelope flow from the playbook (${labels}). ` +
-      `Explain what each envelope's role is in THIS case, what should be inside it, and the ` +
+      `Remember: envelopes are SEALED TASK GATES — they do NOT contain documents. All evidence lives loose in the box from the start. ` +
+      `For each envelope, explain (a) the task / instruction the player reads when they open it, (b) which loose-pile clues the player should already be holding when they reach that beat, and (c) the ` +
       `closing-line rule ("${playbook.envelopes.closing_line_he}"). Then ask me which envelope ` +
       `you should help me draft first.`;
     window.dispatchEvent(new CustomEvent("mystudio:navigate", { detail: { tab: "assistant" } }));
@@ -566,14 +567,14 @@ function EnvelopeCard({
 
           <div className="space-y-1.5">
             <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-              Physical inserts (rare) · {linkedDocs.length}
+              Documents physically sealed inside (rare) · {linkedDocs.length}
             </Label>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" className="w-full justify-between font-normal">
                   <span className="truncate text-sm">
                     {linkedDocs.length === 0
-                      ? "No documents inside (default — all docs live in the box)"
+                      ? "Empty (default — all documents live loose in the box from the start)"
                       : linkedDocs
                           .map((d) => `#${d.doc_number ?? "?"} ${d.title}`)
                           .join(", ")}
@@ -583,7 +584,7 @@ function EnvelopeCard({
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-[320px] max-h-72 overflow-y-auto" align="start">
                 <DropdownMenuLabel className="text-xs">
-                  Optional — only items literally sealed inside this envelope
+                  Rare — only set this if you are physically sealing a document inside this envelope (e.g. a late interrogation reveal)
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 {docs.length === 0 && (
@@ -620,7 +621,7 @@ function EnvelopeCard({
               </DropdownMenuContent>
             </DropdownMenu>
             <p className="text-[11px] text-muted-foreground">
-              Default: empty. Documents live loose in the box. Only link items physically tucked inside this sealed envelope.
+              Default: empty. All documents live loose in the box from the start — envelopes are sealed task gates, not document containers. Use this only for the rare creative drop (≈1 per game) where you are physically sealing a document inside this envelope.
             </p>
           </div>
 

@@ -1,83 +1,83 @@
 ## Goal
 
-Make the Logic Flow Canvas board light up **live** while the assistant is generating it — clues, deductions, suspects, envelopes, hints and edges appear one-by-one as the model emits them, instead of all at once after a 2–3 minute wait.
+Realign the Logic Flow generator and the Envelopes UI with the agreed game-flow model:
 
-## Why this works in our stack
+- All documents live loose in the box from the start.
+- Envelopes are **sealed task gates** — they describe a beat the player has reached, list which loose-pile clues are *relevant* to that beat, and give a short task. They do **not** "contain" clues.
+- A true "drop inside the envelope" is reserved for ~1 envelope per game (a creative reveal — e.g. interrogation transcript) and only when the user explicitly opts in.
 
-- `canvas_nodes` and `canvas_edges` are already on the Realtime publication.
-- `ProjectWorkspace.tsx` already subscribes to `postgres_changes` on both tables and invalidates the Canvas queries on every change. So **any row we insert during generation will pop into the Canvas board automatically** — no client changes needed for the live-paint effect itself.
-- The bottleneck is the edge function: `generate-logic-flow` waits for the full LLM response, parses one big JSON tool call, then bulk-inserts everything. We need to switch to a **streaming** LLM call and insert rows as we parse them.
+## Root causes (already located in code)
 
-## Plan
+1. `supabase/functions/generate-logic-flow/index.ts` (lines ~121–122)
+   - Forces every envelope node's `description` to use the 3-line format with a literal `Contains: …` line.
+   - Tells the model to draw edges as "clue → envelope" / "deduction → envelope" (wording: *"which clues / deductions belong inside it"*).
+2. `src/features/project/EnvelopesSection.tsx` (lines ~207, ~576, ~586, ~623)
+   - Linked-documents picker uses copy like *"No documents inside"*, *"only items literally sealed inside this envelope"*, *"Default: empty. Documents live loose in the box."* — half of that is correct, half still nudges the old model.
+   - The "Explain" prompt asks the AI "what should be **inside** it."
+3. (Already correct, leave alone) `supabase/functions/assistant-chat/index.ts` and `supabase/functions/generate-envelopes/index.ts` already articulate the correct model.
 
-### 1. Switch `generate-logic-flow` to a streaming LLM call
+## Changes
 
-File: `supabase/functions/generate-logic-flow/index.ts`
+### 1. `supabase/functions/generate-logic-flow/index.ts`
 
-- Add `stream: true` to the `chatCompletions` call (the AI router already supports it for OpenAI/Gemini/Lovable AI; verify with the existing helper and fall back gracefully if a given provider can't stream tool calls).
-- Read the response with `resp.body.getReader()` and accumulate `tool_calls[0].function.arguments` chunks into a growing string buffer.
+Rewrite the envelope-description requirement to:
 
-### 2. Incrementally parse the partial tool-call JSON
+```
+Task: <what the player physically does with this envelope>
+Relevant clues / beat: <which loose-pile clues the player should already be holding / which deduction has just happened that unlocks this gate>
+Why it matters: <how it advances the case structure / what it confirms or unlocks next>
+```
 
-The model emits one big JSON object: `{ summary, envelopes[], nodes[], edges[] }`. We need a tolerant parser that can extract **completed array elements** from a still-incomplete JSON string.
+Also rewrite the edges instruction:
 
-- Add a small helper (`parsePartialArrayItems(buffer, key)`) that:
-  - Finds `"nodes":[` / `"edges":[` / `"envelopes":[` in the buffer.
-  - Walks the buffer counting braces/brackets and string escapes to find each fully-closed `{...}` element.
-  - Returns the indexes consumed so we don't re-emit the same item.
-- Run this every time a new chunk arrives.
+- Replace *"draw edges showing which clues / deductions belong inside it (clue → envelope, deduction → envelope)"* with:
+  *"For each envelope node, draw `supports` edges from the clues/deductions that the player should already have figured out from the loose document pile before this gate opens. The label on these edges MUST be `relevant to` (NOT `inside`, NOT `contains`). These edges represent the beat that triggers the envelope, not physical contents."*
+- Keep `envelope_n → envelope_{n+1}` chain edges (label: `then`).
+- Add a single explicit reminder: *"Envelopes do NOT contain documents. All documents are in the box from the start. Only the final envelope physically contains the accusation form."*
 
-### 3. Insert rows live as they're parsed
+Apply the same wording fix in both branches (existing-envelopes branch and scaffolding branch around lines 121–122).
 
-For each newly-completed element from the streaming buffer:
+### 2. `src/features/project/EnvelopesSection.tsx`
 
-- **Envelope** (only when `noEnvelopes`): insert into `envelopes`, remember the new `id`.
-- **Node**: insert one row into `canvas_nodes` (board=`logic`), keep the LLM's stable id (`clue_1`, `env_1`, …) → DB uuid in an in-memory `idMap`.
-- **Edge**: only insert into `canvas_edges` once both endpoints exist in `idMap`; queue any edge whose endpoints haven't streamed yet, and flush the queue every chunk.
+Update copy in the Linked Documents card so it stops implying envelopes are document containers by default:
 
-If `replace` is true, do the existing `delete from canvas_edges/canvas_nodes where board='logic'` **before** the stream starts so the board visibly clears, then re-fills.
+- Line ~207 (Explain prompt): *"Explain what each envelope's role is in THIS case, which clues from the loose document pile the player should already have when they open it, the task it gives, and the …"*
+- Line ~576: *"No documents tucked inside (default — all docs live loose in the box from the start)"*
+- Line ~586: *"Optional — only set this if you are physically sealing a document inside this envelope (rare, ~1 per game — e.g. a late interrogation reveal)"*
+- Line ~623: *"Default: empty. All documents live loose in the box from the start. Use this only for the rare creative drop where you are physically sealing a document inside this envelope."*
+- Rename the section header from "Linked documents" to **"Documents physically sealed inside (rare)"** to make the semantic crystal clear.
 
-### 4. Final-pass reconciliation
+### 3. `supabase/functions/explain-canvas-node/index.ts` (envelope branch)
 
-When the stream ends:
+Audit and update the explanation prompt for envelope nodes so the AI explicitly explains:
+- the **task** the envelope gives,
+- which **loose-pile clues** the player should already be holding,
+- the **beat** that unlocks it,
+- and clarifies it is a gate, not a container.
 
-- Flush any remaining queued edges.
-- Run the existing envelope cross-link logic (`linked_node_ids`, `final_layout_locked`, etc.) on the now-complete set.
-- Save `solution_summary` on the project (unchanged).
-- Run the same `logAiRun` accounting as today, just at the end.
+(Will inspect this file during implementation; small wording change.)
 
-If the stream errors mid-way, leave whatever has been inserted on the board (it's still useful) and surface the error to the assistant so it can offer "retry".
+### 4. Backfill existing envelope node descriptions (data fix)
 
-### 5. Keep the assistant's UX honest
+Existing logic boards already on disk have the literal `Contains: …` line baked in. Two options — pick one during implementation:
 
-File: `supabase/functions/assistant-chat/index.ts`
+- **(Preferred)** Add a one-time safe rewrite when the Logic Flow regenerates: when overwriting envelope nodes, the new prompt naturally replaces the description.
+- For projects that won't regenerate soon, do nothing destructive — the new wording lands the next time the user re-runs Logic Flow. We will NOT mass-overwrite existing rows automatically.
 
-- The assistant currently fires `generate-logic-flow` as fire-and-forget (`EdgeRuntime.waitUntil`) and tells the user "refresh in 2–3 minutes". With live streaming we can change the message to:
-  > "I've started rebuilding the Logic Flow — open **Canvas → Logic Flow** now and you'll see it draw itself in real time."
-- No tool signature changes.
+### 5. Assistant-chat reinforcement (small)
 
-### 6. Small Canvas polish (optional, low risk)
-
-File: `src/features/project/CanvasSection.tsx`
-
-- While the Logic Flow board is being streamed, show a subtle "Generating live…" pill in the toolbar. We can detect this either by:
-  - a new boolean column `projects.logic_flow_generating` toggled at the start/end of the edge function, **or**
-  - simply by checking `assistant_runs` for an in-flight `generate-logic-flow` row (we already log runs).
-- We'll go with the `assistant_runs` approach so we don't need a schema change.
+Add one short line to the system prompt in `assistant-chat` so the assistant, when narrating an envelope to the user, never uses the word *"contains"* for clues — only for the rare physical drop. (Reinforces the rule we already have.)
 
 ## Out of scope
 
-- We are **not** streaming the `summary` paragraph live into the UI — only the graph nodes/edges. The summary lands when the stream ends.
-- We are not changing how envelopes / hints / suspects pages render.
-- We are not changing the AI router's tool-call contract.
+- No DB migrations.
+- No changes to envelope generation (`generate-envelopes`) — it is already correct.
+- No changes to the realtime live-dot work.
 
-## Files to change
+## Verification
 
-- `supabase/functions/generate-logic-flow/index.ts` — switch to streaming + incremental insert (main work)
-- `supabase/functions/assistant-chat/index.ts` — update the user-facing message after kicking off generation
-- `src/features/project/CanvasSection.tsx` — add a "Generating live…" indicator driven by `assistant_runs`
+After the change, ask the assistant to regenerate Logic Flow on a test project and confirm:
 
-## Risk / rollback
-
-- If a provider returns a tool call that can't be safely partial-parsed (rare with OpenAI/Gemini structured tool streaming), the helper will simply emit nothing until more bytes arrive, and at end-of-stream we fall back to the existing whole-blob `JSON.parse` path. Net effect in the worst case: same behavior as today.
-- Rollback is a single-file revert of `generate-logic-flow/index.ts`.
+- Envelope node descriptions read `Task / Relevant clues / Why it matters` (no `Contains:`).
+- Canvas edges into envelopes are labeled `relevant to`, not `inside`.
+- Envelopes panel "Linked documents" card defaults to empty and the helper copy reads as a rare exception.

@@ -110,7 +110,7 @@ Deno.serve(async (req) => {
     const modelKey = (modelOverride as string) || (project?.ai_provider_planning as string) || "openai-5.2";
     const model = PROVIDER_MODEL[modelKey] ?? PROVIDER_MODEL["openai-5.2"];
 
-    const sys = `You are a senior mystery game designer explaining a single node in a case logic flow to the game's author. Be concrete and reference how this node connects to the wider solution. ${explanationLength} No fluff, no bullet lists unless genuinely needed.`;
+    const sys = `You are a senior mystery game designer explaining a single node in a case logic flow to the game's author. Be concrete and reference how this node connects to the wider solution. ${explanationLength} No fluff, no bullet lists unless genuinely needed.\n\nGAME-FLOW MODEL (critical when the node type is "envelope"): All evidence documents in this case live LOOSE in the box from the very start — the player has every document immediately. Envelopes are SEALED TASK GATES; they do NOT contain clues or documents. Each envelope holds only a short task / instruction / reveal the player reads when they reach a specific beat. The only exception is the final envelope (accusation form) and, very rarely, a single creative drop. When explaining an envelope node, never say it "contains" clues — instead explain (a) the task it gives the player, (b) which loose-pile clues the player should already be holding when they reach this gate, (c) the case beat that unlocks it, and (d) what it confirms or unlocks next.`;
 
     const userPrompt = `CASE:
 Title: ${project?.title ?? "—"}${project?.subtitle ? ` · ${project.subtitle}` : ""}
