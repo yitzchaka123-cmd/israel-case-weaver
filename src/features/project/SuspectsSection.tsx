@@ -144,6 +144,7 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
   const [draft, setDraft] = useState<Suspect | null>(suspect);
   const [generating, setGenerating] = useState(false);
   const [portraitPrompt, setPortraitPrompt] = useState<string>("");
+  const [previewOpen, setPreviewOpen] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<number | undefined>(undefined);
 
@@ -170,6 +171,24 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
     return () => { cancelled = true; };
   }, [suspect?.id, suspect?.project_id, draft?.thumbnail_url]);
 
+  // Per-suspect generation history strip.
+  const { data: history, refetch: refetchHistory } = useQuery({
+    queryKey: ["suspect-image-history", suspect?.id],
+    queryFn: async () => {
+      if (!suspect) return [];
+      const { data, error } = await supabase
+        .from("media_assets")
+        .select("id, url, preview_url, model, effective_model, provider, fallback, created_at")
+        .eq("source_suspect_id", suspect.id)
+        .not("url", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(24);
+      if (error) throw error;
+      return (data ?? []) as ImageHistoryRow[];
+    },
+    enabled: !!suspect?.id,
+  });
+
   if (!suspect || !draft) return null;
 
   const update = (patch: Partial<Suspect>) => {
@@ -181,29 +200,45 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
         name: next.name, summary: next.summary, role_in_case: next.role_in_case,
         motives: next.motives, secrets: next.secrets, contradictions: next.contradictions,
         is_red_herring: next.is_red_herring,
+        thumbnail_prompt: next.thumbnail_prompt,
+        active_version: next.active_version,
+        uploaded_thumbnail_url: next.uploaded_thumbnail_url,
       }).eq("id", next.id);
     }, 500);
   };
 
   const uploadThumb = async (file: File) => {
-    const path = `${suspect.project_id}/${suspect.id}-${Date.now()}-${file.name}`;
+    const path = `${suspect.project_id}/${suspect.id}-uploaded-${Date.now()}-${file.name}`;
     const { error } = await supabase.storage.from("suspects").upload(path, file, { upsert: true });
     if (error) return toast.error(error.message);
     const { data } = supabase.storage.from("suspects").getPublicUrl(path);
-    await supabase.from("suspects").update({ thumbnail_url: data.publicUrl }).eq("id", suspect.id);
-    setDraft({ ...draft, thumbnail_url: data.publicUrl });
+    await supabase.from("suspects").update({ uploaded_thumbnail_url: data.publicUrl, active_version: "uploaded" }).eq("id", suspect.id);
+    setDraft({ ...draft, uploaded_thumbnail_url: data.publicUrl, active_version: "uploaded" });
+    toast.success("Upload set as the active portrait");
   };
 
-  const generatePortrait = async (promptOverride?: string): Promise<void> => {
-    const prompt = promptOverride?.trim();
+  const restoreFromHistory = async (item: ImageHistoryRow) => {
+    if (!item.url) return;
+    await supabase.from("suspects").update({
+      thumbnail_url: item.url,
+      thumbnail_effective_model: item.effective_model ?? item.model,
+      thumbnail_fallback: item.fallback ?? null,
+      active_version: "generated",
+    }).eq("id", suspect.id);
+    setDraft((d) => d ? { ...d, thumbnail_url: item.url!, active_version: "generated", thumbnail_effective_model: item.effective_model ?? item.model, thumbnail_fallback: item.fallback ?? null } : d);
+    toast.success("Portrait restored as active");
+  };
+
+  const generatePortrait = async (): Promise<void> => {
+    const prompt = (draft.thumbnail_prompt ?? "").trim();
     if (!prompt) {
-      toast.error("Write a prompt first (or click Generate prompt)");
+      toast.error("Click Create prompt first, or paste a prompt into the Final prompt tab");
       return;
     }
     setGenerating(true);
     const t = toast.loading("Generating portrait…");
     const ctrl = new AbortController();
-    const timer = window.setTimeout(() => ctrl.abort(), 120_000);
+    const timer = window.setTimeout(() => ctrl.abort(), 145_000);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const modelOverride = getStoredImageModel("suspect", "nano-banana-2");
@@ -216,8 +251,9 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
       });
       const json = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(json.error ?? `Failed (${resp.status})`);
-      setDraft({ ...draft, thumbnail_url: json.url });
+      setDraft({ ...draft, thumbnail_url: json.url, active_version: "generated", thumbnail_effective_model: json.effectiveModel ?? null, thumbnail_fallback: json.fallback ?? null });
       setPortraitPrompt(prompt);
+      refetchHistory();
       toast.success("Portrait ready", { id: t });
     } catch (e) {
       const msg = e instanceof Error
@@ -235,6 +271,8 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
     await supabase.from("suspects").delete().eq("id", suspect.id);
     onClose();
   };
+
+  const activeUrl = draft.active_version === "uploaded" ? (draft.uploaded_thumbnail_url ?? draft.thumbnail_url) : (draft.thumbnail_url ?? draft.uploaded_thumbnail_url);
 
   return (
     <Dialog open={!!suspect} onOpenChange={(o) => !o && onClose()}>
