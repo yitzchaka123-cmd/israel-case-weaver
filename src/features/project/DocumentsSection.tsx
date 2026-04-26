@@ -2,63 +2,20 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, FileText, Trash2, Upload, Wand2, Image as ImageIcon, Loader2, FileDown, FileType, Copy } from "lucide-react";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Plus, FileText, Trash2, Upload, Image as ImageIcon, Loader2, FileDown, Copy } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
 
-import { ImageModelPicker, getStoredImageModel } from "@/components/ImageModelPicker";
+import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
+import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { DocumentPromptAssistant } from "@/components/DocumentPromptAssistant";
 import { Badge } from "@/components/ui/badge";
-
-const DESIGN_PLACEHOLDER = `Describe EXACTLY how this document should look. The more specific, the better the result.
-
-Recommended structure (copy + adapt):
-
-GOAL: One fictional in-world prop — e.g. a 1987 "Top Secret" internal letter from the Prime Minister's Office. Cinematic, serious, authentic. Must remain fictional (no real names, emblems, addresses).
-
-CRITICAL TEXT QUALITY:
-- All Hebrew real, fluent, grammatical, RTL.
-- No gibberish, mirrored letters, lorem ipsum.
-- The exact Hebrew below must appear cleanly.
-
-OUTPUT FORMAT:
-- Single A4 portrait page, 2480x3508px, 300 DPI.
-- Flat archival scan, no hands/desk/background.
-
-VISUAL STYLE:
-- Late 1980s Israeli bureaucracy.
-- Off-white aged paper, faint fold marks, mild edge wear.
-- Typewriter-style body, dark red classification stamps.
-- Subtle scan softness, fully legible.
-- Punch-hole marks left margin, faint horizontal fold center.
-
-LAYOUT:
-1. Top center: header lines.
-2. Top right: date, classification, reference number.
-3. Top left: recipient block.
-4. Bold subject line.
-5. 3 formal body paragraphs.
-6. Closing + signature block.
-7. Distribution list + footer code.
-8. Diagonal red stamp "סודי ביותר".
-9. Smaller box stamp "לעיני הנמען בלבד".
-10. Handwritten marginal note.
-
-TYPOGRAPHY:
-- Bold formal Hebrew header.
-- Classic serif/typewriter body.
-- Distressed red ink stamps.
-
-EXACT HEBREW TEXT TO PLACE:
-[paste your full Hebrew block here]
-
-AUTHENTICITY: photocopied 1987 archival memo, NOT modern Canva design.`;
 
 const DOC_TYPES = [
   "Memo", "Interrogation transcript", "Suspect profile", "Map", "Chat log",
