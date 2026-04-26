@@ -64,7 +64,11 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const { data: project } = useQuery({
     queryKey: ["project-cover-only", projectId],
     queryFn: async () => {
-      const { data } = await supabase.from("projects").select("title, cover_image_url, cover_prompt, cover_effective_model, cover_fallback, ai_provider_images").eq("id", projectId).maybeSingle();
+      const { data } = await supabase
+        .from("projects")
+        .select("title, cover_image_url, uploaded_cover_url, cover_active_version, cover_prompt, cover_effective_model, cover_fallback, ai_provider_images, mystery_type, setting, subtitle")
+        .eq("id", projectId)
+        .maybeSingle();
       return data;
     },
   });
@@ -83,12 +87,54 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
     },
   });
 
+  const { data: coverHistory } = useQuery({
+    queryKey: ["project-cover-history", projectId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("media_assets")
+        .select("id, url, preview_url, model, effective_model, provider, fallback, created_at")
+        .eq("project_id", projectId)
+        .eq("source_project_cover", true)
+        .not("url", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(24);
+      if (error) throw error;
+      return (data ?? []) as ImageHistoryRow[];
+    },
+  });
+
+  const [coverPromptDraft, setCoverPromptDraft] = useState<string>("");
+  useEffect(() => { setCoverPromptDraft(project?.cover_prompt ?? ""); }, [project?.cover_prompt]);
+
+  const persistCoverPrompt = async (next: string) => {
+    setCoverPromptDraft(next);
+    await supabase.from("projects").update({ cover_prompt: next }).eq("id", projectId);
+  };
+
+  const setCoverActiveVersion = async (v: string) => {
+    await supabase.from("projects").update({ cover_active_version: v }).eq("id", projectId);
+    qc.invalidateQueries({ queryKey: ["project-cover-only", projectId] });
+  };
+
+  const restoreCoverFromHistory = async (item: ImageHistoryRow) => {
+    if (!item.url) return;
+    await supabase.from("projects").update({
+      cover_image_url: item.url,
+      cover_effective_model: item.effective_model ?? item.model,
+      cover_fallback: item.fallback ?? null,
+      cover_active_version: "generated",
+    }).eq("id", projectId);
+    qc.invalidateQueries({ queryKey: ["project-cover-only", projectId] });
+    toast.success("Cover restored as active");
+  };
+
   useEffect(() => {
     const ch = supabase
       .channel(`marketing-assets-${projectId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "media_assets", filter: `project_id=eq.${projectId}` }, () =>
-        qc.invalidateQueries({ queryKey: ["marketing-assets", projectId] }),
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "media_assets", filter: `project_id=eq.${projectId}` }, () => {
+        qc.invalidateQueries({ queryKey: ["marketing-assets", projectId] });
+        qc.invalidateQueries({ queryKey: ["project-cover-history", projectId] });
+      })
       .on("postgres_changes", { event: "*", schema: "public", table: "projects", filter: `id=eq.${projectId}` }, () =>
         qc.invalidateQueries({ queryKey: ["project-cover-only", projectId] }),
       )
