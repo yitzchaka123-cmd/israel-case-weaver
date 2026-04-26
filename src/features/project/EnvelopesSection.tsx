@@ -617,7 +617,6 @@ function EnvelopeCard({
             design={(value("design_instructions") as string) ?? ""}
             content={(value("task") as string) ?? ""}
             onChange={({ design, content }) => onUpdate({ design_instructions: design, task: content })}
-            onAutoGenerate={env?.id ? generateImage : undefined}
             gameLanguage={gameLanguage}
             mode="inline"
           />
