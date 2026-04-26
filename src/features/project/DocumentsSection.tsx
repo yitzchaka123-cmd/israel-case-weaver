@@ -603,14 +603,28 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
               </div>
             </FieldBlock>
           </div>
-          {draft.generated_asset_url && (
-            <div className="md:col-span-2">
-              <div className="flex items-center justify-between mb-2">
-                <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Final asset image</Label>
+          {/* Pending high-quality job placeholder */}
+          {pendingJobId && (
+            <div className="md:col-span-2 rounded-lg border border-accent/40 bg-accent/5 p-4 flex items-center gap-3">
+              <Loader2 className="h-4 w-4 animate-spin text-accent" />
+              <div className="text-sm">
+                <p className="font-medium">Generating high-quality image…</p>
+                <p className="text-xs text-muted-foreground">This can take up to 3 minutes. You can keep working — we'll update the image when it's ready.</p>
+              </div>
+            </div>
+          )}
+
+          {/* Final asset image */}
+          <div className="md:col-span-2">
+            <div className="flex items-center justify-between mb-2">
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Final asset image</Label>
+              {draft.generated_asset_url && (
                 <Button size="sm" variant="outline" className="gap-2" onClick={saveAsPdf}>
                   <FileDown className="h-3.5 w-3.5" /> Save as PDF
                 </Button>
-              </div>
+              )}
+            </div>
+            {draft.generated_asset_url ? (
               <button type="button" onClick={() => setImagePreviewOpen(true)} className="group relative block w-full rounded-lg border bg-muted overflow-hidden">
                 <img src={draft.generated_asset_url} alt="Generated document image" className="w-full max-h-96 object-contain" />
                 <AiOriginBadge
@@ -618,26 +632,59 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
                   hoverOnly
                 />
               </button>
-            </div>
-          )}
-          {(draft.generated_document_url || draft.generated_pdf_url) && (
-            <div className="md:col-span-2 rounded-lg border bg-muted/30 p-3 space-y-3">
-              <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Final asset file</Label>
-                <p className="text-sm truncate">{(draft.document_format ?? "file").toUpperCase()} • {draft.document_model ?? draft.document_provider ?? "Selected model"}</p>
+            ) : (
+              <div className="rounded-lg border border-dashed bg-muted/30 p-6 text-center text-xs text-muted-foreground">
+                Empty — no image generated yet.
               </div>
-              <a href={draft.generated_document_url ?? draft.generated_pdf_url ?? "#"} target="_blank" rel="noreferrer" className="text-sm text-accent underline shrink-0">Open file</a>
+            )}
+            {imageHistory && imageHistory.length > 1 && (
+              <HistoryStrip
+                label="History"
+                items={imageHistory}
+                activeUrl={draft.generated_asset_url}
+                onPreview={(item) => setHistoryPreview(item)}
+                onRestore={restoreImageFromHistory}
+                kind="image"
+              />
+            )}
+          </div>
+
+          {/* Final asset document */}
+          <div className="md:col-span-2">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Final asset document</Label>
+            {(draft.generated_document_url || draft.generated_pdf_url) ? (
+              <div className="mt-2 rounded-lg border bg-muted/30 p-3 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm truncate">{(draft.document_format ?? "file").toUpperCase()} • {draft.document_model ?? draft.document_provider ?? "Selected model"}</p>
+                  </div>
+                  <a href={draft.generated_document_url ?? draft.generated_pdf_url ?? "#"} target="_blank" rel="noreferrer" className="text-sm text-accent underline shrink-0">Open file</a>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {draft.document_format && <Badge variant="outline" className="text-[10px]">{draft.document_format.toUpperCase()}</Badge>}
+                  {draft.document_provider && <Badge variant="outline" className="text-[10px]">{draft.document_provider}</Badge>}
+                  {draft.document_model && <Badge variant="secondary" className="text-[10px]">{draft.document_model}</Badge>}
+                  {draft.document_skill_id && <Badge variant="outline" className="text-[10px]">Skill {draft.document_skill_id}</Badge>}
+                </div>
+                {latestDocumentAttempt?.preview_url && <img src={latestDocumentAttempt.preview_url} alt="Document preview" className="max-h-56 w-full rounded-md border bg-background object-contain" />}
               </div>
-              <div className="flex flex-wrap gap-1.5">
-                {draft.document_format && <Badge variant="outline" className="text-[10px]">{draft.document_format.toUpperCase()}</Badge>}
-                {draft.document_provider && <Badge variant="outline" className="text-[10px]">{draft.document_provider}</Badge>}
-                {draft.document_model && <Badge variant="secondary" className="text-[10px]">{draft.document_model}</Badge>}
-                {draft.document_skill_id && <Badge variant="outline" className="text-[10px]">Skill {draft.document_skill_id}</Badge>}
+            ) : (
+              <div className="mt-2 rounded-lg border border-dashed bg-muted/30 p-6 text-center text-xs text-muted-foreground">
+                Empty — no document generated yet.
               </div>
-              {latestDocumentAttempt?.preview_url && <img src={latestDocumentAttempt.preview_url} alt="Document preview" className="max-h-56 w-full rounded-md border bg-background object-contain" />}
-            </div>
-          )}
+            )}
+            {documentHistory && documentHistory.length > 0 && (
+              <HistoryStrip
+                label="History"
+                items={documentHistory}
+                activeUrl={draft.generated_document_url ?? draft.generated_pdf_url ?? null}
+                onPreview={(item) => item.url && window.open(item.url, "_blank")}
+                onRestore={restoreDocumentFromHistory}
+                kind="document"
+              />
+            )}
+          </div>
+
           {latestDocumentAttempt?.status === "failed" && (
             <div className="md:col-span-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 space-y-2">
               <div className="flex flex-wrap items-center gap-1.5">
@@ -663,9 +710,20 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
               <p className="max-h-28 overflow-auto whitespace-pre-wrap rounded-md bg-background/60 p-2 text-[11px] leading-relaxed text-muted-foreground">{filePrompt.final_prompt}</p>
             </div>
           )}
-          <div className="md:col-span-2 border-t pt-4">
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Final asset</Label>
-            <div className="mt-2 flex gap-2 items-center">
+
+          {/* Final asset selector + uploaded file */}
+          <div className="md:col-span-2 border-t pt-4 space-y-3">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Final asset for export</Label>
+            <RadioGroup
+              value={draft.active_version}
+              onValueChange={(v) => update({ active_version: v })}
+              className="grid grid-cols-1 sm:grid-cols-3 gap-2"
+            >
+              <FinalAssetOption value="generated" label="Generated image" disabled={!draft.generated_asset_url} current={draft.active_version} />
+              <FinalAssetOption value="generated_document" label="Generated document file" disabled={!draft.generated_document_url && !draft.generated_pdf_url} current={draft.active_version} />
+              <FinalAssetOption value="uploaded" label="Uploaded file" disabled={!draft.uploaded_asset_url} current={draft.active_version} />
+            </RadioGroup>
+            <div className="flex gap-2 items-center">
               <input ref={fileInput} type="file" className="hidden" onChange={(e) => e.target.files?.[0] && uploadReplacement(e.target.files[0])} />
               <Button variant="outline" className="gap-2" onClick={() => fileInput.current?.click()}>
                 <Upload className="h-4 w-4" /> Upload final file
@@ -675,10 +733,8 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
                   View uploaded file
                 </a>
               )}
-              <span className="ml-auto text-[11px] text-muted-foreground uppercase tracking-widest">
-                Active: {draft.active_version}
-              </span>
             </div>
+            <p className="text-[11px] text-muted-foreground">Exports ({"Documents only"}, full zip, etc.) use the asset selected above. Uploaded files always take precedence over generated ones when picked.</p>
           </div>
         </div>
         <div className="flex justify-end pt-4 border-t">
