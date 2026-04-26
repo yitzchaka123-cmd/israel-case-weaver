@@ -1,16 +1,19 @@
 // Panel A — shows the project cover prominently and lets the user generate
-// additional marketing images (back of box, marketing-extra). Reuses
-// PromptPanel + suggest-image-prompt + generate-image like the Media tab.
+// additional marketing images (back of box, marketing-extra). Uses the new
+// ImagePromptAssistant + history strip + FinalAssetPicker stack so the cover
+// here stays in sync with Overview.
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { PromptPanel } from "@/components/PromptPanel";
+import { ImagePromptAssistant } from "@/components/ImagePromptAssistant";
+import { ImageHistoryStrip, type ImageHistoryRow } from "@/components/ImageHistoryStrip";
+import { FinalAssetPicker } from "@/components/FinalAssetPicker";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
-import { Copy, Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2 } from "lucide-react";
+import { Copy, Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 type OutputType = "image" | "document" | "both";
@@ -61,7 +64,11 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const { data: project } = useQuery({
     queryKey: ["project-cover-only", projectId],
     queryFn: async () => {
-      const { data } = await supabase.from("projects").select("title, cover_image_url, cover_prompt, cover_effective_model, cover_fallback, ai_provider_images").eq("id", projectId).maybeSingle();
+      const { data } = await supabase
+        .from("projects")
+        .select("title, cover_image_url, uploaded_cover_url, cover_active_version, cover_prompt, cover_effective_model, cover_fallback, ai_provider_images, mystery_type, setting, subtitle")
+        .eq("id", projectId)
+        .maybeSingle();
       return data;
     },
   });
@@ -80,12 +87,54 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
     },
   });
 
+  const { data: coverHistory } = useQuery({
+    queryKey: ["project-cover-history", projectId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("media_assets")
+        .select("id, url, preview_url, model, effective_model, provider, fallback, created_at")
+        .eq("project_id", projectId)
+        .eq("source_project_cover", true)
+        .not("url", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(24);
+      if (error) throw error;
+      return (data ?? []) as ImageHistoryRow[];
+    },
+  });
+
+  const [coverPromptDraft, setCoverPromptDraft] = useState<string>("");
+  useEffect(() => { setCoverPromptDraft(project?.cover_prompt ?? ""); }, [project?.cover_prompt]);
+
+  const persistCoverPrompt = async (next: string) => {
+    setCoverPromptDraft(next);
+    await supabase.from("projects").update({ cover_prompt: next }).eq("id", projectId);
+  };
+
+  const setCoverActiveVersion = async (v: string) => {
+    await supabase.from("projects").update({ cover_active_version: v }).eq("id", projectId);
+    qc.invalidateQueries({ queryKey: ["project-cover-only", projectId] });
+  };
+
+  const restoreCoverFromHistory = async (item: ImageHistoryRow) => {
+    if (!item.url) return;
+    await supabase.from("projects").update({
+      cover_image_url: item.url,
+      cover_effective_model: item.effective_model ?? item.model,
+      cover_fallback: item.fallback ?? null,
+      cover_active_version: "generated",
+    }).eq("id", projectId);
+    qc.invalidateQueries({ queryKey: ["project-cover-only", projectId] });
+    toast.success("Cover restored as active");
+  };
+
   useEffect(() => {
     const ch = supabase
       .channel(`marketing-assets-${projectId}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "media_assets", filter: `project_id=eq.${projectId}` }, () =>
-        qc.invalidateQueries({ queryKey: ["marketing-assets", projectId] }),
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "media_assets", filter: `project_id=eq.${projectId}` }, () => {
+        qc.invalidateQueries({ queryKey: ["marketing-assets", projectId] });
+        qc.invalidateQueries({ queryKey: ["project-cover-history", projectId] });
+      })
       .on("postgres_changes", { event: "*", schema: "public", table: "projects", filter: `id=eq.${projectId}` }, () =>
         qc.invalidateQueries({ queryKey: ["project-cover-only", projectId] }),
       )
@@ -234,15 +283,35 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
               ))}
             </div>
           </div>
-          <PromptPanel
+          <ImagePromptAssistant
             projectId={projectId}
             surface="cover"
             category="cover"
-            initialPrompt={project?.cover_prompt ?? undefined}
-            onGenerate={handleGenerateCover}
-            generating={generatingCover}
-            mode="inline"
+            targetId={projectId}
+            hint={[project?.title && `Title: ${project.title}`, project?.subtitle && `Subtitle: ${project.subtitle}`, project?.mystery_type && `Mystery type: ${project.mystery_type}`, project?.setting && `Setting: ${project.setting}`].filter(Boolean).join(". ")}
+            prompt={coverPromptDraft}
+            onChange={persistCoverPrompt}
           />
+          <Button onClick={() => handleGenerateCover(coverPromptDraft)} disabled={generatingCover || !coverPromptDraft.trim()} className="w-full gap-2">
+            {generatingCover ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+            Generate {coverOutputType === "both" ? "both" : coverOutputType}
+          </Button>
+          <ImageHistoryStrip
+            items={coverHistory ?? []}
+            currentUrl={project?.cover_image_url ?? null}
+            onRestore={restoreCoverFromHistory}
+            title="Cover history"
+          />
+          {(project?.cover_image_url || project?.uploaded_cover_url) && (
+            <FinalAssetPicker
+              value={project?.cover_active_version ?? "generated"}
+              onChange={setCoverActiveVersion}
+              generatedUrl={project?.cover_image_url ?? null}
+              uploadedUrl={project?.uploaded_cover_url ?? null}
+              generatedLabel="Generated cover"
+              uploadedLabel="Uploaded cover"
+            />
+          )}
         </div>
       </div>
 
@@ -328,14 +397,11 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
               ))}
             </div>
           </div>
-          <PromptPanel
+          <ExtraPromptBlock
             projectId={projectId}
-            surface="media"
-            category="marketing-extra"
             hint={newHint}
             onGenerate={handleGenerate}
             generating={generating}
-            mode="inline"
           />
           {generating && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -345,5 +411,25 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
         </div>
       )}
     </section>
+  );
+}
+
+function ExtraPromptBlock({ projectId, hint, onGenerate, generating }: { projectId: string; hint: string; onGenerate: (p: string) => void | Promise<void>; generating: boolean }) {
+  const [prompt, setPrompt] = useState("");
+  return (
+    <div className="space-y-2">
+      <ImagePromptAssistant
+        projectId={projectId}
+        surface="media"
+        category="marketing-extra"
+        hint={hint}
+        prompt={prompt}
+        onChange={setPrompt}
+      />
+      <Button onClick={() => onGenerate(prompt)} disabled={generating || !prompt.trim()} className="gap-2">
+        {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+        Generate marketing image
+      </Button>
+    </div>
   );
 }
