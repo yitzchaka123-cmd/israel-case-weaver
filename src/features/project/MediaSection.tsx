@@ -133,7 +133,6 @@ export function MediaSection({ projectId }: { projectId: string }) {
 
 function CategoryPanel({ projectId, category, items }: { projectId: string; category: string; items: MediaAsset[] }) {
   const [generating, setGenerating] = useState(false);
-  const [suggestingPrompt, setSuggestingPrompt] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [hint, setHint] = useState("");
   const [title, setTitle] = useState("");
@@ -160,31 +159,6 @@ function CategoryPanel({ projectId, category, items }: { projectId: string; cate
     if (e2) return toast.error(e2.message);
     toast.success("Uploaded");
     setTitle("");
-  };
-
-  const handleSuggestPrompt = async () => {
-    setSuggestingPrompt(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const writerModel = getStoredWriterModel("media");
-      const resp = await callEdge("suggest-image-prompt", {
-        projectId,
-        category,
-        hint: hint.trim() || undefined,
-        currentPrompt: prompt.trim() || undefined,
-        writerModel: writerModel === "__project" ? undefined : writerModel,
-        userId: session?.user?.id,
-      });
-      const json = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        toast.error(json.error ?? "Couldn't generate a prompt");
-        return;
-      }
-      setPrompt(json.prompt);
-      toast.success("Prompt generated — review or edit before generating the image");
-    } finally {
-      setSuggestingPrompt(false);
-    }
   };
 
   const saveDocumentAttempt = async () => {
