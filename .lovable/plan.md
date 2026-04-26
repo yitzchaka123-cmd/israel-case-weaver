@@ -1,83 +1,95 @@
-## Problem
+# Envelopes rewrite + News Report tab + QR library
 
-The **"Approve logic"** button currently shows whenever a `solution_summary` exists and `logic_approved_at` is null — it does **not** check whether the Logic Flow board actually has any nodes. That means the button appears even when there is literally nothing to approve (empty canvas), which is logically wrong and lets the user "approve" an empty graph.
+## 1. Envelope spec rewrite
 
-This shows up in two places:
-1. **`src/features/project/CanvasSection.tsx`** (line ~757) — the prominent "Approve logic" button on the Canvas toolbar.
-2. **`src/features/project/AssistantSection.tsx`** (line ~540) — the inline approval banner above the chat composer.
+Update both `supabase/functions/_shared/assistant-playbook.ts` (the playbook the assistant follows) and `supabase/functions/generate-envelopes/index.ts` (the deterministic generator) so every project produces exactly **5 envelopes** with this structure:
 
-## Fix
+### Envelope #0 — Welcome / Briefing
+- Atmospheric in-world opening: greet the player as the investigator, set the scene (case name, location, victim, why you've been called in). Length: assistant-decided, but **not too short** — minimum ~4 sentences of atmosphere, can go longer for harder cases.
+- Ends with the **first task** on its own line, formatted as **bold red Hebrew** (already styled by `EnvelopesSection.tsx` via the `task` field).
+- No "previous task recap" here — this is the first envelope.
 
-Add a "node count > 0 on the **logic** board" guard to both buttons. Approval requires:
-- `solution_summary` is non-empty, **AND**
-- `logic_approved_at` is null (not already approved), **AND**
-- The logic board has at least one canvas node.
+### Envelopes #1, #2, #3 — Task Gates
+Each of these envelopes has **two parts**, in this order:
 
-### 1. `src/features/project/CanvasSection.tsx`
+1. **Recap of the previous task's findings (MANDATORY)** — 2–4 sentences in the in-world investigator voice, summarising what the player just discovered. Pattern:
+   > "מצאת את X, שהוביל אותך אל Y, וגרם לך להבין ש-Z."
+   > ("You found X, which led you to Y, and made you realise Z.")
+   The recap must reference concrete details from the case's logic flow (clues, suspect statements, evidence) — not generic filler.
 
-The component already loads `nodes` for the currently selected board. The Approve block at line 757 sits inside `board === "logic"` so `nodes.length` here is the count on the logic board. Change the condition from:
+2. **Next task** — one short, clear, imperative Hebrew sentence (≤18 words), rendered as **bold red** via the `task` field. This is the only thing the player needs to "do" with this envelope.
 
-```tsx
-{project?.solution_summary?.trim() && !approved && (
-  <Button ...>Approve logic</Button>
-)}
-```
+3. **Optional bonus clue** — the assistant decides per case whether **0, 1, or 2** of envelopes #2/#3 also carry a bonus clue (e.g. "we brought suspect X back for re-interrogation — here is their new statement", or a forensic memo, or a newly-found note). The assistant picks based on the case's pacing and clue density. Bonus clue appears **after** the bold red task, clearly separated, formatted as a short in-world document snippet.
 
-to:
+### Envelope #4 — Solution
+1. **Final recap** (2–4 sentences) — same voice as the other recaps, summarising what the previous task uncovered and how it points to the culprit.
+2. **Solution reveal** — short paragraph naming the culprit, motive, method, and how the clues line up.
+3. **Congratulations line** in bold red.
+4. **QR code placeholder** — reserved 4×4 cm space on the printed envelope template with helper text "סרקו את הקוד לצפייה בדיווח החדשותי על הפענוח" ("Scan the code to watch the news report on the case being solved"). The actual QR image will be bound from the QR library (see §3).
 
-```tsx
-{project?.solution_summary?.trim() && !approved && nodes.length > 0 && (
-  <Button ...>Approve logic</Button>
-)}
-```
+### Implementation details
+- In `assistant-playbook.ts`, expand the `Envelopes` section of the system prompt with the structure above and an explicit example showing recap → bold red task → optional bonus clue.
+- In `generate-envelopes/index.ts`, change the LLM prompt to:
+  - Require an array of exactly 5 envelopes typed `briefing | task_gate | solution`.
+  - For every `task_gate` and `solution` envelope, require a `recap` string referencing specific logic-flow nodes from the project.
+  - Continue to populate the existing `task` field (keeps the bold-red rendering in `EnvelopesSection.tsx` unchanged).
+  - Add an optional `bonus_clue: { title, body }` per task_gate, with the assistant deciding 0–2 across envelopes #2/#3.
+  - Add an optional `qr_placeholder: { helper_text, target_qr_id? }` on the solution envelope.
+- No DB migration needed for envelope content itself — `project_envelopes` already stores arbitrary JSON in its content column. Just enrich the JSON shape and update the renderer in `EnvelopesSection.tsx` to display `recap` (normal weight, italic) above the bold-red task, and `bonus_clue` below it in a bordered card.
 
-The existing truthful state badges (lines 680–724) already cover the "summary saved, no flow yet" case with the warning chip "Summary saved — generate logic flow", so the user still sees clear next-step guidance — they just won't see a misleading Approve button.
+## 2. News Report tab under Marketing
 
-### 2. `src/features/project/AssistantSection.tsx`
+Add a new tab **"דיווח חדשותי" / "News Report"** to `src/features/project/MarketingSection.tsx`, alongside the existing Mini-Movie storyboard.
 
-The assistant-side banner has no node-count signal in scope. Add a lightweight query so the banner can hide itself when the logic board is empty:
+- New edge function `supabase/functions/generate-news-report/index.ts`:
+  - Input: `project_id`.
+  - Reads `solution_summary`, suspects, and key logic-flow nodes.
+  - Generates a short in-world TV news report: anchor intro script (Hebrew), 4–6 shot-by-shot storyboard (location, on-screen text, B-roll suggestion, anchor VO line), and an outro.
+  - Persists into `project_storyboards` with a new `kind` column (`'mini_movie' | 'news_report'`), and a new `video_url` column for the user to paste their final rendered video link.
+- New UI panel `src/features/project/marketing/NewsReportPanel.tsx`:
+  - "Generate news report" button (calls the edge function).
+  - Renders the anchor script + storyboard table.
+  - Field for the user to paste the final rendered video URL (`video_url`).
+  - "Create QR code for this report" button → opens the QR library (see §3) prefilled with the `video_url` as the target.
+- Migration:
+  - `ALTER TABLE project_storyboards ADD COLUMN kind text NOT NULL DEFAULT 'mini_movie' CHECK (kind IN ('mini_movie','news_report'));`
+  - `ALTER TABLE project_storyboards ADD COLUMN video_url text;`
 
-```tsx
-const { data: logicNodeCount } = useQuery({
-  queryKey: ["logic-node-count", projectId],
-  queryFn: async () => {
-    const { count } = await supabase
-      .from("canvas_nodes")
-      .select("id", { count: "exact", head: true })
-      .eq("project_id", projectId)
-      .eq("board", "logic");
-    return count ?? 0;
-  },
-  enabled: !!projectId,
-  refetchInterval: 15000,
-  refetchOnWindowFocus: true,
-});
-```
+## 3. Reusable QR Code library
 
-Then gate the banner:
+A per-project library of QR codes the user can generate, label, and reuse anywhere (final envelope, marketing materials, etc.).
 
-```tsx
-{!project?.logic_approved_at
-  && project?.solution_summary?.trim()
-  && (logicNodeCount ?? 0) > 0 && (
-  <div className="...approval banner...">...</div>
-)}
-```
+- New table `project_qr_codes`:
+  - `id uuid pk`, `project_id uuid fk`, `label text`, `target_url text`, `png_path text` (storage path in `media` bucket), `size_px int default 512`, `created_at`, `updated_at`.
+  - RLS: same pattern as other project_* tables (owner + collaborators).
+- New panel `src/features/project/marketing/QrLibraryPanel.tsx` (rendered as another tab in MarketingSection):
+  - List existing QR codes (label + preview + target URL + copy/download buttons).
+  - "Add QR code" form: label, target URL → generates a 512×512 PNG client-side using the existing `qr.ts` helper at `src/features/project/marketing/qr.ts`, uploads to the `media` bucket, inserts row.
+  - Edit / delete actions.
+- Bind to final envelope:
+  - On envelope #4, add a small selector "Linked QR code" listing rows from `project_qr_codes`. Storing the chosen `qr_id` on the envelope's JSON content under `qr_placeholder.target_qr_id` lets the print layout in `EnvelopesSection.tsx` swap in the actual PNG when present, and otherwise keep the placeholder box.
+- Assistant tool:
+  - Add `bind_news_report_qr({ envelope_index, qr_id })` to `assistant-chat/index.ts` so the assistant can wire a generated QR to the final envelope from chat.
 
-Also invalidate this query in the existing realtime subscription on `canvas_nodes` patches (already wired for the Case Board badge in `ProjectWorkspace.tsx`; here we just need the local query to refetch on focus / interval, which the config above handles).
+## 4. Files changed / created
 
-### 3. Sanity check — no other stray approve buttons
+**Edited**
+- `supabase/functions/_shared/assistant-playbook.ts` — new envelope spec (recap + bold red task + optional bonus clue + QR placeholder rules).
+- `supabase/functions/generate-envelopes/index.ts` — enforce 5-envelope schema with `recap`, `bonus_clue`, `qr_placeholder`.
+- `supabase/functions/assistant-chat/index.ts` — add `bind_news_report_qr` tool; keep existing `set_solution_summary` empty-board guard.
+- `src/features/project/EnvelopesSection.tsx` — render `recap` (italic, normal weight) above the bold-red `task`, render `bonus_clue` card below, render QR slot on the solution envelope.
+- `src/features/project/MarketingSection.tsx` — add "News Report" and "QR Codes" tabs.
 
-`rg "Approve logic"` confirms only these two UI sites render an actual approve button. The `assistant-chat` edge function also offers an in-chat approval option via `propose_options`; that path already runs through `set_solution_summary({ mark_approved: true })` which the backend should refuse if the logic board is empty. **Optional hardening (recommended):** in `supabase/functions/assistant-chat/index.ts`, inside the `set_solution_summary` handler, when `mark_approved === true` also verify that at least one logic-board `canvas_nodes` row exists for the project; if not, return a tool error like `"Cannot approve: the Logic Flow board is empty. Generate the logic flow first."` so the assistant can't stamp `logic_approved_at` against an empty graph either.
+**Created**
+- `supabase/functions/generate-news-report/index.ts`
+- `src/features/project/marketing/NewsReportPanel.tsx`
+- `src/features/project/marketing/QrLibraryPanel.tsx`
+- Migration: add `kind` and `video_url` to `project_storyboards`; create `project_qr_codes` with RLS.
 
-## Files changed
+## 5. What you'll see
 
-- `src/features/project/CanvasSection.tsx` — add `&& nodes.length > 0` to the Approve button condition.
-- `src/features/project/AssistantSection.tsx` — add `logic-node-count` query and gate the approval banner on it.
-- `supabase/functions/assistant-chat/index.ts` — (optional hardening) reject `mark_approved: true` when the logic board is empty.
-
-## What the user will see
-
-- Empty Logic Flow board → **no Approve button** anywhere. Instead, the existing "Summary saved — generate logic flow" chip and the "Generate from solution summary" button stay visible, which is the correct next step.
-- Logic board has nodes (drawn from the current summary) but not yet approved → **Approve button shows** in both the Canvas toolbar and the assistant banner, exactly as today.
-- Logic board has nodes and is already approved → green "Logic approved" badge, no Approve button (unchanged).
+- Every envelope #1–#4 opens with a short in-world recap of what the previous task uncovered ("You found X → which led to Y → which made you realise Z"), then gives the next task in bold red Hebrew.
+- Envelopes #2 and #3 may include a bonus clue (re-interrogation note, lab memo, etc.) — assistant picks 0–2 per case.
+- Envelope #4 ends the game with a recap, the solution, congratulations in bold red, and a QR code slot.
+- A new **News Report** tab in Marketing generates an in-world TV news storyboard for the case solution, and lets you paste the final rendered video URL.
+- A new **QR Codes** tab lets you generate, label, and reuse QR codes (including binding one to the final envelope to point at your news report video).
