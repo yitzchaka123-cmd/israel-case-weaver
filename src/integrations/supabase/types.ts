@@ -549,6 +549,7 @@ export type Database = {
       }
       hint_sheets: {
         Row: {
+          active_version: string
           created_at: string
           effective_model: string | null
           fallback: string | null
@@ -561,8 +562,10 @@ export type Database = {
           requested_model: string | null
           stage: number
           updated_at: string
+          uploaded_image_url: string | null
         }
         Insert: {
+          active_version?: string
           created_at?: string
           effective_model?: string | null
           fallback?: string | null
@@ -575,8 +578,10 @@ export type Database = {
           requested_model?: string | null
           stage: number
           updated_at?: string
+          uploaded_image_url?: string | null
         }
         Update: {
+          active_version?: string
           created_at?: string
           effective_model?: string | null
           fallback?: string | null
@@ -589,6 +594,7 @@ export type Database = {
           requested_model?: string | null
           stage?: number
           updated_at?: string
+          uploaded_image_url?: string | null
         }
         Relationships: []
       }
@@ -646,6 +652,9 @@ export type Database = {
           quality: string | null
           source_document_id: string | null
           source_envelope_id: string | null
+          source_hint_sheet_id: string | null
+          source_project_cover: boolean
+          source_suspect_id: string | null
           status: string
           updated_at: string
           url: string | null
@@ -665,6 +674,9 @@ export type Database = {
           quality?: string | null
           source_document_id?: string | null
           source_envelope_id?: string | null
+          source_hint_sheet_id?: string | null
+          source_project_cover?: boolean
+          source_suspect_id?: string | null
           status?: string
           updated_at?: string
           url?: string | null
@@ -684,6 +696,9 @@ export type Database = {
           quality?: string | null
           source_document_id?: string | null
           source_envelope_id?: string | null
+          source_hint_sheet_id?: string | null
+          source_project_cover?: boolean
+          source_suspect_id?: string | null
           status?: string
           updated_at?: string
           url?: string | null
@@ -755,6 +770,9 @@ export type Database = {
           skill_name: string | null
           skill_source: string | null
           source_document_id: string | null
+          source_hint_sheet_id: string | null
+          source_project_cover: boolean
+          source_suspect_id: string | null
           status: string
           title: string | null
           url: string | null
@@ -781,6 +799,9 @@ export type Database = {
           skill_name?: string | null
           skill_source?: string | null
           source_document_id?: string | null
+          source_hint_sheet_id?: string | null
+          source_project_cover?: boolean
+          source_suspect_id?: string | null
           status?: string
           title?: string | null
           url?: string | null
@@ -807,6 +828,9 @@ export type Database = {
           skill_name?: string | null
           skill_source?: string | null
           source_document_id?: string | null
+          source_hint_sheet_id?: string | null
+          source_project_cover?: boolean
+          source_suspect_id?: string | null
           status?: string
           title?: string | null
           url?: string | null
@@ -1093,6 +1117,7 @@ export type Database = {
           ai_reasoning_effort: string
           assistant_origins: Json
           case_goal: string | null
+          cover_active_version: string
           cover_effective_model: string | null
           cover_fallback: string | null
           cover_image_url: string | null
@@ -1127,6 +1152,7 @@ export type Database = {
           target_doc_count: number | null
           title: string
           updated_at: string
+          uploaded_cover_url: string | null
           video_prompt_instructions: string | null
           year: number | null
         }
@@ -1137,6 +1163,7 @@ export type Database = {
           ai_reasoning_effort?: string
           assistant_origins?: Json
           case_goal?: string | null
+          cover_active_version?: string
           cover_effective_model?: string | null
           cover_fallback?: string | null
           cover_image_url?: string | null
@@ -1171,6 +1198,7 @@ export type Database = {
           target_doc_count?: number | null
           title?: string
           updated_at?: string
+          uploaded_cover_url?: string | null
           video_prompt_instructions?: string | null
           year?: number | null
         }
@@ -1181,6 +1209,7 @@ export type Database = {
           ai_reasoning_effort?: string
           assistant_origins?: Json
           case_goal?: string | null
+          cover_active_version?: string
           cover_effective_model?: string | null
           cover_fallback?: string | null
           cover_image_url?: string | null
@@ -1215,6 +1244,7 @@ export type Database = {
           target_doc_count?: number | null
           title?: string
           updated_at?: string
+          uploaded_cover_url?: string | null
           video_prompt_instructions?: string | null
           year?: number | null
         }
@@ -1269,6 +1299,7 @@ export type Database = {
       }
       suspects: {
         Row: {
+          active_version: string
           alt_thumbnail_effective_model: string | null
           alt_thumbnail_fallback: string | null
           alt_thumbnail_prompt: string | null
@@ -1292,8 +1323,10 @@ export type Database = {
           thumbnail_prompt_history: Json
           thumbnail_url: string | null
           updated_at: string
+          uploaded_thumbnail_url: string | null
         }
         Insert: {
+          active_version?: string
           alt_thumbnail_effective_model?: string | null
           alt_thumbnail_fallback?: string | null
           alt_thumbnail_prompt?: string | null
@@ -1317,8 +1350,10 @@ export type Database = {
           thumbnail_prompt_history?: Json
           thumbnail_url?: string | null
           updated_at?: string
+          uploaded_thumbnail_url?: string | null
         }
         Update: {
+          active_version?: string
           alt_thumbnail_effective_model?: string | null
           alt_thumbnail_fallback?: string | null
           alt_thumbnail_prompt?: string | null
@@ -1342,6 +1377,7 @@ export type Database = {
           thumbnail_prompt_history?: Json
           thumbnail_url?: string | null
           updated_at?: string
+          uploaded_thumbnail_url?: string | null
         }
         Relationships: [
           {
