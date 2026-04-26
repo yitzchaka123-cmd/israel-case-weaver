@@ -72,6 +72,34 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     },
   });
 
+  // Derive whether the Case Board needs attention. Truthful, data-driven:
+  // - Summary saved but no logic nodes yet → user must (re)generate logic flow.
+  // - Logic nodes exist but approval is missing → awaiting user approval.
+  // No badge before a summary exists, or after logic is approved.
+  const { data: caseBoardAttention } = useQuery({
+    queryKey: ["case-board-attention", projectId],
+    queryFn: async () => {
+      const [{ data: proj }, nodes] = await Promise.all([
+        supabase
+          .from("projects")
+          .select("solution_summary, logic_approved_at")
+          .eq("id", projectId)
+          .single(),
+        supabase
+          .from("canvas_nodes")
+          .select("id", { count: "exact", head: true })
+          .eq("project_id", projectId)
+          .in("board", ["logic", "final"]),
+      ]);
+      const summaryDone = !!proj?.solution_summary?.trim();
+      const logicApproved = !!proj?.logic_approved_at;
+      const nodeCount = nodes.count ?? 0;
+      if (!summaryDone || logicApproved) return { needsAttention: false, reason: "" };
+      if (nodeCount === 0) return { needsAttention: true, reason: "Summary saved — generate the logic flow" };
+      return { needsAttention: true, reason: `Logic flow has ${nodeCount} nodes — awaiting your approval` };
+    },
+  });
+
   // Realtime subscription keeps project state in sync across users/tabs
   useEffect(() => {
     const channel = supabase
