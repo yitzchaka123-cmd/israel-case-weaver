@@ -362,6 +362,13 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
 
     setGeneratingFlow(true);
     try {
+      // If we're regenerating because approval was cleared but the project's
+      // `phase` column still says "production" (a leftover from the old, now-
+      // invalidated approval), snap it back to "summary" so the top progress
+      // bar is consistent while we redraw.
+      if (!project?.logic_approved_at && (project as { phase?: string } | undefined)?.phase === "production") {
+        await supabase.from("projects").update({ phase: "summary" }).eq("id", projectId);
+      }
       const { data: { session } } = await supabase.auth.getSession();
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-logic-flow`, {
         method: "POST",
@@ -384,6 +391,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
       qc.invalidateQueries({ queryKey: ["nodes", projectId, "logic"] });
       qc.invalidateQueries({ queryKey: ["edges", projectId, "logic"] });
       qc.invalidateQueries({ queryKey: ["project", projectId] });
+      qc.invalidateQueries({ queryKey: ["phase-bar-project-meta", projectId] });
       // When we used the approved summary, preserve the textarea exactly as the user wrote it.
       if (data.usedApprovedSummary) setSummaryDraft(approvedSummary);
       setSummaryOpen(true);
