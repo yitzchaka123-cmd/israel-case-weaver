@@ -533,11 +533,29 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
       if (notifyErr) console.error("logic_flow_ready notification insert", notifyErr);
     }
 
-    return new Response(JSON.stringify({
-      ok: true,
-      summary: useApproved ? approvedSummary : (parsed?.summary ?? ""),
-      usedApprovedSummary: useApproved,
-      nodeCount: insertedNodeCount,
+    // Drift warning: if there were already documents/envelopes/hints/final-flow
+    // nodes built from the PREVIOUS logic version, they were not deleted —
+    // they still carry the old logic_version_id and will be flagged as stale
+    // by the assistant on the user's next message. Surface this to the user
+    // immediately so they're not surprised.
+    const staleTotal = (preDocCount ?? 0) + (preEnvCount ?? 0) + (preHintCount ?? 0) + (preFinalCount ?? 0);
+    if (staleTotal > 0) {
+      const parts: string[] = [];
+      if ((preDocCount ?? 0) > 0) parts.push(`${preDocCount} documents`);
+      if ((preEnvCount ?? 0) > 0) parts.push(`${preEnvCount} envelopes`);
+      if ((preHintCount ?? 0) > 0) parts.push(`${preHintCount} hints`);
+      if ((preFinalCount ?? 0) > 0) parts.push(`${preFinalCount} Final Flow nodes`);
+      const { error: driftNotifyErr } = await supa.from("project_notifications").insert({
+        project_id: projectId,
+        kind: "logic_regenerated",
+        title: "Logic Flow regenerated — downstream items may be stale",
+        body: `You had ${parts.join(", ")} built from the previous logic version. They were NOT deleted, but the assistant will flag them as stale next time you message it and ask whether to discard or keep them.`,
+        starter_prompt: "I just regenerated the Logic Flow — what should I do about the existing documents and envelopes from the previous version?",
+        status: "unread",
+        created_by: "assistant",
+      });
+      if (driftNotifyErr) console.error("logic_regenerated notification insert", driftNotifyErr);
+    }
       edgeCount: insertedEdgeCount,
       scaffoldedEnvelopes: noEnvelopes ? envelopesForLinking.length : 0,
       streamed: useStreaming && !streamingErr,
