@@ -14,6 +14,8 @@ import { ImageHistoryStrip, type ImageHistoryRow } from "@/components/ImageHisto
 import { FinalAssetPicker } from "@/components/FinalAssetPicker";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
+import { useBackgroundImageJob } from "@/features/project/useBackgroundImageJob";
+import { GenerationTimer } from "@/features/project/GenerationTimer";
 
 interface Suspect {
   id: string;
