@@ -198,8 +198,10 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
   const [genText, setGenText] = useState(false);
   const [genImage, setGenImage] = useState(false);
   const [genDocument, setGenDocument] = useState(false);
+  const [pendingJobId, setPendingJobId] = useState<string | null>(null);
   const [fileGeneration, setFileGeneration] = useState<"pdf" | "image" | "both">("image");
   const [imagePreviewOpen, setImagePreviewOpen] = useState(false);
+  const [historyPreview, setHistoryPreview] = useState<MediaHistoryRow | null>(null);
   const saveTimer = useRef<number | undefined>(undefined);
   const fileInput = useRef<HTMLInputElement>(null);
 
