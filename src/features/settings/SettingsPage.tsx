@@ -59,6 +59,7 @@ export function SettingsPage() {
   const [promptWriter, setPromptWriter] = useState("lovable");
   const [uiBackground, setUiBackground] = useState(DEFAULT_DISPLAY_BACKGROUND);
   const [imgAssistantInstructions, setImgAssistantInstructions] = useState("");
+  const [defaultDepth, setDefaultDepth] = useState<"express" | "guided" | "deep">("guided");
   const [logicFlowModel, setLogicFlowModel] = useState<string>(() => {
     if (typeof window === "undefined") return LOGIC_FLOW_MODEL_DEFAULT;
     return localStorage.getItem(LOGIC_FLOW_MODEL_KEY) ?? LOGIC_FLOW_MODEL_DEFAULT;
@@ -85,6 +86,8 @@ export function SettingsPage() {
       setPromptWriter((profile as any).ai_provider_prompt_writer ?? "lovable");
       setUiBackground(normalizeDisplayBackground((profile as any).ui_background));
       setImgAssistantInstructions((profile as any).image_prompt_assistant_instructions ?? "");
+      const d = (profile as any).default_planning_depth;
+      if (d === "express" || d === "guided" || d === "deep") setDefaultDepth(d);
     }
   }, [profile]);
 
@@ -105,6 +108,7 @@ export function SettingsPage() {
       ai_provider_prompt_writer: promptWriter,
       ui_background: uiBackground,
       image_prompt_assistant_instructions: imgAssistantInstructions,
+      default_planning_depth: defaultDepth,
     } as any);
     if (error) toast.error(error.message);
     else {
@@ -311,6 +315,22 @@ export function SettingsPage() {
                   <SelectTrigger className="h-9 text-xs w-[280px] shrink-0"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {filterModelOptions(LOGIC_FLOW_MODELS, hiddenModels, logicFlowModel).map((m) => <SelectItem key={m.value} value={m.value} className="text-xs">{m.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="border-t mt-5 pt-5 max-w-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium">Default planning depth</div>
+                  <div className="text-xs text-muted-foreground">How deep the assistant interviews you on new projects. You can change it per-project anytime.</div>
+                </div>
+                <Select value={defaultDepth} onValueChange={(v) => setDefaultDepth(v as "express" | "guided" | "deep")}>
+                  <SelectTrigger className="h-9 text-xs w-[280px] shrink-0"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="express" className="text-xs">⚡ Express — auto-fill &amp; jump to logic flow</SelectItem>
+                    <SelectItem value="guided" className="text-xs">🎯 Guided — a few key questions</SelectItem>
+                    <SelectItem value="deep" className="text-xs">🔬 Deep Dive — full interview, every detail</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
