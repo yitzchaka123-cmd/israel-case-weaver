@@ -168,7 +168,13 @@ Phase 4 Documents: Doc 0 = master inventory of every document in the box; then r
 
 ${renderUniversalDocumentsBlock(playbook)}
 
-DOCUMENT GENERATION WORKFLOW (Phase 4 — read carefully)
+${(() => {
+  // Heavy Phase-4 doc-workflow lecture is only relevant once the user is at
+  // (or close to) Phase 4. In phases 1–2 it just bloats the system prompt.
+  const phase = String((project as { phase?: string }).phase ?? "").toLowerCase();
+  const docPhases = ["", "structure", "documents", "envelopes", "hints", "packaging", "done"];
+  if (!docPhases.includes(phase)) return "";
+  return `DOCUMENT GENERATION WORKFLOW (Phase 4 — read carefully)
 PHASE 4 PLANNING GATE (mandatory): After the Logic Flow is approved and BEFORE you call \`create_final_documents_map\` or \`add_document\`, you MUST first call \`propose_document_set\`. You reason through every approved Logic Flow node + suspect to propose the EXACT list of documents this case needs — each entry is one document with a player-facing title, a format-style hint (doc_type), the SPECIFIC clue/purpose it delivers, and the logic-flow node ids it supports. Do NOT assign documents to envelopes; documents are not gated by envelopes. Doc 0 is added automatically — do not include it. Templates are forbidden: two cases must yield two completely different document lists driven by their actual logic chains, not by a fixed boilerplate.
 After \`propose_document_set\` succeeds, present the proposed list as numbered bullets in your prose AND call \`propose_options\` with three buttons (in this exact order):
   1) "Approve and build the Final Flow" → on click, call \`create_final_documents_map\`.
@@ -195,11 +201,12 @@ ${renderDocModeButtonsBlock(playbook)}
 5. Document/file generation is strict direct-provider-only: the selected document model (or assistant planning model if no document model is set) gets the honest first chance to create the actual file directly. Never use or imply hidden Lovable fallback. If the selected model cannot make real files, say to switch Documents to Claude with document skills for PDF/DOCX, or choose Image-only with ChatGPT Image.
 6. generate_document_assets is gated server-side: it will refuse if the Logic Flow is not approved, or if the document_id doesn't belong to this project. Trust the receipt.
 7. The Hebrew body produced by generate_document_assets MAY differ slightly from the hebrew_content you wrote in add_document — that's expected. The receipt shows the final stored version.
-8. If the user asks to install/add a Claude Skill from chat and there is no attached installable package, call explain_claude_skill_install. Claude can automatically choose among enabled installed skills passed to it, but the app must manage installation.
+8. If the user asks to install/add a Claude Skill from chat and there is no attached installable package, call explain_claude_skill_install. Claude can automatically choose among enabled installed skills passed to it, but the app must manage installation.`;
+})()}
 
-AVAILABLE CLAUDE SKILLS FOR THIS SURFACE
+${claudeSkills.length > 0 ? `AVAILABLE CLAUDE SKILLS FOR THIS SURFACE
 ${renderClaudeSkillCatalog(claudeSkills)}
-Claude Skills are SKILL.md-based packages. Their descriptions tell Claude when to use them; full instructions/supporting files are only available when the Skill is invoked by Claude's runtime.
+Claude Skills are SKILL.md-based packages. Their descriptions tell Claude when to use them; full instructions/supporting files are only available when the Skill is invoked by Claude's runtime.` : ""}
 ${renderEnvelopesLine(playbook)}
 ${renderHintsLine(playbook)}
 
@@ -291,16 +298,11 @@ Image prompt style: ${truncate(project.image_prompt_instructions, 120)}
 Video prompt style: ${truncate(project.video_prompt_instructions, 120)}
 Hint settings: ${(() => { const v = project.hint_settings as Record<string, unknown> | null; if (!v || typeof v !== "object") return "—"; const keys = Object.keys(v); return keys.length === 0 ? "(empty)" : `(${keys.length} keys: ${truncate(keys.join(", "), 80)})`; })()}
 Envelope settings: ${(() => { const v = project.envelope_settings as Record<string, unknown> | null; if (!v || typeof v !== "object") return "—"; const keys = Object.keys(v); return keys.length === 0 ? "(empty)" : `(${keys.length} keys: ${truncate(keys.join(", "), 80)})`; })()}
-Existing suspects (${suspectCount}):
-${suspectsList}
-Existing documents (${docCount}):
-${documentsList}
-Existing envelopes (${rosters.envelopes.length}):
-${envelopesList}
-Existing hints (${rosters.hints.length}):
-${hintsList}
-Existing canvas nodes (${rosters.canvas_nodes.length}):
-${nodesList}
+${suspectCount > 0 ? `Existing suspects (${suspectCount}):\n${suspectsList}` : ""}
+${docCount > 0 ? `Existing documents (${docCount}):\n${documentsList}` : ""}
+${rosters.envelopes.length > 0 ? `Existing envelopes (${rosters.envelopes.length}):\n${envelopesList}` : ""}
+${rosters.hints.length > 0 ? `Existing hints (${rosters.hints.length}):\n${hintsList}` : ""}
+${rosters.canvas_nodes.length > 0 ? `Existing canvas nodes (${rosters.canvas_nodes.length}):\n${nodesList}` : ""}
 Logic flow approved: ${project.logic_approved_at ? "YES (" + project.logic_approved_at + ")" : "NO — must be approved on the Canvas before generating documents"}
 Final Flow mapped: ${rosters.canvas_nodes.some((n) => n.board === "final" && n.node_type === "document") ? `YES (${rosters.canvas_nodes.filter((n) => n.board === "final").length} final-board nodes)` : "NO — ask to create the Final Flow before final documents"}
 Solution summary set: ${project.solution_summary ? "YES" : "NO"}
@@ -1499,11 +1501,11 @@ async function processConversation(
     { data: nodesRoster },
   ] = await Promise.all([
     supa.from("projects").select("*").eq("id", projectId).single(),
-    supa.from("suspects").select("id, name, role_in_case").eq("project_id", projectId).order("position", { ascending: true }).limit(50),
-    supa.from("documents").select("id, doc_number, title, doc_type, status").eq("project_id", projectId).order("doc_number", { ascending: true, nullsFirst: false }).limit(100),
-    supa.from("envelopes").select("id, number, label").eq("project_id", projectId).order("number", { ascending: true }).limit(50),
-    supa.from("hints").select("id, stage, level").eq("project_id", projectId).order("stage", { ascending: true }).order("level", { ascending: true }).limit(50),
-    supa.from("canvas_nodes").select("id, title, node_type, board").eq("project_id", projectId).order("created_at", { ascending: true }).limit(100),
+    supa.from("suspects").select("id, name, role_in_case").eq("project_id", projectId).order("position", { ascending: true }).limit(25),
+    supa.from("documents").select("id, doc_number, title, doc_type, status").eq("project_id", projectId).order("doc_number", { ascending: true, nullsFirst: false }).limit(25),
+    supa.from("envelopes").select("id, number, label").eq("project_id", projectId).order("number", { ascending: true }).limit(25),
+    supa.from("hints").select("id, stage, level").eq("project_id", projectId).order("stage", { ascending: true }).order("level", { ascending: true }).limit(25),
+    supa.from("canvas_nodes").select("id, title, node_type, board").eq("project_id", projectId).order("created_at", { ascending: true }).limit(25),
   ]);
   if (!project) throw new Error("Project not found");
 
@@ -1551,7 +1553,7 @@ async function processConversation(
     project_id: projectId,
     role: "assistant",
     content: "",
-    metadata: { in_progress: true, model },
+    metadata: { in_progress: true, model, stage: "thinking" },
   });
   if (assistantPlaceholderError) {
     console.error("assistant placeholder insert failed", assistantPlaceholderError);
@@ -1565,14 +1567,30 @@ async function processConversation(
   // the project has ai_reasoning_effort != 'none' AND the model supports it.
   type ReasoningSegment = { type: "thinking" | "summary"; text: string };
   const reasoningRounds: Array<{ round: number; segments: ReasoningSegment[] }> = [];
-  const reasoningEffort = String((project as { ai_reasoning_effort?: string }).ai_reasoning_effort ?? "medium");
+  // Default to "low" — chat is short turn-by-turn and tool calls don't need
+  // heavy reasoning. Users who want deeper thinking can crank ai_reasoning_effort.
+  const baseEffort = String((project as { ai_reasoning_effort?: string }).ai_reasoning_effort ?? "low");
   const TOOLS = buildTools(playbook);
-  const MAX_ROUNDS = 8;
+  const MAX_ROUNDS = 4;
   let lastFb: { effectiveModel: string; fallback: string } = { effectiveModel: model, fallback: "none" };
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const isFinalRound = round === MAX_ROUNDS - 1;
-    const body: Record<string, unknown> = { model, messages: convo, stream: false, reasoningEffort, ...claudeSkillRequestShape(claudeChatSkills) };
+    // Tool-only rounds (everything but the last) get the cheapest reasoning
+    // tier — picking the next tool call doesn't need deep thought. Save the
+    // user's chosen `baseEffort` for the final prose round.
+    const roundEffort = isFinalRound ? baseEffort : "low";
+    const body: Record<string, unknown> = { model, messages: convo, stream: false, reasoningEffort: roundEffort, ...claudeSkillRequestShape(claudeChatSkills) };
     if (!isFinalRound) body.tools = TOOLS;
+
+    // Surface progress to the UI between rounds via the placeholder row's
+    // metadata.stage. The chat_messages realtime subscription picks this up.
+    if (round > 0) {
+      const lastTool = executedTools[executedTools.length - 1]?.name;
+      const stage = isFinalRound ? "writing reply" : lastTool ? `after ${lastTool}…` : "thinking…";
+      void supa.from("chat_messages")
+        .update({ metadata: { in_progress: true, model, stage, partial_tools: executedTools.length } })
+        .eq("id", assistantMessageId);
+    }
 
     const roundStartedAt = Date.now();
     const resp = await chatCompletions(body);
@@ -1632,6 +1650,13 @@ async function processConversation(
         const argsForUi = call.function.name === "propose_options" ? undefined : args;
         executedTools.push({ name: call.function.name, args: argsForUi, result });
         convo.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
+      }
+      // After this round, warn the model that it's running out of tool rounds
+      // — encourages batching the rest and writing the prose reply instead of
+      // looping on micro-edits. (round index 1 → next call is index 2 → only
+      // index 3, the final prose round, remains.)
+      if (round === MAX_ROUNDS - 3) {
+        convo.push({ role: "system", content: "You have one tool round left. Make any remaining tool calls in a single batch this turn, then write your reply." });
       }
       continue;
     }
@@ -1849,15 +1874,16 @@ Deno.serve(async (req) => {
     const executedTools: Array<{ name: string; args?: Record<string, unknown>; result: unknown }> = [];
     type ReasoningSegment = { type: "thinking" | "summary"; text: string };
     const reasoningRounds: Array<{ round: number; segments: ReasoningSegment[] }> = [];
-    const reasoningEffort = String((project as { ai_reasoning_effort?: string }).ai_reasoning_effort ?? "medium");
+    const baseEffort = String((project as { ai_reasoning_effort?: string }).ai_reasoning_effort ?? "low");
     const TOOLS = buildTools(playbook);
 
-    const MAX_ROUNDS = 8;
+    const MAX_ROUNDS = 4;
     const callerUserId = await getUserIdFromAuth(req);
     let lastFb: { effectiveModel: string; fallback: string } = { effectiveModel: model, fallback: "none" };
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const isFinalRound = round === MAX_ROUNDS - 1;
-      const body: Record<string, unknown> = { model, messages: convo, stream: false, reasoningEffort, ...claudeSkillRequestShape(claudeChatSkills) };
+      const roundEffort = isFinalRound ? baseEffort : "low";
+      const body: Record<string, unknown> = { model, messages: convo, stream: false, reasoningEffort: roundEffort, ...claudeSkillRequestShape(claudeChatSkills) };
       if (!isFinalRound) body.tools = TOOLS;
 
       const roundStartedAt = Date.now();

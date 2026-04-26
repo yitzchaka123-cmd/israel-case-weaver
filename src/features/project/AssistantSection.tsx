@@ -74,7 +74,7 @@ type Msg = {
   id: string;
   role: "user" | "assistant";
   content: string;
-  metadata?: { tools?: ToolCall[]; options?: QuickOption[]; question?: string | null; model?: string | null; effective_model?: string | null; fallback?: string | null; in_progress?: boolean | null; reasoning?: ReasoningRound[] | null } | null;
+  metadata?: { tools?: ToolCall[]; options?: QuickOption[]; question?: string | null; model?: string | null; effective_model?: string | null; fallback?: string | null; in_progress?: boolean | null; stage?: string | null; reasoning?: ReasoningRound[] | null } | null;
   created_at?: string;
 };
 
@@ -262,7 +262,13 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     if (!content) return;
     setInput("");
     const source = baseMessages ?? messages;
-    const convo = source.map((m) => ({ role: m.role, content: m.content }));
+    // Trim to the last 16 turns. The server prompt re-renders fresh project
+    // rosters (suspects/docs/envelopes/hints/canvas nodes) every turn, so
+    // older chat context is already baked into state — we don't need to
+    // re-send hundreds of messages every send. This is the single biggest
+    // latency win on long projects.
+    const trimmed = source.slice(-16);
+    const convo = trimmed.map((m) => ({ role: m.role, content: m.content }));
     // Hook handles fire-and-forget background mode + realtime status flips.
     await hookSend(content, convo);
   };
@@ -460,16 +466,25 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
               );
             })}
 
-            {sending && (
-              <div className="flex gap-3 items-start">
-                <Avatar role="assistant" />
-                <div className="flex-1 pt-1.5">
-                  <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Thinking…
+            {sending && (() => {
+              // Find the most recent in-progress assistant placeholder so we
+              // can surface its `stage` (e.g. "after add_suspect…") instead
+              // of just spinning silently. The placeholder is updated between
+              // tool rounds via realtime UPDATE on chat_messages.metadata.
+              const inFlight = [...messages].reverse().find((m) => m.role === "assistant" && m.metadata?.in_progress);
+              const stage = inFlight?.metadata?.stage ?? null;
+              return (
+                <div className="flex gap-3 items-start">
+                  <Avatar role="assistant" />
+                  <div className="flex-1 pt-1.5">
+                    <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>{stage ? `${stage}` : "Thinking…"}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
           </div>
         </div>
 
