@@ -1783,7 +1783,8 @@ async function processConversation(
   const TOOLS = buildTools(playbook);
   const MAX_ROUNDS = 4;
   let lastFb: { effectiveModel: string; fallback: string } = { effectiveModel: model, fallback: "none" };
-  flushProgress("thinking…");
+  flushProgress("preparing prompt…");
+  flushProgress("contacting model…");
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const isFinalRound = round === MAX_ROUNDS - 1;
     // Tool-only rounds get a cheaper reasoning tier than the final prose
@@ -2139,7 +2140,8 @@ Deno.serve(async (req) => {
     const MAX_ROUNDS = 4;
     const callerUserId = await getUserIdFromAuth(req);
     let lastFb: { effectiveModel: string; fallback: string } = { effectiveModel: model, fallback: "none" };
-    flushProgress("thinking…");
+    flushProgress("preparing prompt…");
+    flushProgress("contacting model…");
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const isFinalRound = round === MAX_ROUNDS - 1;
       const roundEffort = isFinalRound ? baseEffort : (baseEffort === "high" ? "medium" : baseEffort === "medium" ? "low" : baseEffort);
