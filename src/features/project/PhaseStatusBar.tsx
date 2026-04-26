@@ -100,8 +100,16 @@ export function PhaseStatusBar({
   if (logicApproved && derivedIdx < documentsIdx) derivedIdx = documentsIdx;
   let currentIdx = Math.max(serverIdx, derivedIdx);
   // Caps so the bar can move BACKWARDS when data is invalidated.
-  if (!summaryDone) currentIdx = Math.min(currentIdx, summaryIdx);
-  else if (!logicApproved) currentIdx = Math.min(currentIdx, logicIdx);
+  if (!summaryDone) {
+    currentIdx = Math.min(currentIdx, summaryIdx);
+  } else if (!logicApproved) {
+    // The server snaps `phase` back to "summary" when the assistant rewrites
+    // the summary (because the prior logic flow was wiped). Honor that signal
+    // — if the server says we're back at Summary AND nothing has been approved
+    // since, show Summary as the current step.
+    const cap = normalizePhase(phase) === "summary" ? summaryIdx : logicIdx;
+    currentIdx = Math.min(currentIdx, cap);
+  }
 
   const tooltipFor = (key: string): string => {
     switch (key) {
