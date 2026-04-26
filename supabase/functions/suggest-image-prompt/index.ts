@@ -128,6 +128,186 @@ Deno.serve(async (req) => {
         : ((project.ai_provider_planning as string) || "lovable");
     const model = PLANNING_MODEL[projectKey] ?? PLANNING_MODEL.lovable;
 
+    // ─────────────────────────────────────────────────────────────────────
+    // STRUCTURED-DOC MODE — Documents + Envelopes only.
+    // Returns { design_instructions, content } in one shot. Used by the new
+    // DocumentPromptAssistant (2-tab UI). All other categories fall through
+    // to the legacy single-prompt path below.
+    // ─────────────────────────────────────────────────────────────────────
+    if (category === STRUCTURED_DOC || category === STRUCTURED_ENV) {
+      const { documentId, envelopeId, userInstructions, currentDesign, currentContent } = body;
+
+      // Resolve the project's chosen game language for the content half.
+      const { data: projectLang } = await supa
+        .from("projects")
+        .select("game_language, solution_summary")
+        .eq("id", projectId)
+        .maybeSingle();
+      const gameLanguage = ((projectLang as { game_language?: string } | null)?.game_language ?? "Hebrew").trim();
+      const solutionSummary = ((projectLang as { solution_summary?: string } | null)?.solution_summary ?? "").trim();
+      const isRtl = /^(hebrew|arabic|persian|farsi|urdu|yiddish)$/i.test(gameLanguage);
+
+      // Load the specific document or envelope so the assistant has its facts.
+      let targetBlock = "";
+      if (category === STRUCTURED_DOC && documentId) {
+        const { data: docRow } = await supa
+          .from("documents")
+          .select("doc_number, title, doc_type, print_size, envelope_number, design_instructions, hebrew_content")
+          .eq("id", documentId)
+          .maybeSingle();
+        if (docRow) {
+          targetBlock = [
+            `THIS DOCUMENT:`,
+            docRow.doc_number !== null && `- Number: ${docRow.doc_number}`,
+            docRow.title && `- Title: ${docRow.title}`,
+            docRow.doc_type && `- Type / format hint: ${docRow.doc_type}`,
+            docRow.print_size && `- Print size: ${docRow.print_size}`,
+            docRow.envelope_number !== null && `- Belongs to envelope: ${docRow.envelope_number}`,
+          ].filter(Boolean).join("\n");
+        }
+      } else if (category === STRUCTURED_ENV && envelopeId) {
+        const { data: envRow } = await supa
+          .from("envelopes")
+          .select("number, label, task, design_instructions")
+          .eq("id", envelopeId)
+          .maybeSingle();
+        if (envRow) {
+          targetBlock = [
+            `THIS ENVELOPE:`,
+            envRow.number !== null && `- Number: ${envRow.number}`,
+            envRow.label && `- Current label: ${envRow.label}`,
+            envRow.task && `- Current task: ${envRow.task}`,
+            `- Print: a sealed envelope cover (front face).`,
+          ].filter(Boolean).join("\n");
+        }
+      }
+
+      const isEnv = category === STRUCTURED_ENV;
+      const structuredSystem = [
+        `You are a master prop designer AND in-world writer for a premium boxed murder-mystery game. You think about ONE ${isEnv ? "envelope" : "document"} at a time. You produce TWO things in a single JSON response:`,
+        ``,
+        `Part 1 — DESIGN_INSTRUCTIONS (English): an extremely detailed graphic-design brief. Cover EVERY relevant element:`,
+        `  • Document type / output format (e.g. "single A4 portrait page, 2480x3508px, 300 DPI, flat archival scan").`,
+        `  • Paper stock (weight, finish, age, color).`,
+        `  • Look & feel (administrative / dramatic / aged / clean / etc.) and how strongly to apply realism.`,
+        `  • Typography: exact fonts (or font families), sizes, weights for title / headers / body / footnotes. RTL or LTR direction.`,
+        `  • Full layout, section by section. Margins. Alignment.`,
+        `  • Color palette / ink colors / stamp colors.`,
+        `  • Stamps, handwriting, signatures, marginalia, holes, fold lines, tape, smudges — INCLUDE ONLY if the document calls for them. For clean admin docs, explicitly say "no stamps, no handwriting, no realism details".`,
+        `  • Footer / header rules.`,
+        `  • Explicit "do NOT include" rules (e.g. no real names, no real emblems, no modern Canva styling, no watermark text).`,
+        `  Be exhaustive. Think like a senior print designer briefing an illustrator.`,
+        ``,
+        `Part 2 — CONTENT (${gameLanguage}, ${isRtl ? "RTL" : "LTR"}): the EXACT final text that appears on the ${isEnv ? "envelope" : "document"}. Ready to typeset. No meta-commentary, no English explanations inside the content, no placeholders like "[insert name here]", no markdown headings — just the actual prop text in ${gameLanguage}. Names, dates, numbers, quotes — all final.`,
+        ``,
+        isEnv
+          ? `Envelope-specific rules: the content is what's printed on the OUTSIDE of the envelope (label + opening trigger / task). Keep it short, bold, non-spoilery. Never reveal the case solution.`
+          : `Document-specific rules: stay in-world; do not reveal the full solution; honor the document's planned role inside the case. For Doc 0 / contents inventory, the design must be a plain white printer-paper sheet (no realism), and content is a numbered list of every game document.`,
+        ``,
+        `OUTPUT: a single strict JSON object with EXACTLY these two string keys: {"design_instructions": "...", "content": "..."}. No prose around it, no markdown fences, no extra keys.`,
+        globalAssistantInstructions
+          ? `\nUSER GLOBAL STYLE GUIDE (highest priority — apply to every brief you write):\n${globalAssistantInstructions}`
+          : "",
+      ].filter(Boolean).join("\n");
+
+      const structuredUser = [
+        `PROJECT CONTEXT:`,
+        ctx || "(no context yet)",
+        ``,
+        `GAME LANGUAGE: ${gameLanguage} (${isRtl ? "RTL" : "LTR"})`,
+        solutionSummary ? `\nSOLUTION SUMMARY (for coherence — do NOT reveal in this artifact):\n${solutionSummary}` : "",
+        ``,
+        targetBlock,
+        ``,
+        userInstructions?.trim()
+          ? `USER STEERING (highest priority — apply faithfully):\n${userInstructions.trim()}`
+          : `USER STEERING: (none — use project context and the target's title/type to decide everything)`,
+        currentDesign?.trim() ? `\nCURRENT DESIGN INSTRUCTIONS (revise / improve, don't repeat verbatim):\n${currentDesign.trim()}` : "",
+        currentContent?.trim() ? `\nCURRENT CONTENT (revise / improve, don't repeat verbatim):\n${currentContent.trim()}` : "",
+        ``,
+        `Now produce the JSON object with design_instructions (English, very detailed) and content (${gameLanguage}, exact final text).`,
+      ].filter(Boolean).join("\n");
+
+      const supportsTempStruct = !model.startsWith("openai/");
+      const supportsJsonMode = model.startsWith("openai/") || model.startsWith("google/") || model.startsWith("gemini-direct/");
+      const startedAtStruct = Date.now();
+      const callerUserIdStruct = await getUserIdFromAuth(req);
+      const respStruct = await chatCompletions({
+        model,
+        messages: [
+          { role: "system", content: structuredSystem },
+          { role: "user", content: structuredUser },
+        ],
+        ...(supportsTempStruct ? { temperature: 0.85 } : {}),
+        ...(supportsJsonMode ? { response_format: { type: "json_object" } } : {}),
+      });
+      const fbStruct = extractFallback(respStruct, model);
+
+      if (!respStruct.ok) {
+        const t = await respStruct.text().catch(() => "");
+        console.error("suggest-image-prompt structured error", respStruct.status, t);
+        const provider = model.startsWith("openai/") ? "OpenAI" : "Lovable AI";
+        await logAiRun({
+          userId: callerUserIdStruct, projectId, surface: `suggest-image-prompt:${category}`,
+          requestedModel: model, effectiveModel: fbStruct.effectiveModel, fallback: fbStruct.fallback,
+          status: "error", latencyMs: Date.now() - startedAtStruct,
+          errorMessage: `${provider} ${respStruct.status}: ${t.slice(0, 200)}`,
+          promptExcerpt: structuredUser,
+        });
+        if (respStruct.status === 429) return new Response(JSON.stringify({ error: `${provider} rate limit — try again shortly.` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        if (respStruct.status === 402) return new Response(JSON.stringify({ error: `${provider} credits/key issue (status 402).` }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ error: `${provider} error (status ${respStruct.status})` }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      const dataStruct = await respStruct.json();
+      const raw: string = (dataStruct.choices?.[0]?.message?.content ?? "").trim();
+      // Robust parse: try JSON first, then fenced JSON, then a labeled-section fallback.
+      let designOut = "";
+      let contentOut = "";
+      const tryParse = (s: string): { d?: string; c?: string } | null => {
+        try {
+          const j = JSON.parse(s);
+          if (j && typeof j === "object") {
+            return { d: typeof j.design_instructions === "string" ? j.design_instructions : undefined, c: typeof j.content === "string" ? j.content : undefined };
+          }
+        } catch { /* ignore */ }
+        return null;
+      };
+      const direct = tryParse(raw);
+      if (direct?.d || direct?.c) { designOut = direct.d ?? ""; contentOut = direct.c ?? ""; }
+      if (!designOut && !contentOut) {
+        const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
+        if (fenced) {
+          const f = tryParse(fenced[1].trim());
+          if (f?.d || f?.c) { designOut = f.d ?? ""; contentOut = f.c ?? ""; }
+        }
+      }
+      if (!designOut && !contentOut) {
+        // Labeled-section fallback.
+        const dMatch = raw.match(/design[_\s-]*instructions\s*[:\n]+([\s\S]*?)(?:\n\s*content\s*[:\n]|$)/i);
+        const cMatch = raw.match(/(?:^|\n)\s*content\s*[:\n]+([\s\S]*)$/i);
+        if (dMatch) designOut = dMatch[1].trim();
+        if (cMatch) contentOut = cMatch[1].trim();
+      }
+      if (!designOut && !contentOut) {
+        // Last resort: dump the raw text into design so the user can salvage it.
+        designOut = raw;
+      }
+
+      await logAiRun({
+        userId: callerUserIdStruct, projectId, surface: `suggest-image-prompt:${category}`,
+        requestedModel: model, effectiveModel: fbStruct.effectiveModel, fallback: fbStruct.fallback,
+        status: "ok", latencyMs: Date.now() - startedAtStruct, promptExcerpt: structuredUser,
+      });
+      return new Response(JSON.stringify({
+        design_instructions: designOut,
+        content: contentOut,
+        model,
+        effectiveModel: fbStruct.effectiveModel,
+        fallback: fbStruct.fallback,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     const ctx = [
       project.title && `Title: ${project.title}`,
       project.subtitle && `Subtitle: ${project.subtitle}`,
