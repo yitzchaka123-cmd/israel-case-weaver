@@ -505,6 +505,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
               const liveTools = inFlight?.metadata?.tools ?? [];
               const liveReasoning = inFlight?.metadata?.reasoning ?? [];
               const stageHistory = inFlight?.metadata?.stage_history ?? [];
+              const liveMsgId = inFlight?.id ?? "pending";
               return (
                 <div className="flex gap-3 items-start">
                   <Avatar role="assistant" />
@@ -513,16 +514,17 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       <span className="inline-flex items-center gap-1.5">
                         <span className="inline-block h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
-                        {stage ? stage : "Thinking…"}
+                        {stage ? stage : "Starting…"}
                       </span>
                     </div>
-                    {(liveReasoning.length > 0 || stageHistory.length > 1) && (
-                      <ThinkingDisclosure
-                        reasoning={liveReasoning}
-                        stageHistory={stageHistory}
-                        live
-                      />
-                    )}
+                    <ThinkingDisclosure
+                      key={liveMsgId}
+                      msgId={liveMsgId}
+                      reasoning={liveReasoning}
+                      stageHistory={stageHistory}
+                      live
+                      defaultOpen
+                    />
                     {liveTools.length > 0 && (
                       <ToolReceipts tools={liveTools} onOpenAsset={setLightbox} />
                     )}
