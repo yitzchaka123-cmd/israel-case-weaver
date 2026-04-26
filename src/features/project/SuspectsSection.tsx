@@ -1,8 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { AutoSaveInput, AutoSaveTextarea } from "@/components/AutoSave";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -338,27 +337,27 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
           <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
             <div>
               <Label className="text-xs uppercase tracking-wider text-muted-foreground">Name</Label>
-              <Input value={draft.name} onChange={(e) => update({ name: e.target.value })} />
+              <AutoSaveInput value={draft.name} onSave={(v) => update({ name: v })} />
             </div>
             <div>
               <Label className="text-xs uppercase tracking-wider text-muted-foreground">Role in case</Label>
-              <Input value={draft.role_in_case ?? ""} onChange={(e) => update({ role_in_case: e.target.value })} />
+              <AutoSaveInput value={draft.role_in_case ?? ""} onSave={(v) => update({ role_in_case: v })} />
             </div>
             <div>
               <Label className="text-xs uppercase tracking-wider text-muted-foreground">Summary</Label>
-              <Textarea rows={3} value={draft.summary ?? ""} onChange={(e) => update({ summary: e.target.value })} />
+              <AutoSaveTextarea rows={3} value={draft.summary ?? ""} onSave={(v) => update({ summary: v })} />
             </div>
             <div>
               <Label className="text-xs uppercase tracking-wider text-muted-foreground">Motives</Label>
-              <Textarea rows={2} value={draft.motives ?? ""} onChange={(e) => update({ motives: e.target.value })} />
+              <AutoSaveTextarea rows={2} value={draft.motives ?? ""} onSave={(v) => update({ motives: v })} />
             </div>
             <div>
               <Label className="text-xs uppercase tracking-wider text-muted-foreground">Secrets</Label>
-              <Textarea rows={2} value={draft.secrets ?? ""} onChange={(e) => update({ secrets: e.target.value })} />
+              <AutoSaveTextarea rows={2} value={draft.secrets ?? ""} onSave={(v) => update({ secrets: v })} />
             </div>
             <div>
               <Label className="text-xs uppercase tracking-wider text-muted-foreground">Contradictions</Label>
-              <Textarea rows={2} value={draft.contradictions ?? ""} onChange={(e) => update({ contradictions: e.target.value })} />
+              <AutoSaveTextarea rows={2} value={draft.contradictions ?? ""} onSave={(v) => update({ contradictions: v })} />
             </div>
             <div className="flex items-center justify-between pt-2">
               <Label className="flex items-center gap-2">
