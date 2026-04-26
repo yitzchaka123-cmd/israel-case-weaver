@@ -964,6 +964,96 @@ function ThinkingDisclosure({
   );
 }
 
+// Animates a reasoning segment's text in character-by-character the FIRST time
+// we see it during a live run. Once revealed, the segment stays fully shown
+// across re-renders (we keep a module-level set of segIds we've already
+// finished animating, so realtime UPDATEs to the parent message don't
+// re-trigger the typewriter). When `live` is false (post-run rendering or
+// re-opening the disclosure on an old message) we render the full text
+// immediately — no animation.
+const REVEALED_SEGMENT_IDS = new Set<string>();
+function LiveReasoningSegment({
+  segId,
+  type,
+  text,
+  live,
+}: {
+  segId: string;
+  type: "thinking" | "summary";
+  text: string;
+  live: boolean;
+}) {
+  const alreadyRevealed = REVEALED_SEGMENT_IDS.has(segId);
+  const shouldAnimate = live && !alreadyRevealed;
+  const [revealedChars, setRevealedChars] = useState<number>(
+    shouldAnimate ? 0 : text.length,
+  );
+
+  useEffect(() => {
+    if (!shouldAnimate) {
+      setRevealedChars(text.length);
+      return;
+    }
+    // Type at ~40 chars/frame so even multi-paragraph reasoning feels lively
+    // but not hyperactive. Cap so very long segments still finish in <5s.
+    const total = text.length;
+    const stepChars = Math.max(2, Math.ceil(total / 120));
+    let cancelled = false;
+    let raf = 0;
+    let last = performance.now();
+    const tick = (now: number) => {
+      if (cancelled) return;
+      // ~30 fps
+      if (now - last >= 33) {
+        last = now;
+        setRevealedChars((prev) => {
+          const next = Math.min(total, prev + stepChars);
+          if (next >= total) {
+            REVEALED_SEGMENT_IDS.add(segId);
+            return total;
+          }
+          return next;
+        });
+      }
+      if (!REVEALED_SEGMENT_IDS.has(segId)) {
+        raf = requestAnimationFrame(tick);
+      }
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+    };
+  }, [shouldAnimate, segId, text]);
+
+  // If the upstream text grew (rare — segments are immutable per round, but
+  // guard anyway), and we've already finished revealing, re-extend to full.
+  useEffect(() => {
+    if (REVEALED_SEGMENT_IDS.has(segId) && revealedChars < text.length) {
+      setRevealedChars(text.length);
+    }
+  }, [text, segId, revealedChars]);
+
+  const shown = text.slice(0, revealedChars);
+  const stillTyping = revealedChars < text.length;
+
+  return (
+    <div className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-foreground/75">
+      <span
+        className={`mr-1.5 rounded px-1 py-0.5 text-[9px] font-semibold uppercase ${
+          type === "summary" ? "bg-accent/20 text-accent" : "bg-primary/15 text-primary"
+        }`}
+      >
+        {type}
+      </span>
+      {shown}
+      {stillTyping && (
+        <span className="ml-0.5 inline-block h-3 w-1 -mb-0.5 align-baseline bg-accent/70 animate-pulse" />
+      )}
+    </div>
+  );
+}
+
 function formatRelativeTime(iso: string): string {
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return "";
