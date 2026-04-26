@@ -515,7 +515,28 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
     }
   };
 
-  return (
+  const restoreImageFromHistory = async (item: MediaHistoryRow) => {
+    if (!item.url) return;
+    await supabase.from("documents").update({
+      generated_asset_url: item.url,
+      active_version: "generated",
+    }).eq("id", doc.id);
+    setDraft((d) => d ? { ...d, generated_asset_url: item.url!, active_version: "generated" } : d);
+    toast.success("Image restored as Final asset image");
+  };
+
+  const restoreDocumentFromHistory = async (item: MediaHistoryRow) => {
+    if (!item.url) return;
+    await supabase.from("documents").update({
+      generated_document_url: item.url,
+      document_format: item.document_format ?? "pdf",
+      document_provider: item.provider ?? null,
+      document_model: item.model ?? null,
+    }).eq("id", doc.id);
+    setDraft((d) => d ? { ...d, generated_document_url: item.url!, document_format: item.document_format ?? "pdf", document_provider: item.provider ?? null, document_model: item.model ?? null } : d);
+    toast.success("Document restored as Final asset document");
+  };
+
     <>
     <Dialog open={!!doc} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-3xl">
