@@ -12,9 +12,7 @@ import { toast } from "sonner";
 import jsPDF from "jspdf";
 
 import { ImageModelPicker, getStoredImageModel } from "@/components/ImageModelPicker";
-import { PromptWriterModelPicker, getStoredWriterModel } from "@/components/PromptWriterModelPicker";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
-import { Sparkles } from "lucide-react";
 import { DocumentPromptAssistant } from "@/components/DocumentPromptAssistant";
 import { Badge } from "@/components/ui/badge";
 
