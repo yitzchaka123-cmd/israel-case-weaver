@@ -319,6 +319,22 @@ export function SettingsPage() {
                 </Select>
               </div>
             </div>
+            <div className="border-t mt-5 pt-5 max-w-xl">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium">Default planning depth</div>
+                  <div className="text-xs text-muted-foreground">How deep the assistant interviews you on new projects. You can change it per-project anytime.</div>
+                </div>
+                <Select value={defaultDepth} onValueChange={(v) => setDefaultDepth(v as "express" | "guided" | "deep")}>
+                  <SelectTrigger className="h-9 text-xs w-[280px] shrink-0"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="express" className="text-xs">⚡ Express — auto-fill &amp; jump to logic flow</SelectItem>
+                    <SelectItem value="guided" className="text-xs">🎯 Guided — a few key questions</SelectItem>
+                    <SelectItem value="deep" className="text-xs">🔬 Deep Dive — full interview, every detail</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </Section>
         );
       case "visible-models":
