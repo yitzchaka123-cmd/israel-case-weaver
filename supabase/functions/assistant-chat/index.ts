@@ -1096,6 +1096,21 @@ async function executeTool(
       let approvalCleared = false;
       let logicWiped = false;
       if (markApproved) {
+        // Refuse to stamp approval against an empty logic board — there's
+        // literally nothing to approve. The assistant must generate the flow
+        // first, then re-issue mark_approved on a non-empty board.
+        const { count: existingLogicNodes } = await supa
+          .from("canvas_nodes")
+          .select("id", { count: "exact", head: true })
+          .eq("project_id", projectId)
+          .eq("board", "logic");
+        if ((existingLogicNodes ?? 0) === 0) {
+          return {
+            ok: false,
+            message:
+              "Cannot approve: the Logic Flow board is empty. Call generate_logic_flow first to draw the flow, wait for it to settle, then re-issue set_solution_summary with mark_approved=true.",
+          };
+        }
         patch.logic_approved_at = new Date().toISOString();
         // Re-approval moves the user back into the production phase.
         patch.phase = "production";
