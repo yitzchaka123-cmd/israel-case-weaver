@@ -45,8 +45,23 @@ export function PhaseStatusBar({
   targetDocCount: number | null;
   onJump: (tab: string) => void;
 }) {
-  const current = normalizePhase(phase);
-  const currentIdx = PHASES.findIndex((p) => p.key === current);
+  // Pull the two derivable signals (summary text + logic approval timestamp)
+  // so Summary and Logic Flow can advance independently of the server-side
+  // `phase` column, which can lag behind reality.
+  const { data: projectMeta } = useQuery({
+    queryKey: ["phase-bar-project-meta", projectId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("projects")
+        .select("solution_summary, logic_approved_at")
+        .eq("id", projectId)
+        .single();
+      if (error) throw error;
+      return data as { solution_summary: string | null; logic_approved_at: string | null };
+    },
+  });
+  const summaryDone = !!projectMeta?.solution_summary?.trim();
+  const logicApproved = !!projectMeta?.logic_approved_at;
 
   // Lightweight counts for tooltips. Reuses the realtime invalidation already
   // wired in ProjectWorkspace via the same query keys.
@@ -69,16 +84,32 @@ export function PhaseStatusBar({
       };
     },
   });
+  const logicNodeCount = counts?.nodes ?? 0;
+
+  // Derive an effective progression that reflects the actual data, not just
+  // the server-side `phase` column. Summary advances as soon as it's saved;
+  // Logic Flow advances as soon as it's approved.
+  const serverIdx = PHASES.findIndex((p) => p.key === normalizePhase(phase));
+  const summaryIdx = PHASES.findIndex((p) => p.key === "summary");
+  const logicIdx = PHASES.findIndex((p) => p.key === "logic");
+  const documentsIdx = PHASES.findIndex((p) => p.key === "documents");
+  let derivedIdx = serverIdx;
+  if (summaryDone && derivedIdx < logicIdx) derivedIdx = logicIdx;
+  if (logicApproved && derivedIdx < documentsIdx) derivedIdx = documentsIdx;
+  const currentIdx = Math.max(serverIdx, derivedIdx);
 
   const tooltipFor = (key: string): string => {
-    if (!counts) return PHASES.find((p) => p.key === key)?.label ?? key;
     switch (key) {
       case "setup": return "Setup · case identity & brief";
-      case "summary": return "Summary · solution locked in";
-      case "structure": return `Structure · ${counts.nodes} canvas nodes`;
-      case "documents": return `Documents · ${counts.documents}${targetDocCount ? ` / ${targetDocCount}` : ""}`;
-      case "envelopes": return `Envelopes · ${counts.envelopes}`;
-      case "hints": return `Hints · ${counts.hints}`;
+      case "summary":
+        return summaryDone ? "Summary · saved" : "Summary · not yet saved";
+      case "logic":
+        if (logicApproved) return `Logic Flow · approved (${logicNodeCount} nodes)`;
+        if (logicNodeCount > 0) return `Logic Flow · ${logicNodeCount} nodes, awaiting approval`;
+        return "Logic Flow · not yet generated";
+      case "documents": return `Documents · ${counts?.documents ?? 0}${targetDocCount ? ` / ${targetDocCount}` : ""}`;
+      case "envelopes": return `Envelopes · ${counts?.envelopes ?? 0}`;
+      case "hints": return `Hints · ${counts?.hints ?? 0}`;
       case "packaging": return "Packaging · physical production notes";
       case "done": return "Done · case shipped";
       default: return key;
