@@ -283,15 +283,35 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
               ))}
             </div>
           </div>
-          <PromptPanel
+          <ImagePromptAssistant
             projectId={projectId}
             surface="cover"
             category="cover"
-            initialPrompt={project?.cover_prompt ?? undefined}
-            onGenerate={handleGenerateCover}
-            generating={generatingCover}
-            mode="inline"
+            targetId={projectId}
+            hint={[project?.title && `Title: ${project.title}`, project?.subtitle && `Subtitle: ${project.subtitle}`, project?.mystery_type && `Mystery type: ${project.mystery_type}`, project?.setting && `Setting: ${project.setting}`].filter(Boolean).join(". ")}
+            prompt={coverPromptDraft}
+            onChange={persistCoverPrompt}
           />
+          <Button onClick={() => handleGenerateCover(coverPromptDraft)} disabled={generatingCover || !coverPromptDraft.trim()} className="w-full gap-2">
+            {generatingCover ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+            Generate {coverOutputType === "both" ? "both" : coverOutputType}
+          </Button>
+          <ImageHistoryStrip
+            items={coverHistory ?? []}
+            currentUrl={project?.cover_image_url ?? null}
+            onRestore={restoreCoverFromHistory}
+            title="Cover history"
+          />
+          {(project?.cover_image_url || project?.uploaded_cover_url) && (
+            <FinalAssetPicker
+              value={project?.cover_active_version ?? "generated"}
+              onChange={setCoverActiveVersion}
+              generatedUrl={project?.cover_image_url ?? null}
+              uploadedUrl={project?.uploaded_cover_url ?? null}
+              generatedLabel="Generated cover"
+              uploadedLabel="Uploaded cover"
+            />
+          )}
         </div>
       </div>
 
