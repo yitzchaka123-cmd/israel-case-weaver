@@ -219,6 +219,134 @@ function deterministicLogicLayout(nodes: ArrangeNode[], edges: ArrangeEdge[]): R
   return positions;
 }
 
+// Variant 1: vertical lanes (rotate 90°). Each role gets a column;
+// topological depth pushes nodes downward.
+function logicLayoutColumns(nodes: ArrangeNode[], edges: ArrangeEdge[]): Record<string, Pos> {
+  const positions: Record<string, Pos> = {};
+  const depths = longestPathColumns(nodes, edges);
+  const byLane = new Map<number, ArrangeNode[]>();
+  for (const n of nodes) {
+    const lane = laneIndexFor(n.node_type);
+    if (!byLane.has(lane)) byLane.set(lane, []);
+    byLane.get(lane)!.push(n);
+  }
+  for (let lane = 0; lane < LOGIC_LANES.length + 1; lane++) {
+    const arr = byLane.get(lane) ?? [];
+    if (arr.length === 0) continue;
+    arr.sort((a, b) => (depths.get(a.id) ?? 0) - (depths.get(b.id) ?? 0));
+    const used = new Set<number>();
+    const x = ORIGIN_X + lane * STEP_X;
+    for (const n of arr) {
+      let r = depths.get(n.id) ?? 0;
+      while (used.has(r)) r++;
+      used.add(r);
+      positions[n.id] = { x, y: ORIGIN_Y + r * STEP_Y };
+    }
+  }
+  resolveOverlaps(positions);
+  return positions;
+}
+
+// Variant 2: grouped by suspect. Each suspect (or "unassigned") owns a
+// horizontal band; within the band we render the same lane structure.
+function logicLayoutBySuspect(nodes: ArrangeNode[], edges: ArrangeEdge[]): Record<string, Pos> {
+  const positions: Record<string, Pos> = {};
+  const dataOf = (n: ArrangeNode) =>
+    (n.data ?? {}) as { suspectId?: string; suspectName?: string; suspectIds?: string[] };
+  // Build suspect key per node
+  const keyOf = (n: ArrangeNode): string => {
+    const d = dataOf(n);
+    if (n.node_type === "suspect") return n.id; // suspect anchors its own band
+    const k = d.suspectId || (Array.isArray(d.suspectIds) && d.suspectIds[0]) || d.suspectName;
+    return k ?? "__unassigned__";
+  };
+  // Suspect nodes establish band order
+  const suspectNodes = nodes.filter((n) => n.node_type === "suspect");
+  const bandOrder: string[] = [];
+  const seen = new Set<string>();
+  for (const s of suspectNodes) {
+    bandOrder.push(s.id);
+    seen.add(s.id);
+  }
+  for (const n of nodes) {
+    const k = keyOf(n);
+    if (!seen.has(k)) {
+      bandOrder.push(k);
+      seen.add(k);
+    }
+  }
+  const depths = longestPathColumns(nodes, edges);
+  // Sub-lane within each band: roles other than suspect
+  const SUB_LANES = ["clue", "document", "envelope", "deduction", "red_herring", "solution"];
+  const subLaneIdx = (t: string) => {
+    const i = SUB_LANES.indexOf(t);
+    return i < 0 ? SUB_LANES.length : i;
+  };
+  const BAND_HEIGHT = (SUB_LANES.length + 1) * STEP_Y;
+  bandOrder.forEach((bandKey, bandIdx) => {
+    const bandY0 = ORIGIN_Y + bandIdx * BAND_HEIGHT;
+    const bandNodes = nodes.filter((n) => keyOf(n) === bandKey);
+    // Suspect head sits at top-left of the band
+    const head = bandNodes.find((n) => n.node_type === "suspect");
+    if (head) positions[head.id] = { x: ORIGIN_X, y: bandY0 };
+    // Other nodes by sub-lane row, depth column
+    const others = bandNodes.filter((n) => n.node_type !== "suspect");
+    const used = new Map<number, Set<number>>(); // row → cols used
+    for (const n of others) {
+      const row = subLaneIdx(n.node_type) + 1; // +1 leaves row 0 for suspect
+      let col = (depths.get(n.id) ?? 0) + 1; // +1 leaves col 0 for suspect anchor
+      if (!used.has(row)) used.set(row, new Set());
+      const u = used.get(row)!;
+      while (u.has(col)) col++;
+      u.add(col);
+      positions[n.id] = { x: ORIGIN_X + col * STEP_X, y: bandY0 + row * STEP_Y };
+    }
+  });
+  // Anything missed
+  let trailRow = bandOrder.length * (SUB_LANES.length + 1);
+  for (const n of nodes) {
+    if (!positions[n.id]) {
+      positions[n.id] = { x: ORIGIN_X, y: ORIGIN_Y + trailRow * STEP_Y };
+      trailRow++;
+    }
+  }
+  resolveOverlaps(positions);
+  return positions;
+}
+
+// Variant 3: depth-first chain packing. Walk each root-to-leaf chain into
+// its own row, packing chains tightly so related deductions read along a line.
+function logicLayoutChains(nodes: ArrangeNode[], edges: ArrangeEdge[]): Record<string, Pos> {
+  const positions: Record<string, Pos> = {};
+  const { out, inc } = buildAdjacency(edges);
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
+  const visited = new Set<string>();
+  // Roots: no incoming edges. Sort by lane so suspects come first.
+  const roots = nodes
+    .filter((n) => (inc.get(n.id) ?? []).length === 0)
+    .sort((a, b) => laneIndexFor(a.node_type) - laneIndexFor(b.node_type));
+  let row = 0;
+  const placeChain = (startId: string) => {
+    const stack: { id: string; depth: number }[] = [{ id: startId, depth: 0 }];
+    let chainPlaced = false;
+    while (stack.length) {
+      const { id, depth } = stack.pop()!;
+      if (visited.has(id) || !nodeById.has(id)) continue;
+      visited.add(id);
+      positions[id] = { x: ORIGIN_X + depth * STEP_X, y: ORIGIN_Y + row * STEP_Y };
+      chainPlaced = true;
+      const children = (out.get(id) ?? []).slice().reverse();
+      for (const c of children) stack.push({ id: c, depth: depth + 1 });
+    }
+    if (chainPlaced) row++;
+  };
+  for (const r of roots) placeChain(r.id);
+  // Disconnected nodes (cycles or isolated)
+  for (const n of nodes) if (!visited.has(n.id)) placeChain(n.id);
+  resolveOverlaps(positions);
+  return positions;
+}
+
 // ─── FINAL board: 3-band role-aware layout ───────────────────────────────────
 
 // Band A (logic chain) on the left, Band B (documents) middle, Band C
