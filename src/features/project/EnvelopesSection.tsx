@@ -375,47 +375,24 @@ function EnvelopeCard({
       toast.error("Add design instructions first (or click ✨ Draft prompt)");
       return;
     }
-    setGeneratingImage(true);
+    if (!env?.id) {
+      toast.error("Save the envelope first");
+      return;
+    }
+    const modelOverride = getStoredImageModel("envelope", "chatgpt-image");
+    const quality = getStoredImageQuality("envelope", "medium");
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const modelOverride = getStoredImageModel("envelope", "chatgpt-image");
-      const quality = getStoredImageQuality("envelope", "medium");
-      const resp = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-image`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${
-              session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
-            }`,
-          },
-          body: JSON.stringify({
-            projectId,
-            category: "envelope",
-            envelopeId: env?.id,
-            envelopeNumber: slot.n,
-            prompt,
-            title: `Envelope #${slot.n} — ${slot.label}`,
-            modelOverride,
-            quality,
-          }),
-        },
-      );
-      const json = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        toast.error(json.error ?? "Image generation failed");
-        return;
-      }
-      // generate-image stores the URL into envelopes.cover_image_url server-side
-      // when category=envelope; we still bump status locally so the UI reflects review.
-      await onUpdate({
-        status: "review",
-        ...(json.url ? { cover_image_url: json.url as string } : {}),
+      await coverJob.start({
+        prompt,
+        modelOverride,
+        quality,
+        aspect: "portrait",
+        category: "envelope",
+        title: `Envelope #${slot.n} — ${slot.label}`,
       });
-      toast.success("Envelope mock-up generated");
-    } finally {
-      setGeneratingImage(false);
+      toast.message("Generating in the background — you can close the tab.");
+    } catch {
+      // start() already showed an error toast
     }
   };
 
