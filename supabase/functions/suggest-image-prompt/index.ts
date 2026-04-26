@@ -128,6 +128,22 @@ Deno.serve(async (req) => {
         : ((project.ai_provider_planning as string) || "lovable");
     const model = PLANNING_MODEL[projectKey] ?? PLANNING_MODEL.lovable;
 
+    // Shared project context block — used by both the structured-doc mode and
+    // the legacy single-prompt path below.
+    const ctx = [
+      project.title && `Title: ${project.title}`,
+      project.subtitle && `Subtitle: ${project.subtitle}`,
+      project.genre && `Genre: ${project.genre}`,
+      project.mystery_type && `Mystery type: ${project.mystery_type}`,
+      project.setting && `Setting: ${project.setting}`,
+      project.year && `Year: ${project.year}`,
+      project.player_role && `Player role: ${project.player_role}`,
+      project.case_goal && `Case goal: ${project.case_goal}`,
+      project.selling_point && `Selling point: ${project.selling_point}`,
+      project.image_prompt_instructions && `Project image style notes: ${project.image_prompt_instructions}`,
+      suspects?.length && `Key characters: ${suspects.map((s) => `${s.name}${s.role_in_case ? ` (${s.role_in_case})` : ""}`).join("; ")}`,
+    ].filter(Boolean).join("\n");
+
     // ─────────────────────────────────────────────────────────────────────
     // STRUCTURED-DOC MODE — Documents + Envelopes only.
     // Returns { design_instructions, content } in one shot. Used by the new
