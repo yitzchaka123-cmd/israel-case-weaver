@@ -582,6 +582,9 @@ export function ProjectOverview({ project }: { project: any }) {
                     <Upload className="h-8 w-8 opacity-30" />
                   </div>
                 )}
+                {coverJob.isPending && (
+                  <GenerationTimer elapsedSec={coverJob.state.elapsedSec} label="Generating cover" />
+                )}
               </button>
             );
           })()}
