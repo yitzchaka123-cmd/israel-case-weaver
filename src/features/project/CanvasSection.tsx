@@ -591,6 +591,15 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
           </DropdownMenuContent>
         </DropdownMenu>
 
+        {board === "logic" && isLiveBuilding && (
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary/10 px-2.5 py-1 text-xs text-primary animate-pulse"
+            title="The AI is streaming new nodes and edges onto this board right now"
+          >
+            <Loader2 className="h-3 w-3 animate-spin" />
+            Drawing live…
+          </span>
+        )}
         {board === "logic" && (
           <>
             <Select
