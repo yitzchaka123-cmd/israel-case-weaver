@@ -142,7 +142,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     queryFn: async () => {
       const { data, error } = await supabase
         .from("projects")
-        .select("ai_provider_planning, ai_provider_images, image_prompt_instructions, video_prompt_instructions, planning_depth")
+        .select("ai_provider_planning, ai_provider_images, image_prompt_instructions, video_prompt_instructions, planning_depth, logic_approved_at, solution_summary")
         .eq("id", projectId)
         .single();
       if (error) throw error;
@@ -152,9 +152,35 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
         image_prompt_instructions: string | null;
         video_prompt_instructions: string | null;
         planning_depth: string | null;
+        logic_approved_at: string | null;
+        solution_summary: string | null;
       };
     },
   });
+
+  const [approvingLogic, setApprovingLogic] = useState(false);
+  const approveLogicFromAssistant = async () => {
+    if (!project?.solution_summary?.trim()) {
+      toast.error("Add a solution summary first (Canvas → Logic Flow)");
+      return;
+    }
+    setApprovingLogic(true);
+    try {
+      const { error } = await supabase
+        .from("projects")
+        .update({ logic_approved_at: new Date().toISOString(), phase: "production" })
+        .eq("id", projectId);
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      toast.success("Logic approved — you can now generate documents");
+      qc.invalidateQueries({ queryKey: ["project-ai", projectId] });
+      qc.invalidateQueries({ queryKey: ["project", projectId] });
+    } finally {
+      setApprovingLogic(false);
+    }
+  };
 
   const planningModel = project?.ai_provider_planning ?? "openai-5.2";
   const imageModel = project?.ai_provider_images ?? "nano-banana-2";
