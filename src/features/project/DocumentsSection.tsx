@@ -216,12 +216,17 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
         </div>
       )}
 
-      <DocDialog key={sel?.id} doc={sel} onClose={() => { setSelected(null); refetch(); }} />
+      <DocDialog
+        key={sel?.id}
+        doc={sel}
+        gameLanguage={project?.game_language ?? "Hebrew"}
+        onClose={() => { setSelected(null); refetch(); }}
+      />
     </div>
   );
 }
 
-function DocDialog({ doc, onClose }: { doc: Doc | null; onClose: () => void }) {
+function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLanguage: string; onClose: () => void }) {
   const [draft, setDraft] = useState<Doc | null>(doc);
   const [genText, setGenText] = useState(false);
   const [genImage, setGenImage] = useState(false);
