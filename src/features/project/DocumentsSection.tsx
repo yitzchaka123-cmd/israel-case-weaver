@@ -186,12 +186,11 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
   const [genText, setGenText] = useState(false);
   const [genImage, setGenImage] = useState(false);
   const [genDocument, setGenDocument] = useState(false);
-  
-  const [imageQuality, setImageQuality] = useState<"low" | "medium" | "high">("medium");
-  const [documentFormat, setDocumentFormat] = useState<"pdf" | "docx" | "pptx" | "xlsx">("pdf");
+  const [fileGeneration, setFileGeneration] = useState<"pdf" | "image" | "both">("image");
   const [selectedImageModel, setSelectedImageModel] = useState<string>(
     () => getStoredImageModel("document", "chatgpt-image"),
   );
+  const [imagePreviewOpen, setImagePreviewOpen] = useState(false);
   const saveTimer = useRef<number | undefined>(undefined);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -281,8 +280,8 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
           documentId: doc.id,
           mode,
           imageModelOverride: mode === "image" ? getStoredImageModel("document", "chatgpt-image") : undefined,
-          quality: mode === "image" ? imageQuality : undefined,
-          documentFormat: mode === "document" ? documentFormat : undefined,
+          quality: mode === "image" ? getStoredImageQuality("document", "medium") : undefined,
+          documentFormat: mode === "document" ? "pdf" : undefined,
         }),
       });
 
@@ -309,7 +308,7 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
         setDraft((d) => d ? { ...d, generated_asset_url: payload.url!, active_version: "generated", status: "review" } : d);
       }
       if (mode === "document" && payload.documentUrl) {
-        setDraft((d) => d ? { ...d, generated_document_url: payload.documentUrl!, document_format: documentFormat, status: "review" } : d);
+        setDraft((d) => d ? { ...d, generated_document_url: payload.documentUrl!, document_format: "pdf", status: "review" } : d);
       }
       toast.success(mode === "text" ? "Hebrew content generated" : mode === "image" ? "Document image generated" : "Document file generated");
     } catch (e) {
@@ -320,13 +319,13 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
     }
   };
 
-  const generateOutputType = async (type: "image" | "document" | "both") => {
-    if (type === "both") {
+  const generateSelectedFile = async () => {
+    if (fileGeneration === "both") {
       await generate("document");
       await generate("image");
       return;
     }
-    await generate(type);
+    await generate(fileGeneration === "pdf" ? "document" : "image");
   };
 
   const copyFilePrompt = async () => {
