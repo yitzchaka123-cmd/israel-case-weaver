@@ -948,15 +948,13 @@ function ThinkingDisclosure({
                 </div>
               )}
               {round.segments.map((seg, j) => (
-                <div
-                  key={j}
-                  className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-foreground/75"
-                >
-                  <span className={`mr-1.5 rounded px-1 py-0.5 text-[9px] font-semibold uppercase ${seg.type === "summary" ? "bg-accent/20 text-accent" : "bg-primary/15 text-primary"}`}>
-                    {seg.type}
-                  </span>
-                  {seg.text}
-                </div>
+                <LiveReasoningSegment
+                  key={`${round.round}-${j}`}
+                  segId={`${round.round}-${j}`}
+                  type={seg.type}
+                  text={seg.text}
+                  live={live}
+                />
               ))}
             </div>
           ))}
