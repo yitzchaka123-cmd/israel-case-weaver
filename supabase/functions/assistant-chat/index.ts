@@ -291,16 +291,11 @@ Image prompt style: ${truncate(project.image_prompt_instructions, 120)}
 Video prompt style: ${truncate(project.video_prompt_instructions, 120)}
 Hint settings: ${(() => { const v = project.hint_settings as Record<string, unknown> | null; if (!v || typeof v !== "object") return "—"; const keys = Object.keys(v); return keys.length === 0 ? "(empty)" : `(${keys.length} keys: ${truncate(keys.join(", "), 80)})`; })()}
 Envelope settings: ${(() => { const v = project.envelope_settings as Record<string, unknown> | null; if (!v || typeof v !== "object") return "—"; const keys = Object.keys(v); return keys.length === 0 ? "(empty)" : `(${keys.length} keys: ${truncate(keys.join(", "), 80)})`; })()}
-Existing suspects (${suspectCount}):
-${suspectsList}
-Existing documents (${docCount}):
-${documentsList}
-Existing envelopes (${rosters.envelopes.length}):
-${envelopesList}
-Existing hints (${rosters.hints.length}):
-${hintsList}
-Existing canvas nodes (${rosters.canvas_nodes.length}):
-${nodesList}
+${suspectCount > 0 ? `Existing suspects (${suspectCount}):\n${suspectsList}` : ""}
+${docCount > 0 ? `Existing documents (${docCount}):\n${documentsList}` : ""}
+${rosters.envelopes.length > 0 ? `Existing envelopes (${rosters.envelopes.length}):\n${envelopesList}` : ""}
+${rosters.hints.length > 0 ? `Existing hints (${rosters.hints.length}):\n${hintsList}` : ""}
+${rosters.canvas_nodes.length > 0 ? `Existing canvas nodes (${rosters.canvas_nodes.length}):\n${nodesList}` : ""}
 Logic flow approved: ${project.logic_approved_at ? "YES (" + project.logic_approved_at + ")" : "NO — must be approved on the Canvas before generating documents"}
 Final Flow mapped: ${rosters.canvas_nodes.some((n) => n.board === "final" && n.node_type === "document") ? `YES (${rosters.canvas_nodes.filter((n) => n.board === "final").length} final-board nodes)` : "NO — ask to create the Final Flow before final documents"}
 Solution summary set: ${project.solution_summary ? "YES" : "NO"}
