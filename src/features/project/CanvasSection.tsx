@@ -620,15 +620,39 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
             </Select>
             {project?.solution_summary ? (
               <>
-                <button
-                  type="button"
-                  onClick={() => setSummaryOpen(true)}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-success/40 bg-success/10 px-2 py-1 text-xs text-foreground hover:bg-success/15 transition-colors"
-                  title="Click to view the approved summary"
-                >
-                  <span className="h-1.5 w-1.5 rounded-full bg-success" />
-                  Using approved summary
-                </button>
+                {(() => {
+                  // The "Using approved summary" badge must reflect REALITY:
+                  // green only when (a) a summary is saved, (b) the logic flow
+                  // has been approved against it, AND (c) logic nodes exist.
+                  // Otherwise show an amber chip so the user knows the on-screen
+                  // board no longer matches the saved summary.
+                  const hasLogicNodes = nodes.length > 0;
+                  const trulyAligned = !!project?.logic_approved_at && hasLogicNodes;
+                  if (trulyAligned) {
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => setSummaryOpen(true)}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-success/40 bg-success/10 px-2 py-1 text-xs text-foreground hover:bg-success/15 transition-colors"
+                        title="The current Logic Flow was generated and approved against this saved summary."
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                        Using approved summary
+                      </button>
+                    );
+                  }
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => setSummaryOpen(true)}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-2 py-1 text-xs text-foreground hover:bg-warning/15 transition-colors"
+                      title="The summary was changed (or the logic flow has not been (re)approved against this version). Rebuild from the saved solution summary to align."
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full bg-warning" />
+                      {hasLogicNodes ? "Logic flow is stale — rebuild from summary" : "Summary saved — generate logic flow"}
+                    </button>
+                  );
+                })()}
                 <Button
                   variant="outline"
                   className="gap-2 h-9"
