@@ -727,9 +727,18 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Always start from the deterministic layout — fast and predictable.
+    // Pick a smart-layout variant. Each "Smart arrange" press from the client
+    // increments variantIndex so users cycle through different sensible layouts.
+    const variants = board === "final" ? FINAL_VARIANTS : LOGIC_VARIANTS;
+    const idx = ((Number(variantIndex) || 0) % variants.length + variants.length) % variants.length;
+    const chosenVariant =
+      (typeof variantName === "string" && variants.includes(variantName as never))
+        ? (variantName as LogicVariant | FinalVariant)
+        : variants[idx];
     let positions: Record<string, Pos> =
-      board === "final" ? deterministicFinalLayout(nodes, edges) : deterministicLogicLayout(nodes, edges);
+      board === "final"
+        ? pickFinalLayout(chosenVariant as FinalVariant, nodes, edges)
+        : pickLogicLayout(chosenVariant as LogicVariant, nodes, edges);
     let source: "deterministic" | "ai-refine" | "ai-refine-fallback" = "deterministic";
     let aiNotes: string | undefined;
     let effectiveModel: string | undefined;
