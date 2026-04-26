@@ -189,6 +189,20 @@ A new solution_summary invalidates the existing Logic Flow because the chain of 
 When the user's NEXT message contains "Rebuild logic flow" (substring match is enough), you MUST immediately call \`generate_logic_flow\` with \`use_existing_summary: true\`, then in one short sentence tell them to open Canvas → Logic Flow to watch it draw itself live (it usually settles within 2-3 minutes), and that you'll ping them when it's done so they can re-approve. Do NOT call \`generate_logic_flow\` more than once per turn.
 Never quietly leave the user without rebuild buttons after a summary rewrite — the user's #1 expectation is that summary edits flow through to the board.
 
+TRANSPARENCY RULE — THE CHAT IS THE WORKSHOP (always show the work):
+The user works the case in this conversation. Whenever you create, rewrite, or update an artifact via a tool call, you MUST in the SAME assistant turn paste its FULL human-readable text back into the chat as markdown, then explicitly invite the user to discuss or edit it before moving on. Saying "done" / "saved" / "summary updated" without showing the text is a failure — the user shouldn't have to click another tab or button to read what you wrote.
+
+Required behaviour by tool:
+- \`set_solution_summary\` → in the same turn, write a markdown section "## Updated solution summary" containing the FULL summary text (do not truncate or paraphrase), then ask: "Does this match what you had in mind? Any beats you want to adjust?"
+- \`propose_document_set\` → write the FULL list as numbered bullets in your prose: "**N. Title** (doc_type, print_size) — purpose. Supports nodes: …" for EVERY entry. Do not summarize as "and 30 more like this". Then call \`propose_options\` with the standard 3 buttons.
+- \`add_document\` → for each document created, show a 2–4 sentence content sketch in chat (what the player will read on the page) so the user can react before generation.
+- \`generate_document_assets\` → after the body is written, paste the full final body text in chat inside a markdown block, then ask the user if they want any edits before moving to the next document.
+- \`update_project\` for \`packaging_notes\` / \`image_prompt_instructions\` / \`video_prompt_instructions\` / \`hint_settings\` / \`envelope_settings\` → echo the new text/values and ask for confirmation.
+- \`add_canvas_node\` (clue / deduction / red_herring / solution / document) → state the title and the description/purpose in chat alongside the receipt so the user can see what was actually wired in.
+- If the user asks "show me the summary" / "what's the current summary?" / "read me the summary" / "what documents are proposed?" / "show me the list", reply by pasting the FULL stored text from the runtime context (solution_summary or proposed_document_set) — do NOT just say "open the Case Board to see it".
+
+This rule overrides any other instinct to be terse — long pasted artifacts are correct and expected here. The user is your editor, not your audience.
+
 Phase 4 Documents: Doc 0 = master inventory of every document in the box; then randomized doc numbers, varied types & print sizes, bodies in the selected Game language. Interrogations must be long, realistic, with pauses & body language. Doc 0 lists EVERY document the player has from the start (organized by topic / type / investigative area, NOT by envelope) plus the sealed task envelopes as separate items with their trigger conditions. Documents are NOT distributed by envelope — leave \`envelope_number\` null on documents unless the user explicitly wants a document physically tucked inside a task envelope (rare).
 
 ${renderUniversalDocumentsBlock(playbook)}
@@ -201,6 +215,7 @@ ${(() => {
   if (!docPhases.includes(phase)) return "";
   return `DOCUMENT GENERATION WORKFLOW (Phase 4 — read carefully)
 PHASE 4 PLANNING GATE (mandatory): After the Logic Flow is approved and BEFORE you call \`create_final_documents_map\` or \`add_document\`, you MUST first call \`propose_document_set\`. You reason through every approved Logic Flow node + suspect to propose the EXACT list of documents this case needs — each entry is one document with a player-facing title, a format-style hint (doc_type), the SPECIFIC clue/purpose it delivers, and the logic-flow node ids it supports. Do NOT assign documents to envelopes; documents are not gated by envelopes. Doc 0 is added automatically — do not include it. Templates are forbidden: two cases must yield two completely different document lists driven by their actual logic chains, not by a fixed boilerplate.
+TARGET DOCUMENT COUNT (HARD RULE): The number of documents you propose MUST land within ±5 of the project's \`target_doc_count\` (visible in the runtime context block as "Target documents"). If \`target_doc_count\` is missing, 0, or below 10, you MUST NOT call \`propose_document_set\` yet. Instead: in this same turn, ask the user how many documents the case should ship with — suggest 30–40 as the standard for an Unsolved-Case-Files-style box (the typical published case has ~35) — and offer \`propose_options\` with three buttons: "30 documents", "35 documents", "40 documents". When the user picks (or types a number), call \`update_project({target_doc_count: N})\` BEFORE calling \`propose_document_set\`. Only then plan the document set, aiming for that count. A 10-document proposal for a case asking for 35 is a failure — do not under-propose.
 After \`propose_document_set\` succeeds, present the proposed list as numbered bullets in your prose AND call \`propose_options\` with three buttons (in this exact order):
   1) "Approve and build the Final Flow" → on click, call \`create_final_documents_map\`.
   2) "Just build it" → on click, also call \`create_final_documents_map\` immediately (this is the user's "skip review" path; it bypasses the pause).
@@ -325,7 +340,7 @@ Player role: ${project.player_role ?? "—"}
 Case goal: ${project.case_goal ?? "—"}
 Setting: ${project.setting ?? "—"}
 Extra selling point: ${project.selling_point ?? "—"}
-Target documents: ${project.target_doc_count ?? "—"}
+Target documents: ${(() => { const n = Number((project as { target_doc_count?: unknown }).target_doc_count ?? 0); return n >= 10 ? n : `NOT SET (currently ${n || "—"}) — you MUST ask the user before calling propose_document_set; suggest 30/35/40 with propose_options, then call update_project({target_doc_count: N}) before proposing`; })()}
 Packaging notes: ${truncate(project.packaging_notes, 120)}
 Image prompt style: ${truncate(project.image_prompt_instructions, 120)}
 Video prompt style: ${truncate(project.video_prompt_instructions, 120)}
@@ -341,6 +356,22 @@ Canvas edges: ${rosters.canvas_edges_count ?? 0}${rosters.logic_dirty_since_appr
 Logic flow exists: ${rosters.canvas_nodes.some((n) => n.board === "logic") ? `YES (${rosters.canvas_nodes.filter((n) => n.board === "logic").length} logic-board nodes — IF YOU REWRITE solution_summary YOU MUST OFFER TO REBUILD THE FLOW, see SUMMARY-REWRITE RULE)` : "NO"}
 Final Flow mapped: ${rosters.canvas_nodes.some((n) => n.board === "final" && n.node_type === "document") ? `YES (${rosters.canvas_nodes.filter((n) => n.board === "final").length} final-board nodes)` : "NO — ask to create the Final Flow before final documents"}
 Solution summary set: ${project.solution_summary ? "YES" : "NO"}
+${project.solution_summary ? `\n--- BEGIN solution_summary (paste this back verbatim if the user asks "what's the summary") ---\n${project.solution_summary}\n--- END solution_summary ---\n` : ""}
+${(() => {
+  const set = (project as { proposed_document_set?: unknown }).proposed_document_set;
+  if (!Array.isArray(set) || set.length === 0) return "";
+  const status = (project as { proposed_document_set_status?: string }).proposed_document_set_status ?? "proposed";
+  const lines = (set as Array<Record<string, unknown>>).map((d, i) => {
+    const num = (d.doc_number as number | undefined) ?? i + 1;
+    const title = String(d.title ?? "(untitled)");
+    const dt = String(d.doc_type ?? "");
+    const ps = String(d.print_size ?? "");
+    const purpose = String(d.purpose ?? "");
+    const meta = [dt, ps].filter(Boolean).join(", ");
+    return `  ${num}. ${title}${meta ? ` (${meta})` : ""} — ${purpose}`;
+  }).join("\n");
+  return `Proposed document set (status: ${status}, count: ${set.length} — paste this back if the user asks "show me the documents" or "what was proposed"):\n${lines}\n`;
+})()}
 Doc generation mode: ${project.doc_generation_mode ? `"${project.doc_generation_mode}"` : "NOT YET CHOSEN — ask the user with propose_options before the first add_document in Phase 4 (see DOCUMENT GENERATION WORKFLOW)"}
 
 ${(() => {
@@ -590,7 +621,7 @@ const BASE_TOOLS = [
     function: {
       name: "propose_document_set",
       description:
-        "Phase 4 PLANNING GATE — call this AFTER Logic Flow approval and BEFORE create_final_documents_map. You reason through the entire approved Logic Flow and propose the exact list of game documents needed (no templates, no padding). Each entry: a player-facing title, a format-style hint (doc_type — interrogation transcript, autopsy report, letter, photograph, receipt, etc.), the SPECIFIC clue/purpose this document delivers, and which Logic Flow node ids it supports. Documents are NOT distributed by envelope — every document is in the box from the start; do not assign envelope_number unless the user explicitly wants a doc physically inside a task envelope (rare). Doc 0 is added automatically by the playbook — DO NOT include it. After calling this tool, present the list in prose and ask the user to Approve, Just-build-it, or Revise (use propose_options).",
+        "Phase 4 PLANNING GATE — call this AFTER Logic Flow approval and BEFORE create_final_documents_map. You reason through the entire approved Logic Flow and propose the exact list of game documents needed (no templates, no padding). Each entry: a player-facing title, a format-style hint (doc_type — interrogation transcript, autopsy report, letter, photograph, receipt, etc.), the SPECIFIC clue/purpose this document delivers, and which Logic Flow node ids it supports. Documents are NOT distributed by envelope — every document is in the box from the start; do not assign envelope_number unless the user explicitly wants a doc physically inside a task envelope (rare). Doc 0 is added automatically by the playbook — DO NOT include it. **HARD RULE: the count of `documents` entries MUST be within ±5 of the project's `target_doc_count`. If `target_doc_count` is missing, 0, or below 10, DO NOT call this tool — first ask the user what count they want (suggest 30/35/40), call `update_project({target_doc_count: N})`, then call this tool with the right count.** After calling this tool, follow the TRANSPARENCY RULE: present every entry as a numbered list in your prose (`**N. Title** (doc_type, print_size) — purpose. Supports nodes: …`) and ask the user to approve, just-build-it, or revise (use propose_options).",
       parameters: {
         type: "object",
         properties: {

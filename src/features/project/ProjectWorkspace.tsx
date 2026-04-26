@@ -70,35 +70,44 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
       if (error) throw error;
       return data;
     },
+    // Defensive: if Realtime ever drops a `projects` UPDATE, the badge / phase
+    // bar must still self-correct. Refetch on focus + on every mount.
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
 
-  // Derive whether the Case Board needs attention. Truthful, data-driven:
-  // - Summary saved but no logic nodes yet → user must (re)generate logic flow.
-  // - Logic nodes exist but approval is missing → awaiting user approval.
-  // No badge before a summary exists, or after logic is approved.
-  const { data: caseBoardAttention } = useQuery({
-    queryKey: ["case-board-attention", projectId],
+  // Lightweight node-count for deriving the case-board attention badge. Keyed
+  // off the same realtime invalidation as the rest of the canvas state. Polls
+  // every 15s while in pre-document phases so a dropped Realtime event can
+  // never leave the badge wrong for more than that.
+  const projectPhase = String((project as { phase?: string } | undefined)?.phase ?? "").toLowerCase();
+  const inPreDocPhase = projectPhase === "" || projectPhase === "setup" || projectPhase === "summary" || projectPhase === "structure" || projectPhase === "logic";
+  const { data: caseBoardNodeCount } = useQuery({
+    queryKey: ["case-board-node-count", projectId],
     queryFn: async () => {
-      const [{ data: proj }, nodes] = await Promise.all([
-        supabase
-          .from("projects")
-          .select("solution_summary, logic_approved_at")
-          .eq("id", projectId)
-          .single(),
-        supabase
-          .from("canvas_nodes")
-          .select("id", { count: "exact", head: true })
-          .eq("project_id", projectId)
-          .in("board", ["logic", "final"]),
-      ]);
-      const summaryDone = !!proj?.solution_summary?.trim();
-      const logicApproved = !!proj?.logic_approved_at;
-      const nodeCount = nodes.count ?? 0;
-      if (!summaryDone || logicApproved) return { needsAttention: false, reason: "" };
-      if (nodeCount === 0) return { needsAttention: true, reason: "Summary saved — generate the logic flow" };
-      return { needsAttention: true, reason: `Logic flow has ${nodeCount} nodes — awaiting your approval` };
+      const { count } = await supabase
+        .from("canvas_nodes")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", projectId)
+        .in("board", ["logic", "final"]);
+      return count ?? 0;
     },
+    refetchInterval: inPreDocPhase ? 15_000 : false,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
+    enabled: !!project,
   });
+
+  // Derive the attention state from already-fetched, always-fresh data — no
+  // separate cache that can drift out of sync with `project.logic_approved_at`.
+  const summaryDone = !!(project as { solution_summary?: string | null } | undefined)?.solution_summary?.trim();
+  const logicApproved = !!(project as { logic_approved_at?: string | null } | undefined)?.logic_approved_at;
+  const nodeCount = caseBoardNodeCount ?? 0;
+  const caseBoardAttention = (() => {
+    if (!summaryDone || logicApproved) return { needsAttention: false, reason: "" };
+    if (nodeCount === 0) return { needsAttention: true, reason: "Summary saved — generate the logic flow" };
+    return { needsAttention: true, reason: `Logic flow has ${nodeCount} nodes — awaiting your approval` };
+  })();
 
   // Realtime subscription keeps project state in sync across users/tabs
   useEffect(() => {
@@ -107,7 +116,6 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "projects", filter: `id=eq.${projectId}` }, () => {
         qc.invalidateQueries({ queryKey: ["project", projectId] });
         qc.invalidateQueries({ queryKey: ["phase-bar-project-meta", projectId] });
-        qc.invalidateQueries({ queryKey: ["case-board-attention", projectId] });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "suspects", filter: `project_id=eq.${projectId}` }, () => {
         qc.invalidateQueries({ queryKey: ["suspects", projectId] });
@@ -123,7 +131,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
         qc.invalidateQueries({ queryKey: ["nodes", projectId] });
         qc.invalidateQueries({ queryKey: ["production-dashboard", projectId] });
         qc.invalidateQueries({ queryKey: ["phase-bar-counts", projectId] });
-        qc.invalidateQueries({ queryKey: ["case-board-attention", projectId] });
+        qc.invalidateQueries({ queryKey: ["case-board-node-count", projectId] });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "canvas_edges", filter: `project_id=eq.${projectId}` }, () => {
         qc.invalidateQueries({ queryKey: ["edges", projectId] });
