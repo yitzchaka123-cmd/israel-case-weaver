@@ -485,33 +485,58 @@ OUTPUT RULES:
       const contentExcerpt = (doc.hebrew_content ?? "").trim().slice(0, doc0 ? 2400 : 1200);
       const userImageInstructions = (project?.image_prompt_instructions as string ?? "").trim();
 
-      const imgPrompt = [
-        userImageInstructions
-          ? `USER GLOBAL IMAGE INSTRUCTIONS (apply to every image in this project — highest priority):\n${userImageInstructions}\n`
-          : "",
-        doc0
-          ? `Create a single high-resolution, print-ready image of Doc 0: the player-facing contents checklist / case-file inventory for a premium mystery / detective game. This is not evidence; it is the box inventory.`
-          : `Create a single high-resolution, photorealistic, print-ready image of a ${doc.doc_type ?? "document"} for a premium mystery / detective game.`,
-        `Game title: "${project?.title ?? ""}"${project?.subtitle ? ` — ${project.subtitle}` : ""}.`,
-        `Era / setting: ${project?.year ?? "—"}, ${project?.setting ?? "Israeli setting"}.`,
-        `Genre: ${project?.genre ?? "mystery"}. Mystery type: ${project?.mystery_type ?? "—"}.`,
-        `Document title (visible if appropriate): "${doc.title}".`,
-        `Final print size: ${doc.print_size ?? "A4"} — compose to that aspect ratio with safe margins.`,
-        ``,
-        `STRICT DESIGN & GRAPHIC INSTRUCTIONS (FOLLOW EVERY DETAIL — this is the primary brief):`,
-        designNotes ? designNotes : `Authentic, period-correct, high-detail. Treat as a real-world physical prop: realistic paper texture, period-correct typography, believable headers/stamps/signatures.\n\nADDITIONAL REALISM DETAILS — include AT LEAST 20 concrete, period-appropriate details visible on the document. Pick from (and add similar): slight paper yellowing, faint horizontal fold across the center, mild edge wear, punch-hole marks on the left margin, one or two intake/filing stamps with era-correct date format, a typed reference number, a distribution list at the bottom, a small handwritten marginal note in pen or pencil, a signature scribble above a typed name, slightly uneven line spacing, faint photocopy shadowing along one edge, a classification stamp in dark red ink, a smaller box stamp near the lower third, a discreet fictitious seal (never a real emblem), a paperclip or staple shadow, a coffee/ink ring, smudged ribbon impression, carbon-copy bleed-through where applicable, a tape-repaired tear, a tiny fingerprint smudge, perforation marks if it's a tear-off form. Every detail must be concrete and visible — not a vague "looks aged".\n\nIf this document is an unusual / creative prop (map, diagram, hand-drawn note, cipher, blueprint, matchbook, ransom note, photo collage, evidence tag, ship/building map, etc.) instead include 8–15 CREATIVE in-world touches: hand annotations, torn-and-taped corners, smudged compass roses, coded margin doodles, crayon arrows, crossed-out misspellings, hidden symbols, unusual aspect ratios, attached Polaroids, etc. — tactile prop-style authenticity over bureaucratic realism.\n\nNo cartoon style. No watermark text. No copyright marks. No real emblems, real names, or real signatures.`,
-        ``,
-        `CONTENT TO RENDER (${gameLanguage}, ${isRtl ? "RTL" : "LTR"}, grammatically correct, fully legible):`,
-        contentExcerpt ? contentExcerpt : doc0 ? `Create a non-spoiler checklist from this authoritative inventory:\n${inventory?.text ?? ""}` : `Use plausible ${gameLanguage} text appropriate to the document type. All ${gameLanguage} must be perfectly readable and correctly laid out ${isRtl ? "right-to-left" : "left-to-right"}.`,
-        ``,
-        `RULES:`,
-        `- Render as a real-world physical document photographed or scanned, not a UI mockup.`,
-        `- All visible player-facing text must be in ${gameLanguage} unless the document type explicitly calls for another language.`,
-        `- Do NOT include English placeholder text like "Lorem ipsum".`,
-        `- Do NOT add modern watermarks, logos of real companies, or AI-generated artifacts.`,
-        `- High dynamic range, sharp focus on the document, neutral lighting, color-accurate.`,
-        `- Output ONE image only. Fill the frame with the document.`,
-      ].filter(Boolean).join("\n");
+      const imgPrompt = doc0
+        ? [
+            userImageInstructions
+              ? `USER GLOBAL IMAGE INSTRUCTIONS (apply to every image in this project — highest priority):\n${userImageInstructions}\n`
+              : "",
+            `Create a single high-resolution image of Doc 0: a plain white printer-paper inventory sheet for a printable mystery game. Doc 0 is NOT in-world evidence and NOT a styled prop.`,
+            `Game: "${project?.title ?? ""}". Language: ${gameLanguage}, ${isRtl ? "RTL" : "LTR"}.`,
+            `Final print size: ${doc.print_size ?? "A4"} — compose to that aspect ratio with generous safe margins.`,
+            ``,
+            `STYLE — STRICT:`,
+            `- Plain white background. Clean modern sans-serif typography. Crisp digital print look, like a freshly printed page.`,
+            `- ABSOLUTELY NO realism details: no paper aging, no yellowing, no fold lines, no edge wear, no punch holes, no stamps, no signatures, no classification marks, no coffee/ink rings, no smudges, no staples or paperclips, no period typewriter look, no carbon-copy bleed, no tape, no fingerprints, no perforation, no dog-eared corners. None.`,
+            `- No props, no desk surface, no shadows, no photographic framing — render as the page itself, edge to edge, fill the frame.`,
+            ``,
+            `LAYOUT:`,
+            `- One short title line at the top (e.g. the document title).`,
+            `- Below it: a numbered list, one document per line, formatted "<number>. <title>".`,
+            `- One item per line. Generous line spacing. No descriptions, no flavor text, no commentary, no envelope groupings, no spoilers.`,
+            ``,
+            `CONTENT TO RENDER (${gameLanguage}, ${isRtl ? "RTL" : "LTR"}, fully legible):`,
+            contentExcerpt ? contentExcerpt : `Render this inventory as the numbered list:\n${inventory?.text ?? ""}`,
+            ``,
+            `RULES:`,
+            `- All visible text in ${gameLanguage}.`,
+            `- No English placeholder text. No watermarks. No logos. No real emblems.`,
+            `- Output ONE image only.`,
+          ].filter(Boolean).join("\n")
+        : [
+            userImageInstructions
+              ? `USER GLOBAL IMAGE INSTRUCTIONS (apply to every image in this project — highest priority):\n${userImageInstructions}\n`
+              : "",
+            `Create a single high-resolution, photorealistic, print-ready image of a ${doc.doc_type ?? "document"} for a premium mystery / detective game.`,
+            `Game title: "${project?.title ?? ""}"${project?.subtitle ? ` — ${project.subtitle}` : ""}.`,
+            `Era / setting: ${project?.year ?? "—"}, ${project?.setting ?? "Israeli setting"}.`,
+            `Genre: ${project?.genre ?? "mystery"}. Mystery type: ${project?.mystery_type ?? "—"}.`,
+            `Document title (visible if appropriate): "${doc.title}".`,
+            `Final print size: ${doc.print_size ?? "A4"} — compose to that aspect ratio with safe margins.`,
+            ``,
+            `STRICT DESIGN & GRAPHIC INSTRUCTIONS (FOLLOW EVERY DETAIL — this is the primary brief):`,
+            designNotes ? designNotes : `Authentic, period-correct, high-detail. Treat as a real-world physical prop: realistic paper texture, period-correct typography, believable headers/stamps/signatures.\n\nADDITIONAL REALISM DETAILS — include AT LEAST 20 concrete, period-appropriate details visible on the document. Pick from (and add similar): slight paper yellowing, faint horizontal fold across the center, mild edge wear, punch-hole marks on the left margin, one or two intake/filing stamps with era-correct date format, a typed reference number, a distribution list at the bottom, a small handwritten marginal note in pen or pencil, a signature scribble above a typed name, slightly uneven line spacing, faint photocopy shadowing along one edge, a classification stamp in dark red ink, a smaller box stamp near the lower third, a discreet fictitious seal (never a real emblem), a paperclip or staple shadow, a coffee/ink ring, smudged ribbon impression, carbon-copy bleed-through where applicable, a tape-repaired tear, a tiny fingerprint smudge, perforation marks if it's a tear-off form. Every detail must be concrete and visible — not a vague "looks aged".\n\nIf this document is an unusual / creative prop (map, diagram, hand-drawn note, cipher, blueprint, matchbook, ransom note, photo collage, evidence tag, ship/building map, etc.) instead include 8–15 CREATIVE in-world touches: hand annotations, torn-and-taped corners, smudged compass roses, coded margin doodles, crayon arrows, crossed-out misspellings, hidden symbols, unusual aspect ratios, attached Polaroids, etc. — tactile prop-style authenticity over bureaucratic realism.\n\nNo cartoon style. No watermark text. No copyright marks. No real emblems, real names, or real signatures.`,
+            ``,
+            `CONTENT TO RENDER (${gameLanguage}, ${isRtl ? "RTL" : "LTR"}, grammatically correct, fully legible):`,
+            contentExcerpt ? contentExcerpt : `Use plausible ${gameLanguage} text appropriate to the document type. All ${gameLanguage} must be perfectly readable and correctly laid out ${isRtl ? "right-to-left" : "left-to-right"}.`,
+            ``,
+            `RULES:`,
+            `- Render as a real-world physical document photographed or scanned, not a UI mockup.`,
+            `- All visible player-facing text must be in ${gameLanguage} unless the document type explicitly calls for another language.`,
+            `- Do NOT include English placeholder text like "Lorem ipsum".`,
+            `- Do NOT add modern watermarks, logos of real companies, or AI-generated artifacts.`,
+            `- High dynamic range, sharp focus on the document, neutral lighting, color-accurate.`,
+            `- Output ONE image only. Fill the frame with the document.`,
+          ].filter(Boolean).join("\n");
 
       let mime = "image/png";
       let bytes: Uint8Array;
