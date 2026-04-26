@@ -131,7 +131,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
         qc.invalidateQueries({ queryKey: ["nodes", projectId] });
         qc.invalidateQueries({ queryKey: ["production-dashboard", projectId] });
         qc.invalidateQueries({ queryKey: ["phase-bar-counts", projectId] });
-        qc.invalidateQueries({ queryKey: ["case-board-attention", projectId] });
+        qc.invalidateQueries({ queryKey: ["case-board-node-count", projectId] });
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "canvas_edges", filter: `project_id=eq.${projectId}` }, () => {
         qc.invalidateQueries({ queryKey: ["edges", projectId] });
