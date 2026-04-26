@@ -327,14 +327,13 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
 
   const [arranging, setArranging] = useState(false);
 
-  // Smart arrange — AI-driven.
-  // Sends the current nodes + edges (for this board) to the `arrange-canvas`
-  // edge function, which asks the configured Logic-Flow model to lay them out
-  // as a true game-flow story (suspects → clues → envelope spine → documents
-  // → reasoning → solution) with enough whitespace that edge labels stay
-  // readable. The function also persists the new positions, so on success we
-  // just refetch. Re-clickable: each press triggers a fresh AI plan.
-  const arrangeNodes = useCallback(async () => {
+  // Smart arrange.
+  // Default mode is **deterministic** — pure-JS topological/role-aware layout
+  // that runs server-side in <1s with no LLM. The optional `ai-refine` mode
+  // hands the deterministic layout to the configured Logic-Flow model for a
+  // polish pass (groups by suspect, fixes label collisions); slower (~10-30s)
+  // and only worth it for screenshots / final presentation.
+  const arrangeNodes = useCallback(async (mode: "deterministic" | "ai-refine" = "deterministic") => {
     if (arranging) return;
     if (nodes.length === 0) {
       toast.info("No nodes to arrange yet.");
@@ -342,7 +341,8 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
     }
     setArranging(true);
     arrangePressRef.current++;
-    const t = toast.loading(`AI is arranging ${nodes.length} nodes…`);
+    const label = mode === "ai-refine" ? `AI is refining ${nodes.length} nodes…` : `Arranging ${nodes.length} nodes…`;
+    const t = toast.loading(label);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const resp = await fetch(
@@ -356,13 +356,14 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
           body: JSON.stringify({
             projectId,
             board,
+            mode,
             modelOverride: logicModel,
           }),
         },
       );
       const json = await resp.json().catch(() => ({}));
       if (!resp.ok) {
-        toast.error(json.error ?? `AI arrange failed (${resp.status})`, { id: t });
+        toast.error(json.error ?? `Arrange failed (${resp.status})`, { id: t });
         return;
       }
       const positions = (json.positions ?? {}) as Record<string, { x: number; y: number }>;
@@ -375,9 +376,12 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
         }),
       );
       qc.invalidateQueries({ queryKey: ["nodes", projectId, board] });
-      const source = json.source === "ai" ? "AI" : "fallback layout";
+      const sourceLabel =
+        json.source === "ai-refine" ? "AI refined"
+        : json.source === "ai-refine-fallback" ? "AI refine failed — kept smart layout"
+        : "Smart layout";
       toast.success(
-        `Arranged ${json.count ?? nodes.length} nodes (${source}).${json.notes ? ` ${json.notes}` : ""}`,
+        `Arranged ${json.count ?? nodes.length} nodes (${sourceLabel}).${json.notes ? ` ${json.notes}` : ""}`,
         { id: t, duration: 4000 },
       );
     } catch (err) {
@@ -600,21 +604,52 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <Button
-          variant="outline"
-          className="gap-2 h-9"
-          onClick={arrangeNodes}
-          disabled={arranging || nodes.length === 0}
-          title="AI smart arrange: the configured Logic-Flow model studies your nodes & labelled edges and lays them out as a clear game-flow story with room for the lines and labels. Click again to re-arrange."
-        >
-          {arranging ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-          Arrange
-          {nodes.length > 0 && (
-            <span className="ml-0.5 text-[10px] text-muted-foreground font-normal">
-              · AI smart layout
-            </span>
-          )}
-        </Button>
+        <div className="inline-flex">
+          <Button
+            variant="outline"
+            className="gap-2 h-9 rounded-r-none border-r-0"
+            onClick={() => arrangeNodes("deterministic")}
+            disabled={arranging || nodes.length === 0}
+            title="Smart arrange — instant context-aware layout. For the Final Flow it places the logic chain on the left, documents in the middle aligned with the logic node they came from, and envelopes on the right in numerical order."
+          >
+            {arranging ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            Arrange
+            {nodes.length > 0 && (
+              <span className="ml-0.5 text-[10px] text-muted-foreground font-normal">
+                · instant
+              </span>
+            )}
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-9 w-7 rounded-l-none px-0"
+                disabled={arranging || nodes.length === 0}
+                title="More arrange options"
+              >
+                <span className="text-xs">▾</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuItem onClick={() => arrangeNodes("deterministic")} className="gap-2">
+                <Sparkles className="h-4 w-4" />
+                <div className="flex flex-col">
+                  <span className="font-medium">Smart arrange</span>
+                  <span className="text-[11px] text-muted-foreground">Instant · context-aware layout</span>
+                </div>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => arrangeNodes("ai-refine")} className="gap-2">
+                <Wand2 className="h-4 w-4" />
+                <div className="flex flex-col">
+                  <span className="font-medium">Refine with AI</span>
+                  <span className="text-[11px] text-muted-foreground">Slower · uses Logic-Flow model to polish</span>
+                </div>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
 
         <div className="inline-flex rounded-lg border bg-card shadow-soft p-0.5">
           <button
