@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Textarea } from "@/components/ui/textarea";
@@ -232,7 +232,7 @@ function HintSheetBlock({ projectId, stage, sheet }: { projectId: string; stage:
   const [generating, setGenerating] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [draftPrompt, setDraftPrompt] = useState<string>(sheet?.prompt ?? "");
-  const fileInput = useState<HTMLInputElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => { setDraftPrompt(sheet?.prompt ?? ""); }, [sheet?.id, sheet?.prompt]);
 
