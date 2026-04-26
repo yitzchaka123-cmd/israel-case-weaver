@@ -264,7 +264,16 @@ export function ProjectOverview({ project }: { project: any }) {
     toast.success("Upload set as the active cover");
   };
 
-  const [genCover, setGenCover] = useState(false);
+  const coverJob = useBackgroundImageJob({
+    projectId: project.id,
+    target: "project-cover",
+    onDone: (url) => {
+      setDraft((d: typeof draft) => ({ ...d, cover_image_url: url, cover_active_version: "generated" }));
+      refetchCoverHistory();
+      toast.success("Cover ready");
+    },
+    onError: (msg) => toast.error(msg, { duration: 15000 }),
+  });
   const [coverPreviewOpen, setCoverPreviewOpen] = useState(false);
 
   // Per-project cover history (filtered by source_project_cover).
