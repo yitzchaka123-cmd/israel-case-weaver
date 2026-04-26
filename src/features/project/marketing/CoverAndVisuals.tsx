@@ -397,14 +397,11 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
               ))}
             </div>
           </div>
-          <PromptPanel
+          <ExtraPromptBlock
             projectId={projectId}
-            surface="media"
-            category="marketing-extra"
             hint={newHint}
             onGenerate={handleGenerate}
             generating={generating}
-            mode="inline"
           />
           {generating && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
