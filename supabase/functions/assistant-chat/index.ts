@@ -1499,11 +1499,11 @@ async function processConversation(
     { data: nodesRoster },
   ] = await Promise.all([
     supa.from("projects").select("*").eq("id", projectId).single(),
-    supa.from("suspects").select("id, name, role_in_case").eq("project_id", projectId).order("position", { ascending: true }).limit(50),
-    supa.from("documents").select("id, doc_number, title, doc_type, status").eq("project_id", projectId).order("doc_number", { ascending: true, nullsFirst: false }).limit(100),
-    supa.from("envelopes").select("id, number, label").eq("project_id", projectId).order("number", { ascending: true }).limit(50),
-    supa.from("hints").select("id, stage, level").eq("project_id", projectId).order("stage", { ascending: true }).order("level", { ascending: true }).limit(50),
-    supa.from("canvas_nodes").select("id, title, node_type, board").eq("project_id", projectId).order("created_at", { ascending: true }).limit(100),
+    supa.from("suspects").select("id, name, role_in_case").eq("project_id", projectId).order("position", { ascending: true }).limit(25),
+    supa.from("documents").select("id, doc_number, title, doc_type, status").eq("project_id", projectId).order("doc_number", { ascending: true, nullsFirst: false }).limit(25),
+    supa.from("envelopes").select("id, number, label").eq("project_id", projectId).order("number", { ascending: true }).limit(25),
+    supa.from("hints").select("id, stage, level").eq("project_id", projectId).order("stage", { ascending: true }).order("level", { ascending: true }).limit(25),
+    supa.from("canvas_nodes").select("id, title, node_type, board").eq("project_id", projectId).order("created_at", { ascending: true }).limit(25),
   ]);
   if (!project) throw new Error("Project not found");
 
@@ -1551,7 +1551,7 @@ async function processConversation(
     project_id: projectId,
     role: "assistant",
     content: "",
-    metadata: { in_progress: true, model },
+    metadata: { in_progress: true, model, stage: "thinking" },
   });
   if (assistantPlaceholderError) {
     console.error("assistant placeholder insert failed", assistantPlaceholderError);
@@ -1565,9 +1565,11 @@ async function processConversation(
   // the project has ai_reasoning_effort != 'none' AND the model supports it.
   type ReasoningSegment = { type: "thinking" | "summary"; text: string };
   const reasoningRounds: Array<{ round: number; segments: ReasoningSegment[] }> = [];
-  const reasoningEffort = String((project as { ai_reasoning_effort?: string }).ai_reasoning_effort ?? "medium");
+  // Default to "low" — chat is short turn-by-turn and tool calls don't need
+  // heavy reasoning. Users who want deeper thinking can crank ai_reasoning_effort.
+  const baseEffort = String((project as { ai_reasoning_effort?: string }).ai_reasoning_effort ?? "low");
   const TOOLS = buildTools(playbook);
-  const MAX_ROUNDS = 8;
+  const MAX_ROUNDS = 4;
   let lastFb: { effectiveModel: string; fallback: string } = { effectiveModel: model, fallback: "none" };
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const isFinalRound = round === MAX_ROUNDS - 1;
