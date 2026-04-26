@@ -645,7 +645,8 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
               <Button
                 className="gap-2 shadow-pop"
                 onClick={() => {
-                  setSummaryDraft(approvedSummary);
+                  const current = (project?.solution_summary ?? "").trim();
+                  if (!summaryDraft.trim()) setSummaryDraft(current);
                   approveLogic();
                 }}
                 title="Lock the current solution summary as the approved logic and unlock document generation"
