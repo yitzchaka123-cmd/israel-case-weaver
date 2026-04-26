@@ -1824,19 +1824,36 @@ async function processConversation(
     const thinkingBlocks = (msg as { thinking_blocks?: Array<{ type: "thinking"; text: string; signature?: string }> }).thinking_blocks;
 
     if (toolCalls && toolCalls.length > 0) {
+      // If the model returned no reasoning segments this round, synthesize a
+      // visible action trail from the tool calls so the "Show thinking" panel
+      // is never empty mid-flight (most fast/low-effort models skip reasoning).
+      if (!Array.isArray(msgReasoning) || msgReasoning.length === 0) {
+        const segs: ReasoningSegment[] = toolCalls.map((c) => {
+          let preview = "";
+          try {
+            const obj = JSON.parse(c.function.arguments || "{}") as Record<string, unknown>;
+            const keys = Object.keys(obj).slice(0, 4);
+            preview = keys.map((k) => {
+              const v = obj[k];
+              const s = typeof v === "string" ? v : JSON.stringify(v);
+              return `${k}: ${s.length > 60 ? s.slice(0, 57) + "…" : s}`;
+            }).join(", ");
+          } catch { /* ignore */ }
+          return { type: "thinking", text: `Calling ${c.function.name}${preview ? ` — ${preview}` : ""}` };
+        });
+        if (segs.length) reasoningRounds.push({ round, segments: segs });
+      }
       convo.push({ role: "assistant", content: msg.content ?? "", tool_calls: toolCalls, ...(thinkingBlocks?.length ? { thinking: thinkingBlocks } : {}) });
       for (const call of toolCalls) {
         let args: Record<string, unknown> = {};
         try { args = JSON.parse(call.function.arguments || "{}"); } catch { /* ignore */ }
+        flushProgress(`running ${call.function.name}…`);
         const result = await executeTool(supa, projectId, call.function.name, args, toolMessageId, playbook);
         const argsForUi = call.function.name === "propose_options" ? undefined : args;
         executedTools.push({ name: call.function.name, args: argsForUi, result });
         convo.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
+        flushProgress(`finished ${call.function.name}`);
       }
-      // After this round, warn the model that it's running out of tool rounds
-      // — encourages batching the rest and writing the prose reply instead of
-      // looping on micro-edits. (round index 1 → next call is index 2 → only
-      // index 3, the final prose round, remains.)
       if (round === MAX_ROUNDS - 3) {
         convo.push({ role: "system", content: "You have one tool round left. Make any remaining tool calls in a single batch this turn, then write your reply." });
       }
