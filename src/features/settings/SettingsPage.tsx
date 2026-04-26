@@ -108,6 +108,7 @@ export function SettingsPage() {
       ai_provider_prompt_writer: promptWriter,
       ui_background: uiBackground,
       image_prompt_assistant_instructions: imgAssistantInstructions,
+      default_planning_depth: defaultDepth,
     } as any);
     if (error) toast.error(error.message);
     else {
