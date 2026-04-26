@@ -98,6 +98,7 @@ export type Database = {
           created_at: string
           id: string
           label: string | null
+          logic_version_id: string | null
           project_id: string
           source_id: string
           target_id: string
@@ -107,6 +108,7 @@ export type Database = {
           created_at?: string
           id?: string
           label?: string | null
+          logic_version_id?: string | null
           project_id: string
           source_id: string
           target_id: string
@@ -116,6 +118,7 @@ export type Database = {
           created_at?: string
           id?: string
           label?: string | null
+          logic_version_id?: string | null
           project_id?: string
           source_id?: string
           target_id?: string
@@ -155,6 +158,7 @@ export type Database = {
           height: number | null
           id: string
           locked: boolean
+          logic_version_id: string | null
           node_type: string
           position_x: number
           position_y: number
@@ -173,6 +177,7 @@ export type Database = {
           height?: number | null
           id?: string
           locked?: boolean
+          logic_version_id?: string | null
           node_type?: string
           position_x?: number
           position_y?: number
@@ -191,6 +196,7 @@ export type Database = {
           height?: number | null
           id?: string
           locked?: boolean
+          logic_version_id?: string | null
           node_type?: string
           position_x?: number
           position_y?: number
@@ -386,6 +392,7 @@ export type Database = {
           id: string
           linked_node_ids: string[] | null
           linked_suspect_ids: string[] | null
+          logic_version_id: string | null
           print_size: string | null
           project_id: string
           status: string
@@ -413,6 +420,7 @@ export type Database = {
           id?: string
           linked_node_ids?: string[] | null
           linked_suspect_ids?: string[] | null
+          logic_version_id?: string | null
           print_size?: string | null
           project_id: string
           status?: string
@@ -440,6 +448,7 @@ export type Database = {
           id?: string
           linked_node_ids?: string[] | null
           linked_suspect_ids?: string[] | null
+          logic_version_id?: string | null
           print_size?: string | null
           project_id?: string
           status?: string
@@ -478,6 +487,7 @@ export type Database = {
           label: string | null
           linked_document_ids: string[] | null
           linked_node_ids: string[] | null
+          logic_version_id: string | null
           notes: string | null
           number: number
           project_id: string
@@ -498,6 +508,7 @@ export type Database = {
           label?: string | null
           linked_document_ids?: string[] | null
           linked_node_ids?: string[] | null
+          logic_version_id?: string | null
           notes?: string | null
           number: number
           project_id: string
@@ -518,6 +529,7 @@ export type Database = {
           label?: string | null
           linked_document_ids?: string[] | null
           linked_node_ids?: string[] | null
+          logic_version_id?: string | null
           notes?: string | null
           number?: number
           project_id?: string
@@ -542,6 +554,7 @@ export type Database = {
           fallback: string | null
           id: string
           image_url: string | null
+          logic_version_id: string | null
           project_id: string
           prompt: string | null
           prompt_history: Json
@@ -555,6 +568,7 @@ export type Database = {
           fallback?: string | null
           id?: string
           image_url?: string | null
+          logic_version_id?: string | null
           project_id: string
           prompt?: string | null
           prompt_history?: Json
@@ -568,6 +582,7 @@ export type Database = {
           fallback?: string | null
           id?: string
           image_url?: string | null
+          logic_version_id?: string | null
           project_id?: string
           prompt?: string | null
           prompt_history?: Json
@@ -582,6 +597,7 @@ export type Database = {
           created_at: string
           id: string
           level: number
+          logic_version_id: string | null
           project_id: string
           stage: number
           text: string | null
@@ -590,6 +606,7 @@ export type Database = {
           created_at?: string
           id?: string
           level: number
+          logic_version_id?: string | null
           project_id: string
           stage: number
           text?: string | null
@@ -598,6 +615,7 @@ export type Database = {
           created_at?: string
           id?: string
           level?: number
+          logic_version_id?: string | null
           project_id?: string
           stage?: number
           text?: string | null
@@ -932,6 +950,7 @@ export type Database = {
           id: string
           kling_instructions: string | null
           length_seconds: number
+          logic_version_id: string | null
           project_id: string
           script_instructions: string | null
           shot_prompts: Json
@@ -945,6 +964,7 @@ export type Database = {
           id?: string
           kling_instructions?: string | null
           length_seconds?: number
+          logic_version_id?: string | null
           project_id: string
           script_instructions?: string | null
           shot_prompts?: Json
@@ -958,6 +978,7 @@ export type Database = {
           id?: string
           kling_instructions?: string | null
           length_seconds?: number
+          logic_version_id?: string | null
           project_id?: string
           script_instructions?: string | null
           shot_prompts?: Json
@@ -1027,7 +1048,9 @@ export type Database = {
           hint_settings: Json
           id: string
           image_prompt_instructions: string | null
+          last_assistant_acknowledged_at: string | null
           logic_approved_at: string | null
+          logic_version_id: string
           mystery_type: string | null
           owner_id: string
           packaging_notes: string | null
@@ -1069,7 +1092,9 @@ export type Database = {
           hint_settings?: Json
           id?: string
           image_prompt_instructions?: string | null
+          last_assistant_acknowledged_at?: string | null
           logic_approved_at?: string | null
+          logic_version_id?: string
           mystery_type?: string | null
           owner_id: string
           packaging_notes?: string | null
@@ -1111,7 +1136,9 @@ export type Database = {
           hint_settings?: Json
           id?: string
           image_prompt_instructions?: string | null
+          last_assistant_acknowledged_at?: string | null
           logic_approved_at?: string | null
+          logic_version_id?: string
           mystery_type?: string | null
           owner_id?: string
           packaging_notes?: string | null

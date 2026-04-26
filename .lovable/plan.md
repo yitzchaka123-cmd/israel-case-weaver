@@ -1,107 +1,155 @@
-# Envelopes rewrite + News Report tab + QR library
+# Plan — Assistant always aware of changes you make
 
-## 1. Envelope spec rewrite
+## Goal
+The assistant must **detect and announce** any meaningful change you make to the case (regenerating the Logic Flow, rewriting the solution summary, editing a suspect, deleting documents, etc.) **as soon as you next interact with it** — not silently keep going from a stale picture.
 
-Update both `supabase/functions/_shared/assistant-playbook.ts` (the playbook the assistant follows) and `supabase/functions/generate-envelopes/index.ts` (the deterministic generator) so every project produces exactly **5 envelopes** with this structure.
+Today there is a half-built signal (`logic_dirty_since_approval`) that only fires when canvas nodes are edited *after* approval, and only if the assistant happens to read it. The user's exact scenario — "I started document generation, then went to the Case Board and pressed Regenerate from solution summary" — is **not** caught, because:
+- regeneration wipes the board and re-streams it (so `latestNode.updated_at` is *new*, but `logic_approved_at` was also cleared, so the existing `logic_dirty_since_approval` formula returns `false`),
+- there is no notification posted to the bell,
+- there is no comparison against the documents/envelopes/storyboards that were generated **from the previous version**.
 
-### Envelope #0 — Welcome / Briefing
-- Atmospheric in-world opening: greet the player as the investigator, set the scene (case name, location, victim, why you've been called in). Length: assistant-decided, but **not too short** — minimum ~4 sentences of atmosphere, can go longer for harder cases.
-- Ends with the **first task** on its own line, formatted as **bold red Hebrew** (already styled by `EnvelopesSection.tsx` via the `task` field).
-- No recap here — this is the first envelope.
+This plan fixes all three.
 
-### Envelopes #1, #2, #3 — Task Gates
-Each of these envelopes has the **same fixed structure**, in this order:
+---
 
-1. **Recap of the previous task's findings (MANDATORY on every envelope after #0)** — 2–4 sentences in the in-world investigator voice, summarising what the player just discovered by completing the previous envelope's task. Pattern:
-   > "מצאת את X, שהוביל אותך אל Y, וגרם לך להבין ש-Z."
-   > ("You found X, which led you to Y, and made you realise Z.")
-   The recap **must reference concrete details** from the case's logic flow (specific clues, suspect names, evidence, statements) — not generic filler. It must logically follow from the **previous envelope's `task`** so the player feels a continuous narrative thread: task → discovery → recap → next task.
+## 1. Stamp every artifact with a `logic_version_id`
 
-2. **Next task** — one short, clear, imperative Hebrew sentence (≤18 words), rendered as **bold red** via the `task` field. This is the only thing the player needs to "do" with this envelope.
+Add a single `logic_version_id` (uuid) to `projects` and to every downstream artifact. It changes whenever the Logic Flow is regenerated, deleted, or the solution summary is replaced.
 
-3. **Optional bonus clue** — the assistant decides per case whether **0, 1, or 2** of envelopes #2/#3 also carry a bonus clue (e.g. "we brought suspect X back for re-interrogation — here is their new statement", or a forensic memo, or a newly-found note). Bonus clue appears **after** the bold red task, clearly separated, formatted as a short in-world document snippet.
-
-### Envelope #4 — Solution
-1. **Final recap (MANDATORY)** — same voice and structure as the other recaps, 2–4 sentences summarising what the previous task uncovered and how it points to the culprit. Continues the narrative thread from envelope #3's task.
-2. **Solution reveal** — short paragraph naming the culprit, motive, method, and how the clues line up.
-3. **Congratulations line** in bold red.
-4. **QR code placeholder** — reserved 4×4 cm space on the printed envelope template with helper text "סרקו את הקוד לצפייה בדיווח החדשותי על הפענוח" ("Scan the code to watch the news report on the case being solved"). The actual QR image will be bound from the QR library (see §3).
-
-### The "narrative chain" rule (new)
-The generator and the assistant must treat envelopes as a **chain**: when writing envelope N's recap, look at envelope N-1's `task` and write the recap as the in-world result of having performed that task. A reader going envelope-by-envelope should experience one continuous detective story:
-
-```text
-#0 briefing → first task
-#1 recap of what #0's task uncovered → next task
-#2 recap of what #1's task uncovered → next task (+ optional bonus clue)
-#3 recap of what #2's task uncovered → next task (+ optional bonus clue)
-#4 recap of what #3's task uncovered → solution + QR
+**Migration:**
+```sql
+alter table public.projects        add column logic_version_id uuid default gen_random_uuid();
+alter table public.documents       add column logic_version_id uuid;
+alter table public.envelopes       add column logic_version_id uuid;
+alter table public.hints           add column logic_version_id uuid;
+alter table public.hint_sheets     add column logic_version_id uuid;
+alter table public.project_storyboards add column logic_version_id uuid;
+alter table public.canvas_nodes    add column logic_version_id uuid;
+alter table public.canvas_edges    add column logic_version_id uuid;
 ```
 
-### Implementation details
-- In `assistant-playbook.ts`, expand the `Envelopes` section of the system prompt with the structure above, the chain rule, and one explicit worked example showing recap → bold red task → optional bonus clue across two consecutive envelopes.
-- In `generate-envelopes/index.ts`:
-  - Require an array of exactly 5 envelopes typed `briefing | task_gate | solution`.
-  - For every envelope **except #0**, require a non-empty `recap` string. Validate that the recap references at least one named entity (suspect / clue / location) from the project's logic flow.
-  - Generate envelopes **sequentially** (not in parallel), passing the previous envelope's `task` into the prompt for the next envelope so the recap is grounded in what the player actually just did.
-  - Continue to populate the existing `task` field (keeps the bold-red rendering in `EnvelopesSection.tsx` unchanged).
-  - Add an optional `bonus_clue: { title, body }` per task_gate, with the assistant deciding 0–2 across envelopes #2/#3.
-  - Add an optional `qr_placeholder: { helper_text, target_qr_id? }` on the solution envelope.
-- No DB migration needed for envelope content itself — the `envelopes` table already stores arbitrary fields. Just enrich the JSON shape and update the renderer in `EnvelopesSection.tsx` to display `recap` (normal weight, italic, above the bold-red task), and `bonus_clue` below the task in a bordered card.
+**When `logic_version_id` rotates (server-side, in the same transaction as the change):**
+- `generate-logic-flow` → at the start, `update projects set logic_version_id = gen_random_uuid(), logic_approved_at = null`. Stamp every new node/edge it inserts with the new id.
+- `set_solution_summary` tool in `assistant-chat` → same rotation (the summary is the parent of the logic flow).
+- Manual node deletes that empty the `logic` board → rotate (covered by a tiny `useLogicFlowDirty` hook on the client that calls a new `rotate-logic-version` edge function on debounce after canvas edits).
+- `approveLogic` does **not** rotate — it just records `logic_approved_at`, locking the current version as "approved".
 
-## 2. News Report tab under Marketing
+**When existing artifacts get stamped:**
+- `add_document`, `generate_document_assets`, `add_envelope`, `add_hint`, `generate-storyboard`, `generate-envelopes`, `create-final-documents-map` → all read the project's current `logic_version_id` and stamp it onto every row they create.
 
-Add a new tab **"דיווח חדשותי" / "News Report"** to `src/features/project/MarketingSection.tsx`, alongside the existing Mini-Movie storyboard.
+This gives us a clean equivalence: an artifact is **fresh** iff `artifact.logic_version_id == project.logic_version_id`.
 
-- New edge function `supabase/functions/generate-news-report/index.ts`:
-  - Input: `project_id`.
-  - Reads `solution_summary`, suspects, and key logic-flow nodes.
-  - Generates a short in-world TV news report: anchor intro script (Hebrew), 4–6 shot-by-shot storyboard (location, on-screen text, B-roll suggestion, anchor VO line), and an outro.
-  - Persists into `project_storyboards` with a new `kind` column (`'mini_movie' | 'news_report'`), and a new `video_url` column for the user to paste their final rendered video link.
-- New UI panel `src/features/project/marketing/NewsReportPanel.tsx`:
-  - "Generate news report" button (calls the edge function).
-  - Renders the anchor script + storyboard table.
-  - Field for the user to paste the final rendered video URL (`video_url`).
-  - "Create QR code for this report" button → opens the QR library (see §3) prefilled with the `video_url` as the target.
-- Migration:
-  - `ALTER TABLE project_storyboards ADD COLUMN kind text NOT NULL DEFAULT 'mini_movie' CHECK (kind IN ('mini_movie','news_report'));`
-  - `ALTER TABLE project_storyboards ADD COLUMN video_url text;`
+---
 
-## 3. Reusable QR Code library
+## 2. Compute drift on every assistant turn
 
-A per-project library of QR codes the user can generate, label, and reuse anywhere (final envelope, marketing materials, etc.).
+In `assistant-chat/index.ts`, in the rosters block (around line 1786), add a real `change_summary`:
 
-- New table `project_qr_codes`:
-  - `id uuid pk`, `project_id uuid`, `label text`, `target_url text`, `png_path text` (path in `media` bucket), `size_px int default 512`, `created_at`, `updated_at`.
-  - RLS: same `Auth all *` pattern as other project_* tables.
-- New panel `src/features/project/marketing/QrLibraryPanel.tsx` (rendered as another tab in MarketingSection):
-  - List existing QR codes (label + preview + target URL + copy/download buttons).
-  - "Add QR code" form: label, target URL → generates a 512×512 PNG client-side using the existing `src/features/project/marketing/qr.ts` helper, uploads to the `media` bucket, inserts row.
-  - Edit / delete actions.
-- Bind to final envelope:
-  - On envelope #4, add a small "Linked QR code" selector listing rows from `project_qr_codes`. The chosen `qr_id` is stored on the envelope under `qr_placeholder.target_qr_id`; the print layout in `EnvelopesSection.tsx` swaps in the actual PNG when present, and otherwise renders the placeholder box.
-- Assistant tool:
-  - Add `bind_news_report_qr({ envelope_index, qr_id })` to `assistant-chat/index.ts` so the assistant can wire a generated QR to the final envelope from chat.
+```ts
+const currentVersion = project.logic_version_id;
+const staleDocs       = documentsRoster.filter(d => d.logic_version_id && d.logic_version_id !== currentVersion);
+const staleEnvelopes  = envelopesRoster.filter(e => e.logic_version_id && e.logic_version_id !== currentVersion);
+const staleHints      = hintsRoster.filter(h => h.logic_version_id && h.logic_version_id !== currentVersion);
+const staleFinalNodes = nodesRoster.filter(n => n.board === "final" && n.logic_version_id !== currentVersion);
+const logicApproved   = !!project.logic_approved_at;
+const logicEmpty      = !nodesRoster.some(n => n.board === "logic");
+```
 
-## 4. Files changed / created
+Pack these into the runtime context block (replacing the current single `logic_dirty_since_approval` line) as a clearly labelled **CHANGE WATCH** section:
 
-**Edited**
-- `supabase/functions/_shared/assistant-playbook.ts` — new envelope spec (recap chain + bold red task + optional bonus clue + QR placeholder).
-- `supabase/functions/generate-envelopes/index.ts` — sequential generation, enforced `recap` field on envelopes #1–#4, `bonus_clue`, `qr_placeholder`.
-- `supabase/functions/assistant-chat/index.ts` — add `bind_news_report_qr` tool; keep existing empty-board approval guard.
-- `src/features/project/EnvelopesSection.tsx` — render `recap` (italic, normal weight) above the bold-red `task`, render `bonus_clue` card below, render QR slot on the solution envelope.
-- `src/features/project/MarketingSection.tsx` — add "News Report" and "QR Codes" tabs.
+```
+CHANGE WATCH (read this BEFORE deciding what to do this turn)
+- Logic flow approved: NO  ⚠️ (was approved earlier, then regenerated/cleared)
+- Logic flow board: 47 nodes, version v7c2…
+- Stale documents (from older logic version): 12 of 18  ← these were built before the current logic and may contradict it
+- Stale envelopes: 5 of 5
+- Stale Final Flow nodes: 38
+- Stale storyboards: 1
+```
 
-**Created**
-- `supabase/functions/generate-news-report/index.ts`
-- `src/features/project/marketing/NewsReportPanel.tsx`
-- `src/features/project/marketing/QrLibraryPanel.tsx`
-- Migration: add `kind` and `video_url` to `project_storyboards`; create `project_qr_codes` with RLS.
+Then add a hard rule to the system prompt:
 
-## 5. What you'll see
+> **CHANGE WATCH RULE.** If CHANGE WATCH shows ANY stale rows OR `Logic flow approved: NO` while `Existing documents > 0`, your FIRST action this turn — before any other tool call, before answering the user's actual question — is to:
+> 1. Tell the user plainly what changed: *"You regenerated the Logic Flow since these documents were drafted. The current docs/envelopes were built from an older version of the case and almost certainly don't match anymore."*
+> 2. Call `propose_options` with three buttons:
+>    - **"Discard stale docs and start over from the new logic"** → calls `reset_stale_artifacts`
+>    - **"Keep them, I know what I'm doing"** → calls `mark_artifacts_current` (re-stamps them with the current version)
+>    - **"Show me which docs are stale"** → you list them in chat
+> 3. Do NOT proceed with whatever the user originally asked until they pick one.
 
-- Every envelope #1–#4 opens with a short in-world recap of what the previous task uncovered ("You found X → which led to Y → which made you realise Z"), then gives the next task in bold red Hebrew. Read end-to-end, the five envelopes form one continuous detective story.
-- Envelopes #2 and #3 may include a bonus clue (re-interrogation note, lab memo, etc.) — assistant picks 0–2 per case.
-- Envelope #4 ends the game with a final recap, the solution, congratulations in bold red, and a QR code slot.
-- A new **News Report** tab in Marketing generates an in-world TV news storyboard for the case solution and lets you paste the final rendered video URL.
-- A new **QR Codes** tab lets you generate, label, and reuse QR codes (including binding one to the final envelope to point at your news report video).
+Two new server tools to back the buttons:
+- `reset_stale_artifacts({ scopes: ["documents","envelopes","hints","final_flow","storyboards"] })` — deletes only rows with mismatching `logic_version_id`.
+- `mark_artifacts_current({ scopes: [...] })` — bumps their `logic_version_id` to current (user opt-out of the warning).
+
+---
+
+## 3. Drop a notification in the bell the moment regeneration starts
+
+In `generate-logic-flow/index.ts`, right after rotating the version, insert into `project_notifications`:
+
+```ts
+await supa.from("project_notifications").insert({
+  project_id: projectId,
+  kind: "logic_regenerated",
+  title: "Logic Flow regenerating — downstream docs may be stale",
+  body: `You had ${documentsCount} documents and ${envelopesCount} envelopes built from the previous logic version. They will be flagged as stale; the assistant will ask you what to do next time you message it.`,
+  starter_prompt: "I just regenerated the Logic Flow — what should I do about the existing documents?",
+});
+```
+
+Same pattern for `set_solution_summary` ("Solution summary rewritten — Logic Flow and downstream docs may be stale") and for the auto-rotation when the logic board is emptied manually.
+
+The bell already exists (`NotificationBell.tsx`) and supports `starter_prompt`, so clicking the notification drops a pre-written message into the assistant chat that immediately triggers the CHANGE WATCH rule above.
+
+---
+
+## 4. Generalise to other "the user changed something" events
+
+Same pattern, lighter-weight (no version rotation, just an event line in CHANGE WATCH):
+
+| User action | Detection | Assistant behaviour |
+|---|---|---|
+| Edited a suspect's name/role/secrets | `suspects.updated_at > project.last_assistant_acknowledged_at` | Brief recap: "I see you updated <name> — want me to refresh the docs that reference them?" |
+| Deleted a document manually | New `event_log` row, OR `documents` count dropped between turns (cached in `project_meta.last_doc_count`) | "You removed Doc 12 (<title>). Should I regenerate it, or update Doc 0's inventory to drop it?" |
+| Changed `target_doc_count` / `doc_generation_mode` / `envelope_settings` | `assistant_origins` does NOT contain that field but the value differs from last turn | "Noted — you switched to N=40 / drafts-only / 6-envelope layout. I'll follow that from now on." |
+| Toggled a Claude Skill / changed planning model | Same diff-against-last-turn approach | One-line acknowledgement before answering the user's message |
+
+To support this, add **`last_assistant_acknowledged_at timestamptz`** to `projects`. Bump it at the end of every successful assistant turn. Compare any artifact's `updated_at` against it to detect "user touched this since I last spoke."
+
+---
+
+## 5. Files touched
+
+**Database**
+- New migration: add `logic_version_id` columns, `last_assistant_acknowledged_at` on projects, default-rotate existing projects.
+
+**Edge functions**
+- `supabase/functions/generate-logic-flow/index.ts` — rotate version, post notification.
+- `supabase/functions/assistant-chat/index.ts` — new `set_solution_summary` rotates version + posts notification; new `reset_stale_artifacts` and `mark_artifacts_current` tools; new CHANGE WATCH block + rule in `buildSystemPrompt`; bump `last_assistant_acknowledged_at` at end of turn.
+- `supabase/functions/create-final-documents-map/index.ts`, `generate-envelopes/index.ts`, `generate-document/index.ts`, `generate-storyboard/index.ts`, plus the `add_document`/`add_envelope`/`add_hint` tool handlers in `assistant-chat` — stamp `logic_version_id` on inserts.
+- New tiny `supabase/functions/rotate-logic-version/index.ts` — called from the client when manual canvas edits empty the logic board.
+
+**Client**
+- `src/features/project/CanvasSection.tsx` — call `rotate-logic-version` on debounced canvas-empty event; remove the local `phase=summary` snap-back (server now owns this).
+- No UI changes required for the bell — `NotificationBell` already renders new `project_notifications` rows.
+
+**Plan file**
+- Update `.lovable/plan.md` with the final agreed approach.
+
+---
+
+## 6. What this gives you, concretely
+
+In your exact scenario (started doc gen → went to Case Board → pressed Regenerate from solution summary):
+
+1. The instant you click Regenerate, the bell lights up with **"Logic Flow regenerating — downstream docs may be stale"**.
+2. The next time you send any message in the assistant chat — even just "ok continue with the documents" — the assistant's first words are: *"Hold on — you regenerated the Logic Flow since these 12 documents were drafted. They were built from an older version of the case and won't match the new clue chain. Do you want me to discard them and start over, or keep them as-is?"* with three buttons.
+3. Clicking the notification itself opens the chat with the same starter prompt pre-filled, triggering the same warning immediately.
+
+And the same mechanism gracefully covers future "user touched something" cases — suspect edits, manual doc deletes, setting changes — without needing a separate detector for each.
+
+## 7. Open questions before I build
+
+1. **Default action when stale docs are detected** — should the assistant *recommend* discarding (safer) or *recommend* keeping (less destructive)? My default is to recommend discarding because mismatched docs are usually worse than missing docs, but it's your call.
+2. **Notification noisiness** — should the bell get a notification for *every* regen, or only when there are existing downstream artifacts to invalidate? I'll default to "only when there's something to invalidate" to keep the bell quiet during early Phase-2/3 work.
+3. **Stamping back-fill for existing projects** — for cases you've already built, should I back-fill `logic_version_id` on all existing rows to the project's current version (so nothing is incorrectly flagged stale on day one)? My default is yes.

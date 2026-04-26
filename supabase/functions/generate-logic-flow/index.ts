@@ -217,6 +217,25 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
     const startedAt = Date.now();
     const callerUserId = await getUserIdFromAuth(req);
 
+    // Snapshot pre-regen counts so we can decide whether to warn the user
+    // that downstream artifacts (built from the OLD logic) are now stale.
+    const [{ count: preDocCount }, { count: preEnvCount }, { count: preHintCount }, { count: preFinalCount }] = await Promise.all([
+      supa.from("documents").select("id", { count: "exact", head: true }).eq("project_id", projectId),
+      supa.from("envelopes").select("id", { count: "exact", head: true }).eq("project_id", projectId),
+      supa.from("hints").select("id", { count: "exact", head: true }).eq("project_id", projectId),
+      supa.from("canvas_nodes").select("id", { count: "exact", head: true }).eq("project_id", projectId).eq("board", "final"),
+    ]);
+
+    // Rotate the project's logic_version_id BEFORE we wipe + redraw. Every
+    // node/edge inserted below is stamped with this new id; existing
+    // documents/envelopes/hints/final-nodes keep their OLD id, so the
+    // assistant's CHANGE WATCH check will flag them as stale next turn.
+    const newLogicVersionId = crypto.randomUUID();
+    await supa
+      .from("projects")
+      .update({ logic_version_id: newLogicVersionId, logic_approved_at: null })
+      .eq("id", projectId);
+
     // Clear the board up-front so the user sees it fill in live (instead of a
     // stale board sitting there until the new one arrives).
     if (replace) {
@@ -245,6 +264,7 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
           task: env.task ?? null,
           design_instructions: env.design_instructions ?? null,
           status: "draft",
+          logic_version_id: newLogicVersionId,
         })
         .select("id, number, label, task, design_instructions, linked_node_ids")
         .single();
@@ -276,6 +296,7 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
           position_x: typeof n.x === "number" ? n.x : 0,
           position_y: typeof n.y === "number" ? n.y : 0,
           data,
+          logic_version_id: newLogicVersionId,
         })
         .select("id")
         .single();
@@ -293,12 +314,12 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
     async function tryFlushEdges(extra: EdgeJson[] = []) {
       const all = [...pendingEdges, ...extra];
       pendingEdges.length = 0;
-      const ready: { project_id: string; board: string; source_id: string; target_id: string; label: string | null }[] = [];
+      const ready: { project_id: string; board: string; source_id: string; target_id: string; label: string | null; logic_version_id: string }[] = [];
       for (const e of all) {
         const s = idMap.get(e.source);
         const t = idMap.get(e.target);
         if (s && t) {
-          ready.push({ project_id: projectId, board: "logic", source_id: s, target_id: t, label: e.label ?? null });
+          ready.push({ project_id: projectId, board: "logic", source_id: s, target_id: t, label: e.label ?? null, logic_version_id: newLogicVersionId });
         } else {
           pendingEdges.push(e);
         }
@@ -512,10 +533,35 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
       if (notifyErr) console.error("logic_flow_ready notification insert", notifyErr);
     }
 
+    // Drift warning: if there were already documents/envelopes/hints/final-flow
+    // nodes built from the PREVIOUS logic version, they were not deleted —
+    // they still carry the old logic_version_id and will be flagged as stale
+    // by the assistant on the user's next message. Surface this to the user
+    // immediately so they're not surprised.
+    const staleTotal = (preDocCount ?? 0) + (preEnvCount ?? 0) + (preHintCount ?? 0) + (preFinalCount ?? 0);
+    if (staleTotal > 0) {
+      const parts: string[] = [];
+      if ((preDocCount ?? 0) > 0) parts.push(`${preDocCount} documents`);
+      if ((preEnvCount ?? 0) > 0) parts.push(`${preEnvCount} envelopes`);
+      if ((preHintCount ?? 0) > 0) parts.push(`${preHintCount} hints`);
+      if ((preFinalCount ?? 0) > 0) parts.push(`${preFinalCount} Final Flow nodes`);
+      const { error: driftNotifyErr } = await supa.from("project_notifications").insert({
+        project_id: projectId,
+        kind: "logic_regenerated",
+        title: "Logic Flow regenerated — downstream items may be stale",
+        body: `You had ${parts.join(", ")} built from the previous logic version. They were NOT deleted, but the assistant will flag them as stale next time you message it and ask whether to discard or keep them.`,
+        starter_prompt: "I just regenerated the Logic Flow — what should I do about the existing documents and envelopes from the previous version?",
+        status: "unread",
+        created_by: "assistant",
+      });
+      if (driftNotifyErr) console.error("logic_regenerated notification insert", driftNotifyErr);
+    }
+
     return new Response(JSON.stringify({
       ok: true,
       summary: useApproved ? approvedSummary : (parsed?.summary ?? ""),
       usedApprovedSummary: useApproved,
+      newLogicVersionId,
       nodeCount: insertedNodeCount,
       edgeCount: insertedEdgeCount,
       scaffoldedEnvelopes: noEnvelopes ? envelopesForLinking.length : 0,
