@@ -20,6 +20,7 @@ import { ExportMenu } from "./ExportMenu";
 import { PhaseStatusBar } from "./PhaseStatusBar";
 import { NotificationBell } from "./notifications/NotificationBell";
 import { useAssistantRunStatus } from "./assistant/useAssistantRun";
+import { useLogicFlowLive } from "./canvas/useLogicFlowLive";
 import { ProjectHistoryPanel } from "./ProjectHistoryPanel";
 import { trashProject } from "@/lib/project-versions";
 
