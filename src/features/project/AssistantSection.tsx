@@ -219,7 +219,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
   // Realtime sync for chat messages
   useEffect(() => {
     const ch = supabase
-      .channel(`chat-${projectId}`)
+      .channel(`chat-${projectId}-${Math.random().toString(36).slice(2, 8)}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "chat_messages", filter: `project_id=eq.${projectId}` },
@@ -230,6 +230,17 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
       supabase.removeChannel(ch);
     };
   }, [projectId, qc]);
+
+  // Polling fallback while a run is active — guarantees the live "thinking"
+  // panel keeps updating even if realtime drops a message. Stops as soon as
+  // the run finishes.
+  useEffect(() => {
+    if (!sending) return;
+    const id = window.setInterval(() => {
+      qc.invalidateQueries({ queryKey: ["chat", projectId] });
+    }, 1500);
+    return () => window.clearInterval(id);
+  }, [sending, projectId, qc]);
 
   // Track when an external focus request is in flight, so the
   // auto-scroll-to-bottom effect doesn't yank the user away from the
