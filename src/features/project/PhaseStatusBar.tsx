@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 const PHASES: { key: string; label: string; short: string }[] = [
   { key: "setup", label: "Setup", short: "Setup" },
   { key: "summary", label: "Summary", short: "Sum" },
-  { key: "structure", label: "Structure", short: "Struct" },
+  { key: "logic", label: "Logic Flow", short: "Logic" },
   { key: "documents", label: "Documents", short: "Docs" },
   { key: "envelopes", label: "Envelopes", short: "Env" },
   { key: "hints", label: "Hints", short: "Hints" },
@@ -18,13 +18,15 @@ const PHASES: { key: string; label: string; short: string }[] = [
 function normalizePhase(phase: string | null | undefined): string {
   if (!phase) return "setup";
   if (phase === "production") return "documents";
+  // Legacy "structure" phase now maps to the more descriptive "logic" step.
+  if (phase === "structure") return "logic";
   return PHASES.find((p) => p.key === phase) ? phase : "setup";
 }
 
 const TAB_FOR_PHASE: Record<string, string> = {
   setup: "overview",
-  summary: "overview",
-  structure: "canvas",
+  summary: "canvas",
+  logic: "canvas",
   documents: "documents",
   envelopes: "envelopes",
   hints: "hints",
