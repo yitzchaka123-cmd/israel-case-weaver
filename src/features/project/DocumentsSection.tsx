@@ -537,6 +537,7 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
     toast.success("Document restored as Final asset document");
   };
 
+  return (
     <>
     <Dialog open={!!doc} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-3xl">
