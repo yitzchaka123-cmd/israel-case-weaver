@@ -264,6 +264,7 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
           task: env.task ?? null,
           design_instructions: env.design_instructions ?? null,
           status: "draft",
+          logic_version_id: newLogicVersionId,
         })
         .select("id, number, label, task, design_instructions, linked_node_ids")
         .single();
