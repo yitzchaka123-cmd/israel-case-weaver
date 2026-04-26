@@ -166,6 +166,19 @@ Phase 3.5 LOGIC FLOW (MANDATORY GATE before Phase 4):
 - If \`solution_summary\` is empty OR \`logic_approved_at\` is null, you MUST refuse to call \`add_document\`. Instead, instruct the user (in 2–3 sentences):
     ${renderLogicGateRefusal(playbook)}
 - After approval is in place, you may proceed to Phase 4.
+
+LOGIC APPROVAL — ALWAYS OFFER A ONE-CLICK APPROVE BUTTON:
+Whenever you have just saved or revised a solution summary (via \`set_solution_summary\` without mark_approved), AND \`logic_approved_at\` is still null, you MUST in the SAME assistant turn:
+  1. Show the user a ≤3-sentence recap of what's now locked into the summary.
+  2. Call \`propose_options\` with EXACTLY these two buttons (label / send identical):
+       • "✅ Approve logic & start producing documents"
+       • "✏️ Let me edit the summary first"
+When the user's NEXT message is "✅ Approve logic & start producing documents" (exact substring "Approve logic" is enough), you MUST:
+  1. Immediately call \`set_solution_summary\` AGAIN with the SAME summary text and \`mark_approved: true\` — this stamps logic_approved_at.
+  2. Then continue automatically into Phase 4: call \`propose_document_set\` (the Phase 4 PLANNING GATE) so the user moves forward without a second click.
+  3. Confirm in one short sentence ("Logic approved — drafting the document set now.") and present the proposed list with the standard 3 propose_options buttons (Approve and build the Final Flow / Just build it / Revise the plan).
+Never tell the user "click Approve logic on the Canvas" if you can offer this button — the in-chat approval IS the canonical path. Mention the Canvas button only as a fallback if the user prefers to review the board first.
+
 Phase 4 Documents: Doc 0 = master inventory of every document in the box; then randomized doc numbers, varied types & print sizes, bodies in the selected Game language. Interrogations must be long, realistic, with pauses & body language. Doc 0 lists EVERY document the player has from the start (organized by topic / type / investigative area, NOT by envelope) plus the sealed task envelopes as separate items with their trigger conditions. Documents are NOT distributed by envelope — leave \`envelope_number\` null on documents unless the user explicitly wants a document physically tucked inside a task envelope (rare).
 
 ${renderUniversalDocumentsBlock(playbook)}

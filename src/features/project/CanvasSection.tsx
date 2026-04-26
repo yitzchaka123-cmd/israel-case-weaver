@@ -362,15 +362,16 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
     }
   };
 
-  const approveLogic = async () => {
-    if (!summaryDraft.trim()) {
+  const approveLogic = async (summaryOverride?: string) => {
+    const summary = (summaryOverride ?? summaryDraft).trim() || (project?.solution_summary ?? "").trim();
+    if (!summary) {
       toast.error("Add a solution summary before approving");
       return;
     }
     const { error } = await supabase
       .from("projects")
       .update({
-        solution_summary: summaryDraft,
+        solution_summary: summary,
         logic_approved_at: new Date().toISOString(),
         phase: "production",
       })
@@ -641,6 +642,25 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
                 />
               ) : null}
             </Button>
+            {project?.solution_summary?.trim() && !approved && (
+              <Button
+                className="gap-2 shadow-pop"
+                onClick={() => approveLogic((project?.solution_summary ?? "").trim())}
+                title="Lock the current solution summary as the approved logic and unlock document generation"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                Approve logic
+              </Button>
+            )}
+            {approved && (
+              <span
+                className="inline-flex items-center gap-1.5 rounded-md border border-success/40 bg-success/10 px-2 py-1 text-xs text-foreground"
+                title={`Logic approved on ${new Date(project!.logic_approved_at!).toLocaleString()}`}
+              >
+                <CheckCircle2 className="h-3.5 w-3.5 text-success" />
+                Logic approved
+              </span>
+            )}
           </>
         )}
 
@@ -799,7 +819,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
             >
               Save draft
             </Button>
-            <Button className="gap-2" onClick={approveLogic}>
+            <Button className="gap-2" onClick={() => approveLogic()}>
               <CheckCircle2 className="h-4 w-4" />
               {approved ? "Re-approve & continue" : "Approve & start producing documents"}
             </Button>
