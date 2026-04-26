@@ -495,20 +495,37 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
             })}
 
             {sending && (() => {
-              // Find the most recent in-progress assistant placeholder so we
-              // can surface its `stage` (e.g. "after add_suspect…") instead
-              // of just spinning silently. The placeholder is updated between
-              // tool rounds via realtime UPDATE on chat_messages.metadata.
+              // Find the most recent in-progress assistant placeholder. The
+              // edge function streams `stage`, `stage_history`, `tools` and
+              // accumulated `reasoning` into its metadata between rounds via
+              // realtime UPDATE on chat_messages, so this bubble shows live
+              // thinking/tool activity instead of a silent spinner.
               const inFlight = [...messages].reverse().find((m) => m.role === "assistant" && m.metadata?.in_progress);
               const stage = inFlight?.metadata?.stage ?? null;
+              const liveTools = inFlight?.metadata?.tools ?? [];
+              const liveReasoning = inFlight?.metadata?.reasoning ?? [];
+              const stageHistory = inFlight?.metadata?.stage_history ?? [];
               return (
                 <div className="flex gap-3 items-start">
                   <Avatar role="assistant" />
-                  <div className="flex-1 pt-1.5">
+                  <div className="flex-1 pt-1.5 space-y-2">
                     <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      <span>{stage ? `${stage}` : "Thinking…"}</span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        {stage ? stage : "Thinking…"}
+                      </span>
                     </div>
+                    {(liveReasoning.length > 0 || stageHistory.length > 1) && (
+                      <ThinkingDisclosure
+                        reasoning={liveReasoning}
+                        stageHistory={stageHistory}
+                        live
+                      />
+                    )}
+                    {liveTools.length > 0 && (
+                      <ToolReceipts tools={liveTools} onOpenAsset={setLightbox} />
+                    )}
                   </div>
                 </div>
               );
