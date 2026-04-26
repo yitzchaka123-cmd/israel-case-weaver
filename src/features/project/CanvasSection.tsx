@@ -604,21 +604,52 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <Button
-          variant="outline"
-          className="gap-2 h-9"
-          onClick={arrangeNodes}
-          disabled={arranging || nodes.length === 0}
-          title="AI smart arrange: the configured Logic-Flow model studies your nodes & labelled edges and lays them out as a clear game-flow story with room for the lines and labels. Click again to re-arrange."
-        >
-          {arranging ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-          Arrange
-          {nodes.length > 0 && (
-            <span className="ml-0.5 text-[10px] text-muted-foreground font-normal">
-              · AI smart layout
-            </span>
-          )}
-        </Button>
+        <div className="inline-flex">
+          <Button
+            variant="outline"
+            className="gap-2 h-9 rounded-r-none border-r-0"
+            onClick={() => arrangeNodes("deterministic")}
+            disabled={arranging || nodes.length === 0}
+            title="Smart arrange — instant context-aware layout. For the Final Flow it places the logic chain on the left, documents in the middle aligned with the logic node they came from, and envelopes on the right in numerical order."
+          >
+            {arranging ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            Arrange
+            {nodes.length > 0 && (
+              <span className="ml-0.5 text-[10px] text-muted-foreground font-normal">
+                · instant
+              </span>
+            )}
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-9 w-7 rounded-l-none px-0"
+                disabled={arranging || nodes.length === 0}
+                title="More arrange options"
+              >
+                <span className="text-xs">▾</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuItem onClick={() => arrangeNodes("deterministic")} className="gap-2">
+                <Sparkles className="h-4 w-4" />
+                <div className="flex flex-col">
+                  <span className="font-medium">Smart arrange</span>
+                  <span className="text-[11px] text-muted-foreground">Instant · context-aware layout</span>
+                </div>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => arrangeNodes("ai-refine")} className="gap-2">
+                <Wand2 className="h-4 w-4" />
+                <div className="flex flex-col">
+                  <span className="font-medium">Refine with AI</span>
+                  <span className="text-[11px] text-muted-foreground">Slower · uses Logic-Flow model to polish</span>
+                </div>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
 
         <div className="inline-flex rounded-lg border bg-card shadow-soft p-0.5">
           <button
