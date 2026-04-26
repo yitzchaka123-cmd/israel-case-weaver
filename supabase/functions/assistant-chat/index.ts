@@ -1225,8 +1225,8 @@ async function executeTool(
         .select("id")
         .single();
       if (error) throw error;
-      const src = nodes.find((n) => n.id === sourceId)?.title ?? sourceId;
-      const tgt = nodes.find((n) => n.id === targetId)?.title ?? targetId;
+      const src = (nodes as Array<{ id: string; title: string }>).find((n) => n.id === sourceId)?.title ?? sourceId;
+      const tgt = (nodes as Array<{ id: string; title: string }>).find((n) => n.id === targetId)?.title ?? targetId;
       const followup = await buildPostApprovalFollowup(`add_canvas_edge (${src} → ${tgt})`);
       return { ok: true, message: `Edge created: ${src} → ${tgt}${label ? ` ("${label}")` : ""}`, id: data.id, ...followup };
     }
