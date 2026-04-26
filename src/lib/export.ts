@@ -21,6 +21,12 @@ function pickActiveAsset(d: {
   return d.generated_asset_url ?? docFile ?? d.uploaded_asset_url ?? null;
 }
 
+// Mirror of pickActiveAsset for image-only surfaces (suspect / hint / cover).
+function pickActiveImage(av: string | null | undefined, generated: string | null | undefined, uploaded: string | null | undefined): string | null {
+  if ((av ?? "generated") === "uploaded") return uploaded ?? generated ?? null;
+  return generated ?? uploaded ?? null;
+}
+
 // Build the same project-package zip used by exportProjectPackage and return
 // it as a Blob + suggested file name. Shared by the local download path and
 // the "Save case to Google Drive" path so both produce identical archives.
