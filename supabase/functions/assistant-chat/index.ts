@@ -159,6 +159,8 @@ WORKFLOW — proceed ONE STEP AT A TIME, WAIT FOR APPROVAL before advancing phas
 ${renderPhase1OrderSentence(playbook)}
 ${renderSuspectCountsLine(playbook)}
 Phase 2 Summary: English news-style summary of how the case is solved, layered evidence, balanced red herrings, fictional quoted evidence.
+SOLUTION SUMMARY REGENERATION RULE — DIFFERENT STORY, SAME APPROVED SETUP:
+The solution_summary is the whole mystery story: culprit / central event / motive / method / timeline / clue chain / red herrings / final deduction. When the user says "regenerate", "redo", "try again", "make a different summary/story", or similar for the solution summary, they are NOT asking for a paraphrase. You MUST keep the already-approved Phase 1 details from CURRENT PROJECT STATE (title, subtitle, genre, year, difficulty, player role, case goal, setting, mystery type, selling point, language, and existing suspects unless the user explicitly changes them), but invent a materially different solution story within those constraints. Change at least 5 major story beats from the previous solution_summary: culprit or responsibility structure, motive, method, timeline, primary clue chain, red herrings, and final reveal. Do NOT reuse the same route of events with different wording. Before calling \`set_solution_summary\`, mentally compare against the existing solution_summary in runtime context; if it would feel like "the exact same thing", discard it and generate a bolder alternate story. Then CALL \`set_solution_summary\` with the new text first, and only after the tool succeeds paste the full new summary in chat.
 Phase 3 Structure: suspects, clue sequence, red herrings, deduction logic, and the sealed task-envelope plan. Output fits the node canvas. IMPORTANT GAME-FLOW MODEL: Envelopes are SEALED TASK GATES — they do NOT distribute documents in batches. All evidence documents live loose in the box from the very start; the player has access to every document immediately, organized by Doc 0. Envelopes only hold a short task / reveal / instruction the player reads when they reach the matching beat in the case (e.g. "Open envelope 2 once you've narrowed it down to two suspects"). Envelope #0 is the mission briefing (opened first, points the player at Doc 0 and the case goal). The final envelope contains the accusation form / solution reveal. When you plan envelopes you must reason about each envelope's OPENING TRIGGER (the case beat that unlocks it) and its PAYLOAD (task, reveal, or instruction). NARRATION RULE: When you describe an envelope to the user — in chat, in summaries, or in node descriptions — NEVER say it "contains" or "holds" clues / documents / evidence. Only the final envelope physically contains the accusation form. For every other envelope, describe (a) the task the player reads when they open it, and (b) which loose-pile clues the player should ALREADY be holding when they reach that beat (phrase as "relevant clues" or "the player should already have figured out…", never "inside the envelope").
 Phase 3.5 LOGIC FLOW (MANDATORY GATE before Phase 4):
 - Before producing ANY documents, the user MUST generate and approve a Logic Flow on the Canvas.
@@ -558,13 +560,13 @@ const BASE_TOOLS = [
     function: {
       name: "set_solution_summary",
       description:
-        "Save the full end-to-end case solution summary to the project. Call this AS SOON as the user approves the Phase 2 summary so it appears on the Case Board's Solution-summary button. Pass mark_approved=true ONLY if the user has explicitly approved the logic flow itself (not just the narrative).",
+        "Save the full end-to-end case solution summary to the project. Call this AS SOON as the user approves the Phase 2 summary so it appears on the Case Board's Solution-summary button. If the user asks to regenerate/redo the summary, keep the approved Phase 1 setup details but create a materially different mystery story — not a paraphrase — then call this tool with that new story. Pass mark_approved=true ONLY if the user has explicitly approved the logic flow itself (not just the narrative).",
       parameters: {
         type: "object",
         properties: {
           summary: {
             type: "string",
-            description: "Full multi-paragraph solution summary (English or Hebrew). 3–8 paragraphs covering setup → clue chain → red herrings → deduction → reveal.",
+            description: "Full multi-paragraph solution summary (English or Hebrew). 3–8 paragraphs covering setup → clue chain → red herrings → deduction → reveal. For regeneration, it must be materially different from the prior saved summary while preserving approved Phase 1 constraints.",
           },
           mark_approved: {
             type: "boolean",
