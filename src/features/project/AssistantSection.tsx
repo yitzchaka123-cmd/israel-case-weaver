@@ -262,7 +262,13 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     if (!content) return;
     setInput("");
     const source = baseMessages ?? messages;
-    const convo = source.map((m) => ({ role: m.role, content: m.content }));
+    // Trim to the last 16 turns. The server prompt re-renders fresh project
+    // rosters (suspects/docs/envelopes/hints/canvas nodes) every turn, so
+    // older chat context is already baked into state — we don't need to
+    // re-send hundreds of messages every send. This is the single biggest
+    // latency win on long projects.
+    const trimmed = source.slice(-16);
+    const convo = trimmed.map((m) => ({ role: m.role, content: m.content }));
     // Hook handles fire-and-forget background mode + realtime status flips.
     await hookSend(content, convo);
   };
