@@ -88,7 +88,9 @@ export function PhaseStatusBar({
 
   // Derive an effective progression that reflects the actual data, not just
   // the server-side `phase` column. Summary advances as soon as it's saved;
-  // Logic Flow advances as soon as it's approved.
+  // Logic Flow advances as soon as it's approved. Critically, if approval is
+  // CLEARED (e.g. user rewrote the summary), we also pull the bar BACK so it
+  // never lies about progress that no longer exists.
   const serverIdx = PHASES.findIndex((p) => p.key === normalizePhase(phase));
   const summaryIdx = PHASES.findIndex((p) => p.key === "summary");
   const logicIdx = PHASES.findIndex((p) => p.key === "logic");
@@ -96,7 +98,19 @@ export function PhaseStatusBar({
   let derivedIdx = serverIdx;
   if (summaryDone && derivedIdx < logicIdx) derivedIdx = logicIdx;
   if (logicApproved && derivedIdx < documentsIdx) derivedIdx = documentsIdx;
-  const currentIdx = Math.max(serverIdx, derivedIdx);
+  let currentIdx = Math.max(serverIdx, derivedIdx);
+  // Caps so the bar can move BACKWARDS when data is invalidated.
+  if (!summaryDone) {
+    currentIdx = Math.min(currentIdx, summaryIdx);
+  } else if (!logicApproved) {
+    // The server snaps `phase` back to "summary" when the assistant rewrites
+    // the summary (the prior logic flow gets wiped). Honor that ONLY while
+    // the logic board is still empty — once the user (re)generates nodes,
+    // they are clearly on the Logic Flow step again.
+    const backToSummary = normalizePhase(phase) === "summary" && logicNodeCount === 0;
+    const cap = backToSummary ? summaryIdx : logicIdx;
+    currentIdx = Math.min(currentIdx, cap);
+  }
 
   const tooltipFor = (key: string): string => {
     switch (key) {

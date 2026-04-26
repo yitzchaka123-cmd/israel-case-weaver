@@ -362,6 +362,13 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
 
     setGeneratingFlow(true);
     try {
+      // If we're regenerating because approval was cleared but the project's
+      // `phase` column still says "production" (a leftover from the old, now-
+      // invalidated approval), snap it back to "summary" so the top progress
+      // bar is consistent while we redraw.
+      if (!project?.logic_approved_at && (project as { phase?: string } | undefined)?.phase === "production") {
+        await supabase.from("projects").update({ phase: "summary" }).eq("id", projectId);
+      }
       const { data: { session } } = await supabase.auth.getSession();
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-logic-flow`, {
         method: "POST",
@@ -384,6 +391,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
       qc.invalidateQueries({ queryKey: ["nodes", projectId, "logic"] });
       qc.invalidateQueries({ queryKey: ["edges", projectId, "logic"] });
       qc.invalidateQueries({ queryKey: ["project", projectId] });
+      qc.invalidateQueries({ queryKey: ["phase-bar-project-meta", projectId] });
       // When we used the approved summary, preserve the textarea exactly as the user wrote it.
       if (data.usedApprovedSummary) setSummaryDraft(approvedSummary);
       setSummaryOpen(true);
@@ -620,15 +628,51 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
             </Select>
             {project?.solution_summary ? (
               <>
-                <button
-                  type="button"
-                  onClick={() => setSummaryOpen(true)}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-success/40 bg-success/10 px-2 py-1 text-xs text-foreground hover:bg-success/15 transition-colors"
-                  title="Click to view the approved summary"
-                >
-                  <span className="h-1.5 w-1.5 rounded-full bg-success" />
-                  Using approved summary
-                </button>
+                {(() => {
+                  // Truthful state badge. The backend wipes the logic board on
+                  // every summary rewrite, so any nodes that exist were drawn
+                  // FROM the current saved summary. Approval is the additional
+                  // "user signed off" layer.
+                  const hasLogicNodes = nodes.length > 0;
+                  const approved = !!project?.logic_approved_at;
+                  if (approved && hasLogicNodes) {
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => setSummaryOpen(true)}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-success/40 bg-success/10 px-2 py-1 text-xs text-foreground hover:bg-success/15 transition-colors"
+                        title="The current Logic Flow was generated and approved against this saved summary."
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                        Using approved summary
+                      </button>
+                    );
+                  }
+                  if (hasLogicNodes) {
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => setSummaryOpen(true)}
+                        className="inline-flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent/10 px-2 py-1 text-xs text-foreground hover:bg-accent/15 transition-colors"
+                        title="The Logic Flow was drawn from this summary but you haven't approved it yet. Approve to unlock document generation."
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+                        Drawn from summary — not yet approved
+                      </button>
+                    );
+                  }
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => setSummaryOpen(true)}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-2 py-1 text-xs text-foreground hover:bg-warning/15 transition-colors"
+                      title="A solution summary is saved but the Logic Flow is empty. Generate it from the saved summary to continue."
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full bg-warning" />
+                      Summary saved — generate logic flow
+                    </button>
+                  );
+                })()}
                 <Button
                   variant="outline"
                   className="gap-2 h-9"
