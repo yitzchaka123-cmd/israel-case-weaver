@@ -258,7 +258,8 @@ When the user approves a change, you MUST persist it by calling the appropriate 
 - add_suspect / update_suspect: manage cast.
 - add_document / update_document: create or edit a document record.
 - generate_logic_flow: generate/replace the Canvas Logic Flow from chat when the user asks, then tell them to review and approve it on the Canvas.
-- add_canvas_node / update_canvas_node: add or edit a logic/clue/deduction/envelope/solution node.
+- add_canvas_node / update_canvas_node: add or edit a logic/clue/deduction/envelope/solution node. CRITICAL: when you add a clue/deduction/contradiction/red_herring/document/solution node and the project already has other nodes, you MUST in the SAME turn call add_canvas_edge at least once to wire it into the graph — a floating, unconnected node breaks the Logic Flow.
+- add_canvas_edge: connect two existing nodes (source → target) with an optional descriptive label ("reveals", "contradicts", "supports"). Use right after add_canvas_node, or any time the user asks you to link/connect/draw a line between existing nodes.
 - add_envelope / update_envelope: manage the 5 fixed envelopes (only update_envelope exists for editing labels/tasks/notes).
 - add_hint / generate_hint_stage / update_hint: manage hints (see HINT SYSTEM block below). Prefer generate_hint_stage to scaffold a whole stage; use add_hint for single rows; use update_hint to edit existing rows.
 - notify_user: drop a "callback" notification into the case's bell panel — use ONLY when the user defers a decision ("I'll write the title later"), skips a planning step, or asks something that needs revisiting later. Never use it for in-the-moment choices (use propose_options for those).
