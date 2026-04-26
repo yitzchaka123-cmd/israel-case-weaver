@@ -859,14 +859,24 @@ function MessageBubble({
   );
 }
 
-function ThinkingDisclosure({ reasoning }: { reasoning: ReasoningRound[] }) {
-  const [open, setOpen] = useState(false);
+function ThinkingDisclosure({
+  reasoning,
+  stageHistory = [],
+  live = false,
+}: {
+  reasoning: ReasoningRound[];
+  stageHistory?: StageEvent[];
+  live?: boolean;
+}) {
+  // Default-open while the run is live so users actually see thinking stream
+  // in. Once the run finishes the next render keeps whatever state they had.
+  const [open, setOpen] = useState(live);
   const totalSegments = reasoning.reduce((acc, r) => acc + r.segments.length, 0);
   const totalChars = reasoning.reduce(
     (acc, r) => acc + r.segments.reduce((a, s) => a + s.text.length, 0),
     0,
   );
-  if (totalSegments === 0) return null;
+  if (totalSegments === 0 && stageHistory.length === 0) return null;
 
   const fullText = reasoning
     .map((r) => {
@@ -886,6 +896,10 @@ function ThinkingDisclosure({ reasoning }: { reasoning: ReasoningRound[] }) {
     }
   };
 
+  const label = live
+    ? open ? "Hide thinking" : "Show live thinking"
+    : open ? "Hide thinking" : "Show thinking";
+
   return (
     <div className="mt-2">
       <div className="inline-flex items-center gap-1">
@@ -894,13 +908,15 @@ function ThinkingDisclosure({ reasoning }: { reasoning: ReasoningRound[] }) {
           onClick={() => setOpen((v) => !v)}
           className="inline-flex items-center gap-1.5 rounded-l-full border border-border bg-muted/50 hover:bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors"
         >
-          <Brain className="h-3 w-3 text-accent" />
-          {open ? "Hide thinking" : "Show thinking"}
-          <span className="opacity-70">
-            · {totalSegments} segment{totalSegments === 1 ? "" : "s"} · {totalChars.toLocaleString()} chars
-          </span>
+          <Brain className={`h-3 w-3 text-accent ${live ? "animate-pulse" : ""}`} />
+          {label}
+          {totalSegments > 0 && (
+            <span className="opacity-70">
+              · {totalSegments} segment{totalSegments === 1 ? "" : "s"} · {totalChars.toLocaleString()} chars
+            </span>
+          )}
         </button>
-        {open && (
+        {open && totalSegments > 0 && (
           <button
             type="button"
             onClick={handleCopy}
@@ -913,6 +929,16 @@ function ThinkingDisclosure({ reasoning }: { reasoning: ReasoningRound[] }) {
       </div>
       {open && (
         <div className="mt-2 space-y-3 rounded-md border border-border/60 bg-muted/30 p-3">
+          {stageHistory.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground/80">
+              {stageHistory.map((s, i) => (
+                <span key={i} className="inline-flex items-center gap-1">
+                  {i > 0 && <ChevronRight className="h-2.5 w-2.5 opacity-50" />}
+                  <span className="rounded bg-background/60 px-1.5 py-0.5 border border-border/40">{s.label}</span>
+                </span>
+              ))}
+            </div>
+          )}
           {reasoning.map((round, i) => (
             <div key={i} className="space-y-1.5">
               {reasoning.length > 1 && (
