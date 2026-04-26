@@ -372,6 +372,16 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
           </div>
         </div>
       </DialogContent>
+      {activeUrl && (
+        <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+          <DialogContent className="max-w-4xl p-4">
+            <div className="relative rounded-lg bg-muted overflow-hidden border">
+              <img src={activeUrl} alt="Portrait preview" className="max-h-[80vh] w-full object-contain" />
+              <AiOriginBadge info={{ requested: null, effective: draft.thumbnail_effective_model ?? null, fallback: draft.thumbnail_fallback ?? null }} />
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </Dialog>
   );
 }
