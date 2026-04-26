@@ -327,14 +327,13 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
 
   const [arranging, setArranging] = useState(false);
 
-  // Smart arrange — AI-driven.
-  // Sends the current nodes + edges (for this board) to the `arrange-canvas`
-  // edge function, which asks the configured Logic-Flow model to lay them out
-  // as a true game-flow story (suspects → clues → envelope spine → documents
-  // → reasoning → solution) with enough whitespace that edge labels stay
-  // readable. The function also persists the new positions, so on success we
-  // just refetch. Re-clickable: each press triggers a fresh AI plan.
-  const arrangeNodes = useCallback(async () => {
+  // Smart arrange.
+  // Default mode is **deterministic** — pure-JS topological/role-aware layout
+  // that runs server-side in <1s with no LLM. The optional `ai-refine` mode
+  // hands the deterministic layout to the configured Logic-Flow model for a
+  // polish pass (groups by suspect, fixes label collisions); slower (~10-30s)
+  // and only worth it for screenshots / final presentation.
+  const arrangeNodes = useCallback(async (mode: "deterministic" | "ai-refine" = "deterministic") => {
     if (arranging) return;
     if (nodes.length === 0) {
       toast.info("No nodes to arrange yet.");
@@ -342,7 +341,8 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
     }
     setArranging(true);
     arrangePressRef.current++;
-    const t = toast.loading(`AI is arranging ${nodes.length} nodes…`);
+    const label = mode === "ai-refine" ? `AI is refining ${nodes.length} nodes…` : `Arranging ${nodes.length} nodes…`;
+    const t = toast.loading(label);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const resp = await fetch(
@@ -356,13 +356,14 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
           body: JSON.stringify({
             projectId,
             board,
+            mode,
             modelOverride: logicModel,
           }),
         },
       );
       const json = await resp.json().catch(() => ({}));
       if (!resp.ok) {
-        toast.error(json.error ?? `AI arrange failed (${resp.status})`, { id: t });
+        toast.error(json.error ?? `Arrange failed (${resp.status})`, { id: t });
         return;
       }
       const positions = (json.positions ?? {}) as Record<string, { x: number; y: number }>;
@@ -375,9 +376,12 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
         }),
       );
       qc.invalidateQueries({ queryKey: ["nodes", projectId, board] });
-      const source = json.source === "ai" ? "AI" : "fallback layout";
+      const sourceLabel =
+        json.source === "ai-refine" ? "AI refined"
+        : json.source === "ai-refine-fallback" ? "AI refine failed — kept smart layout"
+        : "Smart layout";
       toast.success(
-        `Arranged ${json.count ?? nodes.length} nodes (${source}).${json.notes ? ` ${json.notes}` : ""}`,
+        `Arranged ${json.count ?? nodes.length} nodes (${sourceLabel}).${json.notes ? ` ${json.notes}` : ""}`,
         { id: t, duration: 4000 },
       );
     } catch (err) {
