@@ -56,6 +56,8 @@ import { useProjectNotifications } from "./notifications/useProjectNotifications
 import { notifyEnvelopesDrafted } from "./notifications/triggers";
 import { resolvePlaybook } from "@/lib/assistant-playbook";
 import { DocumentPromptAssistant } from "@/components/DocumentPromptAssistant";
+import { useBackgroundImageJob } from "@/features/project/useBackgroundImageJob";
+import { GenerationTimer } from "@/features/project/GenerationTimer";
 
 interface Envelope {
   id: string;
