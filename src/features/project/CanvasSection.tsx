@@ -415,10 +415,15 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
       })
       .eq("id", projectId);
     if (error) return toast.error(error.message);
-    toast.success("Logic approved — you can now generate documents");
+    toast.success("Logic approved — drafting next steps with the assistant…");
     setSummaryOpen(false);
     qc.invalidateQueries({ queryKey: ["project", projectId] });
     setBoard("final");
+
+    // Hand off to the assistant so the conversation continues (recap +
+    // propose_options for the Final Flow). Without this, approving from the
+    // Canvas leaves the chat silently waiting for the user to type something.
+    void notifyAssistantOfApproval(projectId);
   };
 
   const createFinalDocumentsMap = async () => {
