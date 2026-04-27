@@ -152,7 +152,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
       if (coverOutputType === "image" || coverOutputType === "both") {
         const modelOverride = getStoredImageModel("marketing-cover", "chatgpt-image-2");
         const quality = getStoredImageQuality("marketing-cover", "medium");
-        const resp = await callEdge("generate-image", {
+        const result = await fireBackgroundImage({
           projectId,
           category: "cover",
           target: "project-cover",
@@ -161,16 +161,15 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
           aspect: "portrait",
           quality,
         });
-        if (!resp.ok) {
-          const e = await resp.json().catch(() => ({}));
-          toast.error(e.error ?? "Cover generation failed", { duration: 10000 });
+        if (!result.ok) {
+          toast.error(result.error ?? "Could not start cover generation", { duration: 10000 });
           if (coverOutputType === "image") return;
         }
       }
       if (coverOutputType === "document" || coverOutputType === "both") {
         await supabase.from("media_assets").insert({ project_id: projectId, category: "cover", title: "Cover document prompt", prompt, provider: "direct-model-file", asset_type: "document", document_format: "pdf", generation_mode: "direct_model_file", status: "failed", error_message: "Create a document row to generate a real file directly with the selected document model." } as never);
       }
-      toast.success(coverOutputType === "both" ? "Cover image generated; document prompt saved" : coverOutputType === "document" ? "Cover document prompt saved" : "Cover visual generated");
+      toast.success(coverOutputType === "document" ? "Cover document prompt saved" : "Generating cover in background — feel free to leave this page");
       qc.invalidateQueries({ queryKey: ["project-cover-only", projectId] });
     } finally {
       setGeneratingCover(false);
@@ -183,24 +182,24 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
       if (extraOutputType === "image" || extraOutputType === "both") {
         const modelOverride = getStoredImageModel("marketing-cover", "chatgpt-image-2");
         const quality = getStoredImageQuality("marketing-cover", "medium");
-        const resp = await callEdge("generate-image", {
+        const result = await fireBackgroundImage({
           projectId,
+          target: "media",
           category: "marketing-extra",
           prompt,
           title: newTitle || "Marketing image",
           modelOverride,
           quality,
         });
-        if (!resp.ok) {
-          const e = await resp.json().catch(() => ({}));
-          toast.error(e.error ?? "Image generation failed", { duration: 10000 });
+        if (!result.ok) {
+          toast.error(result.error ?? "Could not start image generation", { duration: 10000 });
           if (extraOutputType === "image") return;
         }
       }
       if (extraOutputType === "document" || extraOutputType === "both") {
         await supabase.from("media_assets").insert({ project_id: projectId, category: "marketing-extra", title: newTitle || "Marketing document prompt", prompt, provider: "direct-model-file", asset_type: "document", document_format: "pdf", generation_mode: "direct_model_file", status: "failed", error_message: "Create a document row to generate a real file directly with the selected document model." } as never);
       }
-      toast.success(extraOutputType === "both" ? "Marketing image generated; document prompt saved" : extraOutputType === "document" ? "Marketing document prompt saved" : "Marketing image generated");
+      toast.success(extraOutputType === "document" ? "Marketing document prompt saved" : "Generating marketing image in background — feel free to leave this page");
       setNewTitle("");
       setNewHint("");
       setAdding(false);
