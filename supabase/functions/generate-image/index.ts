@@ -552,6 +552,8 @@ async function runImageGeneration(req: Request): Promise<Response> {
         } as any).eq("id", (row as any).id);
       }
     }
+
+    // Always record into media_assets so EVERY surface (covers, suspects,
     // hints, etc.) has a history strip without needing a separate per-surface
     // history table. The `source_*` flags scope the history query.
     if (target !== "media") {
