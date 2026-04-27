@@ -375,6 +375,7 @@ export type Database = {
         Row: {
           active_version: string
           anchor_image_id: string | null
+          anchor_reference_url: string | null
           created_at: string
           created_by_message_id: string | null
           document_id: string
@@ -400,6 +401,7 @@ export type Database = {
         Insert: {
           active_version?: string
           anchor_image_id?: string | null
+          anchor_reference_url?: string | null
           created_at?: string
           created_by_message_id?: string | null
           document_id: string
@@ -425,6 +427,7 @@ export type Database = {
         Update: {
           active_version?: string
           anchor_image_id?: string | null
+          anchor_reference_url?: string | null
           created_at?: string
           created_by_message_id?: string | null
           document_id?: string

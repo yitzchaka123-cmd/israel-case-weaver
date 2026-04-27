@@ -181,14 +181,18 @@ Deno.serve(async (req) => {
       .single();
 
     // Resolve anchor row + sibling slots (for context).
+    // Prefer anchor_reference_url (the locked first-generated reference) over
+    // the active url, so the user picking a different "final" image from the
+    // anchor's history reel never breaks sibling consistency.
     let anchor: { slot_label: string; prompt: string | null; url: string | null } | null = null;
     if (row.anchor_image_id) {
       const { data: a } = await supa
         .from("document_inline_images")
-        .select("slot_label, prompt, url")
+        .select("slot_label, prompt, url, anchor_reference_url")
         .eq("id", row.anchor_image_id)
         .maybeSingle();
-      if (a && a.url) anchor = a as typeof anchor;
+      const lockedUrl = (a as { anchor_reference_url?: string | null } | null)?.anchor_reference_url ?? a?.url ?? null;
+      if (a && lockedUrl) anchor = { slot_label: a.slot_label, prompt: a.prompt, url: lockedUrl };
       // If the anchor hasn't been generated yet, treat THIS as a stand-alone
       // generation (don't try to lock to a non-existent reference).
     }
@@ -309,6 +313,13 @@ Deno.serve(async (req) => {
       ? [{ at: new Date().toISOString(), prompt: row.prompt }, ...priorPromptHistory].slice(0, 20)
       : priorPromptHistory;
 
+    // Pin the anchor's FIRST generated image as the locked reference. Once
+    // set, anchor_reference_url is never overwritten by future regenerations
+    // — even if the user picks a different image as "final" from the reel,
+    // siblings will keep locking to this original reference.
+    const existingAnchorRef = (row as unknown as { anchor_reference_url?: string | null }).anchor_reference_url ?? null;
+    const anchorRefPatch = (row.is_anchor && !existingAnchorRef) ? { anchor_reference_url: pub.publicUrl } : {};
+
     await supa.from("document_inline_images").update({
       url: pub.publicUrl,
       active_version: "generated",
@@ -320,6 +331,7 @@ Deno.serve(async (req) => {
       error_message: null,
       url_history: newUrlHist,
       prompt_history: newPromptHist,
+      ...anchorRefPatch,
     } as never).eq("id", row.id);
 
     // History/origin entry in media_assets so the existing AI-origin badges

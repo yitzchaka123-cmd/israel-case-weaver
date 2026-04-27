@@ -11,6 +11,13 @@ import { Plus, Trash2, Sparkles, Loader2, Star, Upload, RotateCcw, Wand2, Palett
 import { toast } from "sonner";
 import { useState, useRef } from "react";
 import { getStoredWriterModel } from "@/components/PromptWriterModelPicker";
+import { ImageHistoryStrip, type ImageHistoryRow } from "@/components/ImageHistoryStrip";
+
+interface UrlHistoryEntry {
+  at: string;
+  url: string;
+  model?: string | null;
+}
 
 interface InlineImage {
   id: string;
@@ -24,11 +31,13 @@ interface InlineImage {
   active_version: string;
   is_anchor: boolean;
   anchor_image_id: string | null;
+  anchor_reference_url: string | null;
   group_key: string | null;
   status: string;
   error_message: string | null;
   provider: string | null;
   effective_model: string | null;
+  url_history: UrlHistoryEntry[] | null;
 }
 
 const LAYOUTS = [
@@ -336,6 +345,72 @@ function InlineSlotCard({ slot, isOnlyAnchor, onChanged }: { slot: InlineImage; 
           />
         </TabsContent>
       </Tabs>
+
+      {/* History reel — pick which generated image is the slot's "final".
+          For anchor slots the original first-generated reference is pinned
+          (and never lost), so siblings always lock to a stable look even
+          when the user picks a different image as the displayed final. */}
+      {(() => {
+        const reel: ImageHistoryRow[] = [];
+        const seen = new Set<string>();
+        const push = (url: string | null, model: string | null, at: string, idSuffix: string) => {
+          if (!url || seen.has(url)) return;
+          seen.add(url);
+          reel.push({
+            id: `${slot.id}-${idSuffix}`,
+            url,
+            preview_url: url,
+            model,
+            effective_model: slot.effective_model,
+            provider: slot.provider,
+            fallback: null,
+            created_at: at,
+          });
+        };
+        // Currently active generated image (top of reel)
+        push(slot.url, slot.effective_model, new Date().toISOString(), "current");
+        // Anchor's pinned reference (always shown for anchor slots)
+        if (slot.is_anchor && slot.anchor_reference_url) {
+          push(slot.anchor_reference_url, slot.effective_model, new Date(0).toISOString(), "anchor-ref");
+        }
+        // Past generations from url_history
+        (slot.url_history ?? []).forEach((h, i) => push(h.url, h.model ?? null, h.at, `hist-${i}`));
+
+        if (reel.length === 0) return null;
+
+        const onRestore = async (item: ImageHistoryRow) => {
+          if (!item.url || item.url === slot.url) return;
+          // Push the currently-active url back into history so nothing is lost.
+          const currentInHist = (slot.url_history ?? []).some((h) => h.url === slot.url);
+          const nextHistory: UrlHistoryEntry[] = (!currentInHist && slot.url)
+            ? [{ at: new Date().toISOString(), url: slot.url, model: slot.effective_model ?? null }, ...(slot.url_history ?? [])].slice(0, 20)
+            : (slot.url_history ?? []);
+          await saveField({
+            url: item.url,
+            active_version: "generated",
+            url_history: nextHistory,
+          } as Partial<InlineImage>);
+          toast.success("Set as final image for this slot");
+        };
+
+        return (
+          <div className="space-y-1">
+            <ImageHistoryStrip
+              items={reel}
+              currentUrl={slot.url}
+              onRestore={onRestore}
+              title={slot.is_anchor ? "Slot reel — anchor reference is pinned" : "Slot reel — pick the final image"}
+            />
+            {slot.is_anchor && slot.anchor_reference_url && (
+              <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                <Star className="h-2.5 w-2.5" />
+                Anchor reference is preserved — siblings always lock to it, even if you pick a different final image above.
+              </p>
+            )}
+          </div>
+        );
+      })()}
+
       {slot.error_message && <p className="text-[10px] text-destructive">{slot.error_message}</p>}
       <div className="flex flex-wrap gap-1.5">
         <Button size="sm" variant="default" onClick={generate} disabled={isGenerating} className="gap-1.5 h-7 text-[11px]">
