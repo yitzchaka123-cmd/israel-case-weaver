@@ -374,6 +374,7 @@ OUTPUT RULES:
         requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
         status: "ok", latencyMs: Date.now() - startedAt,
         targetId: documentId, promptExcerpt: userPrompt,
+        masterPromptVersion: resolvedSP.masterVersion, surfacePromptVersion: resolvedSP.surfaceVersion,
       });
       return new Response(JSON.stringify({ ok: true, hebrew_content: bodyText, model, effectiveModel: fb.effectiveModel, fallback: fb.fallback }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
