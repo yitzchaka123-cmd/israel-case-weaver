@@ -1,14 +1,24 @@
-// Panel C — Generate barcode (EAN-13) and back-of-box image. Barcode is
-// rendered client-side, uploaded to the media bucket, and stamped onto the
-// back-of-box generation as a final compositing step (also client-side).
+// Panel C — Generate barcode (EAN-13), QR codes, and back-of-box image.
+// The AI image is generated with explicit reserved zones, then the barcode,
+// primary QR, secondary QRs, company logo, and address/legal/footer strip are
+// baked on client-side via bakeCover.ts after the image lands.
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, Copy, ExternalLink, Loader2, Barcode as BarcodeIcon, Image as ImageIcon, RefreshCw, Trash2, Wand2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  CheckCircle2, Copy, ExternalLink, Loader2, Barcode as BarcodeIcon,
+  Image as ImageIcon, RefreshCw, Trash2, Wand2, QrCode, Plus, Star, Building2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { ean13ToPngBlob, ean13ToSvg, generateEan13 } from "./ean13";
+import { createQrPngBlob } from "./qr";
+import { bakeBackCover } from "./bakeCover";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
+import { ImagePromptAssistant } from "@/components/ImagePromptAssistant";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { useProjectNotifications } from "@/features/project/notifications/useProjectNotifications";
 import { fireBackgroundImage } from "@/features/project/fireBackgroundImage";
@@ -26,10 +36,13 @@ interface Marketing {
   front_subtext: string | null;
   back_headline: string | null;
   back_body: string | null;
+  back_cover_prompt: string | null;
   tagline: string | null;
   barcode_value: string | null;
   barcode_url: string | null;
   back_cover_url: string | null;
+  qr_code_url: string | null;
+  mini_movie_url: string | null;
 }
 
 interface MediaAsset {
@@ -44,27 +57,87 @@ interface MediaAsset {
   fallback: string | null;
 }
 
-
-
-async function fetchAsImage(url: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => resolve(img);
-    img.onerror = (e) => reject(e);
-    img.src = url + (url.includes("?") ? "&" : "?") + "cb=" + Date.now();
-  });
+interface QrRow {
+  id: string;
+  project_id: string;
+  label: string | null;
+  target_url: string;
+  qr_image_url: string | null;
+  is_primary: boolean;
+  position: number;
 }
+
+interface ProjectLite {
+  title: string | null;
+  subtitle: string | null;
+  mystery_type: string | null;
+  setting: string | null;
+}
+
+interface CompanyLite {
+  company_name: string | null;
+  logo_url: string | null;
+  address: string | null;
+  legal_text: string | null;
+  warning_text: string | null;
+  box_footer_line: string | null;
+  manufactured_by: string | null;
+  distributed_by: string | null;
+  tagline: string | null;
+}
+
+const LAYOUT_SUFFIX = `
+
+LAYOUT REQUIREMENTS (these are PRINT-CRITICAL — overlays will be added later):
+- Vertical, 3:4 print-ready canvas, atmospheric, evocative.
+- Genre-appropriate imagery; do NOT spoil the solution.
+- Reserve a CLEAN UNTEXTURED rectangular area in the LOWER-RIGHT (~22% × 18%) for a barcode — keep it visually quiet.
+- Reserve a CLEAN UNTEXTURED square area in the LOWER-LEFT (~20% × 20%) for a primary QR code with a small label below it.
+- Reserve a CLEAN UNTEXTURED rectangular area at TOP-CENTER (~22% × 10%) for the company logo.
+- Reserve a CLEAN UNTEXTURED horizontal strip across the BOTTOM (~100% × 8%) for the company address and legal text.
+- Reserve negative space across the central body region for paragraph copy.
+- No text rendered into the artwork itself — typography and brand marks are added in post.`;
 
 export function BarcodeAndBackPanel({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
+  const { user } = useAuth();
   const [generatingBarcode, setGeneratingBarcode] = useState(false);
   const [generatingBack, setGeneratingBack] = useState(false);
   const [generateCount, setGenerateCount] = useState<1 | 2 | 4>(4);
   const [backOutputType, setBackOutputType] = useState<OutputType>("image");
   const [backOrigin, setBackOrigin] = useState<{ requested: string | null; effective: string | null; fallback: string | null } | null>(null);
+  const [promptDraft, setPromptDraft] = useState("");
+  const [newQrLabel, setNewQrLabel] = useState("");
+  const [newQrUrl, setNewQrUrl] = useState("");
+  const [creatingQr, setCreatingQr] = useState(false);
   const seenBarcode = useRef<string | null>(null);
   const { create: createNotif } = useProjectNotifications(projectId);
+
+  const { data: project } = useQuery({
+    queryKey: ["project-back-cover-meta", projectId],
+    queryFn: async (): Promise<ProjectLite | null> => {
+      const { data } = await supabase
+        .from("projects")
+        .select("title, subtitle, mystery_type, setting")
+        .eq("id", projectId)
+        .maybeSingle();
+      return (data as ProjectLite) ?? null;
+    },
+  });
+
+  const { data: company } = useQuery({
+    queryKey: ["company-profile-for-back", user?.id],
+    queryFn: async (): Promise<CompanyLite | null> => {
+      if (!user) return null;
+      const { data } = await supabase
+        .from("company_profiles")
+        .select("company_name, logo_url, address, legal_text, warning_text, box_footer_line, manufactured_by, distributed_by, tagline")
+        .eq("owner_id", user.id)
+        .maybeSingle();
+      return (data as CompanyLite) ?? null;
+    },
+    enabled: !!user,
+  });
 
   const { data } = useQuery({
     queryKey: ["project-marketing-barcode", projectId],
@@ -74,6 +147,16 @@ export function BarcodeAndBackPanel({ projectId }: { projectId: string }) {
       return (data as Marketing) ?? null;
     },
   });
+
+  useEffect(() => { setPromptDraft(data?.back_cover_prompt ?? ""); }, [data?.back_cover_prompt]);
+
+  const persistPrompt = async (next: string) => {
+    setPromptDraft(next);
+    await supabase.from("project_marketing").upsert(
+      { project_id: projectId, back_cover_prompt: next } as never,
+      { onConflict: "project_id" },
+    );
+  };
 
   const { data: backAssets } = useQuery({
     queryKey: ["marketing-back-assets", projectId],
@@ -89,6 +172,20 @@ export function BarcodeAndBackPanel({ projectId }: { projectId: string }) {
     },
   });
 
+  const { data: qrCodes } = useQuery({
+    queryKey: ["project-qr-codes", projectId],
+    queryFn: async (): Promise<QrRow[]> => {
+      const { data, error } = await supabase
+        .from("project_qr_codes")
+        .select("id, project_id, label, target_url, qr_image_url, is_primary, position")
+        .eq("project_id", projectId)
+        .order("position", { ascending: true })
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as QrRow[];
+    },
+  });
+
   useEffect(() => {
     const ch = supabase
       .channel(`marketing-barcode-${projectId}`)
@@ -97,6 +194,9 @@ export function BarcodeAndBackPanel({ projectId }: { projectId: string }) {
       )
       .on("postgres_changes", { event: "*", schema: "public", table: "media_assets", filter: `project_id=eq.${projectId}` }, () =>
         qc.invalidateQueries({ queryKey: ["marketing-back-assets", projectId] }),
+      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "project_qr_codes", filter: `project_id=eq.${projectId}` }, () =>
+        qc.invalidateQueries({ queryKey: ["project-qr-codes", projectId] }),
       )
       .subscribe();
     return () => { supabase.removeChannel(ch); };
@@ -112,6 +212,7 @@ export function BarcodeAndBackPanel({ projectId }: { projectId: string }) {
     seenBarcode.current = data.barcode_value;
   }, [data?.barcode_value]);
 
+  // ----- Barcode -----
   const handleGenerateBarcode = async () => {
     setGeneratingBarcode(true);
     try {
@@ -126,11 +227,7 @@ export function BarcodeAndBackPanel({ projectId }: { projectId: string }) {
       const { data: pub } = supabase.storage.from("media").getPublicUrl(path);
       const { error } = await supabase
         .from("project_marketing")
-        .upsert({
-          project_id: projectId,
-          barcode_value: code,
-          barcode_url: pub.publicUrl,
-        } as never, { onConflict: "project_id" });
+        .upsert({ project_id: projectId, barcode_value: code, barcode_url: pub.publicUrl } as never, { onConflict: "project_id" });
       if (error) {
         toast.error(error.message);
         return;
@@ -148,33 +245,90 @@ export function BarcodeAndBackPanel({ projectId }: { projectId: string }) {
     }
   };
 
-  const bakeBarcodeIntoImage = async (baseUrl: string, barcodeUrl: string) => {
-    const [base, code] = await Promise.all([fetchAsImage(baseUrl), fetchAsImage(barcodeUrl)]);
-    const canvas = document.createElement("canvas");
-    canvas.width = base.naturalWidth;
-    canvas.height = base.naturalHeight;
-    const ctx = canvas.getContext("2d")!;
-    ctx.drawImage(base, 0, 0);
-    const targetW = Math.round(canvas.width * 0.22);
-    const targetH = Math.round((targetW / code.naturalWidth) * code.naturalHeight);
-    const pad = Math.round(canvas.width * 0.025);
-    const x = canvas.width - targetW - pad;
-    const y = canvas.height - targetH - pad;
-    const cardPad = Math.round(targetW * 0.06);
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(x - cardPad, y - cardPad, targetW + cardPad * 2, targetH + cardPad * 2);
-    ctx.drawImage(code, x, y, targetW, targetH);
-    const composedBlob = await new Promise<Blob>((res, rej) =>
-      canvas.toBlob((b) => (b ? res(b) : rej(new Error("toBlob failed"))), "image/jpeg", 0.92),
-    );
-    const finalPath = `${projectId}/marketing/back-final-${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
-    const { error: upErr } = await supabase.storage.from("media").upload(finalPath, composedBlob, {
-      upsert: true,
-      contentType: "image/jpeg",
-    });
-    if (upErr) throw upErr;
-    const { data: pub } = supabase.storage.from("media").getPublicUrl(finalPath);
-    return pub.publicUrl;
+  // ----- QR codes (multi) -----
+  const handleAddQr = async () => {
+    if (!newQrUrl.trim()) {
+      toast.error("Paste a link first");
+      return;
+    }
+    setCreatingQr(true);
+    try {
+      const blob = await createQrPngBlob(newQrUrl.trim());
+      const path = `${projectId}/marketing/qr-${Date.now()}-${Math.random().toString(36).slice(2)}.png`;
+      const { error: upErr } = await supabase.storage.from("media").upload(path, blob, { upsert: true, contentType: "image/png" });
+      if (upErr) { toast.error(upErr.message); return; }
+      const { data: pub } = supabase.storage.from("media").getPublicUrl(path);
+      const isFirst = (qrCodes ?? []).length === 0;
+      const { error } = await supabase.from("project_qr_codes").insert({
+        project_id: projectId,
+        label: newQrLabel.trim() || null,
+        target_url: newQrUrl.trim(),
+        qr_image_url: pub.publicUrl,
+        is_primary: isFirst,
+        position: (qrCodes ?? []).length,
+      } as never);
+      if (error) { toast.error(error.message); return; }
+      if (isFirst) {
+        await supabase.from("project_marketing").upsert({
+          project_id: projectId, qr_code_url: pub.publicUrl, mini_movie_url: newQrUrl.trim(),
+        } as never, { onConflict: "project_id" });
+      }
+      setNewQrLabel("");
+      setNewQrUrl("");
+      toast.success("QR code added");
+    } finally {
+      setCreatingQr(false);
+    }
+  };
+
+  const setPrimaryQr = async (qr: QrRow) => {
+    await supabase.from("project_qr_codes").update({ is_primary: false } as never).eq("project_id", projectId);
+    await supabase.from("project_qr_codes").update({ is_primary: true } as never).eq("id", qr.id);
+    await supabase.from("project_marketing").upsert({
+      project_id: projectId, qr_code_url: qr.qr_image_url, mini_movie_url: qr.target_url,
+    } as never, { onConflict: "project_id" });
+    toast.success("Primary QR updated");
+  };
+
+  const deleteQr = async (qr: QrRow) => {
+    if (!confirm("Delete this QR code?")) return;
+    await supabase.from("project_qr_codes").delete().eq("id", qr.id);
+    if (qr.is_primary) {
+      await supabase.from("project_marketing").upsert({
+        project_id: projectId, qr_code_url: null, mini_movie_url: null,
+      } as never, { onConflict: "project_id" });
+    }
+  };
+
+  // ----- Back cover prompt + generation -----
+  const buildPromptHint = (): string => [
+    project?.title && `Title: ${project.title}`,
+    project?.subtitle && `Subtitle: ${project.subtitle}`,
+    project?.mystery_type && `Mystery type: ${project.mystery_type}`,
+    project?.setting && `Setting: ${project.setting}`,
+    data?.back_headline && `Back headline: ${data.back_headline}`,
+    data?.tagline && `Tagline: ${data.tagline}`,
+    company?.company_name && `Company: ${company.company_name}`,
+    company?.tagline && `Company tagline: ${company.tagline}`,
+  ].filter(Boolean).join(". ");
+
+  const composeFinalPrompt = (draft: string): string => {
+    const headline = data?.back_headline ?? "";
+    const body = data?.back_body ?? "";
+    const tagline = data?.tagline ?? "";
+    return `Design a printable BACK-OF-BOX cover for a premium boxed murder-mystery game.
+
+ART DIRECTION FROM THE WRITER:
+${draft.trim() || "(no extra direction — use the headline + body below to set the tone)"}
+
+HEADLINE (place prominently at top): "${headline}"
+
+BODY COPY (reserve enough negative space for it; do NOT render this text):
+"""
+${body}
+"""
+
+${tagline ? `TAGLINE (small): "${tagline}"` : ""}${LAYOUT_SUFFIX}`;
   };
 
   const handleGenerateBack = async () => {
@@ -182,40 +336,23 @@ export function BarcodeAndBackPanel({ projectId }: { projectId: string }) {
       toast.error("Generate the barcode + write back-cover copy first.");
       return;
     }
+    if (!promptDraft.trim()) {
+      toast.error("Click Create prompt or write a prompt first.");
+      return;
+    }
     setGeneratingBack(true);
     try {
-      const composedPrompt = `Design a printable BACK-OF-BOX cover for a premium boxed murder-mystery game.
-
-HEADLINE (place prominently at top): "${data.back_headline ?? ""}"
-
-BODY COPY (place as a single readable paragraph in the central area, reserve enough negative space for it; do NOT render this text in the image — it will be typeset over the artwork later):
-"""
-${data.back_body}
-"""
-
-${data.tagline ? `TAGLINE (small, near top or bottom): "${data.tagline}"` : ""}
-
-LAYOUT REQUIREMENTS:
-- Vertical, 3:4 print-ready canvas, atmospheric, evocative.
-- Genre-appropriate imagery; do NOT spoil the solution.
-- Reserve a clean, untextured rectangular area in the LOWER-RIGHT corner (~22% x 18%) for a barcode that will be added in post — leave that area visually quiet.
-- Reserve clean negative space across the central body region for paragraph copy.
-- No text rendered into the artwork itself — typography will be added later.`;
-
+      const composedPrompt = composeFinalPrompt(promptDraft);
       let kicked = 0;
       if (backOutputType === "image" || backOutputType === "both") {
         const modelOverride = getStoredImageModel("marketing-back", "chatgpt-image-2");
         const quality = getStoredImageQuality("marketing-back", "medium");
-        // Fire all variations as background jobs in parallel. The browser can
-        // close — Supabase keeps generating. The bake-and-stamp step happens
-        // client-side later, when the new media_assets row arrives via
-        // realtime (see the bake effect below).
         const results = await Promise.all(
           Array.from({ length: generateCount }).map((_, i) => fireBackgroundImage({
             projectId,
             target: "media",
             category: "marketing-back",
-            prompt: `${composedPrompt}\n\nVariation ${i + 1}: use a distinct composition, color balance, and focal image while preserving the reserved copy and barcode areas.`,
+            prompt: `${composedPrompt}\n\nVariation ${i + 1}: use a distinct composition, color balance, and focal image while preserving the reserved zones.`,
             title: `Back of box option ${i + 1}`,
             modelOverride,
             quality,
@@ -233,7 +370,7 @@ LAYOUT REQUIREMENTS:
         await supabase.from("media_assets").insert({ project_id: projectId, category: "marketing-back", title: "Back of box document prompt", prompt: composedPrompt, provider: "direct-model-file", asset_type: "document", document_format: "pdf", generation_mode: "direct_model_file", status: "failed", error_message: "Create a document row to generate a real file directly with the selected document model." } as never);
       }
       if (kicked > 0) {
-        toast.success(`Generating ${kicked} back-cover option${kicked === 1 ? "" : "s"} in background — barcode will be stamped on automatically.`);
+        toast.success(`Generating ${kicked} back-cover option${kicked === 1 ? "" : "s"} — barcode, QR & company info will be stamped on automatically.`);
       } else if (backOutputType === "document") {
         toast.success("Back-cover document prompt saved");
       }
@@ -242,24 +379,33 @@ LAYOUT REQUIREMENTS:
     }
   };
 
-  // After the worker writes a fresh marketing-back row into media_assets, we
-  // bake the barcode into the artwork client-side and replace the row's URL.
-  // Heuristic for "needs baking": the image url does not yet point to a
-  // back-final-* file (which only the bake step produces). We also persist a
-  // localStorage set so we never re-bake the same id across navigations.
+  // After a fresh marketing-back row arrives, bake all the elements onto it.
   const bakingRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (!data?.barcode_url) return;
     const list = backAssets ?? [];
     const todo = list.filter((a) => a.url && !a.url.includes("back-final-") && !bakingRef.current.has(a.id));
     if (todo.length === 0) return;
+    const primary = (qrCodes ?? []).find((q) => q.is_primary && q.qr_image_url) ?? null;
+    const secondaries = (qrCodes ?? []).filter((q) => !q.is_primary && q.qr_image_url);
     todo.forEach((asset) => {
       bakingRef.current.add(asset.id);
       void (async () => {
         try {
-          const finalUrl = await bakeBarcodeIntoImage(asset.url!, data.barcode_url!);
+          const finalUrl = await bakeBackCover({
+            projectId,
+            baseImageUrl: asset.url!,
+            barcodeUrl: data.barcode_url,
+            primaryQr: primary ? { url: primary.qr_image_url, label: primary.label } : null,
+            secondaryQrs: secondaries.map((q) => ({ url: q.qr_image_url, label: q.label })),
+            logoUrl: company?.logo_url ?? null,
+            companyName: company?.company_name ?? null,
+            address: company?.address ?? null,
+            legalText: company?.legal_text ?? null,
+            warningText: company?.warning_text ?? null,
+            footerLine: company?.box_footer_line ?? null,
+          });
           await supabase.from("media_assets").update({ url: finalUrl }).eq("id", asset.id);
-          // Set the project_marketing.back_cover_url to the most recent baked image.
           await supabase.from("project_marketing").upsert({
             project_id: projectId,
             back_cover_url: finalUrl,
@@ -270,12 +416,12 @@ LAYOUT REQUIREMENTS:
             fallback: asset.fallback ?? null,
           });
         } catch (e) {
-          toast.error("Generated, but barcode overlay failed: " + (e instanceof Error ? e.message : "unknown"));
+          toast.error("Generated, but back-cover overlay failed: " + (e instanceof Error ? e.message : "unknown"));
           bakingRef.current.delete(asset.id);
         }
       })();
     });
-  }, [backAssets, data?.barcode_url, projectId]);
+  }, [backAssets, data?.barcode_url, qrCodes, company, projectId]);
 
   const barcodeReady = !!data?.barcode_url;
   const copyReady = !!data?.back_body && !!data?.back_headline;
@@ -307,13 +453,14 @@ LAYOUT REQUIREMENTS:
   return (
     <section className="rounded-2xl border bg-card p-6 shadow-soft space-y-5">
       <div>
-        <h3 className="font-display text-xl">Barcode & back of box</h3>
+        <h3 className="font-display text-xl">Barcode, QR & back of box</h3>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Generate the EAN-13 first, then the back cover — the barcode is baked into the lower-right corner automatically.
+          Generate the EAN-13, add as many QR codes as you need, then generate the back cover — barcode, primary QR, company logo, and address strip are all baked on automatically.
         </p>
       </div>
 
       <div className="grid md:grid-cols-2 gap-5">
+        {/* Barcode */}
         <div className="rounded-xl border bg-muted/30 p-4 space-y-3">
           <div className="flex items-center gap-2 text-sm font-medium">
             <BarcodeIcon className="h-4 w-4" /> EAN-13 barcode
@@ -334,10 +481,76 @@ LAYOUT REQUIREMENTS:
           </Button>
         </div>
 
+        {/* QR codes */}
         <div className="rounded-xl border bg-muted/30 p-4 space-y-3">
           <div className="flex items-center gap-2 text-sm font-medium">
-            <ImageIcon className="h-4 w-4" /> Back cover
+            <QrCode className="h-4 w-4" /> QR codes
           </div>
+          <p className="text-[11px] text-muted-foreground">
+            Add a link → we generate the QR. The <Star className="inline h-3 w-3" /> primary QR is baked large on the back cover; the others appear as a small strip.
+          </p>
+          <div className="space-y-2">
+            <div className="grid grid-cols-[1fr_auto] gap-2">
+              <Input
+                value={newQrLabel}
+                onChange={(e) => setNewQrLabel(e.target.value)}
+                placeholder="Label (e.g. Mini movie)"
+                className="text-sm h-9"
+              />
+              <span />
+              <Input
+                value={newQrUrl}
+                onChange={(e) => setNewQrUrl(e.target.value)}
+                placeholder="https://…"
+                className="text-sm h-9"
+              />
+              <Button onClick={handleAddQr} disabled={creatingQr || !newQrUrl.trim()} size="sm" className="gap-1.5 h-9">
+                {creatingQr ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                Add
+              </Button>
+            </div>
+          </div>
+          {(qrCodes ?? []).length === 0 ? (
+            <div className="rounded-lg border border-dashed p-3 text-center text-xs text-muted-foreground">
+              No QR codes yet. The first one you add becomes the primary.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {(qrCodes ?? []).map((qr) => (
+                <div key={qr.id} className="flex items-center gap-3 rounded-lg border bg-background p-2">
+                  {qr.qr_image_url ? (
+                    <img src={qr.qr_image_url} alt={qr.label ?? "QR"} className="h-12 w-12 rounded border bg-white object-contain p-1" />
+                  ) : (
+                    <div className="h-12 w-12 rounded border bg-muted flex items-center justify-center">
+                      <QrCode className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-medium truncate">{qr.label ?? "Untitled QR"}</div>
+                    <a href={qr.target_url} target="_blank" rel="noreferrer" className="text-[11px] text-muted-foreground hover:underline truncate block">
+                      {qr.target_url}
+                    </a>
+                  </div>
+                  <Button size="sm" variant={qr.is_primary ? "secondary" : "ghost"} className="h-7 px-2 gap-1 text-[11px]" onClick={() => !qr.is_primary && setPrimaryQr(qr)}>
+                    <Star className={`h-3 w-3 ${qr.is_primary ? "fill-current" : ""}`} />
+                    {qr.is_primary ? "Primary" : "Make primary"}
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => deleteQr(qr)}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Back cover generator */}
+      <div className="rounded-xl border bg-muted/30 p-4 space-y-3">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <ImageIcon className="h-4 w-4" /> Back cover
+        </div>
+        <div className="grid lg:grid-cols-[2fr_3fr] gap-4">
           <div className="group aspect-[3/4] bg-muted rounded-lg overflow-hidden flex items-center justify-center relative">
             {data?.back_cover_url ? (
               <>
@@ -356,49 +569,63 @@ LAYOUT REQUIREMENTS:
               </span>
             )}
           </div>
-          <ImageModelPicker surface="marketing-back" defaultModel="chatgpt-image-2" />
-          <div className="flex items-center justify-between gap-2 rounded-lg border bg-surface/70 p-2">
-            <span className="text-xs font-medium text-muted-foreground">Output type</span>
-            <div className="inline-flex rounded-md border bg-muted/40 p-0.5">
-              {OUTPUT_TYPES.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => setBackOutputType(option.value)}
-                  className={`h-7 rounded px-2 text-xs font-medium transition ${backOutputType === option.value ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"}`}
-                >
-                  {option.label}
-                </button>
-              ))}
+          <div className="space-y-3">
+            <ImagePromptAssistant
+              projectId={projectId}
+              surface="cover"
+              category="marketing-back"
+              targetId={projectId}
+              hint={buildPromptHint()}
+              prompt={promptDraft}
+              onChange={persistPrompt}
+            />
+            <ImageModelPicker surface="marketing-back" defaultModel="chatgpt-image-2" />
+            <div className="flex items-center justify-between gap-2 rounded-lg border bg-surface/70 p-2">
+              <span className="text-xs font-medium text-muted-foreground">Output type</span>
+              <div className="inline-flex rounded-md border bg-muted/40 p-0.5">
+                {OUTPUT_TYPES.map((option) => (
+                  <button key={option.value} type="button" onClick={() => setBackOutputType(option.value)}
+                    className={`h-7 rounded px-2 text-xs font-medium transition ${backOutputType === option.value ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                    {option.label}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-          <div className="flex items-center justify-between gap-2 rounded-lg border bg-surface/70 p-2">
-            <span className="text-xs font-medium text-muted-foreground">Generate options</span>
-            <div className="inline-flex rounded-md border bg-muted/40 p-0.5">
-              {([1, 2, 4] as const).map((count) => (
-                <button
-                  key={count}
-                  type="button"
-                  onClick={() => setGenerateCount(count)}
-                  className={`h-7 min-w-8 rounded px-2 text-xs font-medium transition ${generateCount === count ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"}`}
-                >
-                  {count}
-                </button>
-              ))}
+            <div className="flex items-center justify-between gap-2 rounded-lg border bg-surface/70 p-2">
+              <span className="text-xs font-medium text-muted-foreground">Generate options</span>
+              <div className="inline-flex rounded-md border bg-muted/40 p-0.5">
+                {([1, 2, 4] as const).map((count) => (
+                  <button key={count} type="button" onClick={() => setGenerateCount(count)}
+                    className={`h-7 min-w-8 rounded px-2 text-xs font-medium transition ${generateCount === count ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                    {count}
+                  </button>
+                ))}
+              </div>
             </div>
+            <Button onClick={handleGenerateBack} disabled={generatingBack || !barcodeReady || !copyReady || !promptDraft.trim()} size="sm" className="w-full gap-1.5">
+              {generatingBack ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+              {data?.back_cover_url ? "Generate more back-cover options" : "Generate back-cover options"}
+            </Button>
           </div>
-          <Button
-            onClick={handleGenerateBack}
-            disabled={generatingBack || !barcodeReady || !copyReady}
-            size="sm"
-            className="w-full gap-1.5"
-          >
-            {generatingBack ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-            {data?.back_cover_url ? "Generate more back-cover options" : "Generate back-cover options"}
-          </Button>
+        </div>
+
+        {/* Mini company-summary card so the user sees what gets baked on */}
+        <div className="rounded-lg border bg-background p-3 flex items-center gap-3">
+          <div className="h-12 w-12 rounded border bg-muted flex items-center justify-center overflow-hidden shrink-0">
+            {company?.logo_url ? (
+              <img src={company.logo_url} alt="logo" className="w-full h-full object-contain" />
+            ) : (
+              <Building2 className="h-5 w-5 text-muted-foreground" />
+            )}
+          </div>
+          <div className="min-w-0 flex-1 text-[11px] text-muted-foreground leading-relaxed">
+            <div className="text-foreground font-medium text-xs truncate">{company?.company_name ?? "No company profile yet"}</div>
+            <div className="truncate">{[company?.address, company?.box_footer_line, company?.warning_text].filter(Boolean).join("  ·  ") || "Add your address & legal text in Settings → Company profile."}</div>
+          </div>
         </div>
       </div>
 
+      {/* Candidates */}
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-3">
           <h4 className="text-sm font-medium">Back-cover candidates</h4>
