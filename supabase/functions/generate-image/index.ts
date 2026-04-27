@@ -65,7 +65,8 @@ type Target =
   | "suspect-alt-thumbnail"
   | "project-cover"
   | "envelope"
-  | "hint-sheet";
+  | "hint-sheet"
+  | "storyboard-shot";
 
 type Quality = "low" | "medium" | "high";
 
@@ -414,6 +415,9 @@ async function runImageGeneration(req: Request): Promise<Response> {
     } else if (target === "hint-sheet") {
       bucket = "media";
       path = `${projectId}/hint-sheets/${targetId ?? "x"}-${Date.now()}.${ext}`;
+    } else if (target === "storyboard-shot") {
+      bucket = "media";
+      path = `${projectId}/storyboard/${targetId ?? "x"}-${Date.now()}.${ext}`;
     }
 
     const { error: upErr } = await supa.storage.from(bucket).upload(path, bytes, { contentType: mime, upsert: true });
@@ -519,6 +523,33 @@ async function runImageGeneration(req: Request): Promise<Response> {
           prompt_history: [historyEntry, ...priorHist].slice(0, 20),
           updated_at: new Date().toISOString(),
         } as any, { onConflict: "project_id,stage" });
+      }
+    } else if (target === "storyboard-shot" && targetId) {
+      // targetId = the shot's `id` (string, lives inside the project_storyboards.shots JSON array).
+      // We patch the matching shot in-place and bump updated_at.
+      const { data: row } = await supa
+        .from("project_storyboards")
+        .select("id, shots")
+        .eq("project_id", projectId)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (row?.id) {
+        const shots = Array.isArray((row as any).shots) ? ((row as any).shots as any[]) : [];
+        const next = shots.map((s) => s && s.id === targetId
+          ? {
+              ...s,
+              image_url: pub.publicUrl,
+              in_storyboard: true,
+              image_requested_model: requestedModelForLog,
+              image_effective_model: effectiveModel,
+              image_fallback: fallbackLabel,
+            }
+          : s);
+        await supa.from("project_storyboards").update({
+          shots: next,
+          updated_at: new Date().toISOString(),
+        } as any).eq("id", (row as any).id);
       }
     }
 

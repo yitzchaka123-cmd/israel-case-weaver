@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { useProjectNotifications } from "@/features/project/notifications/useProjectNotifications";
+import { fireBackgroundImage } from "@/features/project/fireBackgroundImage";
 
 type Engine = "sora" | "kling";
 type Length = 30 | 60 | 90 | 120;
@@ -120,6 +121,41 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
       image_fallback: s.image_fallback ?? null,
     })) : []);
   }, [data]);
+
+  // Realtime: when a background keyframe job updates project_storyboards.shots,
+  // merge the new image_url back into local React state without clobbering
+  // unsaved edits to other fields (action / voiceover / etc.).
+  useEffect(() => {
+    const ch = supabase
+      .channel(`project-storyboards-${projectId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "project_storyboards", filter: `project_id=eq.${projectId}` },
+        (payload) => {
+          const incoming = (payload.new as { shots?: unknown })?.shots;
+          if (!Array.isArray(incoming)) return;
+          const byId = new Map<string, any>();
+          for (const s of incoming) if (s && typeof s === "object" && (s as any).id) byId.set((s as any).id, s);
+          setShots((prev) => prev.map((sh) => {
+            const fresh = byId.get(sh.id);
+            if (!fresh) return sh;
+            // Only adopt the image-related fields server-side; keep local text edits.
+            if (!fresh.image_url || fresh.image_url === sh.image_url) return sh;
+            return {
+              ...sh,
+              image_url: fresh.image_url,
+              in_storyboard: true,
+              image_requested_model: fresh.image_requested_model ?? sh.image_requested_model ?? null,
+              image_effective_model: fresh.image_effective_model ?? sh.image_effective_model ?? null,
+              image_fallback: fresh.image_fallback ?? sh.image_fallback ?? null,
+            };
+          }));
+          qc.invalidateQueries({ queryKey: ["project-storyboards", projectId] });
+        },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [projectId, qc]);
 
   const promptShots = useMemo(() => shots.filter((s) => s.in_prompts), [shots]);
   const boardShots = useMemo(() => shots.filter((s) => s.in_storyboard), [shots]);
@@ -248,10 +284,15 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
     }
     setBusyShot((b) => ({ ...b, [shot.id]: "image" }));
     try {
+      // The worker patches project_storyboards.shots[id == shot.id] when done,
+      // so the shot must already be persisted in the row. Save first.
+      await persist();
       const modelOverride = getStoredImageModel("storyboard", "nano-banana-2");
       const quality = getStoredImageQuality("storyboard", "medium");
-      const resp = await callEdge("generate-image", {
+      const result = await fireBackgroundImage({
         projectId,
+        target: "storyboard-shot",
+        targetId: shot.id,
         category: "marketing-storyboard",
         prompt: `Cinematic single still keyframe (16:9) for trailer shot #${shot.n}.\n\n${shot.prompt}`,
         title: `Shot ${shot.n}`,
@@ -259,19 +300,14 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
         quality,
         aspect: "landscape",
       });
-      const json = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        toast.error(json.error ?? "Keyframe generation failed", { duration: 10000 });
+      if (!result.ok) {
+        toast.error(result.error ?? "Could not start keyframe generation", { duration: 10000 });
         return;
       }
-      updateShot(shot.id, {
-        image_url: json.url as string,
-        in_storyboard: true,
-        image_requested_model: (json.requestedModel as string) ?? modelOverride ?? null,
-        image_effective_model: (json.effectiveModel as string) ?? null,
-        image_fallback: (json.fallback as string) ?? "none",
-      });
-      toast.success(`Shot ${shot.n} keyframe ready`);
+      // Mark as on-storyboard so it appears immediately while the worker is
+      // still rendering. The image_url will fill in via realtime later.
+      updateShot(shot.id, { in_storyboard: true });
+      toast.success(`Shot ${shot.n} generating in background — feel free to leave this page`);
     } finally {
       setBusyShot((b) => ({ ...b, [shot.id]: undefined }));
     }

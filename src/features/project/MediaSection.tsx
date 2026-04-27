@@ -11,6 +11,7 @@ import { Upload, Wand2, Loader2, Trash2, Image as ImageIcon, Video, Film, Newspa
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { ImagePromptAssistant } from "@/components/ImagePromptAssistant";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
+import { fireBackgroundImage } from "./fireBackgroundImage";
 import { toast } from "sonner";
 
 type OutputType = "image" | "document" | "both";
@@ -184,26 +185,29 @@ function CategoryPanel({ projectId, category, items }: { projectId: string; cate
       if (outputType === "image" || outputType === "both") {
         const modelOverride = getStoredImageModel("media", "chatgpt-image-2");
         const quality = getStoredImageQuality("media", "medium");
-        const resp = await callEdge("generate-image", { projectId, category, prompt, title, modelOverride, quality });
-        if (!resp.ok) {
-          const e = await resp.json().catch(() => ({ error: "Failed" }));
-          if (resp.status === 429) toast.error("Rate limit — try again in a moment.", { duration: 10000 });
-          else if (resp.status === 402) toast.error(e.error ?? "Out of AI credits.", { duration: 15000 });
-          else if (resp.status === 504) toast.error(e.error ?? "Image generation timed out — try Medium or Low quality.", { duration: 10000 });
-          else toast.error(e.error ?? "Generation failed", { duration: 10000 });
+        // Fire-and-forget: edge function returns 202 immediately; the new
+        // media_assets row will arrive via realtime when generation finishes.
+        const result = await fireBackgroundImage({
+          projectId, target: "media", category, prompt, title, modelOverride, quality,
+        });
+        if (!result.ok) {
+          toast.error(result.error ?? "Could not start generation", { duration: 10000 });
           if (outputType === "image") return;
         }
       }
       if (outputType === "document" || outputType === "both") await saveDocumentAttempt();
-      toast.success(outputType === "both" ? "Image generated; document prompt saved" : outputType === "document" ? "Document prompt saved" : "Image generated");
+      toast.success(
+        outputType === "both"
+          ? "Generating image in background; document prompt saved"
+          : outputType === "document"
+            ? "Document prompt saved"
+            : "Generating in background — feel free to leave this page",
+      );
       setPrompt("");
       setHint("");
       setTitle("");
     } catch (e) {
-      const msg = e instanceof Error
-        ? (e.name === "AbortError" ? "Image generation timed out (>2 min). Try Medium/Low quality or a Gemini model." : e.message)
-        : "Generation failed";
-      toast.error(msg);
+      toast.error(e instanceof Error ? e.message : "Generation failed");
     } finally {
       setGenerating(false);
     }
@@ -426,29 +430,23 @@ function AssetDialog({
     try {
       const modelOverride = getStoredImageModel("media", "chatgpt-image-2");
       const quality = getStoredImageQuality("media", "medium");
-      const resp = await callEdge("generate-image", {
+      const result = await fireBackgroundImage({
         projectId,
+        target: "media",
         category: asset.category ?? category,
         prompt: editPrompt,
         title: asset.title ?? undefined,
         modelOverride,
         quality,
       });
-      if (!resp.ok) {
-        const e = await resp.json().catch(() => ({ error: "Failed" }));
-        if (resp.status === 429) toast.error("Rate limit — try again in a moment.", { duration: 10000 });
-        else if (resp.status === 402) toast.error(e.error ?? "Out of AI credits.", { duration: 15000 });
-        else if (resp.status === 504) toast.error(e.error ?? "Image generation timed out — try Medium or Low quality.", { duration: 10000 });
-        else toast.error(e.error ?? "Generation failed", { duration: 10000 });
+      if (!result.ok) {
+        toast.error(result.error ?? "Could not start retry", { duration: 10000 });
         return;
       }
-      toast.success("New image generated");
+      toast.success("Retrying in background — feel free to leave this page");
       onClose();
     } catch (e) {
-      const msg = e instanceof Error
-        ? (e.name === "AbortError" ? "Image generation timed out (>2 min). Try Medium/Low quality or a Gemini model." : e.message)
-        : "Generation failed";
-      toast.error(msg);
+      toast.error(e instanceof Error ? e.message : "Generation failed");
     } finally {
       setRetrying(false);
     }
