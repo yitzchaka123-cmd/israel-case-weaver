@@ -377,6 +377,7 @@ OUTPUT RULES:
       const bodyText = data.choices?.[0]?.message?.content ?? "";
 
       await supa.from("documents").update({ hebrew_content: bodyText, status: "review" }).eq("id", documentId);
+      await mirrorStatusOnNodes("generated");
       await supa.from("prompts").insert({
         project_id: doc.project_id,
         scope: "document",
