@@ -2,9 +2,10 @@
 // additional marketing images (back of box, marketing-extra). Uses the new
 // ImagePromptAssistant + history strip + FinalAssetPicker stack so the cover
 // here stays in sync with Overview.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +15,8 @@ import { FinalAssetPicker } from "@/components/FinalAssetPicker";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { fireBackgroundImage } from "@/features/project/fireBackgroundImage";
-import { Copy, Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2, Sparkles } from "lucide-react";
+import { bakeFrontCover } from "./bakeCover";
+import { Copy, Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2, Sparkles, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 
 type OutputType = "image" | "document" | "both";
@@ -44,13 +46,29 @@ const MARKETING_CATEGORIES = ["cover", "back", "marketing-back", "marketing-extr
 
 export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
+  const { user } = useAuth();
   const [adding, setAdding] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newHint, setNewHint] = useState("");
   const [generating, setGenerating] = useState(false);
   const [generatingCover, setGeneratingCover] = useState(false);
+  const [rebaking, setRebaking] = useState(false);
   const [coverOutputType, setCoverOutputType] = useState<OutputType>("image");
   const [extraOutputType, setExtraOutputType] = useState<OutputType>("image");
+
+  const { data: company } = useQuery({
+    queryKey: ["company-profile-for-front", user?.id],
+    queryFn: async () => {
+      if (!user) return null;
+      const { data } = await supabase
+        .from("company_profiles")
+        .select("logo_url, company_name")
+        .eq("owner_id", user.id)
+        .maybeSingle();
+      return data;
+    },
+    enabled: !!user,
+  });
 
   const { data: project } = useQuery({
     queryKey: ["project-cover-only", projectId],
@@ -132,6 +150,50 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [projectId, qc]);
+
+  // Auto-bake title/subtitle/logo onto a freshly generated raw cover.
+  const bakingFrontRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const url = project?.cover_image_url;
+    if (!url || url.includes("cover-final-") || bakingFrontRef.current.has(url)) return;
+    if (!project?.title && !project?.subtitle && !company?.logo_url) return;
+    bakingFrontRef.current.add(url);
+    void (async () => {
+      try {
+        const finalUrl = await bakeFrontCover({
+          projectId,
+          baseImageUrl: url,
+          title: project?.title ?? null,
+          subtitle: project?.subtitle ?? null,
+          logoUrl: company?.logo_url ?? null,
+        });
+        await supabase.from("projects").update({ cover_image_url: finalUrl }).eq("id", projectId);
+      } catch (e) {
+        console.warn("Front cover bake failed", e);
+        bakingFrontRef.current.delete(url);
+      }
+    })();
+  }, [project?.cover_image_url, project?.title, project?.subtitle, company?.logo_url, projectId]);
+
+  const handleRebakeCover = async () => {
+    if (!project?.cover_image_url) return;
+    setRebaking(true);
+    try {
+      const finalUrl = await bakeFrontCover({
+        projectId,
+        baseImageUrl: project.cover_image_url,
+        title: project?.title ?? null,
+        subtitle: project?.subtitle ?? null,
+        logoUrl: company?.logo_url ?? null,
+      });
+      await supabase.from("projects").update({ cover_image_url: finalUrl }).eq("id", projectId);
+      toast.success("Cover re-baked with latest title, subtitle & logo");
+    } catch (e) {
+      toast.error("Re-bake failed: " + (e instanceof Error ? e.message : "unknown"));
+    } finally {
+      setRebaking(false);
+    }
+  };
 
   const cover = project?.cover_image_url;
   const extras = (assets ?? []).filter((a) => a.category === "marketing-extra" || a.category === "back" || a.category === "marketing-back");
@@ -249,8 +311,14 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
               </div>
             )}
           </div>
-          <div className="px-4 py-3 text-xs text-muted-foreground border-t">
-            <span className="font-medium text-foreground">Front cover</span> · pulled live from the project
+          <div className="px-4 py-3 text-xs text-muted-foreground border-t flex items-center justify-between gap-2">
+            <span><span className="font-medium text-foreground">Front cover</span> · title, subtitle & logo are baked on automatically</span>
+            {cover && (
+              <Button size="sm" variant="ghost" className="h-7 gap-1 text-[11px]" onClick={handleRebakeCover} disabled={rebaking}>
+                {rebaking ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
+                Re-bake
+              </Button>
+            )}
           </div>
         </div>
 
