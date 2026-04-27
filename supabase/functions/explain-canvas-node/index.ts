@@ -173,6 +173,7 @@ ${playbook.explanations.include_suggestion ? "4. Any concrete suggestion to stre
       userId: callerUserId, projectId: node.project_id, surface: "explain-canvas-node",
       requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
       status: "ok", latencyMs: Date.now() - startedAt, targetId: nodeId, promptExcerpt: userPrompt,
+      masterPromptVersion: resolvedSP.masterVersion, surfacePromptVersion: resolvedSP.surfaceVersion,
     });
     return new Response(
       JSON.stringify({
