@@ -46,7 +46,7 @@ export function ImageHistoryStrip({ items, currentUrl, onRestore, title = "Histo
               type="button"
               onClick={() => setPreview(item)}
               title={item.model ?? "Open"}
-              className={`relative shrink-0 rounded-md border bg-muted overflow-hidden ${isActive ? "border-accent ring-2 ring-accent/40" : "border-border hover:border-accent/40"}`}
+              className={`group relative shrink-0 rounded-md border bg-muted overflow-hidden ${isActive ? "border-accent ring-2 ring-accent/40" : "border-border hover:border-accent/40"}`}
             >
               <img
                 src={item.preview_url ?? item.url ?? ""}
