@@ -81,6 +81,13 @@ const SURFACES: Array<{ group: string; items: Array<{ id: string; label: string;
     items: [
       { id: "generate-document:text", label: "Document body (in-world evidence)", desc: "Writes the body text of a single document." },
       { id: "generate-document:doc0", label: "Doc 0 (contents inventory)", desc: "Writes the player-facing inventory list." },
+      { id: "generate-document-inline-image", label: "Document inline-image generator", desc: "Image-prompt writer for the per-slot inline images inside a document." },
+    ],
+  },
+  {
+    group: "Envelopes",
+    items: [
+      { id: "generate-envelopes", label: "Envelope generator", desc: "Batch-generates label / task / opening trigger / design instructions for every envelope." },
     ],
   },
   {
