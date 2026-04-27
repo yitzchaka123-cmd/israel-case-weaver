@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import {
   CheckCircle2, Copy, ExternalLink, Loader2, Barcode as BarcodeIcon,
   Image as ImageIcon, RefreshCw, Trash2, Wand2, QrCode, Plus, Star, Building2,
+  AlertTriangle, Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ean13ToPngBlob, ean13ToSvg, generateEan13 } from "./ean13";
@@ -20,6 +21,8 @@ import { bakeBackCover } from "./bakeCover";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { ImagePromptAssistant } from "@/components/ImagePromptAssistant";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
+import { DownloadButton } from "@/components/DownloadButton";
+import { downloadAsset, slugify } from "@/lib/utils";
 import { useProjectNotifications } from "@/features/project/notifications/useProjectNotifications";
 import { fireBackgroundImage } from "@/features/project/fireBackgroundImage";
 
