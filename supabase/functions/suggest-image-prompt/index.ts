@@ -5,6 +5,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { chatCompletions, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
 import { resolvePlaybook, renderEnvelopeDesignTemplate } from "../_shared/assistant-playbook.ts";
+import { resolveSystemPrompt, applyUserHeader } from "../_shared/system-prompts.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -268,11 +269,14 @@ Deno.serve(async (req) => {
       const supportsJsonMode = model.startsWith("openai/") || model.startsWith("google/") || model.startsWith("gemini-direct/");
       const startedAtStruct = Date.now();
       const callerUserIdStruct = await getUserIdFromAuth(req);
+      const resolvedStruct = await resolveSystemPrompt({
+        supa, ownerId: profileOwnerId, surface: `suggest-image-prompt:${category}`, defaultBody: structuredSystem,
+      });
       const respStruct = await chatCompletions({
         model,
         messages: [
-          { role: "system", content: structuredSystem },
-          { role: "user", content: structuredUser },
+          { role: "system", content: resolvedStruct.system },
+          { role: "user", content: applyUserHeader(structuredUser, resolvedStruct.userHeader) },
         ],
         ...(supportsTempStruct ? { temperature: 0.85 } : {}),
         ...(supportsJsonMode ? { response_format: { type: "json_object" } } : {}),
@@ -453,11 +457,14 @@ Deno.serve(async (req) => {
       const supportsTempInline = !model.startsWith("openai/");
       const startedAtInline = Date.now();
       const callerUserIdInline = await getUserIdFromAuth(req);
+      const resolvedInline = await resolveSystemPrompt({
+        supa, ownerId: profileOwnerId, surface: "suggest-image-prompt:inline-image", defaultBody: inlineSystem,
+      });
       const respInline = await chatCompletions({
         model,
         messages: [
-          { role: "system", content: inlineSystem },
-          { role: "user", content: inlineUser },
+          { role: "system", content: resolvedInline.system },
+          { role: "user", content: applyUserHeader(inlineUser, resolvedInline.userHeader) },
         ],
         ...(supportsTempInline ? { temperature: 0.85 } : {}),
       });
@@ -516,11 +523,14 @@ Deno.serve(async (req) => {
     const supportsTemperature = !model.startsWith("openai/");
     const startedAt = Date.now();
     const callerUserId = await getUserIdFromAuth(req);
+    const resolvedLegacy = await resolveSystemPrompt({
+      supa, ownerId: profileOwnerId, surface: `suggest-image-prompt:${category}`, defaultBody: system,
+    });
     const resp = await chatCompletions({
       model,
       messages: [
-        { role: "system", content: system },
-        { role: "user", content: userMsg },
+        { role: "system", content: resolvedLegacy.system },
+        { role: "user", content: applyUserHeader(userMsg, resolvedLegacy.userHeader) },
       ],
       ...(supportsTemperature ? { temperature: 0.9 } : {}),
     });

@@ -1,175 +1,147 @@
-## Goal
 
-Some documents are documents-with-pictures: a drone surveillance report needs 4 drone photos at the bottom; a forensic report needs 3 evidence photos; an interrogation file wants a mugshot. Today a document is **one image OR one file** — there is no concept of "document body + N inline images". This adds it, end to end:
+# Prompt Studio — Master Control Over How the System Thinks
 
-- The **assistant decides** during planning whether a doc needs embedded images and how many.
-- The **document editor UI** grows an "Inline images" panel with N slots — each with its own prompt, generate button, regenerate, history, and reorder.
-- The **prompter is consistency-aware**: image #2/3/4 in a slot group automatically reference image #1 (or whichever is marked the "anchor") so all four drone photos look like the same drone, same camera, same lighting.
-- The **PDF/DOCX renderer** embeds the images at the bottom of the document in the order shown.
+## Goals
 
-## Data model — one new table + small additions
+1. **One Master Prompt** that is automatically prepended/injected into **every AI call** in the platform (chat, image prompts, documents, marketing, storyboards, envelopes, canvas, hints, suspects, inline images, etc.).
+2. **Per-surface system prompts** — every individual edge function's system prompt becomes editable from the UI, with the hardcoded version shipped as the default fallback.
+3. **Versioning + revert** — every save creates a new version; one click rolls back.
+4. **Live test panel** — paste a sample user message, see exactly what the assembled prompt looks like and what the model returns, before you save.
+5. **Visibility** — for any AI run, show which Master Prompt version + which surface override version was used (origin badge already exists; we extend it).
 
-### New table: `document_inline_images`
+## How it changes "Why didn't my playbook edit work?"
 
-```text
-id                uuid pk
-document_id       uuid → documents.id (cascade)
-project_id        uuid → projects.id
-position          int        -- 0-indexed display order
-slot_label        text       -- e.g. "Drone shot 1", "Body — wide", filled by assistant
-prompt            text       -- per-image prompt, editable
-url               text|null  -- generated/uploaded image
-uploaded_url      text|null  -- user upload override
-active_version    text       -- 'generated' | 'uploaded'
-prompt_history    jsonb      -- prior prompts (for revert)
-url_history       jsonb      -- prior generated URLs
-is_anchor         bool       -- true for the reference image of the group
-anchor_image_id   uuid|null  -- if not anchor: which image to reference for consistency
-group_key         text|null  -- 'drone-photos', 'evidence', etc. — multiple groups per doc allowed
-provider, model, effective_model, fallback   -- origin badge data
-status            text       -- 'pending' | 'generated' | 'failed'
-error_message     text
-created_at, updated_at
-```
+Today the playbook is only read by ~3 surfaces. After this plan:
+- The Master Prompt is read by **all ~12 surfaces** (chat, suggest-image-prompt, generate-document, generate-marketing-copy, generate-storyboard, generate-envelopes, arrange-canvas, explain-canvas-node, generate-logic-flow, assistant-tweaks-edit, generate-document-inline-image's prompt assistant, etc.).
+- Each surface still has its own editable system prompt that you can tune independently.
+- The playbook stays as a separate, more structured tool (envelopes already use it). It is not removed.
 
-RLS: same "auth all" policies as `documents` (matches existing project tables).
+## What you will see in the app
 
-### Tiny additions to `documents`
+A new **Settings → Prompt Studio** tab with three sections:
 
-```text
-inline_images_layout  text default 'bottom-grid-2col'  -- 'bottom-grid-2col' | 'bottom-grid-3col' | 'inline-after-text' | 'gallery'
-inline_images_caption text                              -- optional shared caption
-```
+### 1. Master Prompt (top, big editor)
+- One large textarea labeled "Applied to every AI call across the platform."
+- Live char counter, version dropdown, "Save as new version" / "Revert" buttons.
+- A toggle: `Inject as: [System prefix] / [System suffix] / [User-message header]` — controls where it is concatenated.
 
-## Assistant-side: it decides + plans the slots
+### 2. Per-Surface Prompts (accordion list)
+Each row = one editable system prompt. Surfaces:
+- Assistant Chat
+- Image Prompt Writer (covers, suspects, hint sheets, media)
+- Image Prompt Writer — Envelope sub-mode
+- Image Prompt Writer — Inline-image sub-mode
+- Image Prompt Writer — Structured-doc sub-mode
+- Document Generator (Claude Skills + fallback)
+- Marketing Copy
+- Storyboard
+- Envelope Generator
+- Canvas Arranger
+- Canvas Node Explainer
+- Logic Flow Generator
+- Assistant Tweaks Editor
 
-### New tool `add_document_inline_images`
+Each row shows: title, current version, "Reset to default" button (re-loads the hardcoded text shipped in code), "View default" diff modal, and an editor.
 
-```text
-add_document_inline_images({
-  document_id,
-  layout,                  -- one of the layout enum values
-  group_key,               -- optional grouping (consistency band)
-  images: [
-    { slot_label, prompt, is_anchor },
-    { slot_label, prompt },
-    ...
-  ]
-})
-```
+### 3. Live Test Panel (right side / drawer)
+- Pick a surface from a dropdown.
+- Optional: pick a project to use as context.
+- Type a sample user input.
+- Click "Preview assembled prompt" → shows the exact final prompt sent to the model (Master + surface override + per-call context).
+- Click "Run test" → calls the surface and shows raw model output. Does not write to your real project.
 
-Inserts N rows into `document_inline_images`. Exactly one image per `group_key` MUST have `is_anchor=true`; the rest get `anchor_image_id` set to the anchor's id post-insert. Prompts are stored as drafted; nothing renders until the user (or `generate_document_assets`) hits Generate.
+## Technical plan (for the implementer / for your reference)
 
-### Updates to existing tools
+### Data model
 
-- `add_document` and `propose_document_set` get an optional `inline_images_plan` field on each entry: `{ count, group_key, layout, theme }`. When the assistant proposes the document set it can mark "Doc 14 — Drone surveillance log: needs 4 drone aerials, consistent look, group 'drone-feed'."
-- `generate_document_assets` mode `"images"` (new) or `"both"` will also generate any pending inline images for that doc, in anchor-first order.
+New table: `system_prompts`
+- `id uuid PK`
+- `owner_id uuid` (workspace-scoped — tied to user, like profiles)
+- `surface text` — `'master'`, `'assistant-chat'`, `'suggest-image-prompt:cover'`, `'suggest-image-prompt:inline-image'`, `'generate-document'`, etc.
+- `body text` — the prompt text
+- `injection_mode text` — `'system_prefix' | 'system_suffix' | 'user_header'` (master only; surfaces always replace)
+- `version int` — monotonic per (owner_id, surface)
+- `is_active bool` — exactly one active per (owner_id, surface)
+- `notes text` — optional changelog
+- `created_at`, `created_by`
+- RLS: only owner can read/write their own rows; admins read all.
 
-### Playbook rule (adds ~10 lines to the system prompt)
+### Shared resolver
 
-"When proposing a document, decide whether it visually requires embedded photos as part of the prop's realism (e.g. drone reports need aerial shots, autopsy reports need photo plates, evidence logs need item photos, dossiers need a mugshot). If yes, include `inline_images_plan` with the count, a `group_key` (so consistency can be enforced), a layout hint, and a one-sentence visual theme. Default `count` to the smallest believable number. NEVER inflate counts to pad the doc."
-
-## Consistency-aware prompter
-
-This is the smart bit. Lives in a new shared helper `_shared/inline-image-prompt.ts`:
+New file: `supabase/functions/_shared/system-prompts.ts`
 
 ```ts
-buildInlineImagePrompt({
-  doc,                  // doc context (title, doc_type, design_instructions)
-  thisImage,            // current row (slot_label, prompt, position)
-  anchor,               // null if this IS the anchor
-  groupSiblings,        // already-generated sibling rows in same group
-  projectImageStyle,    // project.image_prompt_instructions + user global notes
-})
+export async function resolveSystemPrompt(opts: {
+  supa: SupabaseClient;
+  ownerId: string | null;
+  surface: string;          // e.g. "suggest-image-prompt:inline-image"
+  defaultBody: string;       // the hardcoded system prompt currently in the function
+}): Promise<{ system: string; masterMode: 'system_prefix'|'system_suffix'|'user_header'|'none'; masterBody: string; surfaceVersion: number | null; masterVersion: number | null }>
 ```
 
-When `anchor` is set, the helper:
+Behavior:
+1. Load active master (`surface = 'master'`) for ownerId. If none, masterBody = "".
+2. Load active per-surface override. If none, use `defaultBody`.
+3. Compose final system text per `injection_mode`.
+4. Return both pieces + version numbers so we can log them.
 
-1. Fetches the anchor row from DB (its prompt + final URL).
-2. Calls `suggest-image-prompt` (already exists) with a system message that injects the anchor's full prompt and a strict rule: *"Every output prompt MUST repeat these locked visual properties from the reference image: camera/sensor type, lens/focal length feel, lighting condition, time of day, weather, color palette, subject style, framing language. Vary ONLY the framing/subject of the new shot as described by the slot prompt."*
-3. Returns the merged prompt and **also** passes the anchor's image URL to the image generator as a reference image input — Nano Banana / Gemini Image / GPT-Image all accept reference images, and the existing `generate-image` edge function already supports edit-mode (`url` input). We just route inline-image generation through that path when `anchor_image_id` is set.
+### Wiring (per edge function)
 
-So:
+In every function with a system prompt, replace:
 
-- **Image #1 (anchor)** = generated normally from `slot_label + prompt + project style`.
-- **Images #2-N** = generated as **edits/variations of the anchor image** with a slot-specific prompt overlay. This guarantees "same drone, same lighting, same look" — far stronger consistency than text-only prompt sharing.
-
-If the user manually uploads the anchor (drag-drop a real reference photo), the same logic kicks in — children will be generated as variations of the uploaded reference. This unlocks "I have one good drone shot, give me 3 more from different angles."
-
-## UI — inside the document editor
-
-In `DocumentsSection.tsx` editor, add a new section between "Final asset image" and "Final asset document":
-
-```text
-INLINE IMAGES                                    [+ Add image]   [Layout: ⬛⬛ 2-col ▾]
-
-┌──────────────┐  ┌──────────────┐
-│ [thumbnail]  │  │ [thumbnail]  │
-│ "Drone 1"  ⭐│  │ "Drone 2"    │
-│ Aerial view  │  │ Closer pass  │
-│ over the…    │  │ on suspect…  │
-│ [✨ Generate]│  │ [✨ Generate]│
-│ [↻] [✎] [⋮]  │  │ [↻] [✎] [⋮]  │
-└──────────────┘  └──────────────┘
-┌──────────────┐  ┌──────────────┐
-│ Drone 3      │  │ Drone 4      │
-│ + Add prompt │  │ + Add prompt │
-└──────────────┘  └──────────────┘
-
-🔗 Group: drone-feed (4 images, anchor: Drone 1)   [Regenerate group from anchor]
+```ts
+const system = `...long hardcoded prompt...`;
 ```
 
-Per slot:
-- **Thumbnail** (or empty/dashed placeholder).
-- **Slot label** — editable inline.
-- **Prompt** — editable textarea, opens the existing `ImagePromptAssistant` popover for the AI-assisted writer.
-- **⭐ Anchor toggle** — exactly one anchor per group; clicking another star moves the anchor.
-- **Generate** — calls a new edge function `generate-document-inline-image` (mirrors `generate-image` but writes to `document_inline_images`).
-- **Regenerate** — re-runs current prompt.
-- **History** — small strip identical to the existing image history strip (`HistoryStrip`).
-- **Drag handle** — reorders `position`.
-- **Upload override** — drag-drop a file to fill the slot manually; sets `active_version='uploaded'`.
+with:
 
-Group strip below shows: `[Regenerate group from anchor]` — wipes children, re-derives from current anchor. Useful when the user picks a new anchor.
+```ts
+const DEFAULT_SYSTEM = `...long hardcoded prompt...`; // unchanged content
+const resolved = await resolveSystemPrompt({
+  supa, ownerId: profileOwnerId, surface: '<surface-key>', defaultBody: DEFAULT_SYSTEM,
+});
+// use resolved.system as the system message
+// if resolved.masterMode === 'user_header', prepend resolved.masterBody to the user message instead
+```
 
-Layout dropdown at the top is the `inline_images_layout` value: how the renderer arranges the photos (2-col grid, 3-col grid, single column inline after text, full-width gallery).
+Then extend `logAiRun(...)` to also store `master_prompt_version` and `surface_prompt_version` (two new nullable columns on `ai_run_logs`).
 
-## Renderer — embedding in the final document
+### UI
 
-For Claude-Skills PDF/DOCX path (the existing direct file path):
-- The existing `buildDocPrompt()` in `generate-document/index.ts` gets a new section listing inline images (`POSITION 1, label, signed URL, caption`) plus the chosen layout, and instructs the skill to embed them at the bottom in a grid matching the layout.
-- We pass the actual public URLs (already in storage) to Claude as `image_url` content blocks alongside the text instruction so the skill can both reference and download them.
+- New route: `src/routes/settings.prompts.tsx` (TanStack Start file-based child of `settings.tsx`)
+- Components:
+  - `MasterPromptEditor.tsx` — textarea + version select + save/revert
+  - `SurfacePromptList.tsx` — accordion of per-surface editors
+  - `PromptTestDrawer.tsx` — surface picker, sample input, preview & run buttons
+- Uses Tanstack Query, follows existing settings panel design tokens (no custom colors).
 
-For ChatGPT image-only path (when the doc is *itself* a poster-style image): inline images are ignored — that flow generates one giant image. The UI hides the inline-images panel when the user picks `image` mode for `fileGeneration`.
+### Safety / guardrails
 
-## Files to create / change
+- Soft size cap: warn if Master Prompt > 4 KB (it gets prepended everywhere, costs tokens).
+- "Reset to default" is always one click — code-shipped defaults are the source of truth backup.
+- Live test panel never writes to real project rows.
+- Version history retained forever (small text rows, cheap).
 
-**New**:
-- migration: `document_inline_images` table + RLS + indexes; `documents.inline_images_layout`, `documents.inline_images_caption`.
-- `supabase/functions/generate-document-inline-image/index.ts` — per-slot generation, anchor-aware (uses reference-image edit mode when child).
-- `supabase/functions/_shared/inline-image-prompt.ts` — consistency-aware prompt builder.
-- `src/features/project/documents/InlineImagesPanel.tsx` — the slot grid UI.
-- `src/features/project/documents/InlineImageSlot.tsx` — single slot card.
-- `src/features/project/documents/useInlineImages.ts` — query + mutations + Realtime sync.
+### Migration scope
 
-**Edit**:
-- `supabase/functions/assistant-chat/index.ts` — register `add_document_inline_images` tool, extend `add_document` and `propose_document_set` schemas with `inline_images_plan`, extend `generate_document_assets` to also generate pending inline images.
-- `supabase/functions/generate-document/index.ts` — `buildDocPrompt` includes inline-image manifest; final doc payload to Claude attaches image URLs.
-- `src/features/project/DocumentsSection.tsx` — render `<InlineImagesPanel />` between final-image and final-document sections; layout dropdown.
-- `supabase/functions/suggest-image-prompt/index.ts` — accept `anchor_prompt` + `anchor_url` and prepend the consistency rule.
+- 1 SQL migration: create `system_prompts` table + RLS + add 2 columns to `ai_run_logs`.
+- ~12 edge functions touched: each gets a 3-line resolver call instead of an inline `const system =` literal. The hardcoded text moves into a `DEFAULT_SYSTEM` constant in the same file (so nothing is lost and the fallback always works).
+- 1 new shared helper file.
+- 1 new settings route + 3 small components.
 
-## Out of scope (future)
+### Out of scope (for this first pass)
 
-- Per-image **face/character** consistency across DIFFERENT documents (e.g. same suspect appearing in dossier + crime-scene photo). Doable later by adding a project-wide "character lock" that becomes the anchor for any matching slot. Not in v1.
-- Video clips inline. Stays single hero video per doc for now.
-- Image cropping / hotspot selection in the UI. Generated as-is, user re-prompts to reframe.
+- Per-project system-prompt overrides (only workspace-level for now). Easy to add later by extending the table with a nullable `project_id`.
+- Editing tool definitions / function-calling schemas of the assistant (separate, more dangerous surface).
+- A/B testing prompts.
 
-## Risk / trade-offs
+## What you get when this ships
 
-- Reference-image variation is great for "same camera/look", weaker for "same person's face" — acceptable for drone shots, evidence photos, scenes; not perfect for repeated-character shots (covered by the future "character lock" item above).
-- One row per inline image multiplies storage rows per project. With ~40 docs × avg 2 inline images = 80 extra rows per project. Negligible.
-- Claude Skills must accept the image URLs at the size they're served; existing image storage is public, so signed-URL handling is not required.
+- A `Settings → Prompt Studio` page where you can:
+  - Write a Master Prompt that genuinely applies to every AI call.
+  - Open any of the 12 surfaces and rewrite its system prompt.
+  - Test changes against a sample input before saving.
+  - Revert to a previous version or to the shipped default in one click.
+- Origin badges on generated assets / chat messages will show "Master v3 · Surface v7" so you always know which prompt produced an output.
 
----
-
-Let me know what to revise. I'll iterate until you say it's perfect, then ship it.
+If this looks right, approve and I'll implement it. If you want it scoped smaller (e.g. start with just the Master Prompt + 4 highest-impact surfaces), tell me which surfaces matter most and I'll trim.
