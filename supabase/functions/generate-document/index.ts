@@ -486,6 +486,7 @@ OUTPUT RULES:
             await supa.storage.from("documents").upload(path, bytes, { contentType: mime, upsert: true });
             const { data: pub } = supa.storage.from("documents").getPublicUrl(path);
             await supa.from("documents").update({ generated_document_url: pub.publicUrl, generated_pdf_url: documentFormat === "pdf" ? pub.publicUrl : doc.generated_pdf_url, document_format: documentFormat, document_provider: "anthropic-direct", document_model: model, document_skill_id: skillUsed.skill_id, status: "review" }).eq("id", documentId);
+            await mirrorStatusOnNodes("generated");
             await recordDocumentAttempt(supa, { projectId: doc.project_id, documentId, createdByMessageId: doc.created_by_message_id, title: doc.title, documentFormat, prompt: directFilePrompt, provider: "anthropic-direct", model, status: "generated", url: pub.publicUrl, mime, skill: skillUsed });
             await saveDocumentPrompt("ok");
             await logAiRun({ userId: callerUserId, projectId: doc.project_id, surface: "generate-document-file", requestedModel: model, effectiveModel: model, fallback: "none", status: "ok", latencyMs: Date.now() - startedAt, targetId: documentId, promptExcerpt: directFilePrompt });
