@@ -715,6 +715,18 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
             </div>
           )}
 
+          {/* Inline images embedded inside the document */}
+          <div className="md:col-span-2 border-t pt-4">
+            <InlineImagesPanel
+              documentId={draft.id}
+              projectId={draft.project_id}
+              layout={draft.inline_images_layout ?? "bottom-grid-2col"}
+              caption={draft.inline_images_caption ?? ""}
+              onLayoutChange={(v) => update({ inline_images_layout: v })}
+              onCaptionChange={(v) => update({ inline_images_caption: v })}
+            />
+          </div>
+
           {/* Final asset selector + uploaded file */}
           <div className="md:col-span-2 border-t pt-4 space-y-3">
             <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Final asset for export</Label>
