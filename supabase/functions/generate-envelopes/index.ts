@@ -8,6 +8,7 @@ import {
   resolvePlaybook,
   renderEnvelopeDesignTemplate,
 } from "../_shared/assistant-playbook.ts";
+import { resolveSystemPrompt, applyUserHeader } from "../_shared/system-prompts.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
