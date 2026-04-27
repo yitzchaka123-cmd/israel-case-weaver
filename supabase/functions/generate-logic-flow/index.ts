@@ -219,6 +219,14 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
     const startedAt = Date.now();
     const callerUserId = await getUserIdFromAuth(req);
 
+    const resolvedSP = await resolveSystemPrompt({
+      supa, ownerId: project.owner_id,
+      surface: useApproved ? "generate-logic-flow:from-approved" : "generate-logic-flow:fresh",
+      defaultBody: sys,
+    });
+    const finalSystem = resolvedSP.system;
+    const finalUserPrompt = applyUserHeader(userPrompt, resolvedSP.userHeader);
+
     // Snapshot pre-regen counts so we can decide whether to warn the user
     // that downstream artifacts (built from the OLD logic) are now stale.
     const [{ count: preDocCount }, { count: preEnvCount }, { count: preHintCount }, { count: preFinalCount }] = await Promise.all([
