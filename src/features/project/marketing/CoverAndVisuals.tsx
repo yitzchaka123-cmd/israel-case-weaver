@@ -2,9 +2,10 @@
 // additional marketing images (back of box, marketing-extra). Uses the new
 // ImagePromptAssistant + history strip + FinalAssetPicker stack so the cover
 // here stays in sync with Overview.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +15,8 @@ import { FinalAssetPicker } from "@/components/FinalAssetPicker";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { fireBackgroundImage } from "@/features/project/fireBackgroundImage";
-import { Copy, Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2, Sparkles } from "lucide-react";
+import { bakeFrontCover } from "./bakeCover";
+import { Copy, Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2, Sparkles, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 
 type OutputType = "image" | "document" | "both";
