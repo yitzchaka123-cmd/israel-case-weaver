@@ -653,6 +653,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
             })()}
           </div>
         </div>
+        </div>
 
         {/* Composer */}
         <div className="border-t bg-surface/60 backdrop-blur">
