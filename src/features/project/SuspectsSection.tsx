@@ -228,6 +228,7 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
       active_version: "generated",
     }).eq("id", suspect.id);
     setDraft((d) => d ? { ...d, thumbnail_url: item.url!, active_version: "generated", thumbnail_effective_model: item.effective_model ?? item.model, thumbnail_fallback: item.fallback ?? null } : d);
+    void syncSuspectThumbnailToIntakeDocs({ projectId: suspect.project_id, suspectId: suspect.id, portraitUrl: item.url });
     toast.success("Portrait restored as active");
   };
 
