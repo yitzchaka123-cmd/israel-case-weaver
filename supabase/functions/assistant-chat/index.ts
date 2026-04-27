@@ -1989,7 +1989,7 @@ async function processConversation(
   };
   // Default to "low" — chat is short turn-by-turn and tool calls don't need
   // heavy reasoning. Users who want deeper thinking can crank ai_reasoning_effort.
-  const baseEffort = String((project as { ai_reasoning_effort?: string }).ai_reasoning_effort ?? "low");
+  const baseEffort = String((project as { ai_reasoning_effort?: string }).ai_reasoning_effort ?? "high");
   const TOOLS = buildTools(playbook);
   const MAX_ROUNDS = 4;
   let lastFb: { effectiveModel: string; fallback: string } = { effectiveModel: model, fallback: "none" };
@@ -2357,7 +2357,7 @@ Deno.serve(async (req) => {
         })
         .eq("id", assistantMessageId);
     };
-    const baseEffort = String((project as { ai_reasoning_effort?: string }).ai_reasoning_effort ?? "low");
+    const baseEffort = String((project as { ai_reasoning_effort?: string }).ai_reasoning_effort ?? "high");
     const TOOLS = buildTools(playbook);
 
     const MAX_ROUNDS = 4;
