@@ -523,11 +523,14 @@ Deno.serve(async (req) => {
     const supportsTemperature = !model.startsWith("openai/");
     const startedAt = Date.now();
     const callerUserId = await getUserIdFromAuth(req);
+    const resolvedLegacy = await resolveSystemPrompt({
+      supa, ownerId: profileOwnerId, surface: `suggest-image-prompt:${category}`, defaultBody: system,
+    });
     const resp = await chatCompletions({
       model,
       messages: [
-        { role: "system", content: system },
-        { role: "user", content: userMsg },
+        { role: "system", content: resolvedLegacy.system },
+        { role: "user", content: applyUserHeader(userMsg, resolvedLegacy.userHeader) },
       ],
       ...(supportsTemperature ? { temperature: 0.9 } : {}),
     });
