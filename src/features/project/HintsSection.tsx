@@ -12,6 +12,7 @@ import { ImageHistoryStrip, type ImageHistoryRow } from "@/components/ImageHisto
 import { FinalAssetPicker } from "@/components/FinalAssetPicker";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
+import { DownloadButton } from "@/components/DownloadButton";
 import { useBackgroundImageJob } from "@/features/project/useBackgroundImageJob";
 import { GenerationTimer } from "@/features/project/GenerationTimer";
 
@@ -375,6 +376,9 @@ function HintSheetBlock({ projectId, stage, sheet }: { projectId: string; stage:
             position="absolute"
             hoverOnly
           />
+          <span className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity z-10" onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}>
+            <DownloadButton url={activeUrl} title={`hint-stage-${stage}`} />
+          </span>
           {sheetJob.isPending && (
             <GenerationTimer elapsedSec={sheetJob.state.elapsedSec} label={`Regenerating stage ${stage}`} />
           )}
