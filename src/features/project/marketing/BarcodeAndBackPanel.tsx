@@ -44,17 +44,7 @@ interface MediaAsset {
   fallback: string | null;
 }
 
-async function callEdge(name: string, body: unknown) {
-  const { data: { session } } = await supabase.auth.getSession();
-  return fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${name}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-    },
-    body: JSON.stringify(body),
-  });
-}
+
 
 async function fetchAsImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
