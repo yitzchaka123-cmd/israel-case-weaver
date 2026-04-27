@@ -18,6 +18,7 @@ import { ClaudeSkillsPanel } from "./ClaudeSkillsPanel";
 import { TeamAccessPanel } from "./TeamAccessPanel";
 import { AiRunLog } from "./AiRunLog";
 import { VisibleModelsPanel } from "./VisibleModelsPanel";
+import { PromptStudioPanel } from "./PromptStudioPanel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LOGIC_FLOW_MODELS, LOGIC_FLOW_MODEL_KEY, LOGIC_FLOW_MODEL_DEFAULT } from "@/features/project/CanvasSection";
 import { Textarea } from "@/components/ui/textarea";
