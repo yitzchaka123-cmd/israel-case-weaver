@@ -18,6 +18,7 @@ import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { DocumentPromptAssistant } from "@/components/DocumentPromptAssistant";
 import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { InlineImagesPanel } from "./documents/InlineImagesPanel";
 
 interface MediaHistoryRow {
   id: string;
@@ -61,6 +62,8 @@ interface Doc {
   active_version: string;
   envelope_number: number | null;
   created_by_message_id: string | null;
+  inline_images_layout?: string | null;
+  inline_images_caption?: string | null;
 }
 
 export function DocumentsSection({ projectId }: { projectId: string }) {
@@ -711,6 +714,18 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
               <p className="max-h-28 overflow-auto whitespace-pre-wrap rounded-md bg-background/60 p-2 text-[11px] leading-relaxed text-muted-foreground">{filePrompt.final_prompt}</p>
             </div>
           )}
+
+          {/* Inline images embedded inside the document */}
+          <div className="md:col-span-2 border-t pt-4">
+            <InlineImagesPanel
+              documentId={draft.id}
+              projectId={draft.project_id}
+              layout={draft.inline_images_layout ?? "bottom-grid-2col"}
+              caption={draft.inline_images_caption ?? ""}
+              onLayoutChange={(v) => update({ inline_images_layout: v })}
+              onCaptionChange={(v) => update({ inline_images_caption: v })}
+            />
+          </div>
 
           {/* Final asset selector + uploaded file */}
           <div className="md:col-span-2 border-t pt-4 space-y-3">
