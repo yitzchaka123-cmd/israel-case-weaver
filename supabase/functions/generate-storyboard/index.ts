@@ -219,6 +219,7 @@ Return: {"shots": [ ... ]}`;
         userId: callerUserId, projectId, surface: "generate-storyboard",
         requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
         status: "ok", latencyMs: Date.now() - startedAt, promptExcerpt: userMsg,
+        masterPromptVersion: resolvedSP.masterVersion, surfacePromptVersion: resolvedSP.surfaceVersion,
       });
       return new Response(JSON.stringify({ shots, model, effectiveModel: fb.effectiveModel, fallback: fb.fallback }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
