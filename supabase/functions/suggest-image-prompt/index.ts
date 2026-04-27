@@ -457,11 +457,14 @@ Deno.serve(async (req) => {
       const supportsTempInline = !model.startsWith("openai/");
       const startedAtInline = Date.now();
       const callerUserIdInline = await getUserIdFromAuth(req);
+      const resolvedInline = await resolveSystemPrompt({
+        supa, ownerId: profileOwnerId, surface: "suggest-image-prompt:inline-image", defaultBody: inlineSystem,
+      });
       const respInline = await chatCompletions({
         model,
         messages: [
-          { role: "system", content: inlineSystem },
-          { role: "user", content: inlineUser },
+          { role: "system", content: resolvedInline.system },
+          { role: "user", content: applyUserHeader(inlineUser, resolvedInline.userHeader) },
         ],
         ...(supportsTempInline ? { temperature: 0.85 } : {}),
       });
