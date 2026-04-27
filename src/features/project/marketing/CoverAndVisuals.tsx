@@ -14,9 +14,10 @@ import { ImageHistoryStrip, type ImageHistoryRow } from "@/components/ImageHisto
 import { FinalAssetPicker } from "@/components/FinalAssetPicker";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
+import { DownloadButton } from "@/components/DownloadButton";
 import { fireBackgroundImage } from "@/features/project/fireBackgroundImage";
 import { bakeFrontCover } from "./bakeCover";
-import { Copy, Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2, Sparkles, Wand2 } from "lucide-react";
+import { Copy, Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2, Sparkles, Wand2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
 type OutputType = "image" | "document" | "both";
@@ -75,8 +76,20 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
     queryFn: async () => {
       const { data } = await supabase
         .from("projects")
-        .select("title, cover_image_url, uploaded_cover_url, cover_active_version, cover_prompt, cover_effective_model, cover_fallback, ai_provider_images, mystery_type, setting, subtitle")
+        .select("title, cover_image_url, uploaded_cover_url, cover_active_version, cover_prompt, cover_effective_model, cover_fallback, ai_provider_images, mystery_type, setting, subtitle, genre, year")
         .eq("id", projectId)
+        .maybeSingle();
+      return data;
+    },
+  });
+
+  const { data: marketing } = useQuery({
+    queryKey: ["project-marketing-front", projectId],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("project_marketing")
+        .select("front_subtext, front_company_slogan, front_logo_note, front_title_note, front_bottom_explanation, tagline")
+        .eq("project_id", projectId)
         .maybeSingle();
       return data;
     },
