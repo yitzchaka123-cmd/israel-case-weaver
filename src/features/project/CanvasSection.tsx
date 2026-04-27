@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import ReactFlow, {
   Background, BackgroundVariant, Controls, MiniMap, addEdge, useEdgesState, useNodesState,
   type Connection, type Edge, type NodeChange, type EdgeChange, type Node as RFNode,
-  applyNodeChanges, applyEdgeChanges, ReactFlowProvider,
+  applyNodeChanges, applyEdgeChanges, ReactFlowProvider, useReactFlow,
   MarkerType,
 } from "reactflow";
 import "reactflow/dist/style.css";
