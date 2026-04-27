@@ -231,6 +231,7 @@ ${isSellingPoint
         status: "error", latencyMs: Date.now() - startedAt,
         errorMessage: `${provider} ${resp.status}: ${t.slice(0, 200)}`,
         promptExcerpt: userMsg,
+        masterPromptVersion: resolvedSP.masterVersion, surfacePromptVersion: resolvedSP.surfaceVersion,
       });
       if (resp.status === 429) {
         return new Response(JSON.stringify({ error: `${provider} rate limit — try again shortly.` }), {
