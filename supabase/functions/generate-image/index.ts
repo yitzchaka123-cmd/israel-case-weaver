@@ -415,6 +415,9 @@ async function runImageGeneration(req: Request): Promise<Response> {
     } else if (target === "hint-sheet") {
       bucket = "media";
       path = `${projectId}/hint-sheets/${targetId ?? "x"}-${Date.now()}.${ext}`;
+    } else if (target === "storyboard-shot") {
+      bucket = "media";
+      path = `${projectId}/storyboard/${targetId ?? "x"}-${Date.now()}.${ext}`;
     }
 
     const { error: upErr } = await supa.storage.from(bucket).upload(path, bytes, { contentType: mime, upsert: true });
