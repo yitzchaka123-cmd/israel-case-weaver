@@ -291,6 +291,32 @@ Deno.serve(async (req) => {
     const gameLanguage = String(project?.game_language ?? "Hebrew").trim() || "Hebrew";
     const isRtl = ["Hebrew", "Arabic", "Persian", "Urdu", "Yiddish"].includes(gameLanguage);
 
+    // Mirror the document's lifecycle status onto its linked Final Flow node(s)
+    // by merging into existing node.data so we don't wipe docNumber/docType/etc.
+    // The CaseNode renderer reads data.generationStatus to color the pill:
+    //   "generated" → blue, "approved" → green.
+    const mirrorStatusOnNodes = async (generationStatus: "generated" | "approved") => {
+      try {
+        const linked: string[] = Array.isArray(doc.linked_node_ids) ? doc.linked_node_ids : [];
+        const { data: nodes } = await supa
+          .from("canvas_nodes")
+          .select("id, data")
+          .eq("project_id", doc.project_id)
+          .eq("board", "final")
+          .eq("node_type", "document");
+        const targets = (nodes ?? []).filter((n: any) =>
+          (n.data as { documentId?: string } | null)?.documentId === documentId ||
+          linked.includes(n.id)
+        );
+        for (const n of targets) {
+          const merged = { ...((n.data as Record<string, unknown> | null) ?? {}), generationStatus };
+          await supa.from("canvas_nodes").update({ data: merged }).eq("id", n.id);
+        }
+      } catch (e) {
+        console.warn("[generate-document] mirrorStatusOnNodes failed", (e as Error).message);
+      }
+    };
+
     if (mode === "text") {
       const model = resolveDocumentModel(project);
       const blocked = directProviderBlock(model, "document text");
@@ -351,6 +377,7 @@ OUTPUT RULES:
       const bodyText = data.choices?.[0]?.message?.content ?? "";
 
       await supa.from("documents").update({ hebrew_content: bodyText, status: "review" }).eq("id", documentId);
+      await mirrorStatusOnNodes("generated");
       await supa.from("prompts").insert({
         project_id: doc.project_id,
         scope: "document",
@@ -459,6 +486,7 @@ OUTPUT RULES:
             await supa.storage.from("documents").upload(path, bytes, { contentType: mime, upsert: true });
             const { data: pub } = supa.storage.from("documents").getPublicUrl(path);
             await supa.from("documents").update({ generated_document_url: pub.publicUrl, generated_pdf_url: documentFormat === "pdf" ? pub.publicUrl : doc.generated_pdf_url, document_format: documentFormat, document_provider: "anthropic-direct", document_model: model, document_skill_id: skillUsed.skill_id, status: "review" }).eq("id", documentId);
+            await mirrorStatusOnNodes("generated");
             await recordDocumentAttempt(supa, { projectId: doc.project_id, documentId, createdByMessageId: doc.created_by_message_id, title: doc.title, documentFormat, prompt: directFilePrompt, provider: "anthropic-direct", model, status: "generated", url: pub.publicUrl, mime, skill: skillUsed });
             await saveDocumentPrompt("ok");
             await logAiRun({ userId: callerUserId, projectId: doc.project_id, surface: "generate-document-file", requestedModel: model, effectiveModel: model, fallback: "none", status: "ok", latencyMs: Date.now() - startedAt, targetId: documentId, promptExcerpt: directFilePrompt });
@@ -601,6 +629,7 @@ OUTPUT RULES:
         await supa.storage.from("documents").upload(path, bytes, { contentType: mime, upsert: true });
         const { data: pub } = supa.storage.from("documents").getPublicUrl(path);
         await supa.from("documents").update({ generated_asset_url: pub.publicUrl, active_version: "generated", status: "review", document_model: model, document_provider: imageProvider }).eq("id", documentId);
+        await mirrorStatusOnNodes("generated");
         await supa.from("media_assets").insert({
           project_id: doc.project_id, category: "document", title: doc.title, url: pub.publicUrl,
           mime_type: mime, prompt: imgPrompt, provider: imageProvider, model, effective_model: model,
@@ -703,6 +732,7 @@ OUTPUT RULES:
       await supa.storage.from("documents").upload(path, bytes, { contentType: mime, upsert: true });
       const { data: pub } = supa.storage.from("documents").getPublicUrl(path);
       await supa.from("documents").update({ generated_asset_url: pub.publicUrl, active_version: "generated", status: "review", document_model: model, document_provider: imageProvider }).eq("id", documentId);
+      await mirrorStatusOnNodes("generated");
       await supa.from("prompts").insert({
         project_id: doc.project_id, scope: "document-image", target_id: documentId,
         original_prompt: imgPrompt, final_prompt: imgPrompt, provider: imageProvider, model,

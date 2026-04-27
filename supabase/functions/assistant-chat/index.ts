@@ -332,8 +332,10 @@ The transparency rule does NOT replace the tool call — it COMPLEMENTS it. Writ
 Required behaviour by tool:
 - \`set_solution_summary\` → CALL THE TOOL FIRST with the full new summary text. Then in the same turn, write a markdown section "## Updated solution summary" containing the FULL summary text (do not truncate or paraphrase), then ask: "Does this match what you had in mind? Any beats you want to adjust?" Pasting the markdown WITHOUT calling \`set_solution_summary\` first means the summary was never saved — that is a critical failure.
 - \`propose_document_set\` → write the FULL list as numbered bullets in your prose: "**N. Title** (doc_type, print_size) — purpose. Supports nodes: …" for EVERY entry. Do not summarize as "and 30 more like this". Then call \`propose_options\` with the standard 3 buttons.
-- \`add_document\` → for each document created, show a 2–4 sentence content sketch in chat (what the player will read on the page) so the user can react before generation.
-- \`generate_document_assets\` → after the body is written, paste the full final body text in chat inside a markdown block, then ask the user if they want any edits before moving to the next document.
+- \`add_document\` → for each document created, show a 2–4 sentence content sketch in chat (what the player will read on the page), AND a separate 2–3 sentence "Visual feel:" paragraph describing what the finished prop will LOOK like (paper stock, era, color palette, typography, layout vibe, any photos/stamps/handwriting/inline images). Derive the visual-feel paragraph from \`design_instructions\` and the doc type so it stays consistent with what will actually be produced. Do this BEFORE generation so the user can picture the prop and react.
+- \`propose_document_set\` → when listing the proposal, append a single short "Visual feel:" line under each item (paper/era/typography/photo cues) so the user can picture the whole physical box of props before approving.
+- \`generate_document_assets\` → after the body is written, (1) paste the full final body text in chat inside a markdown block, (2) include the same kind of short "Visual feel:" paragraph describing the produced document's look, (3) ask the user if they want edits OR if it's good to move on.
+- AUTO-APPROVAL: When the user reacts to a just-shown document or its image with a positive / move-on signal — examples: "this is good", "looks good", "looks great", "perfect", "approved", "approve", "next", "next one", "move on", "continue", "ok next", "👍", "love it", "yes go on", "ship it", "סבבה", "מאושר", "הבא", "תמשיך" — you MUST call \`approve_document\` for the most recently shown document BEFORE moving on. Then briefly confirm ("Approved — moving to the next document.") and proceed. If the user asked for changes/edits instead, do NOT approve — make the edits first.
 - \`update_project\` for \`packaging_notes\` / \`image_prompt_instructions\` / \`video_prompt_instructions\` / \`hint_settings\` / \`envelope_settings\` → echo the new text/values and ask for confirmation.
 - \`add_canvas_node\` (clue / deduction / red_herring / solution / document) → state the title and the description/purpose in chat alongside the receipt so the user can see what was actually wired in.
 - If the user asks "show me the summary" / "what's the current summary?" / "read me the summary" / "what documents are proposed?" / "show me the list", reply by pasting the FULL stored text from the runtime context (solution_summary or proposed_document_set) — do NOT just say "open the Case Board to see it".
@@ -978,6 +980,22 @@ const BASE_TOOLS = [
           hebrew_content: { type: "string" },
           envelope_number: { type: "number", description: "DEPRECATED for distribution. Almost always leave null. Documents are in the box from the start; only set if the user explicitly wants this doc physically inside a sealed task envelope." },
           status: { type: "string" },
+        },
+        required: ["id"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "approve_document",
+      description:
+        "Mark a document as APPROVED / final. Call this whenever the user gives a positive sign-off on a document or its image (examples: 'this is good', 'looks great', 'perfect', 'approved', 'next one', 'move on', 'continue', 'ok next', '👍', 'love it', or explicit 'approve doc N'). Sets documents.status = 'final' AND turns the matching Final Flow node GREEN. After calling this, briefly confirm in chat ('Approved — moving to the next document.') and proceed to the next planned doc. Do NOT call this if the user asked for changes/edits — only on explicit positive sign-off. The receipt returns the document id and title.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Document id from the Existing documents roster (the doc the user just approved)." },
         },
         required: ["id"],
         additionalProperties: false,
@@ -1855,6 +1873,43 @@ async function executeTool(
         "id, name, thumbnail_url, alt_thumbnail_url, thumbnail_prompt, alt_thumbnail_prompt",
         (r) => String(r.name ?? "—"),
       );
+    }
+    if (name === "approve_document") {
+      const id = typeof (args as { id?: unknown }).id === "string" ? (args as { id: string }).id : "";
+      if (!id) return { ok: false, message: "approve_document needs id" };
+      const { data: docRow, error: docErr } = await supa
+        .from("documents")
+        .select("id, title, doc_number, project_id, linked_node_ids")
+        .eq("id", id)
+        .eq("project_id", projectId)
+        .single();
+      if (docErr || !docRow) return { ok: false, message: "Document not found in this project" };
+      await supa.from("documents").update(withMessage({ status: "final" })).eq("id", id);
+      // Mirror "approved" onto every Final Flow document node tied to this doc.
+      try {
+        const linked: string[] = Array.isArray(docRow.linked_node_ids) ? docRow.linked_node_ids : [];
+        const { data: nodes } = await supa
+          .from("canvas_nodes")
+          .select("id, data")
+          .eq("project_id", projectId)
+          .eq("board", "final")
+          .eq("node_type", "document");
+        const targets = (nodes ?? []).filter((n: any) =>
+          (n.data as { documentId?: string } | null)?.documentId === id ||
+          linked.includes(n.id)
+        );
+        for (const n of targets) {
+          const merged = { ...((n.data as Record<string, unknown> | null) ?? {}), generationStatus: "approved" };
+          await supa.from("canvas_nodes").update({ data: merged }).eq("id", n.id);
+        }
+      } catch (e) {
+        console.warn("[approve_document] node mirror failed", (e as Error).message);
+      }
+      return {
+        ok: true,
+        message: `Approved: #${docRow.doc_number ?? "?"} ${docRow.title ?? "—"} (status → final, Final Flow node turned green)`,
+        id,
+      };
     }
     if (name === "update_document") {
       return await runUpdate(

@@ -66,12 +66,23 @@ export type CaseNodeData = {
   linkedLogicTitles?: string[];
 };
 
+// Color buckets for the per-node status pill on the Final Flow board.
+// Two strong signals the user reads at a glance:
+//   • BLUE  = the document has been generated but not yet approved
+//   • GREEN = the document has been approved (status === "final")
+const BLUE  = { bg: "color-mix(in oklab, oklch(0.70 0.14 235) 26%, transparent)", fg: "oklch(0.40 0.16 235)" };
+const GREEN = { bg: "color-mix(in oklab, oklch(0.62 0.18 155) 30%, transparent)", fg: "oklch(0.32 0.16 155)" };
+
 const STATUS_STYLE: Record<string, { label: string; bg: string; fg: string }> = {
   ungenerated: { label: "Ungenerated", bg: "color-mix(in oklab, var(--color-muted) 70%, transparent)", fg: "var(--color-muted-foreground)" },
   "draft row created": { label: "Draft row", bg: "color-mix(in oklab, oklch(0.75 0.12 75) 22%, transparent)", fg: "oklch(0.45 0.15 75)" },
-  "image generated": { label: "Image ready", bg: "color-mix(in oklab, oklch(0.70 0.14 220) 22%, transparent)", fg: "oklch(0.40 0.15 220)" },
-  "file generated": { label: "File ready", bg: "color-mix(in oklab, oklch(0.68 0.16 155) 22%, transparent)", fg: "oklch(0.38 0.16 155)" },
-  finalized: { label: "Finalized", bg: "color-mix(in oklab, oklch(0.62 0.18 155) 28%, transparent)", fg: "oklch(0.32 0.16 155)" },
+  // All "generated, awaiting approval" variants render BLUE.
+  generated:         { label: "Generated", ...BLUE },
+  "image generated": { label: "Image ready", ...BLUE },
+  "file generated":  { label: "File ready",  ...BLUE },
+  // All "approved / final" variants render GREEN.
+  approved:  { label: "Approved",  ...GREEN },
+  finalized: { label: "Finalized", ...GREEN },
 };
 
 function statusStyleFor(status?: string | null) {
