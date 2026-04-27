@@ -269,11 +269,14 @@ Deno.serve(async (req) => {
       const supportsJsonMode = model.startsWith("openai/") || model.startsWith("google/") || model.startsWith("gemini-direct/");
       const startedAtStruct = Date.now();
       const callerUserIdStruct = await getUserIdFromAuth(req);
+      const resolvedStruct = await resolveSystemPrompt({
+        supa, ownerId: profileOwnerId, surface: `suggest-image-prompt:${category}`, defaultBody: structuredSystem,
+      });
       const respStruct = await chatCompletions({
         model,
         messages: [
-          { role: "system", content: structuredSystem },
-          { role: "user", content: structuredUser },
+          { role: "system", content: resolvedStruct.system },
+          { role: "user", content: applyUserHeader(structuredUser, resolvedStruct.userHeader) },
         ],
         ...(supportsTempStruct ? { temperature: 0.85 } : {}),
         ...(supportsJsonMode ? { response_format: { type: "json_object" } } : {}),
