@@ -61,10 +61,13 @@ interface Body {
   userInstructions?: string; // free-text steering from Tab 1 of the new assistant
   currentDesign?: string;    // existing design_instructions to revise
   currentContent?: string;   // existing content (hebrew_content / envelope task) to revise
+  // Inline-image mode — embedded image inside a document slot
+  inlineImageId?: string;
 }
 
 const STRUCTURED_DOC = "document-structured";
 const STRUCTURED_ENV = "envelope-structured";
+const INLINE_IMAGE = "inline-image";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -338,6 +341,160 @@ Deno.serve(async (req) => {
         model,
         effectiveModel: fbStruct.effectiveModel,
         fallback: fbStruct.fallback,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // INLINE-IMAGE MODE — slot embedded inside a document (e.g. drone shots
+    // at the bottom of a surveillance report). Anchor-aware: when the slot
+    // has an anchor, the writer locks visual properties to it and only
+    // varies framing per the user's brief. Returns { prompt }.
+    // ─────────────────────────────────────────────────────────────────────
+    if (category === INLINE_IMAGE) {
+      const { inlineImageId, userInstructions } = body;
+      if (!inlineImageId) {
+        return new Response(JSON.stringify({ error: "inlineImageId required for inline-image category" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { data: slot } = await supa
+        .from("document_inline_images")
+        .select("id, document_id, slot_label, prompt, position, group_key, is_anchor, anchor_image_id")
+        .eq("id", inlineImageId)
+        .maybeSingle();
+      if (!slot) {
+        return new Response(JSON.stringify({ error: "Inline image slot not found" }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { data: docRow } = await supa
+        .from("documents")
+        .select("title, doc_type, design_instructions, inline_images_caption, inline_images_layout")
+        .eq("id", (slot as { document_id: string }).document_id)
+        .maybeSingle();
+
+      let anchorRow: { slot_label: string; prompt: string | null; url: string | null } | null = null;
+      if ((slot as { anchor_image_id: string | null }).anchor_image_id) {
+        const { data: a } = await supa
+          .from("document_inline_images")
+          .select("slot_label, prompt, url")
+          .eq("id", (slot as { anchor_image_id: string }).anchor_image_id)
+          .maybeSingle();
+        if (a) anchorRow = a as typeof anchorRow;
+      }
+
+      const { data: siblings } = (slot as { group_key: string | null }).group_key
+        ? await supa
+            .from("document_inline_images")
+            .select("slot_label, prompt, position")
+            .eq("document_id", (slot as { document_id: string }).document_id)
+            .eq("group_key", (slot as { group_key: string }).group_key)
+            .neq("id", (slot as { id: string }).id)
+            .order("position", { ascending: true })
+        : { data: [] as Array<{ slot_label: string; prompt: string | null; position: number }> };
+
+      const isAnchor = (slot as { is_anchor: boolean }).is_anchor || !anchorRow;
+
+      const inlineSystem = [
+        `You are an expert art director writing a single image prompt for an image embedded inside a printed game prop document (e.g. surveillance photo at the bottom of a drone report, evidence photo on a case file). Output ONLY the prompt — no preamble, no quotes, no markdown.`,
+        ``,
+        isAnchor
+          ? `THIS IS THE ANCHOR / REFERENCE IMAGE for its slot group. Commit to a strong, opinionated visual identity (camera/sensor type, lens feel, lighting, palette, framing language, post-processing) — sibling slots will be generated as variations of this image and inherit those properties.`
+          : `THIS IS A CHILD / SIBLING IMAGE in a group anchored by another slot. Your prompt MUST lock the following visual properties to match the anchor exactly: camera/sensor type and lens feel, lighting (time, direction, weather, color temp), palette and grading, subject style, post-processing (grain, sharpness, contrast). VARY ONLY the framing/angle/foreground per this slot's brief. The output must read as the same camera operator shooting moments later.`,
+        ``,
+        globalAssistantInstructions
+          ? `USER GLOBAL STYLE GUIDE (highest priority):\n${globalAssistantInstructions}`
+          : "",
+      ].filter(Boolean).join("\n");
+
+      const slotRow = slot as { slot_label: string; prompt: string | null; position: number; group_key: string | null };
+      const docMeta = docRow as { title?: string; doc_type?: string | null; design_instructions?: string | null; inline_images_caption?: string | null; inline_images_layout?: string | null } | null;
+
+      const inlineUser = [
+        userInstructions?.trim()
+          ? `╔════════════════════════════════════════════════════════════╗\n║  USER INSTRUCTIONS FOR THIS SLOT — HIGHEST PRIORITY        ║\n╚════════════════════════════════════════════════════════════╝\n${userInstructions.trim()}\n`
+          : `USER INSTRUCTIONS FOR THIS SLOT: (none — derive everything from project + document + anchor context)`,
+        ``,
+        `PROJECT CONTEXT:`,
+        ctx || "(no context yet)",
+        ``,
+        `PARENT DOCUMENT:`,
+        `- Title: ${docMeta?.title ?? "Document"}`,
+        docMeta?.doc_type ? `- Type: ${docMeta.doc_type}` : "",
+        docMeta?.inline_images_layout ? `- Inline image layout: ${docMeta.inline_images_layout}` : "",
+        docMeta?.inline_images_caption ? `- Shared caption: ${docMeta.inline_images_caption}` : "",
+        docMeta?.design_instructions ? `- Document design context: ${docMeta.design_instructions}` : "",
+        ``,
+        `THIS SLOT:`,
+        `- Label: ${slotRow.slot_label}`,
+        `- Position in document: ${slotRow.position + 1}`,
+        slotRow.group_key ? `- Group: ${slotRow.group_key}` : "",
+        slotRow.prompt?.trim() ? `- Current prompt (revise / improve, do not repeat verbatim):\n${slotRow.prompt.trim()}` : "",
+        ``,
+        anchorRow ? [
+          `ANCHOR REFERENCE IMAGE (the locked look you must match):`,
+          `- Anchor slot: "${anchorRow.slot_label}"`,
+          `- Anchor prompt: ${anchorRow.prompt ?? "(no prompt available)"}`,
+          anchorRow.url ? `- Anchor image URL (will be passed to the image model as a reference): ${anchorRow.url}` : "",
+          ``,
+          `Write a prompt that EXPLICITLY restates the locked properties (camera, lighting, palette, look) AND describes ONLY this slot's variation (angle / framing / foreground).`,
+        ].join("\n") : "",
+        siblings && siblings.length > 0 && isAnchor ? [
+          ``,
+          `SIBLING SLOTS that will inherit this anchor's look (write the anchor knowing these will follow):`,
+          ...siblings.map((s) => `- "${s.slot_label}"${s.prompt ? `: ${s.prompt}` : ""}`),
+        ].join("\n") : "",
+        ``,
+        `Now write the single image prompt. Only the prompt itself.`,
+      ].filter(Boolean).join("\n");
+
+      const supportsTempInline = !model.startsWith("openai/");
+      const startedAtInline = Date.now();
+      const callerUserIdInline = await getUserIdFromAuth(req);
+      const respInline = await chatCompletions({
+        model,
+        messages: [
+          { role: "system", content: inlineSystem },
+          { role: "user", content: inlineUser },
+        ],
+        ...(supportsTempInline ? { temperature: 0.85 } : {}),
+      });
+      const fbInline = extractFallback(respInline, model);
+      if (!respInline.ok) {
+        const t = await respInline.text().catch(() => "");
+        const provider = model.startsWith("openai/") ? "OpenAI" : "Lovable AI";
+        await logAiRun({
+          userId: callerUserIdInline, projectId, surface: "suggest-image-prompt:inline-image",
+          requestedModel: model, effectiveModel: fbInline.effectiveModel, fallback: fbInline.fallback,
+          status: "error", latencyMs: Date.now() - startedAtInline,
+          errorMessage: `${provider} ${respInline.status}: ${t.slice(0, 200)}`,
+          promptExcerpt: inlineUser,
+        });
+        return new Response(JSON.stringify({ error: `${provider} error (status ${respInline.status})` }), {
+          status: respInline.status === 429 ? 429 : 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const dataInline = await respInline.json();
+      const textInline: string = (dataInline.choices?.[0]?.message?.content ?? "").trim();
+      if (!textInline) {
+        return new Response(JSON.stringify({ error: "Model returned an empty prompt" }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      await logAiRun({
+        userId: callerUserIdInline, projectId, surface: "suggest-image-prompt:inline-image",
+        requestedModel: model, effectiveModel: fbInline.effectiveModel, fallback: fbInline.fallback,
+        status: "ok", latencyMs: Date.now() - startedAtInline, promptExcerpt: inlineUser,
+      });
+      return new Response(JSON.stringify({
+        prompt: textInline,
+        anchored: !!anchorRow,
+        isAnchor,
+        model,
+        effectiveModel: fbInline.effectiveModel,
+        fallback: fbInline.fallback,
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
