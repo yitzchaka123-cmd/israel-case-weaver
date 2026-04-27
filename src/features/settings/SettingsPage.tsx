@@ -25,7 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { DISPLAY_BACKGROUNDS, DEFAULT_DISPLAY_BACKGROUND, normalizeDisplayBackground } from "@/lib/display-background";
 import { useHiddenModels, filterModelOptions } from "@/lib/hidden-models";
 
-const SETTINGS_SECTIONS = [
+export const SETTINGS_SECTIONS = [
   { id: "branding", label: "Branding" },
   { id: "appearance", label: "Appearance" },
   { id: "display", label: "Display" },

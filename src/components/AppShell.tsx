@@ -8,18 +8,9 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { normalizeDisplayBackground } from "@/lib/display-background";
+import { SETTINGS_SECTIONS } from "@/features/settings/SettingsPage";
 
-const settingsSections = [
-  { id: "branding", label: "Branding" },
-  { id: "appearance", label: "Appearance" },
-  { id: "display", label: "Display" },
-  { id: "profile", label: "Profile" },
-  { id: "image-prompt-assistant", label: "Image prompt assistant" },
-  { id: "assistant-rules", label: "Assistant rules" },
-  { id: "ai-routing", label: "AI routing" },
-  { id: "ai-connections", label: "AI connections" },
-  { id: "ai-ops", label: "Usage, credits, API keys & activity" },
-];
+const settingsSections = SETTINGS_SECTIONS;
 
 export function AppShell({ children }: { children: ReactNode }) {
   const loc = useLocation();
