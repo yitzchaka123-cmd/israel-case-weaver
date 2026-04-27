@@ -6,6 +6,7 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { RotateCcw } from "lucide-react";
 import { AiOriginBadge } from "./AiOriginBadge";
+import { DownloadButton } from "./DownloadButton";
 
 export interface ImageHistoryRow {
   id: string;
@@ -58,6 +59,12 @@ export function ImageHistoryStrip({ items, currentUrl, onRestore, title = "Histo
                   Active
                 </span>
               )}
+              <span
+                className="absolute bottom-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <DownloadButton url={item.url} title={`history-${item.id}`} />
+              </span>
             </button>
           );
         })}
@@ -81,11 +88,14 @@ export function ImageHistoryStrip({ items, currentUrl, onRestore, title = "Histo
               <p className="text-[11px] text-muted-foreground truncate">
                 {new Date(preview.created_at).toLocaleString()}
               </p>
-              {preview.url !== currentUrl && (
-                <Button size="sm" className="gap-2" onClick={async () => { await onRestore(preview); setPreview(null); }}>
-                  <RotateCcw className="h-3.5 w-3.5" /> Restore as active
-                </Button>
-              )}
+              <div className="flex items-center gap-2">
+                <DownloadButton url={preview.url} title={`history-${preview.id}`} size="sm" variant="outline" />
+                {preview.url !== currentUrl && (
+                  <Button size="sm" className="gap-2" onClick={async () => { await onRestore(preview); setPreview(null); }}>
+                    <RotateCcw className="h-3.5 w-3.5" /> Restore as active
+                  </Button>
+                )}
+              </div>
             </div>
           </DialogContent>
         </Dialog>
