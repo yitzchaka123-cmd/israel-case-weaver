@@ -2,6 +2,7 @@
 // Uses Lovable AI Gateway (Gemini + GPT-5). Tools mutate project state server-side.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { chatCompletions, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
+import { resolveSystemPrompt, applyUserHeader } from "../_shared/system-prompts.ts";
 import { modelSupportsStreamingReasoning, streamReasoningChat, type ChatMessageOut, type ReasoningSegment as StreamReasoningSegment } from "../_shared/stream-reasoning.ts";
 import {
   PLAYBOOK_DEFAULTS,
