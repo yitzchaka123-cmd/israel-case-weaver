@@ -750,8 +750,8 @@ Square-ish print panel, no on-image text, no logos, no UI overlays. Will be crop
                         <Copy className="h-3 w-3" /> Prompt
                       </Button>
                       {asset.url && (
-                        <Button size="sm" variant="outline" className="h-8 text-xs gap-1" asChild>
-                          <a href={asset.url} target="_blank" rel="noreferrer"><ExternalLink className="h-3 w-3" /> Open</a>
+                        <Button size="sm" variant="outline" className="h-8 text-xs gap-1" onClick={() => downloadAsset(asset.url!, slugify(asset.title ?? "back-cover"))}>
+                          <Download className="h-3 w-3" /> Save
                         </Button>
                       )}
                       <Button size="sm" variant="outline" className="h-8 text-xs gap-1 text-destructive hover:text-destructive" onClick={() => deleteCandidate(asset)}>
