@@ -1111,6 +1111,40 @@ const BASE_TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "add_document_inline_images",
+      description:
+        "Plan a set of EMBEDDED images that live INSIDE a document (e.g. 4 drone aerials at the bottom of a surveillance report, 3 evidence photos in a forensic file, 1 mugshot in a dossier). Use this whenever the document's realism requires actual visual evidence as part of the prop itself — NOT for cover art or decorative imagery. Each entry creates one slot the user can later generate independently. Mark exactly ONE slot as is_anchor=true per group_key — that anchor becomes the visual reference image; the other slots in the same group are generated as VARIATIONS of the anchor (same camera, same lighting, same drone, just different angle/framing). Default to the smallest believable count — 4 drone shots, 3 evidence photos, 1 mugshot. Never inflate counts to pad the doc. Set group_key when multiple images must look visually consistent (drone-feed, evidence-set, scene-photos). Set layout to control how the renderer arranges them at the bottom of the document.",
+      parameters: {
+        type: "object",
+        properties: {
+          document_id: { type: "string", description: "Existing document id (from the Existing documents roster, or returned by add_document)." },
+          layout: { type: "string", enum: ["bottom-grid-2col", "bottom-grid-3col", "inline-after-text", "gallery"], description: "How the renderer arranges the images at the bottom of the document. Defaults to 'bottom-grid-2col'." },
+          caption: { type: "string", description: "Optional shared caption rendered above the image grid (e.g. 'Aerial reconnaissance — 14:23, June 9.')." },
+          group_key: { type: "string", description: "Optional shared key linking siblings for visual consistency (e.g. 'drone-feed', 'evidence-set'). All images in the same group inherit the anchor's look." },
+          images: {
+            type: "array",
+            minItems: 1,
+            maxItems: 8,
+            items: {
+              type: "object",
+              properties: {
+                slot_label: { type: "string", description: "Short editable label shown above the slot in the editor (e.g. 'Drone shot 1 — wide')." },
+                prompt: { type: "string", description: "Per-image prompt brief. For the anchor: a strong opinionated reference shot. For children: a SHORT description of how this slot's framing/angle differs from the anchor (the consistency lock is added automatically)." },
+                is_anchor: { type: "boolean", description: "True for exactly ONE image per group_key — the visual reference all siblings inherit from. The first image in the array is auto-anchored if none is marked." },
+              },
+              required: ["slot_label"],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["document_id", "images"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 // Build the tool list with the playbook-derived `phase` enum substituted in.
@@ -1669,6 +1703,91 @@ async function executeTool(
       return {
         ok: true,
         message: `Claude Skill install request noted: ${requested}. To install it, upload a Claude Skill package/file in Settings → Assistant Rules → Claude Skills, then enable it for ${intendedUse}. Once installed, Claude requests will receive the enabled skill list automatically.`,
+      };
+    }
+    if (name === "add_document_inline_images") {
+      const documentId = String((args as { document_id?: string }).document_id ?? "").trim();
+      const layout = String((args as { layout?: string }).layout ?? "bottom-grid-2col").trim();
+      const caption = (args as { caption?: string }).caption?.trim() || null;
+      const groupKey = (args as { group_key?: string }).group_key?.trim() || null;
+      const rawImages = Array.isArray((args as { images?: unknown[] }).images) ? (args as { images: unknown[] }).images : [];
+      if (!documentId) return { ok: false, message: "document_id is required" };
+      if (rawImages.length === 0) return { ok: false, message: "Pass at least one image slot." };
+
+      // Verify the document belongs to this project.
+      const { data: docRow } = await supa
+        .from("documents")
+        .select("id, project_id, title")
+        .eq("id", documentId)
+        .maybeSingle();
+      if (!docRow || (docRow as { project_id?: string }).project_id !== projectId) {
+        return { ok: false, message: "Document not found in this project." };
+      }
+
+      // Persist layout + caption on the document.
+      await supa.from("documents").update({
+        inline_images_layout: ["bottom-grid-2col", "bottom-grid-3col", "inline-after-text", "gallery"].includes(layout) ? layout : "bottom-grid-2col",
+        ...(caption !== null ? { inline_images_caption: caption } : {}),
+      } as never).eq("id", documentId);
+
+      // Find the next position offset (so we append, not overwrite).
+      const { count: existing } = await supa
+        .from("document_inline_images")
+        .select("id", { count: "exact", head: true })
+        .eq("document_id", documentId);
+      const offset = existing ?? 0;
+
+      // Determine which slot is the anchor — first one marked, else slot 0.
+      let anchorIdx = rawImages.findIndex((r) => (r as { is_anchor?: boolean })?.is_anchor === true);
+      if (anchorIdx < 0) anchorIdx = 0;
+
+      // Insert anchor first so children can reference its id.
+      const anchorRaw = rawImages[anchorIdx] as { slot_label?: string; prompt?: string };
+      const { data: anchorRow, error: anchorErr } = await supa
+        .from("document_inline_images")
+        .insert({
+          document_id: documentId,
+          project_id: projectId,
+          position: offset + anchorIdx,
+          slot_label: String(anchorRaw?.slot_label ?? "Image 1").slice(0, 120),
+          prompt: anchorRaw?.prompt ?? null,
+          is_anchor: true,
+          group_key: groupKey,
+          status: "pending",
+          ...(messageId ? { created_by_message_id: messageId } : {}),
+        } as never)
+        .select("id")
+        .single();
+      if (anchorErr) return { ok: false, message: `Could not create anchor slot: ${anchorErr.message}` };
+      const anchorId = (anchorRow as { id: string }).id;
+
+      // Insert children pointing at the anchor.
+      const childRows = rawImages
+        .map((r, i) => ({ raw: r as { slot_label?: string; prompt?: string }, i }))
+        .filter(({ i }) => i !== anchorIdx)
+        .map(({ raw, i }) => ({
+          document_id: documentId,
+          project_id: projectId,
+          position: offset + i,
+          slot_label: String(raw?.slot_label ?? `Image ${i + 1}`).slice(0, 120),
+          prompt: raw?.prompt ?? null,
+          is_anchor: false,
+          anchor_image_id: anchorId,
+          group_key: groupKey,
+          status: "pending",
+          ...(messageId ? { created_by_message_id: messageId } : {}),
+        }));
+      if (childRows.length > 0) {
+        const { error: childErr } = await supa.from("document_inline_images").insert(childRows as never);
+        if (childErr) return { ok: false, message: `Anchor created, but children failed: ${childErr.message}` };
+      }
+
+      return {
+        ok: true,
+        message: `Planned ${rawImages.length} inline image slot${rawImages.length === 1 ? "" : "s"} for "${(docRow as { title?: string }).title ?? "document"}" — layout ${layout}${groupKey ? `, group "${groupKey}"` : ""}. The user can now generate them from the Documents tab.`,
+        document_id: documentId,
+        anchor_id: anchorId,
+        slot_count: rawImages.length,
       };
     }
     // ---------- Update tools ----------
