@@ -2377,20 +2377,33 @@ Deno.serve(async (req) => {
       flushProgress(isFinalRound ? `writing reply (round ${round + 1})…` : `calling model (round ${round + 1})…`);
 
       const roundStartedAt = Date.now();
-      const resp = await chatCompletions(body);
-      const fb = extractFallback(resp, model);
-      lastFb = fb;
-      // Log every round (best-effort, non-blocking semantics)
+      const liveBaseMetadata: Record<string, unknown> = {
+        in_progress: true,
+        model,
+        stage: isFinalRound ? `writing reply (round ${round + 1})…` : `calling model (round ${round + 1})…`,
+        stage_history: stageHistory,
+        partial_tools: executedTools.length,
+        tools: executedTools,
+      };
+      const live = await runRoundWithLiveReasoning({
+        supa,
+        messageId: assistantMessageId,
+        model,
+        body,
+        priorReasoningRounds: reasoningRounds,
+        roundIndex: round,
+        baseMetadata: liveBaseMetadata,
+      });
       logAiRun({
         userId: callerUserId, projectId, surface: "assistant-chat",
-        requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
-        status: resp.ok ? "ok" : "error", latencyMs: Date.now() - roundStartedAt,
-        errorMessage: resp.ok ? undefined : `status ${resp.status}`,
+        requestedModel: model, effectiveModel: live.ok ? live.effectiveModel : model, fallback: live.ok ? live.fallback : "none",
+        status: live.ok ? "ok" : "error", latencyMs: Date.now() - roundStartedAt,
+        errorMessage: live.ok ? undefined : `status ${live.status}`,
         targetId: assistantMessageId,
         promptExcerpt: lastUser?.content ? String(lastUser.content) : undefined,
       });
 
-      if (!resp.ok) {
+      if (!live.ok) {
         const provider = model.startsWith("openai/")
           ? "OpenAI"
           : model.startsWith("anthropic/")
@@ -2398,33 +2411,27 @@ Deno.serve(async (req) => {
             : model.startsWith("gemini-direct/")
               ? "Google Gemini"
               : "Lovable AI";
-        const t = await resp.text();
-        console.error(`${provider} error`, resp.status, t);
+        console.error(`${provider} error`, live.status, live.errorText);
 
-        // Build a user-facing error string.
         let errMsg: string;
         let errStatus = 500;
-        if (resp.status === 429) {
+        if (live.status === 429) {
           errMsg = `${provider} rate limit — try again in a moment.`;
           errStatus = 429;
-        } else if (resp.status === 402) {
+        } else if (live.status === 402) {
           const hint = provider === "Lovable AI"
             ? "Add credits in Settings → Workspace → Usage, or switch this project's planning provider."
             : `Check your ${provider} account billing or switch this project's planning provider.`;
           errMsg = `${provider} credits/key issue (status 402). ${hint}`;
           errStatus = 402;
-        } else if (resp.status === 401) {
+        } else if (live.status === 401) {
           errMsg = `${provider} authentication failed — check the API key in Settings → API keys.`;
           errStatus = 401;
         } else {
-          errMsg = `${provider} error (status ${resp.status})`;
+          errMsg = `${provider} error (status ${live.status})`;
           errStatus = 500;
         }
 
-        // CRITICAL: if we already executed tools this turn (e.g. saved 3 of 6
-        // documents before the LLM aborted), persist them as an assistant
-        // message so the user sees what made it to the DB and can resume
-        // cleanly instead of thinking the whole batch was lost.
         if (executedTools.length > 0) {
           const okCount = executedTools.filter((t) => (t.result as { ok?: boolean })?.ok).length;
           const totalCount = executedTools.length;
@@ -2455,15 +2462,14 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      lastFb = { effectiveModel: live.effectiveModel, fallback: live.fallback };
 
-      const data = await resp.json();
-      const choice = data.choices?.[0];
-      const msg = choice?.message ?? {};
+      const msg = live.message as Record<string, unknown>;
       const msgReasoning = msg.reasoning as ReasoningSegment[] | undefined;
       if (Array.isArray(msgReasoning) && msgReasoning.length > 0) {
         reasoningRounds.push({ round, segments: msgReasoning });
-        // Flush immediately so the live "Thinking…" disclosure starts typing
-        // the moment this round's reasoning lands — don't wait for the next loop.
+        // Flush immediately so the live "Thinking…" disclosure finalises the
+        // moment this round's reasoning lands — don't wait for the next loop.
         flushProgress(`thought through round ${round + 1}`);
       }
       const toolCalls = msg.tool_calls as Array<{ id: string; function: { name: string; arguments: string } }> | undefined;
