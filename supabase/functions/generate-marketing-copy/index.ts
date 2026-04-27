@@ -206,11 +206,15 @@ ${isSellingPoint
 
     const startedAt = Date.now();
     const callerUserId = await getUserIdFromAuth(req);
+    const resolvedSP = await resolveSystemPrompt({
+      supa, ownerId: project.owner_id, surface: "generate-marketing-copy", defaultBody: system,
+    });
+    const finalUserMsg = applyUserHeader(userMsg, resolvedSP.userHeader);
     const resp = await chatCompletions(withClaudeSkills({
       model,
       messages: [
-        { role: "system", content: system },
-        { role: "user", content: userMsg },
+        { role: "system", content: resolvedSP.system },
+        { role: "user", content: finalUserMsg },
       ],
       temperature: 0.85,
       response_format: { type: "json_object" },
