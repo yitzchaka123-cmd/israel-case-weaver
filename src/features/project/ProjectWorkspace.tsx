@@ -262,9 +262,13 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
                     <span className="relative inline-flex">
                       <Icon className="h-3.5 w-3.5" />
                       {showPulse && (
-                        <span className="absolute -top-0.5 -right-1 flex h-1.5 w-1.5">
-                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-75" />
-                          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-accent" />
+                        <span
+                          className="absolute -top-1 -right-1.5 flex h-2 w-2"
+                          title="Assistant is running live"
+                        >
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-80" />
+                          <span className="absolute inline-flex h-full w-full animate-pulse rounded-full bg-success opacity-60" />
+                          <span className="relative inline-flex h-2 w-2 rounded-full bg-success ring-2 ring-success/40 shadow-[0_0_8px_rgba(34,197,94,0.7)]" />
                         </span>
                       )}
                       {showLiveDot && (
