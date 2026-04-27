@@ -122,6 +122,41 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
     })) : []);
   }, [data]);
 
+  // Realtime: when a background keyframe job updates project_storyboards.shots,
+  // merge the new image_url back into local React state without clobbering
+  // unsaved edits to other fields (action / voiceover / etc.).
+  useEffect(() => {
+    const ch = supabase
+      .channel(`project-storyboards-${projectId}`)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "project_storyboards", filter: `project_id=eq.${projectId}` },
+        (payload) => {
+          const incoming = (payload.new as { shots?: unknown })?.shots;
+          if (!Array.isArray(incoming)) return;
+          const byId = new Map<string, any>();
+          for (const s of incoming) if (s && typeof s === "object" && (s as any).id) byId.set((s as any).id, s);
+          setShots((prev) => prev.map((sh) => {
+            const fresh = byId.get(sh.id);
+            if (!fresh) return sh;
+            // Only adopt the image-related fields server-side; keep local text edits.
+            if (!fresh.image_url || fresh.image_url === sh.image_url) return sh;
+            return {
+              ...sh,
+              image_url: fresh.image_url,
+              in_storyboard: true,
+              image_requested_model: fresh.image_requested_model ?? sh.image_requested_model ?? null,
+              image_effective_model: fresh.image_effective_model ?? sh.image_effective_model ?? null,
+              image_fallback: fresh.image_fallback ?? sh.image_fallback ?? null,
+            };
+          }));
+          qc.invalidateQueries({ queryKey: ["project-storyboards", projectId] });
+        },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [projectId, qc]);
+
   const promptShots = useMemo(() => shots.filter((s) => s.in_prompts), [shots]);
   const boardShots = useMemo(() => shots.filter((s) => s.in_storyboard), [shots]);
   const promptsReady = useMemo(() => promptShots.filter((s) => s.prompt.trim()).length, [promptShots]);
