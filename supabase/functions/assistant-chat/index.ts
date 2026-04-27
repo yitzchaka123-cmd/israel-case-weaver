@@ -2048,7 +2048,16 @@ async function processConversation(
     ),
   };
   const isFirstTurn = (messages?.length ?? 0) <= 1;
-  const systemPrompt = buildSystemPrompt(project, rosters, tweaks, playbook, claudeChatSkills, isFirstTurn);
+  const defaultSystemPrompt = buildSystemPrompt(project, rosters, tweaks, playbook, claudeChatSkills, isFirstTurn);
+  const resolvedSP = await resolveSystemPrompt({
+    supa, ownerId: project.owner_id, surface: "assistant-chat", defaultBody: defaultSystemPrompt,
+  });
+  const systemPrompt = resolvedSP.userHeader
+    ? `${resolvedSP.system}\n\n---\n\n${resolvedSP.userHeader}`
+    : resolvedSP.system;
+  // userHeader unused for chat (folded into system above) — variable referenced
+  // to silence linters in environments that warn on destructured unused.
+  void applyUserHeader;
 
   const lastUser = [...messages].reverse().find((m) => (m as { role: string }).role === "user") as { content: string } | undefined;
   if (lastUser) {
