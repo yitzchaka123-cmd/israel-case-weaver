@@ -1000,6 +1000,10 @@ const BASE_TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "update_envelope",
       description:
         "Edit an EXISTING envelope row by id (from the Existing envelopes roster). Pass ONLY the fields you want to change. Envelopes are SEALED TASK GATES (not document containers): the player only opens an envelope when they reach the matching beat. The 'notes' field MUST start with the OPENING TRIGGER — a 1-sentence description of when the player should open this envelope (e.g. 'Open after the player has narrowed it to two suspects.' or 'Open once the cipher in Doc 7 is solved.') — followed by any internal design notes. The 'task' field is the short, bold, in-language instruction the player reads when they open the envelope.",
       parameters: {
