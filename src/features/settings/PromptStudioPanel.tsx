@@ -23,8 +23,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { Eye, Copy, Loader2 } from "lucide-react";
 
 type InjectionMode = "system_prefix" | "system_suffix" | "user_header" | "replace";
 
@@ -36,6 +44,18 @@ interface PromptRow {
   version: number;
   is_active: boolean;
   updated_at: string;
+}
+
+interface InspectResult {
+  surface: string;
+  defaultTemplate: string;
+  dynamicNotes: string;
+  assembledSystem: string;
+  userHeader: string;
+  surfaceVersion: number | null;
+  masterVersion: number | null;
+  hasOverride: boolean;
+  hasMaster: boolean;
 }
 
 // Catalog of known surfaces, grouped. Edge functions pass these strings to
@@ -61,6 +81,13 @@ const SURFACES: Array<{ group: string; items: Array<{ id: string; label: string;
     items: [
       { id: "generate-document:text", label: "Document body (in-world evidence)", desc: "Writes the body text of a single document." },
       { id: "generate-document:doc0", label: "Doc 0 (contents inventory)", desc: "Writes the player-facing inventory list." },
+      { id: "generate-document-inline-image", label: "Document inline-image generator", desc: "Image-prompt writer for the per-slot inline images inside a document." },
+    ],
+  },
+  {
+    group: "Envelopes",
+    items: [
+      { id: "generate-envelopes", label: "Envelope generator", desc: "Batch-generates label / task / opening trigger / design instructions for every envelope." },
     ],
   },
   {
@@ -80,9 +107,13 @@ const SURFACES: Array<{ group: string; items: Array<{ id: string; label: string;
   {
     group: "Image-prompt writer",
     items: [
-      { id: "suggest-image-prompt:structured-doc", label: "Image prompts — structured documents", desc: "Multi-section image briefs for documents." },
+      { id: "suggest-image-prompt:cover", label: "Image prompts — cover", desc: "Multi-section image brief for the box cover." },
+      { id: "suggest-image-prompt:suspect", label: "Image prompts — suspect portrait", desc: "Multi-section image brief for a suspect portrait." },
+      { id: "suggest-image-prompt:document", label: "Image prompts — document insert", desc: "Multi-section image brief for a document image." },
+      { id: "suggest-image-prompt:hint", label: "Image prompts — hint visual", desc: "Multi-section image brief for a hint-sheet image." },
+      { id: "suggest-image-prompt:media", label: "Image prompts — media library", desc: "Multi-section image brief for a media-library asset." },
       { id: "suggest-image-prompt:inline-image", label: "Image prompts — inline document slots", desc: "Drives the per-slot create-prompt and final-prompt." },
-      { id: "suggest-image-prompt:legacy", label: "Image prompts — legacy single prompt", desc: "Single-image prompt writer used by covers, suspects, hints." },
+      { id: "suggest-image-prompt:legacy", label: "Image prompts — legacy single prompt", desc: "Single-image prompt writer used by older code paths." },
     ],
   },
 ];
@@ -271,6 +302,28 @@ function SurfaceItem({
   useEffect(() => { setBody(row?.body ?? ""); }, [row?.id, row?.body]);
   const hasOverride = !!row && row.body.trim().length > 0;
 
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [inspect, setInspect] = useState<InspectResult | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const openViewer = async () => {
+    setViewerOpen(true);
+    if (inspect) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("inspect-system-prompt", {
+        body: { surface },
+      });
+      if (error) throw error;
+      setInspect(data as InspectResult);
+    } catch (e) {
+      toast.error((e as Error)?.message ?? "Failed to load default");
+      setViewerOpen(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <AccordionItem value={surface}>
       <AccordionTrigger className="text-sm">
@@ -286,9 +339,14 @@ function SurfaceItem({
       </AccordionTrigger>
       <AccordionContent>
         <p className="text-xs text-muted-foreground mb-2">{desc}</p>
-        <p className="text-[11px] text-muted-foreground mb-2">
-          Surface key: <code className="bg-muted px-1 rounded">{surface}</code>
-        </p>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <p className="text-[11px] text-muted-foreground">
+            Surface key: <code className="bg-muted px-1 rounded">{surface}</code>
+          </p>
+          <Button variant="outline" size="sm" className="h-7 text-[11px]" onClick={openViewer}>
+            <Eye className="h-3 w-3 mr-1" /> View hardcoded default
+          </Button>
+        </div>
         <Textarea
           rows={8}
           value={body}
@@ -303,6 +361,84 @@ function SurfaceItem({
           <Button size="sm" onClick={() => onSave(body)}>Save</Button>
         </div>
       </AccordionContent>
+
+      <Dialog open={viewerOpen} onOpenChange={setViewerOpen}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="text-base">{label}</DialogTitle>
+            <DialogDescription className="text-xs">
+              <code className="bg-muted px-1 rounded">{surface}</code>
+            </DialogDescription>
+          </DialogHeader>
+          {loading || !inspect ? (
+            <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Loading…
+            </div>
+          ) : (
+            <div className="overflow-y-auto space-y-5 pr-1">
+              <PromptBlock
+                title="Hardcoded default (the scaffold the model receives)"
+                body={inspect.defaultTemplate}
+              />
+              <div className="rounded-md border bg-muted/40 p-3">
+                <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">
+                  Dynamic context appended at runtime
+                </div>
+                <p className="text-xs leading-relaxed">{inspect.dynamicNotes}</p>
+              </div>
+              {(inspect.hasOverride || inspect.hasMaster) && (
+                <PromptBlock
+                  title={
+                    inspect.hasOverride && inspect.hasMaster
+                      ? "Assembled prompt (Master + your override)"
+                      : inspect.hasOverride
+                        ? "Assembled prompt (your override)"
+                        : "Assembled prompt (Master + default)"
+                  }
+                  body={inspect.assembledSystem}
+                  badge={[
+                    inspect.hasMaster ? `Master v${inspect.masterVersion}` : null,
+                    inspect.hasOverride ? `Override v${inspect.surfaceVersion}` : null,
+                  ].filter(Boolean).join(" · ")}
+                />
+              )}
+              {inspect.userHeader && (
+                <PromptBlock
+                  title="Injected as a header on the user message"
+                  body={inspect.userHeader}
+                />
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </AccordionItem>
+  );
+}
+
+function PromptBlock({ title, body, badge }: { title: string; body: string; badge?: string }) {
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2 mb-1.5">
+        <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{title}</div>
+        <div className="flex items-center gap-2">
+          {badge && <Badge variant="secondary" className="text-[10px]">{badge}</Badge>}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 text-[11px]"
+            onClick={() => {
+              navigator.clipboard.writeText(body);
+              toast.success("Copied");
+            }}
+          >
+            <Copy className="h-3 w-3 mr-1" /> Copy
+          </Button>
+        </div>
+      </div>
+      <pre className="text-[11px] leading-relaxed font-mono whitespace-pre-wrap bg-muted/40 border rounded-md p-3 max-h-[40vh] overflow-y-auto">
+        {body}
+      </pre>
+    </div>
   );
 }
