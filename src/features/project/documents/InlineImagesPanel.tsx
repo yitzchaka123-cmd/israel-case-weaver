@@ -12,6 +12,12 @@ import { toast } from "sonner";
 import { useState, useRef } from "react";
 import { getStoredWriterModel } from "@/components/PromptWriterModelPicker";
 
+interface UrlHistoryEntry {
+  at: string;
+  url: string;
+  model?: string | null;
+}
+
 interface InlineImage {
   id: string;
   document_id: string;
@@ -24,11 +30,13 @@ interface InlineImage {
   active_version: string;
   is_anchor: boolean;
   anchor_image_id: string | null;
+  anchor_reference_url: string | null;
   group_key: string | null;
   status: string;
   error_message: string | null;
   provider: string | null;
   effective_model: string | null;
+  url_history: UrlHistoryEntry[] | null;
 }
 
 const LAYOUTS = [
