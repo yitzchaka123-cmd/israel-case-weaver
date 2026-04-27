@@ -987,7 +987,19 @@ const BASE_TOOLS = [
   {
     type: "function",
     function: {
-      name: "update_envelope",
+      name: "approve_document",
+      description:
+        "Mark a document as APPROVED / final. Call this whenever the user gives a positive sign-off on a document or its image (examples: 'this is good', 'looks great', 'perfect', 'approved', 'next one', 'move on', 'continue', 'ok next', '👍', 'love it', or explicit 'approve doc N'). Sets documents.status = 'final' AND turns the matching Final Flow node GREEN. After calling this, briefly confirm in chat ('Approved — moving to the next document.') and proceed to the next planned doc. Do NOT call this if the user asked for changes/edits — only on explicit positive sign-off. The receipt returns the document id and title.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "Document id from the Existing documents roster (the doc the user just approved)." },
+        },
+        required: ["id"],
+        additionalProperties: false,
+      },
+    },
+  },
       description:
         "Edit an EXISTING envelope row by id (from the Existing envelopes roster). Pass ONLY the fields you want to change. Envelopes are SEALED TASK GATES (not document containers): the player only opens an envelope when they reach the matching beat. The 'notes' field MUST start with the OPENING TRIGGER — a 1-sentence description of when the player should open this envelope (e.g. 'Open after the player has narrowed it to two suspects.' or 'Open once the cipher in Doc 7 is solved.') — followed by any internal design notes. The 'task' field is the short, bold, in-language instruction the player reads when they open the envelope.",
       parameters: {
