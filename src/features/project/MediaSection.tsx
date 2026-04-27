@@ -430,29 +430,23 @@ function AssetDialog({
     try {
       const modelOverride = getStoredImageModel("media", "chatgpt-image-2");
       const quality = getStoredImageQuality("media", "medium");
-      const resp = await callEdge("generate-image", {
+      const result = await fireBackgroundImage({
         projectId,
+        target: "media",
         category: asset.category ?? category,
         prompt: editPrompt,
         title: asset.title ?? undefined,
         modelOverride,
         quality,
       });
-      if (!resp.ok) {
-        const e = await resp.json().catch(() => ({ error: "Failed" }));
-        if (resp.status === 429) toast.error("Rate limit — try again in a moment.", { duration: 10000 });
-        else if (resp.status === 402) toast.error(e.error ?? "Out of AI credits.", { duration: 15000 });
-        else if (resp.status === 504) toast.error(e.error ?? "Image generation timed out — try Medium or Low quality.", { duration: 10000 });
-        else toast.error(e.error ?? "Generation failed", { duration: 10000 });
+      if (!result.ok) {
+        toast.error(result.error ?? "Could not start retry", { duration: 10000 });
         return;
       }
-      toast.success("New image generated");
+      toast.success("Retrying in background — feel free to leave this page");
       onClose();
     } catch (e) {
-      const msg = e instanceof Error
-        ? (e.name === "AbortError" ? "Image generation timed out (>2 min). Try Medium/Low quality or a Gemini model." : e.message)
-        : "Generation failed";
-      toast.error(msg);
+      toast.error(e instanceof Error ? e.message : "Generation failed");
     } finally {
       setRetrying(false);
     }
