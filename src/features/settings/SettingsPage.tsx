@@ -32,6 +32,7 @@ const SETTINGS_SECTIONS = [
   { id: "profile", label: "Profile" },
   { id: "image-prompt-assistant", label: "Image prompt assistant" },
   { id: "assistant-rules", label: "Assistant rules" },
+  { id: "prompt-studio", label: "Prompt Studio" },
   { id: "ai-routing", label: "AI routing" },
   { id: "visible-models", label: "Visible models" },
   { id: "ai-connections", label: "AI connections" },
