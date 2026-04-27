@@ -408,7 +408,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
     } finally {
       setArranging(false);
     }
-  }, [arranging, nodes.length, projectId, board, logicModel, setNodes, qc]);
+  }, [arranging, nodes.length, projectId, board, logicModel, setNodes, qc, rf]);
 
   const generateLogicFlow = async (opts?: { useExistingSummary?: boolean }) => {
     if (board !== "logic") {
