@@ -16,6 +16,7 @@ import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { useBackgroundImageJob } from "@/features/project/useBackgroundImageJob";
 import { GenerationTimer } from "@/features/project/GenerationTimer";
+import { syncSuspectThumbnailToIntakeDocs } from "@/features/project/syncSuspectIntake";
 
 interface Suspect {
   id: string;
