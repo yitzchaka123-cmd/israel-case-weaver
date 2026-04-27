@@ -2,6 +2,7 @@
 // Uses Lovable AI Gateway (Gemini + GPT-5). Tools mutate project state server-side.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { chatCompletions, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
+import { modelSupportsStreamingReasoning, streamReasoningChat, type ChatMessageOut, type ReasoningSegment as StreamReasoningSegment } from "../_shared/stream-reasoning.ts";
 import {
   PLAYBOOK_DEFAULTS,
   resolvePlaybook,
@@ -37,6 +38,137 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+// ---------- Live-streaming round helper ----------
+//
+// Runs ONE model round with provider streaming when supported. Reasoning and
+// final-text deltas are pushed into chat_messages.metadata.reasoning /
+// chat_messages.content with a ~120ms debounce so the UI's ThinkingDisclosure
+// types the words live via Realtime instead of waiting for the full round.
+// Falls back to the non-streaming chatCompletions path on error / unsupported
+// models so the round loop never gets stuck.
+type LiveSupa = ReturnType<typeof createClient>;
+async function runRoundWithLiveReasoning(args: {
+  supa: LiveSupa;
+  messageId: string;
+  model: string;
+  body: Record<string, unknown>;
+  // Snapshot of completed prior rounds — the live round we render is appended
+  // on top of this so prior rounds remain visible while this one types in.
+  priorReasoningRounds: Array<{ round: number; segments: StreamReasoningSegment[] }>;
+  roundIndex: number;
+  baseMetadata: Record<string, unknown>;
+}): Promise<{ ok: true; message: ChatMessageOut; effectiveModel: string; fallback: "none" | "openai-direct" | "lovable-ai" } | { ok: false; status: number; errorText: string }> {
+  const { supa, messageId, model, body, priorReasoningRounds, roundIndex, baseMetadata } = args;
+
+  // Helper: write current state to chat_messages with debounce.
+  let liveReasoning = "";
+  let liveText = "";
+  let lastFlushAt = 0;
+  let pendingFlush: number | null = null;
+  const FLUSH_INTERVAL_MS = 120;
+
+  const writeNow = async () => {
+    const liveSegments: StreamReasoningSegment[] = liveReasoning
+      ? [{ type: "summary", text: liveReasoning }]
+      : [];
+    const allRounds = liveSegments.length
+      ? [...priorReasoningRounds, { round: roundIndex, segments: liveSegments }]
+      : priorReasoningRounds;
+    const metadata = {
+      ...baseMetadata,
+      ...(allRounds.length ? { reasoning: allRounds } : {}),
+    };
+    const update: Record<string, unknown> = { metadata };
+    // Only update content while text is actively streaming so we don't clobber
+    // the final content the round-loop writes after tools complete.
+    if (liveText) update.content = liveText;
+    try {
+      await supa.from("chat_messages").update(update).eq("id", messageId);
+    } catch (e) {
+      console.warn("[stream-flush] update failed", e);
+    }
+  };
+  const scheduleFlush = () => {
+    const now = Date.now();
+    if (now - lastFlushAt >= FLUSH_INTERVAL_MS) {
+      lastFlushAt = now;
+      void writeNow();
+      return;
+    }
+    if (pendingFlush != null) return;
+    pendingFlush = setTimeout(() => {
+      pendingFlush = null;
+      lastFlushAt = Date.now();
+      void writeNow();
+    }, FLUSH_INTERVAL_MS - (now - lastFlushAt)) as unknown as number;
+  };
+
+  const supportsStreaming = modelSupportsStreamingReasoning(model);
+  const wantsThinking = (body.reasoningEffort as string | undefined) !== "none";
+
+  if (supportsStreaming) {
+    const effort = (body.reasoningEffort as "none" | "low" | "medium" | "high" | "xhigh" | undefined) ?? "medium";
+    const result = await streamReasoningChat(
+      {
+        model,
+        messages: body.messages as Array<{ role: string; content?: unknown; tool_calls?: unknown; tool_call_id?: string; thinking?: unknown }>,
+        tools: body.tools as Array<{ type: string; function: { name: string; description?: string; parameters: unknown } }> | undefined,
+        effort,
+        max_tokens: body.max_tokens as number | undefined,
+        anthropicTools: body.anthropicTools as Array<Record<string, unknown>> | undefined,
+        anthropicContainer: body.anthropicContainer,
+        anthropicBeta: body.anthropicBeta as string | undefined,
+      },
+      {
+        onReasoningDelta: (delta) => {
+          liveReasoning += delta;
+          scheduleFlush();
+        },
+        onTextDelta: (delta) => {
+          liveText += delta;
+          scheduleFlush();
+        },
+      },
+    );
+    if (pendingFlush != null) { clearTimeout(pendingFlush); pendingFlush = null; }
+    // Final flush so the last chunk lands in the DB before the round returns.
+    await writeNow();
+    if (result.ok) {
+      const fallback = "none" as const;
+      return { ok: true, message: result.message, effectiveModel: model, fallback };
+    }
+    // Streaming failed — log and fall through to non-streaming path.
+    console.warn(`[stream-fallback] streaming failed for ${model} (status ${result.status}); falling back to non-streaming chatCompletions`);
+  }
+
+  // Non-streaming path (used for models that don't stream OR after a stream error).
+  const nonStreamBody = { ...body, stream: false };
+  const resp = await chatCompletions(nonStreamBody);
+  const fb = extractFallback(resp, model);
+  if (!resp.ok) {
+    const text = await resp.text();
+    return { ok: false, status: resp.status, errorText: text };
+  }
+  const data = await resp.json();
+  const choice = data.choices?.[0];
+  const message: ChatMessageOut = (choice?.message ?? { role: "assistant", content: "" }) as ChatMessageOut;
+  // Push the final reasoning/text into metadata one last time so the live UI
+  // catches up to the full result.
+  if (Array.isArray(message.reasoning) && message.reasoning.length > 0) {
+    const allRounds = [...priorReasoningRounds, { round: roundIndex, segments: message.reasoning }];
+    await supa.from("chat_messages").update({
+      metadata: { ...baseMetadata, reasoning: allRounds },
+    }).eq("id", messageId);
+  }
+  return {
+    ok: true,
+    message,
+    effectiveModel: fb.effectiveModel,
+    fallback: fb.fallback,
+  };
+}
+
 
 // Map provider preferences to provider-prefixed model ids understood by the
 // shared AI router. Prefix legend:
@@ -1881,30 +2013,43 @@ async function processConversation(
     flushProgress(isFinalRound ? `writing reply (round ${round + 1})…` : `calling model (round ${round + 1})…`);
 
     const roundStartedAt = Date.now();
-    const resp = await chatCompletions(body);
-    const fb = extractFallback(resp, model);
-    lastFb = fb;
+    const liveBaseMetadata: Record<string, unknown> = {
+      in_progress: true,
+      model,
+      stage: isFinalRound ? `writing reply (round ${round + 1})…` : `calling model (round ${round + 1})…`,
+      stage_history: stageHistory,
+      partial_tools: executedTools.length,
+      tools: executedTools,
+    };
+    const live = await runRoundWithLiveReasoning({
+      supa,
+      messageId: assistantMessageId,
+      model,
+      body,
+      priorReasoningRounds: reasoningRounds,
+      roundIndex: round,
+      baseMetadata: liveBaseMetadata,
+    });
     logAiRun({
       userId: callerUserId, projectId, surface: "assistant-chat",
-      requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
-      status: resp.ok ? "ok" : "error", latencyMs: Date.now() - roundStartedAt,
-      errorMessage: resp.ok ? undefined : `status ${resp.status}`,
+      requestedModel: model, effectiveModel: live.ok ? live.effectiveModel : model, fallback: live.ok ? live.fallback : "none",
+      status: live.ok ? "ok" : "error", latencyMs: Date.now() - roundStartedAt,
+      errorMessage: live.ok ? undefined : `status ${live.status}`,
       targetId: assistantMessageId,
       promptExcerpt: lastUser?.content ? String(lastUser.content) : undefined,
     });
 
-    if (!resp.ok) {
+    if (!live.ok) {
       const provider = model.startsWith("openai/") ? "OpenAI"
         : model.startsWith("anthropic/") ? "Anthropic"
         : model.startsWith("gemini-direct/") ? "Google Gemini"
         : "Lovable AI";
-      const t = await resp.text();
-      console.error(`${provider} error`, resp.status, t);
+      console.error(`${provider} error`, live.status, live.errorText);
       let errMsg: string;
-      if (resp.status === 429) errMsg = `${provider} rate limit — try again in a moment.`;
-      else if (resp.status === 402) errMsg = `${provider} credits/key issue (status 402).`;
-      else if (resp.status === 401) errMsg = `${provider} authentication failed — check the API key in Settings → API keys.`;
-      else errMsg = `${provider} error (status ${resp.status})`;
+      if (live.status === 429) errMsg = `${provider} rate limit — try again in a moment.`;
+      else if (live.status === 402) errMsg = `${provider} credits/key issue (status 402).`;
+      else if (live.status === 401) errMsg = `${provider} authentication failed — check the API key in Settings → API keys.`;
+      else errMsg = `${provider} error (status ${live.status})`;
 
       if (executedTools.length > 0) {
         const okCount = executedTools.filter((t) => (t.result as { ok?: boolean })?.ok).length;
@@ -1918,14 +2063,13 @@ async function processConversation(
       }
       throw new Error(errMsg);
     }
+    lastFb = { effectiveModel: live.effectiveModel, fallback: live.fallback };
 
-    const data = await resp.json();
-    const choice = data.choices?.[0];
-    const msg = choice?.message ?? {};
+    const msg = live.message as Record<string, unknown>;
     const msgReasoning = msg.reasoning as ReasoningSegment[] | undefined;
     if (Array.isArray(msgReasoning) && msgReasoning.length > 0) {
       reasoningRounds.push({ round, segments: msgReasoning });
-      // Flush immediately so the live "Thinking…" disclosure starts typing the
+      // Flush immediately so the live "Thinking…" disclosure finalises the
       // moment this round's reasoning lands — don't wait for the next loop.
       flushProgress(`thought through round ${round + 1}`);
     }
@@ -2233,20 +2377,33 @@ Deno.serve(async (req) => {
       flushProgress(isFinalRound ? `writing reply (round ${round + 1})…` : `calling model (round ${round + 1})…`);
 
       const roundStartedAt = Date.now();
-      const resp = await chatCompletions(body);
-      const fb = extractFallback(resp, model);
-      lastFb = fb;
-      // Log every round (best-effort, non-blocking semantics)
+      const liveBaseMetadata: Record<string, unknown> = {
+        in_progress: true,
+        model,
+        stage: isFinalRound ? `writing reply (round ${round + 1})…` : `calling model (round ${round + 1})…`,
+        stage_history: stageHistory,
+        partial_tools: executedTools.length,
+        tools: executedTools,
+      };
+      const live = await runRoundWithLiveReasoning({
+        supa,
+        messageId: assistantMessageId,
+        model,
+        body,
+        priorReasoningRounds: reasoningRounds,
+        roundIndex: round,
+        baseMetadata: liveBaseMetadata,
+      });
       logAiRun({
         userId: callerUserId, projectId, surface: "assistant-chat",
-        requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
-        status: resp.ok ? "ok" : "error", latencyMs: Date.now() - roundStartedAt,
-        errorMessage: resp.ok ? undefined : `status ${resp.status}`,
+        requestedModel: model, effectiveModel: live.ok ? live.effectiveModel : model, fallback: live.ok ? live.fallback : "none",
+        status: live.ok ? "ok" : "error", latencyMs: Date.now() - roundStartedAt,
+        errorMessage: live.ok ? undefined : `status ${live.status}`,
         targetId: assistantMessageId,
         promptExcerpt: lastUser?.content ? String(lastUser.content) : undefined,
       });
 
-      if (!resp.ok) {
+      if (!live.ok) {
         const provider = model.startsWith("openai/")
           ? "OpenAI"
           : model.startsWith("anthropic/")
@@ -2254,33 +2411,27 @@ Deno.serve(async (req) => {
             : model.startsWith("gemini-direct/")
               ? "Google Gemini"
               : "Lovable AI";
-        const t = await resp.text();
-        console.error(`${provider} error`, resp.status, t);
+        console.error(`${provider} error`, live.status, live.errorText);
 
-        // Build a user-facing error string.
         let errMsg: string;
         let errStatus = 500;
-        if (resp.status === 429) {
+        if (live.status === 429) {
           errMsg = `${provider} rate limit — try again in a moment.`;
           errStatus = 429;
-        } else if (resp.status === 402) {
+        } else if (live.status === 402) {
           const hint = provider === "Lovable AI"
             ? "Add credits in Settings → Workspace → Usage, or switch this project's planning provider."
             : `Check your ${provider} account billing or switch this project's planning provider.`;
           errMsg = `${provider} credits/key issue (status 402). ${hint}`;
           errStatus = 402;
-        } else if (resp.status === 401) {
+        } else if (live.status === 401) {
           errMsg = `${provider} authentication failed — check the API key in Settings → API keys.`;
           errStatus = 401;
         } else {
-          errMsg = `${provider} error (status ${resp.status})`;
+          errMsg = `${provider} error (status ${live.status})`;
           errStatus = 500;
         }
 
-        // CRITICAL: if we already executed tools this turn (e.g. saved 3 of 6
-        // documents before the LLM aborted), persist them as an assistant
-        // message so the user sees what made it to the DB and can resume
-        // cleanly instead of thinking the whole batch was lost.
         if (executedTools.length > 0) {
           const okCount = executedTools.filter((t) => (t.result as { ok?: boolean })?.ok).length;
           const totalCount = executedTools.length;
@@ -2311,15 +2462,14 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      lastFb = { effectiveModel: live.effectiveModel, fallback: live.fallback };
 
-      const data = await resp.json();
-      const choice = data.choices?.[0];
-      const msg = choice?.message ?? {};
+      const msg = live.message as Record<string, unknown>;
       const msgReasoning = msg.reasoning as ReasoningSegment[] | undefined;
       if (Array.isArray(msgReasoning) && msgReasoning.length > 0) {
         reasoningRounds.push({ round, segments: msgReasoning });
-        // Flush immediately so the live "Thinking…" disclosure starts typing
-        // the moment this round's reasoning lands — don't wait for the next loop.
+        // Flush immediately so the live "Thinking…" disclosure finalises the
+        // moment this round's reasoning lands — don't wait for the next loop.
         flushProgress(`thought through round ${round + 1}`);
       }
       const toolCalls = msg.tool_calls as Array<{ id: string; function: { name: string; arguments: string } }> | undefined;
