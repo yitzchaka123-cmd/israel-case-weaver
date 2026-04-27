@@ -151,6 +151,50 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
     return () => { supabase.removeChannel(ch); };
   }, [projectId, qc]);
 
+  // Auto-bake title/subtitle/logo onto a freshly generated raw cover.
+  const bakingFrontRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const url = project?.cover_image_url;
+    if (!url || url.includes("cover-final-") || bakingFrontRef.current.has(url)) return;
+    if (!project?.title && !project?.subtitle && !company?.logo_url) return;
+    bakingFrontRef.current.add(url);
+    void (async () => {
+      try {
+        const finalUrl = await bakeFrontCover({
+          projectId,
+          baseImageUrl: url,
+          title: project?.title ?? null,
+          subtitle: project?.subtitle ?? null,
+          logoUrl: company?.logo_url ?? null,
+        });
+        await supabase.from("projects").update({ cover_image_url: finalUrl }).eq("id", projectId);
+      } catch (e) {
+        console.warn("Front cover bake failed", e);
+        bakingFrontRef.current.delete(url);
+      }
+    })();
+  }, [project?.cover_image_url, project?.title, project?.subtitle, company?.logo_url, projectId]);
+
+  const handleRebakeCover = async () => {
+    if (!project?.cover_image_url) return;
+    setRebaking(true);
+    try {
+      const finalUrl = await bakeFrontCover({
+        projectId,
+        baseImageUrl: project.cover_image_url,
+        title: project?.title ?? null,
+        subtitle: project?.subtitle ?? null,
+        logoUrl: company?.logo_url ?? null,
+      });
+      await supabase.from("projects").update({ cover_image_url: finalUrl }).eq("id", projectId);
+      toast.success("Cover re-baked with latest title, subtitle & logo");
+    } catch (e) {
+      toast.error("Re-bake failed: " + (e instanceof Error ? e.message : "unknown"));
+    } finally {
+      setRebaking(false);
+    }
+  };
+
   const cover = project?.cover_image_url;
   const extras = (assets ?? []).filter((a) => a.category === "marketing-extra" || a.category === "back" || a.category === "marketing-back");
 
