@@ -80,6 +80,8 @@ export async function logAiRun(opts: {
   errorMessage?: string;
   targetId?: string | null;
   promptExcerpt?: string | null;
+  masterPromptVersion?: number | null;
+  surfacePromptVersion?: number | null;
 }): Promise<void> {
   try {
     if (!SUPABASE_URL_INTERNAL || !SERVICE_ROLE_INTERNAL) return;
@@ -95,6 +97,8 @@ export async function logAiRun(opts: {
       error_message: opts.errorMessage ?? null,
       target_id: opts.targetId ?? null,
       prompt_excerpt: opts.promptExcerpt ? String(opts.promptExcerpt).slice(0, 500) : null,
+      master_prompt_version: opts.masterPromptVersion ?? null,
+      surface_prompt_version: opts.surfacePromptVersion ?? null,
     };
     await fetch(`${SUPABASE_URL_INTERNAL}/rest/v1/ai_run_logs`, {
       method: "POST",
