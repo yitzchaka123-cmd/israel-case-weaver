@@ -4,6 +4,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { chatCompletions, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
 import { resolvePlaybook, renderExplanationLengthLine } from "../_shared/assistant-playbook.ts";
+import { resolveSystemPrompt, applyUserHeader } from "../_shared/system-prompts.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -140,9 +141,13 @@ ${playbook.explanations.include_suggestion ? "4. Any concrete suggestion to stre
 
     const startedAt = Date.now();
     const callerUserId = await getUserIdFromAuth(req);
+    const resolvedSP = await resolveSystemPrompt({
+      supa, ownerId: project?.owner_id, surface: "explain-canvas-node", defaultBody: sys,
+    });
+    const finalUserPrompt = applyUserHeader(userPrompt, resolvedSP.userHeader);
     const resp = await chatCompletions({
       model,
-      messages: [{ role: "system", content: sys }, { role: "user", content: userPrompt }],
+      messages: [{ role: "system", content: resolvedSP.system }, { role: "user", content: finalUserPrompt }],
     });
     const fb = extractFallback(resp, model);
 
@@ -154,6 +159,7 @@ ${playbook.explanations.include_suggestion ? "4. Any concrete suggestion to stre
         requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
         status: "error", latencyMs: Date.now() - startedAt,
         errorMessage: `${resp.status}: ${t.slice(0, 200)}`, targetId: nodeId,
+        masterPromptVersion: resolvedSP.masterVersion, surfacePromptVersion: resolvedSP.surfaceVersion,
       });
       return new Response(JSON.stringify({ error: `AI error (${resp.status})` }), {
         status: resp.status, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -167,6 +173,7 @@ ${playbook.explanations.include_suggestion ? "4. Any concrete suggestion to stre
       userId: callerUserId, projectId: node.project_id, surface: "explain-canvas-node",
       requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
       status: "ok", latencyMs: Date.now() - startedAt, targetId: nodeId, promptExcerpt: userPrompt,
+      masterPromptVersion: resolvedSP.masterVersion, surfacePromptVersion: resolvedSP.surfaceVersion,
     });
     return new Response(
       JSON.stringify({
