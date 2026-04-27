@@ -7,7 +7,7 @@ import { AutoSaveInput } from "@/components/AutoSave";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Plus, FileText, Trash2, Upload, Image as ImageIcon, Loader2, FileDown, Copy, RotateCcw } from "lucide-react";
+import { Plus, FileText, Trash2, Upload, Image as ImageIcon, Loader2, FileDown, Copy, RotateCcw, Wand2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
@@ -102,14 +102,166 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
     else refetch();
   };
 
+  // ---- Bulk generation ---------------------------------------------------
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkMode, setBulkMode] = useState<"draft" | "image" | "document" | "both">("both");
+  const [bulkScope, setBulkScope] = useState<"all_remaining" | "ids">("all_remaining");
+  const [bulkFormat, setBulkFormat] = useState<"pdf" | "docx" | "pptx" | "xlsx">("pdf");
+  const [bulkConcurrency, setBulkConcurrency] = useState<number>(2);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+
+  const { data: activeJob, refetch: refetchJob } = useQuery({
+    queryKey: ["bulk-job", projectId, activeJobId],
+    queryFn: async () => {
+      if (activeJobId) {
+        const { data } = await supabase.from("bulk_generation_jobs").select("*").eq("id", activeJobId).maybeSingle();
+        return data as never;
+      }
+      const { data } = await supabase.from("bulk_generation_jobs").select("*").eq("project_id", projectId).order("started_at", { ascending: false }).limit(1).maybeSingle();
+      return data as never;
+    },
+    refetchInterval: activeJobId ? 2500 : false,
+  }) as { data: { id: string; status: string; total: number; completed: number; failed: number; current_doc_title: string | null; mode: string; error: string | null; started_at: string; finished_at: string | null } | null; refetch: () => void };
+
+  useEffect(() => {
+    const ch = supabase
+      .channel(`bulk-jobs-${projectId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "bulk_generation_jobs", filter: `project_id=eq.${projectId}` }, () => {
+        refetchJob();
+        refetch();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [projectId, refetchJob, refetch]);
+
+  const launchBulk = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/bulk-generate-documents`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+      },
+      body: JSON.stringify({ projectId, scope: bulkScope, mode: bulkMode, documentFormat: bulkFormat, concurrency: bulkConcurrency }),
+    });
+    const json = await resp.json().catch(() => ({} as { jobId?: string; total?: number; error?: string; message?: string }));
+    if (!resp.ok) { toast.error(json.error ?? `Bulk start failed (${resp.status})`); return; }
+    if (!json.jobId) { toast.info(json.message ?? "No matching documents."); return; }
+    setActiveJobId(json.jobId);
+    setBulkOpen(false);
+    toast.success(`Bulk run started — ${json.total} document${json.total === 1 ? "" : "s"} in queue.`);
+  };
+
   const sel = data?.find((d) => d.id === selected) ?? null;
+  const jobRunning = activeJob?.status === "running";
+  const jobPct = activeJob ? Math.round((((activeJob.completed ?? 0) + (activeJob.failed ?? 0)) / Math.max(1, activeJob.total)) * 100) : 0;
 
   return (
     <div className="max-w-7xl mx-auto px-6 md:px-10 py-8">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
         <h2 className="font-display text-3xl">Documents</h2>
-        <Button onClick={addDoc} className="gap-2"><Plus className="h-4 w-4" /> New document</Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setBulkOpen(true)}
+            disabled={jobRunning || !data?.length}
+            className="gap-2"
+            title="Generate text + image + file for many documents in one run"
+          >
+            {jobRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+            Generate all
+          </Button>
+          <Button onClick={addDoc} className="gap-2"><Plus className="h-4 w-4" /> New document</Button>
+        </div>
       </div>
+
+      {activeJob && (jobRunning || (activeJob.finished_at && Date.now() - new Date(activeJob.finished_at).getTime() < 30_000)) && (
+        <div className="mb-6 rounded-xl border bg-card px-4 py-3 shadow-soft">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <div className="flex items-center gap-2 text-sm">
+              {jobRunning ? <Loader2 className="h-4 w-4 animate-spin text-primary" /> : <FileText className="h-4 w-4 text-success" />}
+              <span className="font-medium">
+                {jobRunning ? "Bulk generation in progress" : activeJob.status === "completed" ? "Bulk generation complete" : "Bulk generation finished with errors"}
+              </span>
+              <span className="text-muted-foreground">
+                · {(activeJob.completed ?? 0) + (activeJob.failed ?? 0)} / {activeJob.total} ({jobPct}%)
+              </span>
+              {activeJob.failed > 0 && <span className="text-destructive">· {activeJob.failed} failed</span>}
+            </div>
+            {!jobRunning && (
+              <button onClick={() => setActiveJobId(null)} className="p-1 rounded hover:bg-muted" aria-label="Dismiss">
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+          <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+            <div
+              className={`h-full transition-all ${activeJob.failed > 0 && !jobRunning ? "bg-destructive" : "bg-primary"}`}
+              style={{ width: `${jobPct}%` }}
+            />
+          </div>
+          {activeJob.current_doc_title && jobRunning && (
+            <p className="text-xs text-muted-foreground mt-2 truncate">Working on: {activeJob.current_doc_title}</p>
+          )}
+          {activeJob.error && !jobRunning && (
+            <p className="text-xs text-destructive mt-2 line-clamp-2">{activeJob.error}</p>
+          )}
+        </div>
+      )}
+
+      <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Generate all documents</DialogTitle></DialogHeader>
+          <div className="space-y-4 text-sm">
+            <p className="text-muted-foreground text-xs">
+              The assistant will work through your documents one batch at a time and update each row as it goes. Documents already marked <em>final</em> are skipped.
+            </p>
+            <div>
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground">What to generate</Label>
+              <Select value={bulkMode} onValueChange={(v) => setBulkMode(v as typeof bulkMode)}>
+                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="draft">Draft text only</SelectItem>
+                  <SelectItem value="image">Image only</SelectItem>
+                  <SelectItem value="document">Final document file only</SelectItem>
+                  <SelectItem value="both">Image + document file</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {(bulkMode === "document" || bulkMode === "both") && (
+              <div>
+                <Label className="text-xs uppercase tracking-wider text-muted-foreground">File format</Label>
+                <Select value={bulkFormat} onValueChange={(v) => setBulkFormat(v as typeof bulkFormat)}>
+                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pdf">PDF</SelectItem>
+                    <SelectItem value="docx">DOCX</SelectItem>
+                    <SelectItem value="pptx">PPTX</SelectItem>
+                    <SelectItem value="xlsx">XLSX</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div>
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground">Concurrency</Label>
+              <Select value={String(bulkConcurrency)} onValueChange={(v) => setBulkConcurrency(Number(v))}>
+                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">1 — slowest, gentlest on rate limits</SelectItem>
+                  <SelectItem value="2">2 — recommended</SelectItem>
+                  <SelectItem value="3">3</SelectItem>
+                  <SelectItem value="5">5 — fastest, may hit credits/rate limits</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="ghost" onClick={() => setBulkOpen(false)}>Cancel</Button>
+              <Button onClick={launchBulk} className="gap-2"><Wand2 className="h-4 w-4" /> Start bulk run</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {!project?.logic_approved_at && (
         <div className="mb-6 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm flex items-start gap-3">
           <span className="text-warning text-lg leading-none mt-0.5">⚠</span>

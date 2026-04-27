@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import ReactFlow, {
   Background, BackgroundVariant, Controls, MiniMap, addEdge, useEdgesState, useNodesState,
   type Connection, type Edge, type NodeChange, type EdgeChange, type Node as RFNode,
-  applyNodeChanges, applyEdgeChanges, ReactFlowProvider,
+  applyNodeChanges, applyEdgeChanges, ReactFlowProvider, useReactFlow,
   MarkerType,
 } from "reactflow";
 import "reactflow/dist/style.css";
@@ -105,6 +105,7 @@ export function CanvasSection({ projectId }: { projectId: string }) {
 
 function CanvasInner({ projectId, board, setBoard }: { projectId: string; board: Board; setBoard: (b: Board) => void }) {
   const qc = useQueryClient();
+  const rf = useReactFlow();
 
   const { data: project } = useQuery({
     queryKey: ["project", projectId],
@@ -382,6 +383,12 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
         }),
       );
       qc.invalidateQueries({ queryKey: ["nodes", projectId, board] });
+      // Fit the camera to the freshly arranged graph so the user sees the
+      // entire bounding box without manually zooming out (matches ComfyUI /
+      // n8n "rearrange" behavior).
+      setTimeout(() => {
+        try { rf.fitView({ padding: 0.18, duration: 450, maxZoom: 1.15 }); } catch { /* ignore */ }
+      }, 60);
       const variantLabel = json.variant ? ` · ${json.variant}` : "";
       const variantHint =
         mode === "deterministic" && json.variantCount > 1
@@ -401,7 +408,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
     } finally {
       setArranging(false);
     }
-  }, [arranging, nodes.length, projectId, board, logicModel, setNodes, qc]);
+  }, [arranging, nodes.length, projectId, board, logicModel, setNodes, qc, rf]);
 
   const generateLogicFlow = async (opts?: { useExistingSummary?: boolean }) => {
     if (board !== "logic") {
