@@ -291,6 +291,32 @@ Deno.serve(async (req) => {
     const gameLanguage = String(project?.game_language ?? "Hebrew").trim() || "Hebrew";
     const isRtl = ["Hebrew", "Arabic", "Persian", "Urdu", "Yiddish"].includes(gameLanguage);
 
+    // Mirror the document's lifecycle status onto its linked Final Flow node(s)
+    // by merging into existing node.data so we don't wipe docNumber/docType/etc.
+    // The CaseNode renderer reads data.generationStatus to color the pill:
+    //   "generated" → blue, "approved" → green.
+    const mirrorStatusOnNodes = async (generationStatus: "generated" | "approved") => {
+      try {
+        const linked: string[] = Array.isArray(doc.linked_node_ids) ? doc.linked_node_ids : [];
+        const { data: nodes } = await supa
+          .from("canvas_nodes")
+          .select("id, data")
+          .eq("project_id", doc.project_id)
+          .eq("board", "final")
+          .eq("node_type", "document");
+        const targets = (nodes ?? []).filter((n: any) =>
+          (n.data as { documentId?: string } | null)?.documentId === documentId ||
+          linked.includes(n.id)
+        );
+        for (const n of targets) {
+          const merged = { ...((n.data as Record<string, unknown> | null) ?? {}), generationStatus };
+          await supa.from("canvas_nodes").update({ data: merged }).eq("id", n.id);
+        }
+      } catch (e) {
+        console.warn("[generate-document] mirrorStatusOnNodes failed", (e as Error).message);
+      }
+    };
+
     if (mode === "text") {
       const model = resolveDocumentModel(project);
       const blocked = directProviderBlock(model, "document text");
