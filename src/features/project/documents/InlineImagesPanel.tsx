@@ -281,14 +281,61 @@ function InlineSlotCard({ slot, isOnlyAnchor, onChanged }: { slot: InlineImage; 
         className="h-7 text-xs"
         placeholder="Slot label"
       />
-      <Textarea
-        value={draftPrompt}
-        onChange={(e) => setDraftPrompt(e.target.value)}
-        onBlur={() => draftPrompt !== (slot.prompt ?? "") && saveField({ prompt: draftPrompt })}
-        rows={3}
-        className="text-xs"
-        placeholder={slot.is_anchor ? "Reference shot brief (anchors the look for the group)" : "How this slot's framing differs from the anchor"}
-      />
+      <Tabs value={tab} onValueChange={(v) => setTab(v as "brief" | "final")} className="w-full">
+        <div className="flex items-center justify-between gap-2">
+          <TabsList className="h-7">
+            <TabsTrigger value="brief" className="text-[10px] gap-1 px-2 h-6">
+              <Wand2 className="h-2.5 w-2.5" /> Reference Shot Brief
+            </TabsTrigger>
+            <TabsTrigger value="final" className="text-[10px] gap-1 px-2 h-6">
+              <Palette className="h-2.5 w-2.5" /> Final Prompt
+            </TabsTrigger>
+          </TabsList>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-6 gap-1 text-[10px] px-2"
+            onClick={createPrompt}
+            disabled={drafting}
+            title={slot.is_anchor || !slot.anchor_image_id
+              ? "Draft a fresh anchor prompt — siblings will lock to it."
+              : "Draft a sibling prompt locked to the anchor's look (only the framing varies)."}
+          >
+            {drafting ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Sparkles className="h-2.5 w-2.5" />}
+            Create Prompt
+          </Button>
+        </div>
+        <TabsContent value="brief" className="mt-2">
+          <Textarea
+            value={instructions}
+            onChange={(e) => setInstructions(e.target.value)}
+            rows={3}
+            className="text-xs"
+            placeholder={slot.is_anchor || !slot.anchor_image_id
+              ? "Anchor brief — describe the look that all sibling shots will inherit (camera, lighting, palette). Empty is fine."
+              : "Variation brief — describe ONLY how this shot's framing/angle differs from the anchor. Empty is fine."}
+          />
+          <p className="text-[10px] text-muted-foreground mt-1">
+            {slot.is_anchor
+              ? "This is the anchor — its prompt locks the visual identity for sibling slots."
+              : slot.anchor_image_id
+                ? "Locked to anchor's camera, lighting, and palette — vary only framing."
+                : "No anchor yet — this slot acts as its own reference."}
+          </p>
+        </TabsContent>
+        <TabsContent value="final" className="mt-2">
+          <Textarea
+            value={draftPrompt}
+            onChange={(e) => setDraftPrompt(e.target.value)}
+            onBlur={() => draftPrompt !== (slot.prompt ?? "") && saveField({ prompt: draftPrompt })}
+            rows={4}
+            className="text-xs font-mono leading-relaxed"
+            dir="ltr"
+            placeholder="Click Create Prompt, or write the final image prompt here."
+          />
+        </TabsContent>
+      </Tabs>
       {slot.error_message && <p className="text-[10px] text-destructive">{slot.error_message}</p>}
       <div className="flex flex-wrap gap-1.5">
         <Button size="sm" variant="default" onClick={generate} disabled={isGenerating} className="gap-1.5 h-7 text-[11px]">
