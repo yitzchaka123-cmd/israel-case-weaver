@@ -284,6 +284,16 @@ export function SettingsPage() {
             </div>
           </Section>
         );
+      case "prompt-studio":
+        return (
+          <Section
+            id="prompt-studio"
+            title="Prompt Studio"
+            desc="Edit the global Master Prompt that wraps every AI call, plus per-surface system-prompt overrides. Changes apply on the next call — no deploy."
+          >
+            <PromptStudioPanel />
+          </Section>
+        );
       case "ai-routing":
         return (
           <Section id="ai-routing" title="AI provider routing" desc="Choose which provider handles each task. Each prefix routes to its own billing account.">
