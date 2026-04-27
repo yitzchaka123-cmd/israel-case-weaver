@@ -1,80 +1,175 @@
 ## Goal
 
-Show the model's **actual reasoning text in real time** in the "Thinking" disclosure — character by character, while the model is still working — instead of a static "Waiting for the model's reasoning to come back…" placeholder that only fills in after each round finishes.
+Some documents are documents-with-pictures: a drone surveillance report needs 4 drone photos at the bottom; a forensic report needs 3 evidence photos; an interrogation file wants a mugshot. Today a document is **one image OR one file** — there is no concept of "document body + N inline images". This adds it, end to end:
 
-## Why it doesn't work today
+- The **assistant decides** during planning whether a doc needs embedded images and how many.
+- The **document editor UI** grows an "Inline images" panel with N slots — each with its own prompt, generate button, regenerate, history, and reorder.
+- The **prompter is consistency-aware**: image #2/3/4 in a slot group automatically reference image #1 (or whichever is marked the "anchor") so all four drone photos look like the same drone, same camera, same lighting.
+- The **PDF/DOCX renderer** embeds the images at the bottom of the document in the order shown.
 
-1. `assistant-chat` (and `explain-canvas-node`) call the AI router with `stream: false`. The router buffers the full response, parses reasoning at the end, and returns one big JSON blob.
-2. For `openai/gpt-5*` the router uses the **non-streaming** Responses API (`/v1/responses` without `stream: true`). Reasoning summaries only arrive in the final `output[]` array.
-3. The UI is realtime-driven from the `chat_messages.metadata.reasoning` column, but that column is only written **after each round completes**, so there is nothing to "stream" from the DB perspective either.
-4. At `effort=low` (current default for tool rounds) gpt-5 frequently emits **zero reasoning summaries** — even at the end of the round — which is why your logs show `reasoning=0seg`.
+## Data model — one new table + small additions
 
-## What this plan does
+### New table: `document_inline_images`
 
-Add real provider streaming for every reasoning-capable model, and pump reasoning deltas into `chat_messages.metadata.reasoning` **as they arrive** so the existing Realtime + ThinkingDisclosure animation paints the words live.
+```text
+id                uuid pk
+document_id       uuid → documents.id (cascade)
+project_id        uuid → projects.id
+position          int        -- 0-indexed display order
+slot_label        text       -- e.g. "Drone shot 1", "Body — wide", filled by assistant
+prompt            text       -- per-image prompt, editable
+url               text|null  -- generated/uploaded image
+uploaded_url      text|null  -- user upload override
+active_version    text       -- 'generated' | 'uploaded'
+prompt_history    jsonb      -- prior prompts (for revert)
+url_history       jsonb      -- prior generated URLs
+is_anchor         bool       -- true for the reference image of the group
+anchor_image_id   uuid|null  -- if not anchor: which image to reference for consistency
+group_key         text|null  -- 'drone-photos', 'evidence', etc. — multiple groups per doc allowed
+provider, model, effective_model, fallback   -- origin badge data
+status            text       -- 'pending' | 'generated' | 'failed'
+error_message     text
+created_at, updated_at
+```
 
-### 1. New shared util: `_shared/stream-reasoning.ts`
+RLS: same "auth all" policies as `documents` (matches existing project tables).
 
-A single function `streamReasoningChat({ model, messages, tools, effort, onReasoningDelta, onTextDelta, onToolCall, onDone })` that:
+### Tiny additions to `documents`
 
-- Detects provider from the model id (same logic as `ai-router.ts`).
-- Opens the correct **streaming** endpoint per provider:
-  - **OpenAI gpt-5.x**: `POST https://api.openai.com/v1/responses` with `stream: true`, `reasoning: { effort, summary: "auto" }`. Parses SSE events `response.reasoning_summary_text.delta`, `response.output_text.delta`, `response.function_call_arguments.delta`, and the terminal `response.completed`.
-  - **Anthropic Claude 4.x**: `POST /v1/messages` with `stream: true`, `thinking: { type: "enabled", budget_tokens }`, beta header `interleaved-thinking-2025-05-14`. Parses `content_block_delta` events with `delta.type === "thinking_delta"` (text) and `"input_json_delta"` (tool args).
-  - **Lovable Gateway / `google/*`**: `POST https://ai.gateway.lovable.dev/v1/chat/completions` with `stream: true`, `reasoning: { effort }`. Parses chat-completions SSE — `delta.reasoning_content` / `delta.reasoning` / `delta.content` / `delta.tool_calls`.
-  - **Gemini Direct (`gemini-direct/*`)**: `POST .../models/<model>:streamGenerateContent?alt=sse` with `thinkingConfig: { includeThoughts: true, thinkingBudget }`. Parses each chunk's `candidates[0].content.parts[]` — parts with `thought: true` are reasoning, others are text.
-- Normalises everything into three callbacks: `onReasoningDelta(text)`, `onTextDelta(text)`, `onToolCall({ id, name, argsJson })`.
-- Returns the same final shape as today's non-streaming router (text, reasoning array, tool_calls, thinking_blocks with signatures for Anthropic round-tripping) so caller logic that follows the round is unchanged.
+```text
+inline_images_layout  text default 'bottom-grid-2col'  -- 'bottom-grid-2col' | 'bottom-grid-3col' | 'inline-after-text' | 'gallery'
+inline_images_caption text                              -- optional shared caption
+```
 
-### 2. Wire `assistant-chat` to stream reasoning into Realtime
+## Assistant-side: it decides + plans the slots
 
-In the round loop in `assistant-chat/index.ts`:
+### New tool `add_document_inline_images`
 
-- Replace `chatCompletions({ stream: false, ... })` with `streamReasoningChat(...)`.
-- Maintain an in-memory buffer `currentRoundReasoning = ""` and `liveSegments: ReasoningSegment[]`.
-- In `onReasoningDelta(chunk)`: append to buffer, update the *last* segment of the current round (or create one), and **debounced ~150 ms** push `metadata.reasoning = [...reasoningRounds, { round, segments: liveSegments }]` to the assistant placeholder row. The existing Realtime channel + `ThinkingDisclosure` typing animation will render it word-by-word in the UI.
-- In `onTextDelta(chunk)`: same debounce strategy → update `chat_messages.content` so the final reply also paints live (bonus).
-- On round completion: finalise reasoning round, run tool calls, continue loop exactly as today.
-- Keep existing fallback path (non-streaming `chatCompletions`) for any model that doesn't support streaming or if the stream errors mid-flight.
-- Bump default `ai_reasoning_effort` floor from `"low"` → `"medium"` for tool/final rounds, because at `low` gpt-5 frequently emits zero summaries (this is OpenAI behaviour, not a bug). Add a one-line note in the Settings explainer if such copy exists.
+```text
+add_document_inline_images({
+  document_id,
+  layout,                  -- one of the layout enum values
+  group_key,               -- optional grouping (consistency band)
+  images: [
+    { slot_label, prompt, is_anchor },
+    { slot_label, prompt },
+    ...
+  ]
+})
+```
 
-### 3. Wire `explain-canvas-node` the same way
+Inserts N rows into `document_inline_images`. Exactly one image per `group_key` MUST have `is_anchor=true`; the rest get `anchor_image_id` set to the anchor's id post-insert. Prompts are stored as drafted; nothing renders until the user (or `generate_document_assets`) hits Generate.
 
-Smaller version of #2 — single round, no tool loop. Stream reasoning into the explanation message row so the Canvas node "Explain" panel shows live thinking.
+### Updates to existing tools
 
-### 4. Update `ThinkingDisclosure` placeholder copy
+- `add_document` and `propose_document_set` get an optional `inline_images_plan` field on each entry: `{ count, group_key, layout, theme }`. When the assistant proposes the document set it can mark "Doc 14 — Drone surveillance log: needs 4 drone aerials, consistent look, group 'drone-feed'."
+- `generate_document_assets` mode `"images"` (new) or `"both"` will also generate any pending inline images for that doc, in anchor-first order.
 
-When `in_progress === true` and `reasoning.length === 0`, change "Waiting for the model's reasoning to come back…" to "Model is working — reasoning will appear here once it starts thinking out loud." This makes the empty state honest for low-effort models that genuinely won't emit summaries.
+### Playbook rule (adds ~10 lines to the system prompt)
 
-### 5. Surface model capability in the UI
+"When proposing a document, decide whether it visually requires embedded photos as part of the prop's realism (e.g. drone reports need aerial shots, autopsy reports need photo plates, evidence logs need item photos, dossiers need a mugshot). If yes, include `inline_images_plan` with the count, a `group_key` (so consistency can be enforced), a layout hint, and a one-sentence visual theme. Default `count` to the smallest believable number. NEVER inflate counts to pad the doc."
 
-In `useAssistantRun` / model picker, add a small "Live reasoning" badge next to models that support it (gpt-5.x, claude-sonnet/opus/haiku-4.x, gemini-2.5/3 except flash-lite). Models without it show "No live reasoning". Uses the existing `modelSupportsThinking` helper exported from `ai-router.ts`.
+## Consistency-aware prompter
 
-## Models covered
+This is the smart bit. Lives in a new shared helper `_shared/inline-image-prompt.ts`:
 
-| Provider | Models with live reasoning streaming after this change |
-|---|---|
-| OpenAI direct | `openai/gpt-5`, `gpt-5.2`, `gpt-5.4`, `gpt-5-mini` (responses API SSE) |
-| Anthropic direct | `claude-sonnet-4-5`, `claude-opus-4-5`, `claude-haiku-4-5` (thinking_delta SSE) |
-| Lovable Gateway | `google/gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-3-flash-preview`, `gemini-3.1-pro-preview` (chat-completions SSE with reasoning) |
-| Gemini Direct | `gemini-direct/gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-3-flash-preview`, `gemini-3.1-pro-preview` (streamGenerateContent SSE with thoughts) |
-| Excluded (no thinking on these) | `gpt-5-nano`, `gemini-2.5-flash-lite`, all image models |
+```ts
+buildInlineImagePrompt({
+  doc,                  // doc context (title, doc_type, design_instructions)
+  thisImage,            // current row (slot_label, prompt, position)
+  anchor,               // null if this IS the anchor
+  groupSiblings,        // already-generated sibling rows in same group
+  projectImageStyle,    // project.image_prompt_instructions + user global notes
+})
+```
 
-## Files touched
+When `anchor` is set, the helper:
 
-- **New**: `supabase/functions/_shared/stream-reasoning.ts` (~250 lines, four provider parsers + normaliser)
-- **Edit**: `supabase/functions/assistant-chat/index.ts` (round loop, ~60-line section)
-- **Edit**: `supabase/functions/explain-canvas-node/index.ts` (~20 lines)
-- **Edit**: `src/features/project/AssistantSection.tsx` (placeholder copy + live `content` typing already supported)
-- **Edit**: model picker component (capability badge — small)
+1. Fetches the anchor row from DB (its prompt + final URL).
+2. Calls `suggest-image-prompt` (already exists) with a system message that injects the anchor's full prompt and a strict rule: *"Every output prompt MUST repeat these locked visual properties from the reference image: camera/sensor type, lens/focal length feel, lighting condition, time of day, weather, color palette, subject style, framing language. Vary ONLY the framing/subject of the new shot as described by the slot prompt."*
+3. Returns the merged prompt and **also** passes the anchor's image URL to the image generator as a reference image input — Nano Banana / Gemini Image / GPT-Image all accept reference images, and the existing `generate-image` edge function already supports edit-mode (`url` input). We just route inline-image generation through that path when `anchor_image_id` is set.
 
-## Out of scope
+So:
 
-- Streaming reasoning for `generate-document`, `generate-storyboard`, `generate-marketing-copy`, etc. They are background jobs the user doesn't watch live; not worth the rewrite.
-- Streaming inside the Anthropic interleaved-thinking *tool loop* — first round only is streamed; subsequent rounds after tool execution still use the non-streaming path. Can extend later if you want.
+- **Image #1 (anchor)** = generated normally from `slot_label + prompt + project style`.
+- **Images #2-N** = generated as **edits/variations of the anchor image** with a slot-specific prompt overlay. This guarantees "same drone, same lighting, same look" — far stronger consistency than text-only prompt sharing.
+
+If the user manually uploads the anchor (drag-drop a real reference photo), the same logic kicks in — children will be generated as variations of the uploaded reference. This unlocks "I have one good drone shot, give me 3 more from different angles."
+
+## UI — inside the document editor
+
+In `DocumentsSection.tsx` editor, add a new section between "Final asset image" and "Final asset document":
+
+```text
+INLINE IMAGES                                    [+ Add image]   [Layout: ⬛⬛ 2-col ▾]
+
+┌──────────────┐  ┌──────────────┐
+│ [thumbnail]  │  │ [thumbnail]  │
+│ "Drone 1"  ⭐│  │ "Drone 2"    │
+│ Aerial view  │  │ Closer pass  │
+│ over the…    │  │ on suspect…  │
+│ [✨ Generate]│  │ [✨ Generate]│
+│ [↻] [✎] [⋮]  │  │ [↻] [✎] [⋮]  │
+└──────────────┘  └──────────────┘
+┌──────────────┐  ┌──────────────┐
+│ Drone 3      │  │ Drone 4      │
+│ + Add prompt │  │ + Add prompt │
+└──────────────┘  └──────────────┘
+
+🔗 Group: drone-feed (4 images, anchor: Drone 1)   [Regenerate group from anchor]
+```
+
+Per slot:
+- **Thumbnail** (or empty/dashed placeholder).
+- **Slot label** — editable inline.
+- **Prompt** — editable textarea, opens the existing `ImagePromptAssistant` popover for the AI-assisted writer.
+- **⭐ Anchor toggle** — exactly one anchor per group; clicking another star moves the anchor.
+- **Generate** — calls a new edge function `generate-document-inline-image` (mirrors `generate-image` but writes to `document_inline_images`).
+- **Regenerate** — re-runs current prompt.
+- **History** — small strip identical to the existing image history strip (`HistoryStrip`).
+- **Drag handle** — reorders `position`.
+- **Upload override** — drag-drop a file to fill the slot manually; sets `active_version='uploaded'`.
+
+Group strip below shows: `[Regenerate group from anchor]` — wipes children, re-derives from current anchor. Useful when the user picks a new anchor.
+
+Layout dropdown at the top is the `inline_images_layout` value: how the renderer arranges the photos (2-col grid, 3-col grid, single column inline after text, full-width gallery).
+
+## Renderer — embedding in the final document
+
+For Claude-Skills PDF/DOCX path (the existing direct file path):
+- The existing `buildDocPrompt()` in `generate-document/index.ts` gets a new section listing inline images (`POSITION 1, label, signed URL, caption`) plus the chosen layout, and instructs the skill to embed them at the bottom in a grid matching the layout.
+- We pass the actual public URLs (already in storage) to Claude as `image_url` content blocks alongside the text instruction so the skill can both reference and download them.
+
+For ChatGPT image-only path (when the doc is *itself* a poster-style image): inline images are ignored — that flow generates one giant image. The UI hides the inline-images panel when the user picks `image` mode for `fileGeneration`.
+
+## Files to create / change
+
+**New**:
+- migration: `document_inline_images` table + RLS + indexes; `documents.inline_images_layout`, `documents.inline_images_caption`.
+- `supabase/functions/generate-document-inline-image/index.ts` — per-slot generation, anchor-aware (uses reference-image edit mode when child).
+- `supabase/functions/_shared/inline-image-prompt.ts` — consistency-aware prompt builder.
+- `src/features/project/documents/InlineImagesPanel.tsx` — the slot grid UI.
+- `src/features/project/documents/InlineImageSlot.tsx` — single slot card.
+- `src/features/project/documents/useInlineImages.ts` — query + mutations + Realtime sync.
+
+**Edit**:
+- `supabase/functions/assistant-chat/index.ts` — register `add_document_inline_images` tool, extend `add_document` and `propose_document_set` schemas with `inline_images_plan`, extend `generate_document_assets` to also generate pending inline images.
+- `supabase/functions/generate-document/index.ts` — `buildDocPrompt` includes inline-image manifest; final doc payload to Claude attaches image URLs.
+- `src/features/project/DocumentsSection.tsx` — render `<InlineImagesPanel />` between final-image and final-document sections; layout dropdown.
+- `supabase/functions/suggest-image-prompt/index.ts` — accept `anchor_prompt` + `anchor_url` and prepend the consistency rule.
+
+## Out of scope (future)
+
+- Per-image **face/character** consistency across DIFFERENT documents (e.g. same suspect appearing in dossier + crime-scene photo). Doable later by adding a project-wide "character lock" that becomes the anchor for any matching slot. Not in v1.
+- Video clips inline. Stays single hero video per doc for now.
+- Image cropping / hotspot selection in the UI. Generated as-is, user re-prompts to reframe.
 
 ## Risk / trade-offs
 
-- More edge-function CPU time spent holding open SSE connections (each round is a long-lived fetch). Cloudflare Workers handles this fine within the existing `EdgeRuntime.waitUntil` background pattern already used.
-- ~150 ms DB-write debounce means `chat_messages` will see ~6-8 updates per second per active assistant turn. Realtime can handle this; if you notice channel saturation we can throttle to 250 ms.
-- Reasoning summaries from OpenAI are **summaries**, not raw chain-of-thought. That's the most you can get — OpenAI does not expose the raw thinking tokens, by policy. Same for Gemini "thoughts". Anthropic exposes more verbose thinking blocks.
+- Reference-image variation is great for "same camera/look", weaker for "same person's face" — acceptable for drone shots, evidence photos, scenes; not perfect for repeated-character shots (covered by the future "character lock" item above).
+- One row per inline image multiplies storage rows per project. With ~40 docs × avg 2 inline images = 80 extra rows per project. Negligible.
+- Claude Skills must accept the image URLs at the size they're served; existing image storage is public, so signed-URL handling is not required.
+
+---
+
+Let me know what to revise. I'll iterate until you say it's perfect, then ship it.
