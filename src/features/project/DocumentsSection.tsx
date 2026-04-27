@@ -18,6 +18,7 @@ import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { DocumentPromptAssistant } from "@/components/DocumentPromptAssistant";
 import { Badge } from "@/components/ui/badge";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { InlineImagesPanel } from "./documents/InlineImagesPanel";
 
 interface MediaHistoryRow {
   id: string;
