@@ -350,6 +350,9 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
                     }}
                   />
                 )}
+                <span className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <DownloadButton url={cover} title={`${project?.title ?? "cover"}-front`} />
+                </span>
               </>
             ) : (
               <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground gap-2 text-center px-6">
@@ -470,6 +473,11 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
                     <button onClick={() => handleCopyPrompt(a.prompt)} className="text-white/90 hover:text-white" aria-label="Copy prompt">
                       <Copy className="h-3 w-3" />
                     </button>
+                    {a.url && (
+                      <button onClick={() => downloadFromGrid(a.url!, a.title)} className="text-white/90 hover:text-white" aria-label="Download">
+                        <Download className="h-3 w-3" />
+                      </button>
+                    )}
                     {a.url && (
                       <a href={a.url} target="_blank" rel="noreferrer" className="text-white/90 hover:text-white">
                         <ExternalLink className="h-3 w-3" />
