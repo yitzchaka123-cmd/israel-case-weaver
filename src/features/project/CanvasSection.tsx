@@ -105,6 +105,7 @@ export function CanvasSection({ projectId }: { projectId: string }) {
 
 function CanvasInner({ projectId, board, setBoard }: { projectId: string; board: Board; setBoard: (b: Board) => void }) {
   const qc = useQueryClient();
+  const rf = useReactFlow();
 
   const { data: project } = useQuery({
     queryKey: ["project", projectId],
