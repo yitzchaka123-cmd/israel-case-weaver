@@ -325,7 +325,7 @@ export function ProjectOverview({ project }: { project: any }) {
       return;
     }
     const modelOverride = getStoredImageModel("cover", "chatgpt-image");
-    const quality = getStoredImageQuality("cover", "medium");
+    const quality = getStoredImageQuality("cover", "high");
     try {
       await coverJob.start({ prompt: promptToUse, modelOverride, aspect: "portrait", quality });
       toast.message("Generating in the background — you can close the tab.");

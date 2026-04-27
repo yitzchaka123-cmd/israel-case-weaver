@@ -346,7 +346,7 @@ ${tagline ? `TAGLINE (small): "${tagline}"` : ""}${LAYOUT_SUFFIX}`;
       let kicked = 0;
       if (backOutputType === "image" || backOutputType === "both") {
         const modelOverride = getStoredImageModel("marketing-back", "chatgpt-image-2");
-        const quality = getStoredImageQuality("marketing-back", "medium");
+        const quality = getStoredImageQuality("marketing-back", "high");
         const results = await Promise.all(
           Array.from({ length: generateCount }).map((_, i) => fireBackgroundImage({
             projectId,

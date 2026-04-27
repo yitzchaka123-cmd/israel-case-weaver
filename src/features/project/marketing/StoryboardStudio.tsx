@@ -288,7 +288,7 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
       // so the shot must already be persisted in the row. Save first.
       await persist();
       const modelOverride = getStoredImageModel("storyboard", "nano-banana-2");
-      const quality = getStoredImageQuality("storyboard", "medium");
+      const quality = getStoredImageQuality("storyboard", "high");
       const result = await fireBackgroundImage({
         projectId,
         target: "storyboard-shot",

@@ -285,7 +285,7 @@ function HintSheetBlock({ projectId, stage, sheet }: { projectId: string; stage:
       return;
     }
     const model = getStoredImageModel("hint", "chatgpt-image");
-    const quality = getStoredImageQuality("hint", "medium");
+    const quality = getStoredImageQuality("hint", "high");
     try {
       await sheetJob.start({
         prompt,
