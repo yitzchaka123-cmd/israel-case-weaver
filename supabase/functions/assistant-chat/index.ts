@@ -1111,6 +1111,40 @@ const BASE_TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "add_document_inline_images",
+      description:
+        "Plan a set of EMBEDDED images that live INSIDE a document (e.g. 4 drone aerials at the bottom of a surveillance report, 3 evidence photos in a forensic file, 1 mugshot in a dossier). Use this whenever the document's realism requires actual visual evidence as part of the prop itself — NOT for cover art or decorative imagery. Each entry creates one slot the user can later generate independently. Mark exactly ONE slot as is_anchor=true per group_key — that anchor becomes the visual reference image; the other slots in the same group are generated as VARIATIONS of the anchor (same camera, same lighting, same drone, just different angle/framing). Default to the smallest believable count — 4 drone shots, 3 evidence photos, 1 mugshot. Never inflate counts to pad the doc. Set group_key when multiple images must look visually consistent (drone-feed, evidence-set, scene-photos). Set layout to control how the renderer arranges them at the bottom of the document.",
+      parameters: {
+        type: "object",
+        properties: {
+          document_id: { type: "string", description: "Existing document id (from the Existing documents roster, or returned by add_document)." },
+          layout: { type: "string", enum: ["bottom-grid-2col", "bottom-grid-3col", "inline-after-text", "gallery"], description: "How the renderer arranges the images at the bottom of the document. Defaults to 'bottom-grid-2col'." },
+          caption: { type: "string", description: "Optional shared caption rendered above the image grid (e.g. 'Aerial reconnaissance — 14:23, June 9.')." },
+          group_key: { type: "string", description: "Optional shared key linking siblings for visual consistency (e.g. 'drone-feed', 'evidence-set'). All images in the same group inherit the anchor's look." },
+          images: {
+            type: "array",
+            minItems: 1,
+            maxItems: 8,
+            items: {
+              type: "object",
+              properties: {
+                slot_label: { type: "string", description: "Short editable label shown above the slot in the editor (e.g. 'Drone shot 1 — wide')." },
+                prompt: { type: "string", description: "Per-image prompt brief. For the anchor: a strong opinionated reference shot. For children: a SHORT description of how this slot's framing/angle differs from the anchor (the consistency lock is added automatically)." },
+                is_anchor: { type: "boolean", description: "True for exactly ONE image per group_key — the visual reference all siblings inherit from. The first image in the array is auto-anchored if none is marked." },
+              },
+              required: ["slot_label"],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["document_id", "images"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 // Build the tool list with the playbook-derived `phase` enum substituted in.
