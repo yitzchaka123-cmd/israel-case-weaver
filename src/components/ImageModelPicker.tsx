@@ -24,7 +24,7 @@ export function getStoredImageModel(surface: string, fallback: ImageModelKey): I
   return fallback;
 }
 
-export function getStoredImageQuality(surface: string, fallback: ImageQuality = "medium"): ImageQuality {
+export function getStoredImageQuality(surface: string, fallback: ImageQuality = "high"): ImageQuality {
   if (typeof window === "undefined") return fallback;
   const v = window.localStorage.getItem(QUALITY_PREFIX + surface);
   if (v === "low" || v === "medium" || v === "high") return v;
@@ -51,14 +51,14 @@ interface Props {
  */
 export function ImageModelPicker({ surface, defaultModel, className, size = "sm" }: Props) {
   const [value, setValue] = useState<ImageModelKey>(defaultModel);
-  const [quality, setQuality] = useState<ImageQuality>("medium");
+  const [quality, setQuality] = useState<ImageQuality>("high");
   const [geminiKeyPresent, setGeminiKeyPresent] = useState<boolean | null>(null);
   const { hidden } = useHiddenModels();
   const visibleModels = filterModelOptions(IMAGE_MODELS, hidden, value);
 
   useEffect(() => {
     setValue(getStoredImageModel(surface, defaultModel));
-    setQuality(getStoredImageQuality(surface, "medium"));
+    setQuality(getStoredImageQuality(surface, "high"));
   }, [surface, defaultModel]);
 
   // One lightweight ping to detect whether the user's GEMINI_API_KEY is configured.
