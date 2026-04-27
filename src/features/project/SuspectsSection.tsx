@@ -16,6 +16,7 @@ import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { useBackgroundImageJob } from "@/features/project/useBackgroundImageJob";
 import { GenerationTimer } from "@/features/project/GenerationTimer";
+import { syncSuspectThumbnailToIntakeDocs } from "@/features/project/syncSuspectIntake";
 
 interface Suspect {
   id: string;
@@ -214,6 +215,7 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
     const { data } = supabase.storage.from("suspects").getPublicUrl(path);
     await supabase.from("suspects").update({ uploaded_thumbnail_url: data.publicUrl, active_version: "uploaded" }).eq("id", suspect.id);
     setDraft({ ...draft, uploaded_thumbnail_url: data.publicUrl, active_version: "uploaded" });
+    void syncSuspectThumbnailToIntakeDocs({ projectId: suspect.project_id, suspectId: suspect.id, portraitUrl: data.publicUrl });
     toast.success("Upload set as the active portrait");
   };
 
@@ -226,6 +228,7 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
       active_version: "generated",
     }).eq("id", suspect.id);
     setDraft((d) => d ? { ...d, thumbnail_url: item.url!, active_version: "generated", thumbnail_effective_model: item.effective_model ?? item.model, thumbnail_fallback: item.fallback ?? null } : d);
+    void syncSuspectThumbnailToIntakeDocs({ projectId: suspect.project_id, suspectId: suspect.id, portraitUrl: item.url });
     toast.success("Portrait restored as active");
   };
 
@@ -242,6 +245,9 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
       setDraft((d) => d ? { ...d, thumbnail_url: url, active_version: "generated" } : d);
       setPortraitPrompt(draft?.thumbnail_prompt ?? "");
       refetchHistory();
+      if (suspect?.project_id && suspect?.id) {
+        void syncSuspectThumbnailToIntakeDocs({ projectId: suspect.project_id, suspectId: suspect.id, portraitUrl: url });
+      }
       toast.success("Portrait ready");
     },
     onError: (msg) => toast.error(msg, { duration: 15000 }),

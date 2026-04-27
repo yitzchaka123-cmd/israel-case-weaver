@@ -273,7 +273,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { documentId, mode, imageModelOverride, quality: qualityOverride, documentFormat = "pdf" } = await req.json() as { documentId: string; mode: "text" | "image" | "document"; imageModelOverride?: string; quality?: "low" | "medium" | "high"; documentFormat?: "pdf" | "docx" | "pptx" | "xlsx" };
+    const { documentId, mode, imageModelOverride, quality: qualityOverride, documentFormat = "pdf" } = await req.json() as { documentId: string; mode: "text" | "image" | "document" | "image_to_pdf"; imageModelOverride?: string; quality?: "low" | "medium" | "high"; documentFormat?: "pdf" | "docx" | "pptx" | "xlsx" };
     if (!documentId || !mode) {
       return new Response(JSON.stringify({ error: "documentId and mode required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -748,6 +748,77 @@ OUTPUT RULES:
       return new Response(JSON.stringify({ ok: true, url: pub.publicUrl, requestedModel: model, effectiveModel: model, provider: imageProvider, fallback: "none" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // ---------------------------------------------------------------------
+    // image_to_pdf — wrap the document's existing generated image into a
+    // single full-bleed PDF page. No model call; pure pdf-lib. Used by the
+    // bulk orchestrator when the user wants "save all images as PDF".
+    // ---------------------------------------------------------------------
+    if (mode === "image_to_pdf") {
+      const imgUrl = doc.generated_asset_url || doc.uploaded_asset_url;
+      if (!imgUrl) {
+        return new Response(JSON.stringify({ error: "No image to wrap — generate the image first." }), {
+          status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      try {
+        const imgResp = await fetch(imgUrl);
+        if (!imgResp.ok) throw new Error(`Could not fetch source image (${imgResp.status})`);
+        const ct = (imgResp.headers.get("content-type") || "").toLowerCase();
+        const bytes = new Uint8Array(await imgResp.arrayBuffer());
+        const { PDFDocument } = await import("https://esm.sh/pdf-lib@1.17.1");
+        const pdfDoc = await PDFDocument.create();
+        const isPng = ct.includes("png") || imgUrl.toLowerCase().endsWith(".png");
+        const embedded = isPng ? await pdfDoc.embedPng(bytes) : await pdfDoc.embedJpg(bytes);
+        // Pick page size based on document.print_size (defaults to A4).
+        const SIZES: Record<string, [number, number]> = {
+          A3: [841.89, 1190.55],
+          A4: [595.28, 841.89],
+          A5: [419.53, 595.28],
+          A6: [297.64, 419.53],
+          "Business card": [243.78, 153.07],
+        };
+        const wantedSize = (doc.print_size && SIZES[doc.print_size]) ? SIZES[doc.print_size] : SIZES.A4;
+        // Match orientation to image aspect ratio.
+        const imgRatio = embedded.width / embedded.height;
+        let [pw, ph] = wantedSize;
+        if ((imgRatio > 1 && pw < ph) || (imgRatio < 1 && pw > ph)) [pw, ph] = [ph, pw];
+        const page = pdfDoc.addPage([pw, ph]);
+        // Cover (full bleed) — scale image to fill page, center.
+        const scale = Math.max(pw / embedded.width, ph / embedded.height);
+        const w = embedded.width * scale;
+        const h = embedded.height * scale;
+        page.drawImage(embedded, { x: (pw - w) / 2, y: (ph - h) / 2, width: w, height: h });
+        const pdfBytes = await pdfDoc.save();
+        const path = `${doc.project_id}/${documentId}/wrapped-${Date.now()}.pdf`;
+        await supa.storage.from("documents").upload(path, pdfBytes, { contentType: "application/pdf", upsert: true });
+        const { data: pub } = supa.storage.from("documents").getPublicUrl(path);
+        await supa.from("documents").update({
+          generated_pdf_url: pub.publicUrl,
+          generated_document_url: pub.publicUrl,
+          document_format: "pdf",
+          document_provider: "image-wrap",
+          document_model: "pdf-lib",
+          status: "review",
+        }).eq("id", documentId);
+        await supa.from("media_assets").insert({
+          project_id: doc.project_id, category: "document", title: doc.title, url: pub.publicUrl,
+          mime_type: "application/pdf", prompt: `wrap_image:${imgUrl}`, provider: "image-wrap", model: "pdf-lib", effective_model: "pdf-lib",
+          asset_type: "document", document_format: "pdf", source_document_id: documentId,
+          created_by_message_id: doc.created_by_message_id ?? null, generation_mode: "image_to_pdf",
+          status: "generated", error_message: null,
+        } as never);
+        return new Response(JSON.stringify({ ok: true, documentUrl: pub.publicUrl, documentFormat: "pdf", model: "pdf-lib" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "image_to_pdf failed";
+        console.error("[image_to_pdf]", msg);
+        return new Response(JSON.stringify({ error: msg }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     return new Response(JSON.stringify({ error: "Unknown mode" }), {
