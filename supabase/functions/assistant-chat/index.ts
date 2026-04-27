@@ -39,6 +39,137 @@ const corsHeaders = {
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
+// ---------- Live-streaming round helper ----------
+//
+// Runs ONE model round with provider streaming when supported. Reasoning and
+// final-text deltas are pushed into chat_messages.metadata.reasoning /
+// chat_messages.content with a ~120ms debounce so the UI's ThinkingDisclosure
+// types the words live via Realtime instead of waiting for the full round.
+// Falls back to the non-streaming chatCompletions path on error / unsupported
+// models so the round loop never gets stuck.
+type LiveSupa = ReturnType<typeof createClient>;
+async function runRoundWithLiveReasoning(args: {
+  supa: LiveSupa;
+  messageId: string;
+  model: string;
+  body: Record<string, unknown>;
+  // Snapshot of completed prior rounds — the live round we render is appended
+  // on top of this so prior rounds remain visible while this one types in.
+  priorReasoningRounds: Array<{ round: number; segments: StreamReasoningSegment[] }>;
+  roundIndex: number;
+  baseMetadata: Record<string, unknown>;
+}): Promise<{ ok: true; message: ChatMessageOut; effectiveModel: string; fallback: "none" | "openai-direct" | "lovable-ai" } | { ok: false; status: number; errorText: string }> {
+  const { supa, messageId, model, body, priorReasoningRounds, roundIndex, baseMetadata } = args;
+
+  // Helper: write current state to chat_messages with debounce.
+  let liveReasoning = "";
+  let liveText = "";
+  let lastFlushAt = 0;
+  let pendingFlush: number | null = null;
+  const FLUSH_INTERVAL_MS = 120;
+
+  const writeNow = async () => {
+    const liveSegments: StreamReasoningSegment[] = liveReasoning
+      ? [{ type: "summary", text: liveReasoning }]
+      : [];
+    const allRounds = liveSegments.length
+      ? [...priorReasoningRounds, { round: roundIndex, segments: liveSegments }]
+      : priorReasoningRounds;
+    const metadata = {
+      ...baseMetadata,
+      ...(allRounds.length ? { reasoning: allRounds } : {}),
+    };
+    const update: Record<string, unknown> = { metadata };
+    // Only update content while text is actively streaming so we don't clobber
+    // the final content the round-loop writes after tools complete.
+    if (liveText) update.content = liveText;
+    try {
+      await supa.from("chat_messages").update(update).eq("id", messageId);
+    } catch (e) {
+      console.warn("[stream-flush] update failed", e);
+    }
+  };
+  const scheduleFlush = () => {
+    const now = Date.now();
+    if (now - lastFlushAt >= FLUSH_INTERVAL_MS) {
+      lastFlushAt = now;
+      void writeNow();
+      return;
+    }
+    if (pendingFlush != null) return;
+    pendingFlush = setTimeout(() => {
+      pendingFlush = null;
+      lastFlushAt = Date.now();
+      void writeNow();
+    }, FLUSH_INTERVAL_MS - (now - lastFlushAt)) as unknown as number;
+  };
+
+  const supportsStreaming = modelSupportsStreamingReasoning(model);
+  const wantsThinking = (body.reasoningEffort as string | undefined) !== "none";
+
+  if (supportsStreaming) {
+    const effort = (body.reasoningEffort as "none" | "low" | "medium" | "high" | "xhigh" | undefined) ?? "medium";
+    const result = await streamReasoningChat(
+      {
+        model,
+        messages: body.messages as Array<{ role: string; content?: unknown; tool_calls?: unknown; tool_call_id?: string; thinking?: unknown }>,
+        tools: body.tools as Array<{ type: string; function: { name: string; description?: string; parameters: unknown } }> | undefined,
+        effort,
+        max_tokens: body.max_tokens as number | undefined,
+        anthropicTools: body.anthropicTools as Array<Record<string, unknown>> | undefined,
+        anthropicContainer: body.anthropicContainer,
+        anthropicBeta: body.anthropicBeta as string | undefined,
+      },
+      {
+        onReasoningDelta: (delta) => {
+          liveReasoning += delta;
+          scheduleFlush();
+        },
+        onTextDelta: (delta) => {
+          liveText += delta;
+          scheduleFlush();
+        },
+      },
+    );
+    if (pendingFlush != null) { clearTimeout(pendingFlush); pendingFlush = null; }
+    // Final flush so the last chunk lands in the DB before the round returns.
+    await writeNow();
+    if (result.ok) {
+      const fallback = "none" as const;
+      return { ok: true, message: result.message, effectiveModel: model, fallback };
+    }
+    // Streaming failed — log and fall through to non-streaming path.
+    console.warn(`[stream-fallback] streaming failed for ${model} (status ${result.status}); falling back to non-streaming chatCompletions`);
+  }
+
+  // Non-streaming path (used for models that don't stream OR after a stream error).
+  const nonStreamBody = { ...body, stream: false };
+  const resp = await chatCompletions(nonStreamBody);
+  const fb = extractFallback(resp, model);
+  if (!resp.ok) {
+    const text = await resp.text();
+    return { ok: false, status: resp.status, errorText: text };
+  }
+  const data = await resp.json();
+  const choice = data.choices?.[0];
+  const message: ChatMessageOut = (choice?.message ?? { role: "assistant", content: "" }) as ChatMessageOut;
+  // Push the final reasoning/text into metadata one last time so the live UI
+  // catches up to the full result.
+  if (Array.isArray(message.reasoning) && message.reasoning.length > 0) {
+    const allRounds = [...priorReasoningRounds, { round: roundIndex, segments: message.reasoning }];
+    await supa.from("chat_messages").update({
+      metadata: { ...baseMetadata, reasoning: allRounds },
+    }).eq("id", messageId);
+  }
+  return {
+    ok: true,
+    message,
+    effectiveModel: fb.effectiveModel,
+    fallback: fb.fallback,
+  };
+}
+
+
 // Map provider preferences to provider-prefixed model ids understood by the
 // shared AI router. Prefix legend:
 //   openai/...         → OpenAi secret, billed to user's OpenAI account
