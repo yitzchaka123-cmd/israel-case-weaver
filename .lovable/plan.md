@@ -1,77 +1,65 @@
-# Canvas zoom + cover generators upgrade
+# Fix four mid-flow bugs
 
-Five focused changes. Front- and back-cover generators get a real graphic-design pipeline (logo/title/QR baked in), QR support becomes multi-link, and the company profile becomes the single source of truth in Settings.
+Four small but distinct issues to fix:
 
-## 1. Canvas: wider zoom range
+## 1. Skipped step: summary went straight to "logic approved"
 
-In `src/features/project/CanvasSection.tsx` on the `<ReactFlow>` element:
-- Set `minZoom={0.05}` (currently defaults to 0.5) and `maxZoom={4}` (default 2). Lets you zoom out to see the whole map and zoom in close to read node bodies.
-- Tighten the post-arrange `fitView` so nodes don't shrink to dots: change `maxZoom: 1.15` → `maxZoom: 1.4`, keep `padding: 0.18`.
-- Apply the same `minZoom`/`maxZoom` to the `<MiniMap>`.
+**What happened:** After the user approved the solution summary, the assistant clicked "Approve logic & start producing documents" implicitly — there was no in-between "logic flow generated, please review & approve" step. The flow should be:
+1. Approve solution summary (Phase 2)
+2. → Generate Logic Flow → user reviews on Canvas → Approve logic flow
+3. → Phase 4 documents
 
-## 2. Back cover gets the same prompt assistant as the front
+**Fix in `supabase/functions/assistant-chat/index.ts`** (lines 304–314, the LOGIC APPROVAL block):
+- Replace the current rule, where the single "✅ Approve logic & start producing documents" button both stamps `mark_approved=true` AND continues to `propose_document_set`.
+- New rule: after `set_solution_summary` succeeds (no `mark_approved`), the two buttons become:
+  - **"✅ Approve summary & draw the logic flow"** → on click, the assistant calls `generate_logic_flow({use_existing_summary: true})` and tells the user to open Canvas → Logic Flow to watch it draw, and to come back to approve once it's settled.
+  - **"✏️ Let me edit the summary first"** → unchanged.
+- Add a NEW rule for the post-flow turn: when the flow finishes (the bell notification fires, or the user types something like "approve the flow", "looks good", "approve logic"), THEN show the two buttons:
+  - **"✅ Approve logic flow & start producing documents"** → calls `set_solution_summary(..., mark_approved: true)` then `propose_document_set`.
+  - **"✏️ Tweak the flow first"** → wait for instructions.
+- Keep the empty-board guard at line 1293 (`set_solution_summary` with `mark_approved=true` already refuses if the logic board is empty), so even if the model misfires, the flow can't be marked approved without a board.
 
-In `BarcodeAndBackPanel.tsx`:
-- Add `<ImagePromptAssistant>` (already used by the front cover) above the Generate button, persisted to a new column `project_marketing.back_cover_prompt` (text).
-- The composed final prompt = assistant draft + the existing layout-requirements suffix (reserved barcode area, reserved QR area, reserved logo area, reserved title area). User can refine before each generation, just like the front cover.
-- Hint passed to the assistant: title, subtitle, mystery type, setting, back headline, back body, tagline, company name + tagline.
+## 2. Document proposal didn't list envelopes
 
-## 3. Multi-QR support, auto-baked onto the back cover
+**What happened:** The first time the assistant proposed the document set, only the docs were listed; envelopes were missing. The user expects the assistant to ALSO surface the planned sealed-task envelopes as a separate section so they can review the full physical box plan in one shot. Envelopes are NOT counted toward `target_doc_count`.
 
-New table `project_qr_codes` (project_id, id, label, target_url, qr_image_url, position, created_at). RLS auth-all to match siblings.
+**Fix in `supabase/functions/assistant-chat/index.ts`** (the `propose_document_set` description at ~line 765 + the prose-presentation rules at ~lines 334 and 360):
+- Add to the prose presentation rule: when calling `propose_document_set`, the assistant MUST also list the sealed task envelopes as a separate "Sealed task envelopes (not counted in document total)" section underneath the numbered document list, drawing them from the existing envelope roster + envelope_settings (count, labels, trigger conditions). If envelopes have not been planned yet, the assistant must propose them in the same turn (envelope #0 = mission briefing, final envelope = accusation form, the rest = trigger-based gates).
+- Tighten the "TARGET DOCUMENT COUNT" rule at line 357 to spell out: "Envelopes are NEVER counted toward `target_doc_count`. Only the loose-pile documents (Doc 0 + every numbered evidence doc) count."
 
-UI lives in `BarcodeAndBackPanel.tsx` under a new "QR codes" subsection:
-- "Add QR" → row with label input + URL input + Generate button → renders QR client-side via existing `marketing/qr.ts`, uploads to `media` bucket, saves row.
-- Mark exactly one row as the **primary** QR (the mini-movie one). The existing `project_marketing.qr_code_url` / `mini_movie_url` keep working — primary just mirrors into them for backwards-compat.
-- Up to ~4 QRs supported. Each shows preview, label, link, delete.
+## 3. Envelope 0 button in Overview "didn't fill it in"
 
-Back-cover bake step (extend `bakeBarcodeIntoImage` in same file, rename to `bakeBackCoverElements`):
-- Always bakes the EAN-13 in the lower-right (unchanged).
-- Bakes the **primary QR** (with its label underneath) in the lower-left in a clean white card.
-- Bakes the **company logo** (from `company_profiles.logo_url`) top-center, small.
-- Bakes the **company address + legal_text** as a small typeset block along the bottom edge using canvas 2D text (white card, dark text), pulled from the workspace company profile.
-- Secondary QRs (if any) are baked as a small horizontal strip above the address block, each with its tiny label.
-- Layout coordinates derived from the reserved zones already requested in the prompt — final composite stays crisp because everything is overlaid post-render.
+**What happened:** The user clicked a button next to envelope 0 in the Overview, and the assistant didn't actually create / draft envelope 0.
 
-The prompt suffix is updated to also reserve a lower-left QR zone (~20%×20%), a top-center logo zone (~30%×8%), and a bottom address strip (~100%×8%).
+**Investigation note:** `ProjectOverview.tsx` doesn't currently render per-envelope buttons (only doc/canvas section navigation via `mystudio:navigate`); the user is most likely describing the "Brief me on envelopes" / per-slot draft button inside `EnvelopesSection.tsx`. We'll:
+- Confirm `EnvelopesSection`'s "Brief me" / "Generate all envelopes with AI" buttons forward a clear instruction to the assistant that includes envelope #0 explicitly (mission briefing).
+- In `supabase/functions/generate-envelopes/index.ts`: ensure envelope #0 is always seeded with the mission-briefing label/task even when AI generation skips it. (Read the function first; if it iterates `playbook.envelopes.count` it should already cover index 0 — verify and patch only if missing.)
+- In the assistant playbook (`supabase/functions/assistant-chat/index.ts` Phase 3 envelope rules at line 296): add an explicit "When the user asks for help with envelope #N (single envelope), call `update_envelope` for that specific slot — never silently no-op." rule, so the click reliably writes a draft.
 
-## 4. Front cover becomes a real game cover
+If after reading `generate-envelopes/index.ts` we find the bug is in the in-Overview button (not Envelopes panel), we'll patch the click handler instead. We'll confirm with one extra read before editing.
 
-`CoverAndVisuals.tsx` — extend `handleGenerateCover`:
-- Build the prompt with structured guidance (title, subtitle, mystery_type, setting, company tagline) plus explicit graphic-design requirements: reserve top area for **TITLE** (large), middle for hero art, lower-third for **SUBTITLE**, top-right for **company logo**, "do NOT render text — typography is added in post."
-- After the image lands (use the same realtime-driven bake hook pattern as the back cover), bake on:
-  - The **game title** (large, custom font, top area) — uses `project.title`.
-  - The **subtitle** (smaller, under title) — uses `project.subtitle`.
-  - The **company logo** (top-right, ~12% width, with subtle white card if needed).
-- The baked URL replaces `cover_image_url`, original raw render kept in history so the user can re-bake if they tweak title/subtitle/logo.
-- New "Re-bake typography" button on the cover preview that reruns just the bake step against the latest raw render — no new image generation.
+## 4. Doc 0 layout: shrink text, two-column, number from 1
 
-Add `<ImagePromptAssistant>` already present on cover. Hint is enriched with the new company fields.
+**What happened:** Doc 0's body text overflows; the user wants it to fit on a single sheet. They also want numbering to start at **1** (not 0), and a two-column layout if needed.
 
-## 5. Company profile lives only in Settings, with more fields
+**Fix in `supabase/functions/generate-document/index.ts`** (Doc 0 prompts at lines 330, 344, 432, 538):
+- Change the Doc 0 system + user prompt:
+  - "Number every line starting at **1** (do NOT include 'Doc 0' itself in the numbered list — list it as a small header line above the inventory or skip it entirely)."
+  - "The whole inventory MUST fit on a single sheet at the document's print_size. Use a compact body font and tighten line-height. If the list has more than ~20 items, render it in **two columns** side-by-side; otherwise one column is fine."
+  - In the direct-file (PDF/DOCX) prompt at line 432: explicitly request a 2-column layout when the inventory has > 20 entries, with auto-fit font sizing (target 9–11pt body) so the entire list fits on one page.
+  - In the image prompt at line 538: same — single sheet, two columns when needed, numbering starts at 1.
 
-`company_profiles` already exists per-user in Settings (`/settings`) and `MarketingSection` already shows a read-only summary linking to Settings — so the "take it out of every game" ask is mostly already done. We:
-- Add the **read-only company summary** (logo, name, address, legal text) directly under the back-cover preview in `BarcodeAndBackPanel.tsx` so the user sees what will be baked on, without leaving Marketing.
-- Expand `company_profiles` with: `phone`, `vat_number`, `manufactured_by`, `distributed_by`, `warning_text` (e.g. choking-hazard line), `box_footer_line` (custom one-line override). Add to `CompanyProfilePanel.tsx` form.
-- These new fields flow into the back-cover bake (warning + footer along the bottom strip).
-- Remove any per-project company override fields if present — confirmed none exist today, so nothing to migrate out.
+## Files to change
 
-## Technical details
+- `supabase/functions/assistant-chat/index.ts` — split the logic-approval gate into two button steps; require envelopes alongside doc proposal; clarify envelope-count rule; envelope-#N click rule.
+- `supabase/functions/generate-document/index.ts` — Doc 0 prompts: start at 1, fit one page, two columns when needed.
+- `supabase/functions/generate-envelopes/index.ts` — verify envelope #0 is always drafted; patch only if missing.
+- (Read-only verification) `src/features/project/EnvelopesSection.tsx` to confirm where the failing click originates.
 
-- Migrations:
-  - `ALTER TABLE project_marketing ADD COLUMN back_cover_prompt text;`
-  - `CREATE TABLE project_qr_codes (id uuid pk default gen_random_uuid(), project_id uuid not null references projects(id) on delete cascade, label text, target_url text not null, qr_image_url text, is_primary boolean default false, position int default 0, created_at timestamptz default now());` + RLS auth-all + realtime publication.
-  - `ALTER TABLE company_profiles ADD COLUMN phone text, ADD COLUMN vat_number text, ADD COLUMN manufactured_by text, ADD COLUMN distributed_by text, ADD COLUMN warning_text text, ADD COLUMN box_footer_line text;`
-- The bake helpers stay client-side (canvas 2D), no edge-function changes needed for compositing. `assistant-chat`'s back-cover prompt-builder gets the new reserved-zone instructions.
-- Fonts for baked title/subtitle: load `Cinzel` and `Inter` from Google Fonts via `document.fonts.load()` before drawing, so the canvas uses the real typeface.
-- All existing realtime channels already cover `project_marketing` and `media_assets`; add a channel for `project_qr_codes`.
+## Out of scope
 
-## Files touched
+- No DB schema changes.
+- No UI/layout changes in the Overview page beyond confirming the click target.
+- Existing approved logic flows are not affected; only NEW summaries take the two-step path.
 
-- `src/features/project/CanvasSection.tsx` — zoom limits.
-- `src/features/project/marketing/BarcodeAndBackPanel.tsx` — prompt assistant, multi-QR UI, expanded bake (logo/QR/address).
-- `src/features/project/marketing/CoverAndVisuals.tsx` — typography + logo bake on front cover, re-bake button.
-- `src/features/settings/CompanyProfilePanel.tsx` — new fields.
-- `supabase/functions/assistant-chat/index.ts` — updated reserved-zone instructions for cover prompts.
-- New migration with the three schema changes above.
-- New tiny helper `src/features/project/marketing/bakeCover.ts` shared by front + back compositing.
+Shall I proceed?
