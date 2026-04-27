@@ -238,8 +238,8 @@ export function PromptStudioPanel() {
                   label={s.label}
                   desc={s.desc}
                   row={row}
-                  onSave={(body) => upsert(s.id, body, "system_prefix")}
-                  onReset={() => reset(s.id)}
+                  onSave={(body) => { void upsert(s.id, body, "system_prefix"); }}
+                  onReset={() => { void reset(s.id); }}
                 />
               );
             }),
