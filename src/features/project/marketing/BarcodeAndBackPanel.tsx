@@ -372,9 +372,18 @@ Story tone reference: ${tone.slice(0, 400)}
 Square-ish print panel, no on-image text, no logos, no UI overlays. Will be cropped/laid out along the side of the box.`;
   };
 
+  const backMissing: string[] = [];
+  if (!data?.barcode_url) backMissing.push("Barcode");
+  if (!(qrCodes ?? []).some((q) => q.is_primary && q.qr_image_url)) backMissing.push("Primary QR");
+  if (!data?.back_headline) backMissing.push("Back headline");
+  if (!data?.back_body) backMissing.push("Back body copy");
+  if (!company?.company_name) backMissing.push("Company name (Settings)");
+  if (!company?.logo_url) backMissing.push("Company logo (Settings)");
+  const backReady = backMissing.length === 0;
+
   const handleGenerateBack = async () => {
-    if (!data?.barcode_url || !data?.back_body) {
-      toast.error("Generate the barcode + write back-cover copy first.");
+    if (!backReady) {
+      toast.error(`Missing: ${backMissing.join(", ")}.`, { duration: 10000 });
       return;
     }
     if (!promptDraft.trim()) {
@@ -406,12 +415,30 @@ Square-ish print panel, no on-image text, no logos, no UI overlays. Will be crop
           toast.error(failures[0].error ?? "Some back-cover jobs failed to start", { duration: 10000 });
           if (backOutputType === "image" && kicked === 0) return;
         }
+
+        // Spawn the 4 box-side panel images in parallel.
+        const sideResults = await Promise.all(
+          [1, 2, 3, 4].map((slot) => fireBackgroundImage({
+            projectId,
+            target: "media",
+            category: "marketing-back",
+            prompt: boxSidePrompt(slot, promptDraft),
+            title: `Box side ${slot}`,
+            modelOverride,
+            quality,
+            aspect: "square",
+          })),
+        );
+        const sideFails = sideResults.filter((r) => !r.ok).length;
+        if (sideFails > 0) {
+          toast.message(`${4 - sideFails} of 4 box-side images started — ${sideFails} failed to kick off.`);
+        }
       }
       if (backOutputType === "document" || backOutputType === "both") {
         await supabase.from("media_assets").insert({ project_id: projectId, category: "marketing-back", title: "Back of box document prompt", prompt: composedPrompt, provider: "direct-model-file", asset_type: "document", document_format: "pdf", generation_mode: "direct_model_file", status: "failed", error_message: "Create a document row to generate a real file directly with the selected document model." } as never);
       }
       if (kicked > 0) {
-        toast.success(`Generating ${kicked} back-cover option${kicked === 1 ? "" : "s"} — barcode, QR & company info will be stamped on automatically.`);
+        toast.success(`Generating ${kicked} back-cover + 4 box-side images — barcode, QR & company info will be stamped on automatically.`);
       } else if (backOutputType === "document") {
         toast.success("Back-cover document prompt saved");
       }
