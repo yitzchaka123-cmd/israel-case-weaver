@@ -159,6 +159,7 @@ ${playbook.explanations.include_suggestion ? "4. Any concrete suggestion to stre
         requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
         status: "error", latencyMs: Date.now() - startedAt,
         errorMessage: `${resp.status}: ${t.slice(0, 200)}`, targetId: nodeId,
+        masterPromptVersion: resolvedSP.masterVersion, surfacePromptVersion: resolvedSP.surfaceVersion,
       });
       return new Response(JSON.stringify({ error: `AI error (${resp.status})` }), {
         status: resp.status, headers: { ...corsHeaders, "Content-Type": "application/json" },
