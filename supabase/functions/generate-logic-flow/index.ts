@@ -418,7 +418,7 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
       console.log(`[generate-logic-flow] batch path via ${model}`);
       const resp = await chatCompletions(withClaudeSkills({
         model,
-        messages: [{ role: "system", content: sys }, { role: "user", content: userPrompt }],
+        messages: [{ role: "system", content: finalSystem }, { role: "user", content: finalUserPrompt }],
         tools: [tool],
         tool_choice: { type: "function", function: { name: "emit_logic_flow" } },
       }, enabledSkills));
