@@ -266,10 +266,45 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
   // highlighted message they just clicked through to.
   const focusInFlightRef = useRef(false);
 
+  // Track whether the user is "pinned to bottom". We only auto-scroll on new
+  // content (or streaming reasoning tokens) when they're already there. If
+  // they've scrolled up to read, we leave them put and surface a small
+  // "Jump to latest" pill instead.
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const [hasNewBelow, setHasNewBelow] = useState(false);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+      const atBottom = distance < 80;
+      setIsAtBottom(atBottom);
+      if (atBottom) setHasNewBelow(false);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
   useEffect(() => {
     if (focusInFlightRef.current) return;
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, sending]);
+    const el = scrollRef.current;
+    if (!el) return;
+    if (isAtBottom) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    } else {
+      // User is reading earlier messages — don't yank them. Just signal new
+      // content is available below.
+      setHasNewBelow(true);
+    }
+  }, [messages, sending, isAtBottom]);
+
+  const jumpToLatest = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    setHasNewBelow(false);
+  };
 
   // Scroll-to and briefly highlight a message when an outside component
   // (e.g. the AssistantOriginBadge on a suspect/document) asks to focus it.
