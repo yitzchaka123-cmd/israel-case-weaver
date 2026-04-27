@@ -98,6 +98,63 @@ export type Database = {
         }
         Relationships: []
       }
+      bulk_generation_jobs: {
+        Row: {
+          completed: number
+          created_by: string | null
+          current_doc_id: string | null
+          current_doc_title: string | null
+          document_format: string | null
+          document_ids: string[]
+          error: string | null
+          failed: number
+          finished_at: string | null
+          id: string
+          mode: string
+          project_id: string
+          scope: string
+          started_at: string
+          status: string
+          total: number
+        }
+        Insert: {
+          completed?: number
+          created_by?: string | null
+          current_doc_id?: string | null
+          current_doc_title?: string | null
+          document_format?: string | null
+          document_ids?: string[]
+          error?: string | null
+          failed?: number
+          finished_at?: string | null
+          id?: string
+          mode: string
+          project_id: string
+          scope: string
+          started_at?: string
+          status?: string
+          total?: number
+        }
+        Update: {
+          completed?: number
+          created_by?: string | null
+          current_doc_id?: string | null
+          current_doc_title?: string | null
+          document_format?: string | null
+          document_ids?: string[]
+          error?: string | null
+          failed?: number
+          finished_at?: string | null
+          id?: string
+          mode?: string
+          project_id?: string
+          scope?: string
+          started_at?: string
+          status?: string
+          total?: number
+        }
+        Relationships: []
+      }
       canvas_edges: {
         Row: {
           board: string
