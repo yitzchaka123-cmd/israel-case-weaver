@@ -311,8 +311,14 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
               </div>
             )}
           </div>
-          <div className="px-4 py-3 text-xs text-muted-foreground border-t">
-            <span className="font-medium text-foreground">Front cover</span> · pulled live from the project
+          <div className="px-4 py-3 text-xs text-muted-foreground border-t flex items-center justify-between gap-2">
+            <span><span className="font-medium text-foreground">Front cover</span> · title, subtitle & logo are baked on automatically</span>
+            {cover && (
+              <Button size="sm" variant="ghost" className="h-7 gap-1 text-[11px]" onClick={handleRebakeCover} disabled={rebaking}>
+                {rebaking ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
+                Re-bake
+              </Button>
+            )}
           </div>
         </div>
 
