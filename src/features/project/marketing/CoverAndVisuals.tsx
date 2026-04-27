@@ -17,7 +17,8 @@ import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { DownloadButton } from "@/components/DownloadButton";
 import { fireBackgroundImage } from "@/features/project/fireBackgroundImage";
 import { bakeFrontCover } from "./bakeCover";
-import { Copy, Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2, Sparkles, Wand2, AlertTriangle } from "lucide-react";
+import { Copy, Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2, Sparkles, Wand2, AlertTriangle, Download } from "lucide-react";
+import { downloadAsset, slugify } from "@/lib/utils";
 import { toast } from "sonner";
 
 type OutputType = "image" | "document" | "both";
@@ -474,7 +475,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
                       <Copy className="h-3 w-3" />
                     </button>
                     {a.url && (
-                      <button onClick={() => downloadFromGrid(a.url!, a.title)} className="text-white/90 hover:text-white" aria-label="Download">
+                      <button onClick={() => downloadAsset(a.url!, slugify(a.title ?? a.category))} className="text-white/90 hover:text-white" aria-label="Download">
                         <Download className="h-3 w-3" />
                       </button>
                     )}
