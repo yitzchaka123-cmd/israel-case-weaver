@@ -2538,6 +2538,8 @@ Deno.serve(async (req) => {
         errorMessage: live.ok ? undefined : `status ${live.status}`,
         targetId: assistantMessageId,
         promptExcerpt: lastUser?.content ? String(lastUser.content) : undefined,
+        masterPromptVersion: resolvedSP2.masterVersion,
+        surfacePromptVersion: resolvedSP2.surfaceVersion,
       });
 
       if (!live.ok) {
