@@ -145,6 +145,9 @@ export function InlineImagesPanel({
 
 function InlineSlotCard({ slot, isOnlyAnchor, onChanged }: { slot: InlineImage; isOnlyAnchor: boolean; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
+  const [drafting, setDrafting] = useState(false);
+  const [tab, setTab] = useState<"brief" | "final">("brief");
+  const [instructions, setInstructions] = useState("");
   const [draftLabel, setDraftLabel] = useState(slot.slot_label);
   const [draftPrompt, setDraftPrompt] = useState(slot.prompt ?? "");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -152,6 +155,44 @@ function InlineSlotCard({ slot, isOnlyAnchor, onChanged }: { slot: InlineImage; 
   const saveField = async (patch: Partial<InlineImage>) => {
     await supabase.from("document_inline_images").update(patch as never).eq("id", slot.id);
     onChanged();
+  };
+
+  const createPrompt = async () => {
+    setDrafting(true);
+    setTab("final");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const writerModel = getStoredWriterModel("inline-image");
+      const r = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/suggest-image-prompt`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({
+          projectId: slot.project_id,
+          category: "inline-image",
+          inlineImageId: slot.id,
+          userInstructions: instructions.trim() || undefined,
+          currentPrompt: draftPrompt.trim() || undefined,
+          writerModel: writerModel === "__project" ? undefined : writerModel,
+          userId: session?.user?.id,
+        }),
+      });
+      const json = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        toast.error(json.error ?? "Couldn't draft the prompt");
+        return;
+      }
+      const next = typeof json.prompt === "string" ? json.prompt : "";
+      if (next) {
+        setDraftPrompt(next);
+        await saveField({ prompt: next });
+        toast.success(json.anchored ? "Prompt drafted (locked to anchor look)" : json.isAnchor ? "Anchor prompt drafted" : "Prompt drafted");
+      }
+    } finally {
+      setDrafting(false);
+    }
   };
 
   const generate = async () => {
