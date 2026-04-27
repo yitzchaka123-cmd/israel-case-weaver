@@ -264,6 +264,7 @@ Produce all ${count} envelopes now in numerical order. Reuse the labels above as
       userId: callerUserId, projectId, surface: "generate-envelopes",
       requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
       status: "ok", latencyMs: Date.now() - startedAt, promptExcerpt: userPrompt,
+      masterPromptVersion: resolvedSP.masterVersion, surfacePromptVersion: resolvedSP.surfaceVersion,
     });
     return new Response(JSON.stringify({ ok: true, count: written, model, effectiveModel: fb.effectiveModel, fallback: fb.fallback }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
