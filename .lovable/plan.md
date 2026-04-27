@@ -1,136 +1,77 @@
-## Goals
+# Canvas zoom + cover generators upgrade
 
-Three connected upgrades:
+Five focused changes. Front- and back-cover generators get a real graphic-design pipeline (logo/title/QR baked in), QR support becomes multi-link, and the company profile becomes the single source of truth in Settings.
 
-1. **Smart Arrange that doesn't scatter or overlap nodes** (research-backed).
-2. **Batch document generation** — assistant-driven and a UI button — with a progress indicator.
-3. **Suspect intake page** — assistant auto-creates a one-page police-report doc per suspect with the suspect photo as an inline image (and uses the locked anchor logic so all suspect portraits look like they came from the same world).
+## 1. Canvas: wider zoom range
 
----
+In `src/features/project/CanvasSection.tsx` on the `<ReactFlow>` element:
+- Set `minZoom={0.05}` (currently defaults to 0.5) and `maxZoom={4}` (default 2). Lets you zoom out to see the whole map and zoom in close to read node bodies.
+- Tighten the post-arrange `fitView` so nodes don't shrink to dots: change `maxZoom: 1.15` → `maxZoom: 1.4`, keep `padding: 0.18`.
+- Apply the same `minZoom`/`maxZoom` to the `<MiniMap>`.
 
-### 1. Fix Smart Arrange (no overlap, no infinite scatter)
+## 2. Back cover gets the same prompt assistant as the front
 
-#### What's broken today
+In `BarcodeAndBackPanel.tsx`:
+- Add `<ImagePromptAssistant>` (already used by the front cover) above the Generate button, persisted to a new column `project_marketing.back_cover_prompt` (text).
+- The composed final prompt = assistant draft + the existing layout-requirements suffix (reserved barcode area, reserved QR area, reserved logo area, reserved title area). User can refine before each generation, just like the front cover.
+- Hint passed to the assistant: title, subtitle, mystery type, setting, back headline, back body, tagline, company name + tagline.
 
-`supabase/functions/arrange-canvas/index.ts` already does a deterministic "lanes" layout with role-aware columns. Two real problems:
-- **Naive overlap resolver.** `resolveOverlaps` just nudges colliding nodes one row down without regard to others — on dense graphs it cascades nodes off-screen, which is what you're seeing as "scatter."
-- **`ai-refine` mode** asks the LLM to repaint coordinates from scratch, often returning huge x/y values that explode the canvas.
+## 3. Multi-QR support, auto-baked onto the back cover
 
-#### Research — what ComfyUI / FreePik / Runway / n8n actually do
+New table `project_qr_codes` (project_id, id, label, target_url, qr_image_url, position, created_at). RLS auth-all to match siblings.
 
-The convergent industry approach for node graphs is the **Sugiyama layered layout** (the same algorithm behind `dagre` and Eclipse `ELK`). The well-known ComfyUI extensions (`comfyui-auto-nodes-layout`, `comfyui-workflow-prettier`) and n8n's native auto-layout all use Sugiyama variants because:
+UI lives in `BarcodeAndBackPanel.tsx` under a new "QR codes" subsection:
+- "Add QR" → row with label input + URL input + Generate button → renders QR client-side via existing `marketing/qr.ts`, uploads to `media` bucket, saves row.
+- Mark exactly one row as the **primary** QR (the mini-movie one). The existing `project_marketing.qr_code_url` / `mini_movie_url` keep working — primary just mirrors into them for backwards-compat.
+- Up to ~4 QRs supported. Each shows preview, label, link, delete.
 
-1. **Layering** — assign every node a column (or row) by longest-path topological depth. Roots on the left, leaves on the right. Connected nodes are always one layer apart, so edges read as one-step arrows.
-2. **Crossing reduction** — within each layer, reorder nodes (median + barycenter heuristic) to minimize edge crossings. This is the difference between "readable" and "spaghetti".
-3. **Coordinate assignment** — Brandes-Köpf method: pack nodes inside a layer with a fixed minimum gap, then center each node between its parents/children to straighten edges.
-4. **Disconnected components are laid out independently** and stacked — they never get scattered into the connected graph's bounding box.
-5. **Bounding box is tight**: width = sum of layer widths + gaps; height = max layer height. The canvas auto-fits to this box, so the user always sees the whole graph after pressing Arrange.
+Back-cover bake step (extend `bakeBarcodeIntoImage` in same file, rename to `bakeBackCoverElements`):
+- Always bakes the EAN-13 in the lower-right (unchanged).
+- Bakes the **primary QR** (with its label underneath) in the lower-left in a clean white card.
+- Bakes the **company logo** (from `company_profiles.logo_url`) top-center, small.
+- Bakes the **company address + legal_text** as a small typeset block along the bottom edge using canvas 2D text (white card, dark text), pulled from the workspace company profile.
+- Secondary QRs (if any) are baked as a small horizontal strip above the address block, each with its tiny label.
+- Layout coordinates derived from the reserved zones already requested in the prompt — final composite stays crisp because everything is overlaid post-render.
 
-ComfyUI's "Align Nodes" feature additionally **groups by node category** (loaders left, samplers middle, savers right) on top of Sugiyama — exactly the role-based lanes we already have, just stricter.
+The prompt suffix is updated to also reserve a lower-left QR zone (~20%×20%), a top-center logo zone (~30%×8%), and a bottom address strip (~100%×8%).
 
-#### What we'll build
+## 4. Front cover becomes a real game cover
 
-Replace the homegrown layout in `arrange-canvas` with a proper layered/Sugiyama layout (we'll port a small dagre-style implementation directly to Deno — no npm dependency needed, ~200 lines). Plus:
+`CoverAndVisuals.tsx` — extend `handleGenerateCover`:
+- Build the prompt with structured guidance (title, subtitle, mystery_type, setting, company tagline) plus explicit graphic-design requirements: reserve top area for **TITLE** (large), middle for hero art, lower-third for **SUBTITLE**, top-right for **company logo**, "do NOT render text — typography is added in post."
+- After the image lands (use the same realtime-driven bake hook pattern as the back cover), bake on:
+  - The **game title** (large, custom font, top area) — uses `project.title`.
+  - The **subtitle** (smaller, under title) — uses `project.subtitle`.
+  - The **company logo** (top-right, ~12% width, with subtle white card if needed).
+- The baked URL replaces `cover_image_url`, original raw render kept in history so the user can re-bake if they tweak title/subtitle/logo.
+- New "Re-bake typography" button on the cover preview that reruns just the bake step against the latest raw render — no new image generation.
 
-- **Strict no-overlap guarantee**: per-layer coordinate assignment uses a fixed-stride packer; any node placed inside a layer is shifted right by `NODE_W + GAP` from the previous one. No collisions are possible by construction (the broken `resolveOverlaps` is removed).
-- **Component-aware**: disconnected subgraphs are laid out separately, then stacked vertically with a clear gap, instead of being squeezed into the same band.
-- **Tight bounding box returned to the client**: `arrange-canvas` returns `{ width, height, originX, originY }` and the client calls React Flow's `fitView({ padding: 0.15 })` after applying positions, so the user immediately sees the whole graph centered.
-- **Variant cycling preserved**: keep "lanes / columns / suspects / compact" buttons; they re-run Sugiyama with different role-grouping rules (lanes by `node_type`, columns rotated 90°, swimlanes by suspect, compact = chain-packed).
-- **Scrap `ai-refine`** as a coordinate-rewriter. Instead, "Refine with AI" becomes: run the deterministic Sugiyama, then ask the LLM only to suggest **logical groupings** (which nodes to keep adjacent, which clusters belong together) — the LLM returns group labels, not coordinates, and we re-run the deterministic packer with those groups as lane hints. This is the only way LLM-assisted layout doesn't explode the canvas.
+Add `<ImagePromptAssistant>` already present on cover. Hint is enriched with the new company fields.
 
-#### Result
+## 5. Company profile lives only in Settings, with more fields
 
-Arrange always produces a **tight, readable, non-overlapping** layout that fits on screen, regardless of graph size or AI vs deterministic mode.
+`company_profiles` already exists per-user in Settings (`/settings`) and `MarketingSection` already shows a read-only summary linking to Settings — so the "take it out of every game" ask is mostly already done. We:
+- Add the **read-only company summary** (logo, name, address, legal text) directly under the back-cover preview in `BarcodeAndBackPanel.tsx` so the user sees what will be baked on, without leaving Marketing.
+- Expand `company_profiles` with: `phone`, `vat_number`, `manufactured_by`, `distributed_by`, `warning_text` (e.g. choking-hazard line), `box_footer_line` (custom one-line override). Add to `CompanyProfilePanel.tsx` form.
+- These new fields flow into the back-cover bake (warning + footer along the bottom strip).
+- Remove any per-project company override fields if present — confirmed none exist today, so nothing to migrate out.
 
----
+## Technical details
 
-### 2. Batch document generation
+- Migrations:
+  - `ALTER TABLE project_marketing ADD COLUMN back_cover_prompt text;`
+  - `CREATE TABLE project_qr_codes (id uuid pk default gen_random_uuid(), project_id uuid not null references projects(id) on delete cascade, label text, target_url text not null, qr_image_url text, is_primary boolean default false, position int default 0, created_at timestamptz default now());` + RLS auth-all + realtime publication.
+  - `ALTER TABLE company_profiles ADD COLUMN phone text, ADD COLUMN vat_number text, ADD COLUMN manufactured_by text, ADD COLUMN distributed_by text, ADD COLUMN warning_text text, ADD COLUMN box_footer_line text;`
+- The bake helpers stay client-side (canvas 2D), no edge-function changes needed for compositing. `assistant-chat`'s back-cover prompt-builder gets the new reserved-zone instructions.
+- Fonts for baked title/subtitle: load `Cinzel` and `Inter` from Google Fonts via `document.fonts.load()` before drawing, so the canvas uses the real typeface.
+- All existing realtime channels already cover `project_marketing` and `media_assets`; add a channel for `project_qr_codes`.
 
-#### What exists today
+## Files touched
 
-- `generate-document` is a single-doc edge function (text / image / file).
-- The assistant calls `generate_document_assets` per-doc, sequentially, in chat.
-- No queue, no progress UI, no "draft all" mode.
-- Document regenerations DO already save to `media_assets` (history carousel works) ✅.
-- Inline image anchor is already implemented ✅.
-
-#### What we'll build
-
-**a) New edge function `bulk-generate-documents`** that accepts:
-```
-{
-  projectId: string,
-  scope: "all_remaining" | "from_doc_number" | "ids",
-  fromDocNumber?: number,    // for "from_doc_number"
-  documentIds?: string[],    // for "ids"
-  mode: "draft" | "image" | "document" | "both",  // matches generate-document modes
-  documentFormat?: "pdf" | "docx",                // for document/both mode
-  concurrency?: number,      // default 3, hard max 5
-}
-```
-
-Implementation:
-- Resolves the doc list, filters out already-final docs, then walks them with a small concurrency window (default 3) calling the existing `generate-document` internally per doc + per requested output (no logic duplicated).
-- Writes a row to a new **`bulk_generation_jobs`** table for live progress: `id, project_id, scope, mode, total, completed, failed, current_doc_id, status, started_at, finished_at, error`. Each per-doc completion bumps `completed`/`failed` and updates `current_doc_id`.
-- Realtime is enabled on the new table so the UI subscribes and shows live progress.
-- Respects rate limits: on 429/credits errors, the worker pauses 30s and retries the failed doc up to 2 times before marking it failed and moving on.
-
-**b) New assistant tool `bulk_generate_documents`** with the same shape. System-prompt rules:
-- "Continue from here / generate the rest / produce all remaining docs" → call with `scope: "all_remaining"` and ask which output (Draft / Image / PDF / Both) via `propose_options` first.
-- "Only draft all the documents" → `mode: "draft"` (writes hebrew_content for each doc but no image/file).
-- "Save them all as PDFs from the image" → currently no path exists to convert an image to PDF; we'll add `mode: "image_to_pdf"` that takes each doc's existing `generated_asset_url` (image), wraps it on a single PDF page via Claude file API (the same skill pipeline that already produces PDFs), and stores the PDF in `generated_document_url`.
-- "Generate up to doc 12" → `scope: "from_doc_number", fromDocNumber: <last current>` plus a `untilDocNumber` cap.
-
-**c) UI: batch button + progress strip**
-
-In `DocumentsSection.tsx` header, add a **"Batch generate"** dropdown button: Draft all · Generate images · Generate PDFs · Both. Selecting one spins up the bulk job and pins a sticky progress strip at the top of the documents tab:
-
-```text
-Generating PDFs · 12 / 40 · current: "#13 Autopsy Report"  [✕ cancel]
-```
-
-The strip subscribes to the `bulk_generation_jobs` row via Realtime and disappears on completion (with a toast: "40 / 40 documents generated. 0 failed."). A small bell notification fires too via the existing `project_notifications` table.
-
-#### Carousel / anchor confirmation
-
-Already working — every regeneration writes a new `media_assets` row with `source_document_id`, and `DocumentsSection.tsx` queries those for the image/file history strips. The locked anchor reference for inline images was added in the previous turn (`document_inline_images.anchor_reference_url`). Nothing to add here, just confirmed.
-
----
-
-### 3. Suspect intake page (auto, with photo)
-
-#### What we'll build
-
-- New **assistant rule**: during Phase 4 document planning, when proposing the document set, the assistant decides per-case whether each suspect deserves a one-page intake/police-report document. The default is YES for any case where suspects matter (mystery, detective, espionage, crime, thriller); the assistant skips it only when the format genuinely doesn't fit (e.g. a pure puzzle case with no human cast).
-
-- For each suspect that gets one, the assistant calls `add_document` with `doc_type: "suspect intake report"` and `design_instructions` describing the in-world police/agency form layout, then immediately calls `add_document_inline_images` for that doc with **one anchor slot** seeded from the suspect's existing portrait. Because we already have the locked-anchor logic, all suspect portraits across the case will look like they came from the same booking session (same camera, lighting, color palette).
-
-- **New small flow**: when the assistant creates an intake doc and the suspect already has `thumbnail_url`, instead of generating a new image we set the inline image slot's `uploaded_url` = suspect.thumbnail_url and `active_version: "uploaded"` so the intake page reuses the existing portrait. If the suspect has no portrait yet, the slot is created empty (anchor) and the user (or assistant) generates it once — and that generated image is also pushed back to `suspects.thumbnail_url` so the intake doc and the Suspects panel stay in sync.
-
-- **Realism baseline** is already enforced by the global `image_prompt_instructions` field; we'll update the assistant playbook to add a default "people must look like real photographs, never illustrations or 3D renders, unless the case style explicitly calls for stylized art" to that field whenever a project has suspects and no instruction is set.
-
-- **Suspect UI sync (`SuspectsSection.tsx`)**: when the user updates a suspect's `thumbnail_url`, if an intake document for that suspect exists (linked by a new column `documents.linked_suspect_ids`, which already exists in the schema), the inline image slot's `uploaded_url` is updated automatically via a trigger or, simpler, on the client by writing both rows in the suspect-save mutation. We'll go with the client-side approach to avoid a new trigger.
-
----
-
-## Technical summary
-
-- **Migration** (one):
-  - New table `bulk_generation_jobs` with realtime enabled, plus an `id, project_id, scope, mode, total, completed, failed, current_doc_id, status, started_at, finished_at, error` shape and the standard "auth all" RLS pattern used elsewhere in this app.
-
-- **New edge function**: `supabase/functions/bulk-generate-documents/index.ts` — orchestrates per-doc calls into the existing `generate-document` function, writes job progress, handles concurrency + retries.
-
-- **Edited edge function**: `supabase/functions/arrange-canvas/index.ts` — replaced layout core with a Sugiyama/Brandes-Köpf packer (Deno-native, no npm), removed naive overlap nudger, returns bounding box. Variants kept, `ai-refine` becomes group-hint mode.
-
-- **Edited edge function**: `supabase/functions/assistant-chat/index.ts`:
-  - Add tool `bulk_generate_documents`.
-  - Extend system prompt with batch triggers ("continue / draft all / save as PDF") and the suspect-intake rule.
-
-- **Edited edge function**: `supabase/functions/generate-document/index.ts` — add new mode `image_to_pdf` that wraps an existing image into a one-page PDF via the existing Claude skill pipeline (no new external API).
-
-- **Edited UI**:
-  - `src/features/project/CanvasSection.tsx` — call `fitView({ padding: 0.15 })` after arrange returns.
-  - `src/features/project/DocumentsSection.tsx` — add Batch generate dropdown + sticky progress strip subscribed to the new table via realtime.
-  - `src/features/project/SuspectsSection.tsx` — when saving thumbnail, also update the linked intake doc's anchor inline image slot if one exists.
-
-Once you say it's good, I'll build it.
+- `src/features/project/CanvasSection.tsx` — zoom limits.
+- `src/features/project/marketing/BarcodeAndBackPanel.tsx` — prompt assistant, multi-QR UI, expanded bake (logo/QR/address).
+- `src/features/project/marketing/CoverAndVisuals.tsx` — typography + logo bake on front cover, re-bake button.
+- `src/features/settings/CompanyProfilePanel.tsx` — new fields.
+- `supabase/functions/assistant-chat/index.ts` — updated reserved-zone instructions for cover prompts.
+- New migration with the three schema changes above.
+- New tiny helper `src/features/project/marketing/bakeCover.ts` shared by front + back compositing.

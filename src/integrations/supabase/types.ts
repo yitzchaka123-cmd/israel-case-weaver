@@ -387,49 +387,67 @@ export type Database = {
         Row: {
           address: string | null
           age_rating: string | null
+          box_footer_line: string | null
           company_name: string | null
           country: string | null
           created_at: string
+          distributed_by: string | null
           legal_text: string | null
           logo_url: string | null
           made_in: string | null
+          manufactured_by: string | null
           owner_id: string
+          phone: string | null
           social: Json
           support_email: string | null
           tagline: string | null
           updated_at: string
+          vat_number: string | null
+          warning_text: string | null
           website: string | null
         }
         Insert: {
           address?: string | null
           age_rating?: string | null
+          box_footer_line?: string | null
           company_name?: string | null
           country?: string | null
           created_at?: string
+          distributed_by?: string | null
           legal_text?: string | null
           logo_url?: string | null
           made_in?: string | null
+          manufactured_by?: string | null
           owner_id: string
+          phone?: string | null
           social?: Json
           support_email?: string | null
           tagline?: string | null
           updated_at?: string
+          vat_number?: string | null
+          warning_text?: string | null
           website?: string | null
         }
         Update: {
           address?: string | null
           age_rating?: string | null
+          box_footer_line?: string | null
           company_name?: string | null
           country?: string | null
           created_at?: string
+          distributed_by?: string | null
           legal_text?: string | null
           logo_url?: string | null
           made_in?: string | null
+          manufactured_by?: string | null
           owner_id?: string
+          phone?: string | null
           social?: Json
           support_email?: string | null
           tagline?: string | null
           updated_at?: string
+          vat_number?: string | null
+          warning_text?: string | null
           website?: string | null
         }
         Relationships: []
@@ -1071,6 +1089,7 @@ export type Database = {
         Row: {
           back_body: string | null
           back_content_note: string | null
+          back_cover_prompt: string | null
           back_cover_url: string | null
           back_feature_bullets: string | null
           back_footer_text: string | null
@@ -1099,6 +1118,7 @@ export type Database = {
         Insert: {
           back_body?: string | null
           back_content_note?: string | null
+          back_cover_prompt?: string | null
           back_cover_url?: string | null
           back_feature_bullets?: string | null
           back_footer_text?: string | null
@@ -1127,6 +1147,7 @@ export type Database = {
         Update: {
           back_body?: string | null
           back_content_note?: string | null
+          back_cover_prompt?: string | null
           back_cover_url?: string | null
           back_feature_bullets?: string | null
           back_footer_text?: string | null
@@ -1192,6 +1213,50 @@ export type Database = {
           title?: string
         }
         Relationships: []
+      }
+      project_qr_codes: {
+        Row: {
+          created_at: string
+          id: string
+          is_primary: boolean
+          label: string | null
+          position: number
+          project_id: string
+          qr_image_url: string | null
+          target_url: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_primary?: boolean
+          label?: string | null
+          position?: number
+          project_id: string
+          qr_image_url?: string | null
+          target_url: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_primary?: boolean
+          label?: string | null
+          position?: number
+          project_id?: string
+          qr_image_url?: string | null
+          target_url?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_qr_codes_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       project_storyboards: {
         Row: {
