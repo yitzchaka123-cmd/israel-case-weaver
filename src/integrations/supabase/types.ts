@@ -371,6 +371,99 @@ export type Database = {
         }
         Relationships: []
       }
+      document_inline_images: {
+        Row: {
+          active_version: string
+          anchor_image_id: string | null
+          created_at: string
+          created_by_message_id: string | null
+          document_id: string
+          effective_model: string | null
+          error_message: string | null
+          fallback: string | null
+          group_key: string | null
+          id: string
+          is_anchor: boolean
+          model: string | null
+          position: number
+          project_id: string
+          prompt: string | null
+          prompt_history: Json
+          provider: string | null
+          slot_label: string
+          status: string
+          updated_at: string
+          uploaded_url: string | null
+          url: string | null
+          url_history: Json
+        }
+        Insert: {
+          active_version?: string
+          anchor_image_id?: string | null
+          created_at?: string
+          created_by_message_id?: string | null
+          document_id: string
+          effective_model?: string | null
+          error_message?: string | null
+          fallback?: string | null
+          group_key?: string | null
+          id?: string
+          is_anchor?: boolean
+          model?: string | null
+          position?: number
+          project_id: string
+          prompt?: string | null
+          prompt_history?: Json
+          provider?: string | null
+          slot_label?: string
+          status?: string
+          updated_at?: string
+          uploaded_url?: string | null
+          url?: string | null
+          url_history?: Json
+        }
+        Update: {
+          active_version?: string
+          anchor_image_id?: string | null
+          created_at?: string
+          created_by_message_id?: string | null
+          document_id?: string
+          effective_model?: string | null
+          error_message?: string | null
+          fallback?: string | null
+          group_key?: string | null
+          id?: string
+          is_anchor?: boolean
+          model?: string | null
+          position?: number
+          project_id?: string
+          prompt?: string | null
+          prompt_history?: Json
+          provider?: string | null
+          slot_label?: string
+          status?: string
+          updated_at?: string
+          uploaded_url?: string | null
+          url?: string | null
+          url_history?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_inline_images_anchor_image_id_fkey"
+            columns: ["anchor_image_id"]
+            isOneToOne: false
+            referencedRelation: "document_inline_images"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "document_inline_images_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       documents: {
         Row: {
           active_version: string
@@ -390,6 +483,8 @@ export type Database = {
           generated_pdf_url: string | null
           hebrew_content: string | null
           id: string
+          inline_images_caption: string | null
+          inline_images_layout: string | null
           linked_node_ids: string[] | null
           linked_suspect_ids: string[] | null
           logic_version_id: string | null
@@ -418,6 +513,8 @@ export type Database = {
           generated_pdf_url?: string | null
           hebrew_content?: string | null
           id?: string
+          inline_images_caption?: string | null
+          inline_images_layout?: string | null
           linked_node_ids?: string[] | null
           linked_suspect_ids?: string[] | null
           logic_version_id?: string | null
@@ -446,6 +543,8 @@ export type Database = {
           generated_pdf_url?: string | null
           hebrew_content?: string | null
           id?: string
+          inline_images_caption?: string | null
+          inline_images_layout?: string | null
           linked_node_ids?: string[] | null
           linked_suspect_ids?: string[] | null
           logic_version_id?: string | null
