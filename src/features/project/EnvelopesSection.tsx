@@ -46,6 +46,7 @@ import {
 import { toast } from "sonner";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
+import { DownloadButton } from "@/components/DownloadButton";
 import {
   ImageModelPicker,
   getStoredImageModel,
@@ -643,6 +644,9 @@ function EnvelopeCard({
                 }}
                 hoverOnly
               />
+              <span className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10" onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}>
+                <DownloadButton url={cover} title={`envelope-${slot.n}-${slot.label ?? ''}`} />
+              </span>
               {coverJob.isPending && (
                 <GenerationTimer elapsedSec={coverJob.state.elapsedSec} label="Generating mock-up" />
               )}

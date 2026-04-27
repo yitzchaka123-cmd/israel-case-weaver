@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { X, Copy, ExternalLink, FileText, Image as ImageIcon } from "lucide-react";
+import { X, Copy, ExternalLink, FileText, Image as ImageIcon, Download } from "lucide-react";
 import { toast } from "sonner";
 import { AiOriginBadge, type AiOriginInfo } from "@/components/AiOriginBadge";
+import { downloadAsset, slugify } from "@/lib/utils";
 
 export type LightboxAsset = {
   url: string;
@@ -78,6 +79,13 @@ export function AssetLightbox({ asset, onClose }: { asset: LightboxAsset | null;
               {viewMode === "file" ? "Image view" : "PDF view"}
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => downloadAsset(asset.url, asset.title ? slugify(asset.title) : undefined)}
+            className="inline-flex items-center gap-1.5 rounded-md bg-white/10 hover:bg-white/20 px-3 py-1.5 text-xs font-medium transition text-white"
+          >
+            <Download className="h-3.5 w-3.5" /> Download
+          </button>
           {asset.prompt && (
             <button
               type="button"

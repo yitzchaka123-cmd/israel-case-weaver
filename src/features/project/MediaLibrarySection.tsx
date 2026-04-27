@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Copy, ExternalLink, FileText, Image as ImageIcon, Package, Search, Video } from "lucide-react";
 import { toast } from "sonner";
 import { AssetLightbox, type LightboxAsset } from "./assistant/AssetLightbox";
+import { DownloadButton } from "@/components/DownloadButton";
 
 interface MediaAsset {
   id: string;
@@ -245,7 +246,10 @@ function LibraryCard({ item, onOpenAsset }: { item: LibraryItem; onOpenAsset: (a
         </div>
         <div className="flex items-center justify-between gap-2">
           <span className="text-[11px] text-muted-foreground truncate">{[item.provider, item.model].filter(Boolean).join(" · ") || item.mime || "Asset"}</span>
-          {item.url && <button type="button" onClick={openAsset} className="text-xs text-accent inline-flex items-center gap-1 hover:underline"><ExternalLink className="h-3 w-3" /> Preview</button>}
+          <div className="flex items-center gap-1">
+            <DownloadButton url={item.url} title={item.title} />
+            {item.url && <button type="button" onClick={openAsset} className="text-xs text-accent inline-flex items-center gap-1 hover:underline"><ExternalLink className="h-3 w-3" /> Preview</button>}
+          </div>
         </div>
         <div className="flex flex-wrap gap-1.5">
           {item.mime && <Badge variant="outline" className="text-[10px]">{item.mime.includes("pdf") ? "PDF" : item.mime.split("/")[1] ?? item.mime}</Badge>}

@@ -14,9 +14,11 @@ import { ImageHistoryStrip, type ImageHistoryRow } from "@/components/ImageHisto
 import { FinalAssetPicker } from "@/components/FinalAssetPicker";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
+import { DownloadButton } from "@/components/DownloadButton";
 import { fireBackgroundImage } from "@/features/project/fireBackgroundImage";
 import { bakeFrontCover } from "./bakeCover";
-import { Copy, Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2, Sparkles, Wand2 } from "lucide-react";
+import { Copy, Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2, Sparkles, Wand2, AlertTriangle, Download } from "lucide-react";
+import { downloadAsset, slugify } from "@/lib/utils";
 import { toast } from "sonner";
 
 type OutputType = "image" | "document" | "both";
@@ -75,8 +77,20 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
     queryFn: async () => {
       const { data } = await supabase
         .from("projects")
-        .select("title, cover_image_url, uploaded_cover_url, cover_active_version, cover_prompt, cover_effective_model, cover_fallback, ai_provider_images, mystery_type, setting, subtitle")
+        .select("title, cover_image_url, uploaded_cover_url, cover_active_version, cover_prompt, cover_effective_model, cover_fallback, ai_provider_images, mystery_type, setting, subtitle, genre, year")
         .eq("id", projectId)
+        .maybeSingle();
+      return data;
+    },
+  });
+
+  const { data: marketing } = useQuery({
+    queryKey: ["project-marketing-front", projectId],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("project_marketing")
+        .select("front_subtext, front_company_slogan, front_logo_note, front_title_note, front_bottom_explanation, tagline")
+        .eq("project_id", projectId)
         .maybeSingle();
       return data;
     },
@@ -198,7 +212,41 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const cover = project?.cover_image_url;
   const extras = (assets ?? []).filter((a) => a.category === "marketing-extra" || a.category === "back" || a.category === "marketing-back");
 
+  const frontMissing: string[] = [];
+  if (!project?.title?.trim()) frontMissing.push("Title (Overview)");
+  // Subtitle is recommended but not required; warn rather than block.
+  const frontReady = frontMissing.length === 0;
+
+  const composeFrontPrompt = (basePrompt: string): string => {
+    const parts = [basePrompt.trim()];
+    const meta: string[] = [];
+    if (project?.title) meta.push(`TITLE (must appear large on cover): "${project.title}"`);
+    if (project?.subtitle) meta.push(`SUBTITLE: "${project.subtitle}"`);
+    if (project?.mystery_type) meta.push(`Mystery type: ${project.mystery_type}`);
+    if (project?.setting) meta.push(`Setting: ${project.setting}`);
+    if (project?.genre) meta.push(`Genre: ${project.genre}`);
+    if (project?.year) meta.push(`Year: ${project.year}`);
+    if (marketing?.tagline) meta.push(`Tagline: "${marketing.tagline}"`);
+    if (marketing?.front_subtext) meta.push(`Front subtext block: "${marketing.front_subtext}"`);
+    if (marketing?.front_company_slogan) meta.push(`Company slogan to leave room for: "${marketing.front_company_slogan}"`);
+    if (marketing?.front_logo_note) meta.push(`Logo placement: ${marketing.front_logo_note}`);
+    if (marketing?.front_title_note) meta.push(`Title styling note: ${marketing.front_title_note}`);
+    if (marketing?.front_bottom_explanation) meta.push(`Bottom strip text: "${marketing.front_bottom_explanation}"`);
+    if (company?.company_name) meta.push(`Publisher: ${company.company_name}`);
+    if (meta.length) {
+      parts.push("");
+      parts.push("BOX-COVER COPY DECK (leave clean zones for these — they will be baked on top):");
+      parts.push(meta.map((m) => `- ${m}`).join("\n"));
+    }
+    return parts.filter(Boolean).join("\n");
+  };
+
   const handleGenerateCover = async (prompt: string) => {
+    if (!frontReady) {
+      toast.error(`Fill in: ${frontMissing.join(", ")} before generating the front cover.`, { duration: 8000 });
+      return;
+    }
+    const finalPrompt = composeFrontPrompt(prompt);
     setGeneratingCover(true);
     try {
       if (coverOutputType === "image" || coverOutputType === "both") {
@@ -208,7 +256,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
           projectId,
           category: "cover",
           target: "project-cover",
-          prompt,
+          prompt: finalPrompt,
           modelOverride,
           aspect: "portrait",
           quality,
@@ -219,7 +267,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
         }
       }
       if (coverOutputType === "document" || coverOutputType === "both") {
-        await supabase.from("media_assets").insert({ project_id: projectId, category: "cover", title: "Cover document prompt", prompt, provider: "direct-model-file", asset_type: "document", document_format: "pdf", generation_mode: "direct_model_file", status: "failed", error_message: "Create a document row to generate a real file directly with the selected document model." } as never);
+        await supabase.from("media_assets").insert({ project_id: projectId, category: "cover", title: "Cover document prompt", prompt: finalPrompt, provider: "direct-model-file", asset_type: "document", document_format: "pdf", generation_mode: "direct_model_file", status: "failed", error_message: "Create a document row to generate a real file directly with the selected document model." } as never);
       }
       toast.success(coverOutputType === "document" ? "Cover document prompt saved" : "Generating cover in background — feel free to leave this page");
       qc.invalidateQueries({ queryKey: ["project-cover-only", projectId] });
@@ -303,6 +351,9 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
                     }}
                   />
                 )}
+                <span className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <DownloadButton url={cover} title={`${project?.title ?? "cover"}-front`} />
+                </span>
               </>
             ) : (
               <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground gap-2 text-center px-6">
@@ -327,6 +378,17 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
             <h4 className="font-display text-lg">Generate front cover</h4>
             <p className="text-xs text-muted-foreground mt-0.5">Updates the real project cover used across the app.</p>
           </div>
+          {!frontReady && (
+            <div className="rounded-md border border-amber-300/50 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-xs flex items-start gap-2">
+              <AlertTriangle className="h-3.5 w-3.5 text-amber-600 mt-0.5 shrink-0" />
+              <div>
+                <div className="font-medium text-amber-800 dark:text-amber-200">Missing required fields</div>
+                <div className="text-amber-800/80 dark:text-amber-200/80 mt-0.5">
+                  Fill in <strong>{frontMissing.join(", ")}</strong> on the Overview before generating the front cover.
+                </div>
+              </div>
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Image model</Label>
             <ImageModelPicker surface="marketing-cover" defaultModel="chatgpt-image-2" />
@@ -350,7 +412,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
             prompt={coverPromptDraft}
             onChange={persistCoverPrompt}
           />
-          <Button onClick={() => handleGenerateCover(coverPromptDraft)} disabled={generatingCover || !coverPromptDraft.trim()} className="w-full gap-2">
+          <Button onClick={() => handleGenerateCover(coverPromptDraft)} disabled={generatingCover || !coverPromptDraft.trim() || !frontReady} className="w-full gap-2">
             {generatingCover ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
             Generate {coverOutputType === "both" ? "both" : coverOutputType}
           </Button>
@@ -412,6 +474,11 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
                     <button onClick={() => handleCopyPrompt(a.prompt)} className="text-white/90 hover:text-white" aria-label="Copy prompt">
                       <Copy className="h-3 w-3" />
                     </button>
+                    {a.url && (
+                      <button onClick={() => downloadAsset(a.url!, slugify(a.title ?? a.category))} className="text-white/90 hover:text-white" aria-label="Download">
+                        <Download className="h-3 w-3" />
+                      </button>
+                    )}
                     {a.url && (
                       <a href={a.url} target="_blank" rel="noreferrer" className="text-white/90 hover:text-white">
                         <ExternalLink className="h-3 w-3" />

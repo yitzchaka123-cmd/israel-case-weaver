@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import {
   CheckCircle2, Copy, ExternalLink, Loader2, Barcode as BarcodeIcon,
   Image as ImageIcon, RefreshCw, Trash2, Wand2, QrCode, Plus, Star, Building2,
+  AlertTriangle, Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import { ean13ToPngBlob, ean13ToSvg, generateEan13 } from "./ean13";
@@ -20,6 +21,8 @@ import { bakeBackCover } from "./bakeCover";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { ImagePromptAssistant } from "@/components/ImagePromptAssistant";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
+import { DownloadButton } from "@/components/DownloadButton";
+import { downloadAsset, slugify } from "@/lib/utils";
 import { useProjectNotifications } from "@/features/project/notifications/useProjectNotifications";
 import { fireBackgroundImage } from "@/features/project/fireBackgroundImage";
 
@@ -43,6 +46,13 @@ interface Marketing {
   back_cover_url: string | null;
   qr_code_url: string | null;
   mini_movie_url: string | null;
+  back_teaser?: string | null;
+  back_whats_in_box?: string | null;
+  back_how_to_play?: string | null;
+  back_feature_bullets?: string | null;
+  back_specs?: string | null;
+  back_content_note?: string | null;
+  back_footer_text?: string | null;
 }
 
 interface MediaAsset {
@@ -316,6 +326,20 @@ export function BarcodeAndBackPanel({ projectId }: { projectId: string }) {
     const headline = data?.back_headline ?? "";
     const body = data?.back_body ?? "";
     const tagline = data?.tagline ?? "";
+    const primaryQr = (qrCodes ?? []).find((q) => q.is_primary);
+    const secondaryQrs = (qrCodes ?? []).filter((q) => !q.is_primary);
+    const copyDeck: string[] = [];
+    if (data?.back_teaser) copyDeck.push(`TEASER: "${data.back_teaser}"`);
+    if (data?.back_whats_in_box) copyDeck.push(`WHAT'S IN THE BOX: ${data.back_whats_in_box}`);
+    if (data?.back_how_to_play) copyDeck.push(`HOW TO PLAY: ${data.back_how_to_play}`);
+    if (data?.back_feature_bullets) copyDeck.push(`FEATURE BULLETS:\n${data.back_feature_bullets}`);
+    if (data?.back_specs) copyDeck.push(`SPECS: ${data.back_specs}`);
+    if (data?.back_content_note) copyDeck.push(`CONTENT NOTE: ${data.back_content_note}`);
+    if (data?.back_footer_text) copyDeck.push(`FOOTER LINE: "${data.back_footer_text}"`);
+    if (company?.company_name) copyDeck.push(`PUBLISHER: ${company.company_name}${company.tagline ? ` — "${company.tagline}"` : ""}`);
+    const qrLines: string[] = [];
+    if (primaryQr) qrLines.push(`Primary QR — label "${primaryQr.label ?? "Scan"}", will be baked LARGE in the LOWER-LEFT.`);
+    secondaryQrs.forEach((q, i) => qrLines.push(`Secondary QR ${i + 1} — label "${q.label ?? "Link"}", appears small in the strip below.`));
     return `Design a printable BACK-OF-BOX cover for a premium boxed murder-mystery game.
 
 ART DIRECTION FROM THE WRITER:
@@ -328,12 +352,38 @@ BODY COPY (reserve enough negative space for it; do NOT render this text):
 ${body}
 """
 
-${tagline ? `TAGLINE (small): "${tagline}"` : ""}${LAYOUT_SUFFIX}`;
+${tagline ? `TAGLINE (small): "${tagline}"\n` : ""}${copyDeck.length ? `\nADDITIONAL COPY DECK (the AI does not render these — leave clean negative space for them):\n${copyDeck.map((c) => `- ${c}`).join("\n")}\n` : ""}${qrLines.length ? `\nCODES & LINKS:\n${qrLines.map((l) => `- ${l}`).join("\n")}\nThe ACTUAL barcode (EAN-13 ${data?.barcode_value ?? ""}) and the ACTUAL QR PNGs will be stamped on after generation — do NOT invent fake codes.\n` : ""}${LAYOUT_SUFFIX}`;
   };
 
+  // Build a short, safe scene description for one of the 4 box-side images.
+  const boxSidePrompt = (slot: number, draft: string): string => {
+    const tone = data?.back_teaser || data?.back_body || draft || "atmospheric mood piece";
+    const flavor = [
+      "an evocative close-up of a single key prop or clue (no text, no faces)",
+      "a wide environmental establishing shot of the case setting (no text)",
+      "a detail of a period-appropriate object or document on a table (no text)",
+      "a moody texture / atmospheric backdrop shot (no text, no characters)",
+    ][slot - 1] || "atmospheric mood piece";
+    return `Box-side panel image ${slot} of 4 for the same boxed murder-mystery game. Same world, same color palette and lighting as the back cover.
+
+Scene direction: ${flavor}.
+Story tone reference: ${tone.slice(0, 400)}
+
+Square-ish print panel, no on-image text, no logos, no UI overlays. Will be cropped/laid out along the side of the box.`;
+  };
+
+  const backMissing: string[] = [];
+  if (!data?.barcode_url) backMissing.push("Barcode");
+  if (!(qrCodes ?? []).some((q) => q.is_primary && q.qr_image_url)) backMissing.push("Primary QR");
+  if (!data?.back_headline) backMissing.push("Back headline");
+  if (!data?.back_body) backMissing.push("Back body copy");
+  if (!company?.company_name) backMissing.push("Company name (Settings)");
+  if (!company?.logo_url) backMissing.push("Company logo (Settings)");
+  const backReady = backMissing.length === 0;
+
   const handleGenerateBack = async () => {
-    if (!data?.barcode_url || !data?.back_body) {
-      toast.error("Generate the barcode + write back-cover copy first.");
+    if (!backReady) {
+      toast.error(`Missing: ${backMissing.join(", ")}.`, { duration: 10000 });
       return;
     }
     if (!promptDraft.trim()) {
@@ -365,12 +415,30 @@ ${tagline ? `TAGLINE (small): "${tagline}"` : ""}${LAYOUT_SUFFIX}`;
           toast.error(failures[0].error ?? "Some back-cover jobs failed to start", { duration: 10000 });
           if (backOutputType === "image" && kicked === 0) return;
         }
+
+        // Spawn the 4 box-side panel images in parallel.
+        const sideResults = await Promise.all(
+          [1, 2, 3, 4].map((slot) => fireBackgroundImage({
+            projectId,
+            target: "media",
+            category: "marketing-back",
+            prompt: boxSidePrompt(slot, promptDraft),
+            title: `Box side ${slot}`,
+            modelOverride,
+            quality,
+            aspect: "square",
+          })),
+        );
+        const sideFails = sideResults.filter((r) => !r.ok).length;
+        if (sideFails > 0) {
+          toast.message(`${4 - sideFails} of 4 box-side images started — ${sideFails} failed to kick off.`);
+        }
       }
       if (backOutputType === "document" || backOutputType === "both") {
         await supabase.from("media_assets").insert({ project_id: projectId, category: "marketing-back", title: "Back of box document prompt", prompt: composedPrompt, provider: "direct-model-file", asset_type: "document", document_format: "pdf", generation_mode: "direct_model_file", status: "failed", error_message: "Create a document row to generate a real file directly with the selected document model." } as never);
       }
       if (kicked > 0) {
-        toast.success(`Generating ${kicked} back-cover option${kicked === 1 ? "" : "s"} — barcode, QR & company info will be stamped on automatically.`);
+        toast.success(`Generating ${kicked} back-cover + 4 box-side images — barcode, QR & company info will be stamped on automatically.`);
       } else if (backOutputType === "document") {
         toast.success("Back-cover document prompt saved");
       }
@@ -475,10 +543,13 @@ ${tagline ? `TAGLINE (small): "${tagline}"` : ""}${LAYOUT_SUFFIX}`;
           {data?.barcode_value && (
             <div className="text-xs font-mono text-center text-muted-foreground">{data.barcode_value}</div>
           )}
-          <Button onClick={handleGenerateBarcode} disabled={generatingBarcode} variant={barcodeReady ? "outline" : "default"} size="sm" className="w-full gap-1.5">
-            {generatingBarcode ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : barcodeReady ? <RefreshCw className="h-3.5 w-3.5" /> : <BarcodeIcon className="h-3.5 w-3.5" />}
-            {barcodeReady ? "Generate new barcode" : "Generate barcode"}
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={handleGenerateBarcode} disabled={generatingBarcode} variant={barcodeReady ? "outline" : "default"} size="sm" className="flex-1 gap-1.5">
+              {generatingBarcode ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : barcodeReady ? <RefreshCw className="h-3.5 w-3.5" /> : <BarcodeIcon className="h-3.5 w-3.5" />}
+              {barcodeReady ? "Generate new barcode" : "Generate barcode"}
+            </Button>
+            {data?.barcode_url && <DownloadButton url={data.barcode_url} title={`barcode-${data.barcode_value ?? ""}`} variant="outline" />}
+          </div>
         </div>
 
         {/* QR codes */}
@@ -535,6 +606,7 @@ ${tagline ? `TAGLINE (small): "${tagline}"` : ""}${LAYOUT_SUFFIX}`;
                     <Star className={`h-3 w-3 ${qr.is_primary ? "fill-current" : ""}`} />
                     {qr.is_primary ? "Primary" : "Make primary"}
                   </Button>
+                  {qr.qr_image_url && <DownloadButton url={qr.qr_image_url} title={`qr-${slugify(qr.label ?? "code")}`} />}
                   <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => deleteQr(qr)}>
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
@@ -558,18 +630,30 @@ ${tagline ? `TAGLINE (small): "${tagline}"` : ""}${LAYOUT_SUFFIX}`;
                 {backOrigin && (backOrigin.effective || backOrigin.requested) && (
                   <AiOriginBadge hoverOnly info={backOrigin} />
                 )}
+                <span className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <DownloadButton url={data.back_cover_url} title="back-of-box" />
+                </span>
               </>
             ) : (
               <span className="text-xs text-muted-foreground text-center px-4">
-                {!barcodeReady
-                  ? "Generate a barcode first."
-                  : !copyReady
-                    ? "Write box copy (headline + body) first."
-                    : "Click Generate to render the back cover."}
+                {!backReady
+                  ? `Missing: ${backMissing.join(", ")}.`
+                  : "Click Generate to render the back cover."}
               </span>
             )}
           </div>
           <div className="space-y-3">
+            {!backReady && (
+              <div className="rounded-md border border-amber-300/50 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-xs flex items-start gap-2">
+                <AlertTriangle className="h-3.5 w-3.5 text-amber-600 mt-0.5 shrink-0" />
+                <div>
+                  <div className="font-medium text-amber-800 dark:text-amber-200">Need these before generating:</div>
+                  <ul className="text-amber-800/80 dark:text-amber-200/80 mt-0.5 list-disc list-inside">
+                    {backMissing.map((m) => <li key={m}>{m}</li>)}
+                  </ul>
+                </div>
+              </div>
+            )}
             <ImagePromptAssistant
               projectId={projectId}
               surface="cover"
@@ -602,7 +686,7 @@ ${tagline ? `TAGLINE (small): "${tagline}"` : ""}${LAYOUT_SUFFIX}`;
                 ))}
               </div>
             </div>
-            <Button onClick={handleGenerateBack} disabled={generatingBack || !barcodeReady || !copyReady || !promptDraft.trim()} size="sm" className="w-full gap-1.5">
+            <Button onClick={handleGenerateBack} disabled={generatingBack || !backReady || !promptDraft.trim()} size="sm" className="w-full gap-1.5">
               {generatingBack ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
               {data?.back_cover_url ? "Generate more back-cover options" : "Generate back-cover options"}
             </Button>
@@ -666,8 +750,8 @@ ${tagline ? `TAGLINE (small): "${tagline}"` : ""}${LAYOUT_SUFFIX}`;
                         <Copy className="h-3 w-3" /> Prompt
                       </Button>
                       {asset.url && (
-                        <Button size="sm" variant="outline" className="h-8 text-xs gap-1" asChild>
-                          <a href={asset.url} target="_blank" rel="noreferrer"><ExternalLink className="h-3 w-3" /> Open</a>
+                        <Button size="sm" variant="outline" className="h-8 text-xs gap-1" onClick={() => downloadAsset(asset.url!, slugify(asset.title ?? "back-cover"))}>
+                          <Download className="h-3 w-3" /> Save
                         </Button>
                       )}
                       <Button size="sm" variant="outline" className="h-8 text-xs gap-1 text-destructive hover:text-destructive" onClick={() => deleteCandidate(asset)}>

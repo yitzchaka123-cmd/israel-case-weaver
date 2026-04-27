@@ -14,6 +14,7 @@ import { ImageHistoryStrip, type ImageHistoryRow } from "@/components/ImageHisto
 import { FinalAssetPicker } from "@/components/FinalAssetPicker";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
+import { DownloadButton } from "@/components/DownloadButton";
 import { useBackgroundImageJob } from "@/features/project/useBackgroundImageJob";
 import { GenerationTimer } from "@/features/project/GenerationTimer";
 import { syncSuspectThumbnailToIntakeDocs } from "@/features/project/syncSuspectIntake";
@@ -101,6 +102,11 @@ export function SuspectsSection({ projectId }: { projectId: string }) {
                   {s.is_red_herring && (
                     <span className="absolute top-2 left-2 text-[10px] font-medium uppercase tracking-wider px-2 py-0.5 rounded-md bg-destructive text-destructive-foreground">
                       Red herring
+                    </span>
+                  )}
+                  {s.thumbnail_url && (
+                    <span className="absolute bottom-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity z-10" onClick={(e) => e.stopPropagation()}>
+                      <DownloadButton url={s.thumbnail_url} title={`suspect-${s.name}`} />
                     </span>
                   )}
                 </div>
@@ -325,6 +331,9 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
               <Button variant="outline" size="sm" className="w-full gap-2" onClick={() => fileInput.current?.click()}>
                 <Upload className="h-3.5 w-3.5" /> Upload
               </Button>
+              {activeUrl && (
+                <DownloadButton url={activeUrl} title={`suspect-${draft.name}`} size="sm" variant="outline" className="w-full" label="Download portrait" />
+              )}
               <ImageHistoryStrip
                 items={history ?? []}
                 currentUrl={draft.thumbnail_url}
