@@ -526,6 +526,7 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
       userId: callerUserId, projectId, surface: "generate-logic-flow",
       requestedModel: model, effectiveModel: effectiveModelOverride, fallback: streamingErr ? "stream-error" : "none",
       status: "ok", latencyMs: Date.now() - startedAt, promptExcerpt: userPrompt,
+      masterPromptVersion: resolvedSP.masterVersion, surfacePromptVersion: resolvedSP.surfaceVersion,
     });
 
     // Drop a notification so the user gets a clear "ready for approval" ping
