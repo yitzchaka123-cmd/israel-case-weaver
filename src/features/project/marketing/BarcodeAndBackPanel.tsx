@@ -543,10 +543,13 @@ Square-ish print panel, no on-image text, no logos, no UI overlays. Will be crop
           {data?.barcode_value && (
             <div className="text-xs font-mono text-center text-muted-foreground">{data.barcode_value}</div>
           )}
-          <Button onClick={handleGenerateBarcode} disabled={generatingBarcode} variant={barcodeReady ? "outline" : "default"} size="sm" className="w-full gap-1.5">
-            {generatingBarcode ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : barcodeReady ? <RefreshCw className="h-3.5 w-3.5" /> : <BarcodeIcon className="h-3.5 w-3.5" />}
-            {barcodeReady ? "Generate new barcode" : "Generate barcode"}
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={handleGenerateBarcode} disabled={generatingBarcode} variant={barcodeReady ? "outline" : "default"} size="sm" className="flex-1 gap-1.5">
+              {generatingBarcode ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : barcodeReady ? <RefreshCw className="h-3.5 w-3.5" /> : <BarcodeIcon className="h-3.5 w-3.5" />}
+              {barcodeReady ? "Generate new barcode" : "Generate barcode"}
+            </Button>
+            {data?.barcode_url && <DownloadButton url={data.barcode_url} title={`barcode-${data.barcode_value ?? ""}`} variant="outline" />}
+          </div>
         </div>
 
         {/* QR codes */}
@@ -603,6 +606,7 @@ Square-ish print panel, no on-image text, no logos, no UI overlays. Will be crop
                     <Star className={`h-3 w-3 ${qr.is_primary ? "fill-current" : ""}`} />
                     {qr.is_primary ? "Primary" : "Make primary"}
                   </Button>
+                  {qr.qr_image_url && <DownloadButton url={qr.qr_image_url} title={`qr-${slugify(qr.label ?? "code")}`} />}
                   <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive" onClick={() => deleteQr(qr)}>
                     <Trash2 className="h-3.5 w-3.5" />
                   </Button>
