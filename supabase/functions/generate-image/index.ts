@@ -65,7 +65,8 @@ type Target =
   | "suspect-alt-thumbnail"
   | "project-cover"
   | "envelope"
-  | "hint-sheet";
+  | "hint-sheet"
+  | "storyboard-shot";
 
 type Quality = "low" | "medium" | "high";
 
