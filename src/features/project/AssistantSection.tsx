@@ -144,7 +144,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     queryFn: async () => {
       const { data, error } = await supabase
         .from("projects")
-        .select("ai_provider_planning, ai_provider_images, image_prompt_instructions, video_prompt_instructions, planning_depth, logic_approved_at, solution_summary")
+        .select("ai_provider_planning, ai_provider_images, image_prompt_instructions, video_prompt_instructions, planning_depth, ai_reasoning_effort, logic_approved_at, solution_summary")
         .eq("id", projectId)
         .single();
       if (error) throw error;
@@ -154,6 +154,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
         image_prompt_instructions: string | null;
         video_prompt_instructions: string | null;
         planning_depth: string | null;
+        ai_reasoning_effort: string | null;
         logic_approved_at: string | null;
         solution_summary: string | null;
       };
@@ -199,6 +200,11 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
   const planningModel = project?.ai_provider_planning ?? "openai-5.2";
   const imageModel = project?.ai_provider_images ?? "nano-banana-2";
   const planningDepth = (project?.planning_depth ?? "guided") as "express" | "guided" | "deep";
+  // Fast vs Thinking: stored as the existing project.ai_reasoning_effort column.
+  // "none" = ⚡ Fast (no reasoning budget), anything else = 🧠 Thinking. New
+  // projects default to "high" so the assistant starts in deep-reasoning mode.
+  const reasoningEffort = (project?.ai_reasoning_effort ?? "high") as "none" | "low" | "medium" | "high" | "xhigh";
+  const reasoningMode: "fast" | "thinking" = reasoningEffort === "none" ? "fast" : "thinking";
   const { hidden: hiddenModels } = useHiddenModels();
   const visiblePlanningModels = filterModelOptions(PLANNING_MODELS, hiddenModels, planningModel);
   const visibleImageModels = filterModelOptions(IMAGE_MODELS, hiddenModels, imageModel);
@@ -209,6 +215,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     image_prompt_instructions?: string;
     video_prompt_instructions?: string;
     planning_depth?: "express" | "guided" | "deep";
+    ai_reasoning_effort?: "none" | "low" | "medium" | "high" | "xhigh";
   }) => {
     const { error } = await supabase.from("projects").update(patch).eq("id", projectId);
     if (error) toast.error(error.message);
