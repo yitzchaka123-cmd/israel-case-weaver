@@ -980,7 +980,7 @@ function ThinkingDisclosure({
           )}
           {totalSegments === 0 && live && (
             <div className="text-[11px] italic text-muted-foreground/70">
-              Waiting for the model's reasoning to come back…
+              Model is working — reasoning will appear here as it streams in. Some fast / low-effort models don't expose any.
             </div>
           )}
           {reasoning.map((round, i) => (
