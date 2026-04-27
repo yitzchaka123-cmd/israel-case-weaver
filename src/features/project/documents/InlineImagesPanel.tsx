@@ -11,6 +11,7 @@ import { Plus, Trash2, Sparkles, Loader2, Star, Upload, RotateCcw, Wand2, Palett
 import { toast } from "sonner";
 import { useState, useRef } from "react";
 import { getStoredWriterModel } from "@/components/PromptWriterModelPicker";
+import { ImageHistoryStrip, type ImageHistoryRow } from "@/components/ImageHistoryStrip";
 
 interface UrlHistoryEntry {
   at: string;
