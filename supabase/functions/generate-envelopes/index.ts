@@ -179,9 +179,13 @@ Produce all ${count} envelopes now in numerical order. Reuse the labels above as
 
     const startedAt = Date.now();
     const callerUserId = await getUserIdFromAuth(req);
+    const resolvedSP = await resolveSystemPrompt({
+      supa, ownerId: project.owner_id, surface: "generate-envelopes", defaultBody: sys,
+    });
+    const finalUserPrompt = applyUserHeader(userPrompt, resolvedSP.userHeader);
     const resp = await chatCompletions({
       model,
-      messages: [{ role: "system", content: sys }, { role: "user", content: userPrompt }],
+      messages: [{ role: "system", content: resolvedSP.system }, { role: "user", content: finalUserPrompt }],
       tools: [tool],
       tool_choice: { type: "function", function: { name: "emit_envelopes" } },
     });
