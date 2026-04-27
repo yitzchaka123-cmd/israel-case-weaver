@@ -140,14 +140,20 @@ async function loadDoc0InventoryContext(supa: any, projectId: string) {
     text: [
       `DOC 0 PLAYBOOK RULE: ${doc0Def.title_template} (${doc0Def.doc_type}, ${doc0Def.print_size}). Purpose: ${doc0Def.purpose}. List scope: ${doc0Def.list_scope}.`,
       ``,
+      `🚨 SPOILER GUARD — ABSOLUTE RULES FOR DOC 0:`,
+      `- Doc 0 lists WHAT IS IN THE BOX, nothing else.`,
+      `- For every envelope, list ONLY the number and short label (e.g. "מעטפה 2 — מעטפת המשימה"). NEVER print the envelope's task / opening trigger / payload — those are spoilers.`,
+      `- Do NOT include any "open after…" / "open when…" / "use this when…" hints next to envelopes. Just number + label, like a contents page on a board game.`,
+      `- Do NOT mention the solution, the killer, the twist, the red herring, or any deduction.`,
+      ``,
       `FINAL FLOW DOCUMENT NODES (authoritative list for Doc 0):`,
-      docNodes.map((d: any) => `- #${d.docNumber} ${d.title} (${d.docType}, ${d.printSize})${d.envelopeNumber ? ` — envelope ${d.envelopeNumber}` : ""}. Purpose: ${d.purpose}`).join("\n") || "(none)",
-      `\nENVELOPES:`,
-      (envelopes ?? []).map((e: any) => `- Envelope ${e.number}: ${e.label ?? ""}${e.task ? ` — ${e.task}` : ""}`).join("\n") || "(none)",
+      docNodes.map((d: any) => `- #${d.docNumber} ${d.title} (${d.docType}, ${d.printSize}). Purpose (for your reference only — do NOT print this): ${d.purpose}`).join("\n") || "(none)",
+      `\nSEALED ENVELOPES (number + label ONLY — task text below is for your reference, NEVER print it in Doc 0):`,
+      (envelopes ?? []).map((e: any) => `- מעטפה ${e.number} — ${e.label ?? `Envelope ${e.number}`}  [REFERENCE ONLY, DO NOT PRINT: ${e.task ?? "(no task)"}]`).join("\n") || "(none)",
       `\nSUSPECTS / CAST INSERTS:`,
       (suspects ?? []).map((s: any) => `- ${s.name}${s.role_in_case ? ` — ${s.role_in_case}` : ""}`).join("\n") || "(none)",
       `\nEXISTING DOCUMENT ROWS (for status only; do not invent missing inventory from these if Final Flow differs):`,
-      (existingDocs ?? []).map((d: any) => `- #${d.doc_number ?? "?"} ${d.title} (${d.doc_type ?? "document"}, ${d.print_size ?? "A4"})${d.envelope_number ? ` — envelope ${d.envelope_number}` : ""}`).join("\n") || "(none)",
+      (existingDocs ?? []).map((d: any) => `- #${d.doc_number ?? "?"} ${d.title} (${d.doc_type ?? "document"}, ${d.print_size ?? "A4"})`).join("\n") || "(none)",
     ].join("\n"),
   };
 }
@@ -328,7 +334,7 @@ Deno.serve(async (req) => {
       }
       const planned = doc0 ? null : await loadPlannedDocContext(supa, doc.project_id, documentId);
       const sys = doc0
-        ? `You write Doc 0: a plain, player-facing box-contents inventory for a printable mystery game. Doc 0 is NOT in-world evidence. It is NOT a case memo. It is NOT styled like an aged document. Treat it as a clean printer-paper checklist.\n\nOUTPUT: ONLY a numbered list of every game document, one per line, in ${gameLanguage}, ${isRtl ? "RTL-ready" : "properly formatted"}. NUMBERING STARTS AT 1 (one) — never 0. Do NOT include "Doc 0" / "Document 0" / the inventory sheet itself in the numbered list (it can appear once as a small header line above the list, or be omitted entirely). Format each list line as exactly "<number>. <title>" — nothing else. No introduction, no headers beyond a single short title line, no envelope groupings, no descriptions, no flavor text, no realism details, no solution hints, no commentary about what each document does. Use the supplied Final Flow document nodes as the authoritative inventory. Do not invent documents that are not in the Final Flow. The whole inventory MUST fit on a single sheet at the document's print size — keep titles short and the line count tight.`
+        ? `You write Doc 0: a plain, player-facing box-contents inventory for a printable mystery game. Doc 0 is NOT in-world evidence. It is NOT a case memo. It is NOT styled like an aged document. Treat it as a clean printer-paper checklist.\n\n🚨 SPOILER GUARD (HARD RULE): For sealed envelopes, list ONLY their number and short label (e.g. "מעטפה 2 — מעטפת המשימה"). NEVER print the envelope's task, opening trigger, instruction, or any "open after…" hint — those are spoilers and players will read them too early.\n\nOUTPUT: ONLY a numbered list of every game document, one per line, in ${gameLanguage}, ${isRtl ? "RTL-ready" : "properly formatted"}. NUMBERING STARTS AT 1 (one) — never 0. Do NOT include "Doc 0" / "Document 0" / the inventory sheet itself in the numbered list (it can appear once as a small header line above the list, or be omitted entirely). Format each list line as exactly "<number>. <title>" — nothing else. After the documents, you MAY add a short "מעטפות אטומות" (Sealed envelopes) sub-list with envelope numbers + labels ONLY (no tasks, no triggers). No introduction, no headers beyond a single short title line, no descriptions, no flavor text, no realism details, no solution hints, no commentary about what each document does. Use the supplied Final Flow document nodes as the authoritative inventory. Do not invent documents that are not in the Final Flow. The whole inventory MUST fit on a single sheet at the document's print size — keep titles short and the line count tight.`
         : `You are a senior mystery-game writer producing one in-world evidence document for a premium printable detective game.
 
 CONTENT IS REASONED, NOT TEMPLATED. Read the case brief, the approved solution summary, the suspects, and the Logic Flow nodes this specific document is meant to support. Then write the document so it delivers ITS planned clue / role inside the case — not a generic example of its document type. The 'document type' field is ONLY a hint about FORMAT and visual style (interrogation transcript, autopsy report, letter, receipt, photograph caption, etc.). It is NOT a template for the body. Two documents of the same type in the same case must read very differently because the underlying evidence and characters are different.
@@ -548,7 +554,8 @@ OUTPUT RULES:
             `- One short title line at the top (e.g. the document title).`,
             `- Below it: a numbered list, one document per line, formatted "<number>. <title>". NUMBER FROM 1 (do NOT start at 0; do NOT include the Doc 0 inventory sheet itself in the numbered list).`,
             `- The entire numbered list MUST fit on this single sheet. If there are MORE THAN ~20 entries, render the list in TWO COLUMNS side-by-side, with continuous numbering across columns (column A: 1..N, column B: N+1..). 20 or fewer entries: one column. Auto-fit the body font down to roughly 9–11 pt and tighten line-height as needed so nothing overflows.`,
-            `- One item per line. No descriptions, no flavor text, no commentary, no envelope groupings, no spoilers.`,
+            `- One item per line. No descriptions, no flavor text, no commentary, no spoilers.`,
+            `- For sealed envelopes you MAY add a small "מעטפות אטומות" sub-list at the bottom with envelope NUMBER + LABEL ONLY. NEVER print envelope tasks, opening triggers, or "open after…" hints — those are spoilers.`,
             ``,
             `CONTENT TO RENDER (${gameLanguage}, ${isRtl ? "RTL" : "LTR"}, fully legible):`,
             contentExcerpt ? contentExcerpt : `Render this inventory as the numbered list:\n${inventory?.text ?? ""}`,

@@ -387,7 +387,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
       // entire bounding box without manually zooming out (matches ComfyUI /
       // n8n "rearrange" behavior).
       setTimeout(() => {
-        try { rf.fitView({ padding: 0.18, duration: 450, maxZoom: 1.4, minZoom: 0.05 }); } catch { /* ignore */ }
+        try { rf.fitView({ padding: 0.18, duration: 450, maxZoom: 1.4, minZoom: 0.02 }); } catch { /* ignore */ }
       }, 60);
       const variantLabel = json.variant ? ` · ${json.variant}` : "";
       const variantHint =
@@ -922,8 +922,13 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
           onConnect={onConnect}
           onNodeClick={(_e, n: RFNode) => setSelectedNodeId(n.id)}
           fitView
-          minZoom={0.05}
-          maxZoom={4}
+          fitViewOptions={{ padding: 0.18, maxZoom: 1.4, minZoom: 0.02 }}
+          minZoom={0.02}
+          maxZoom={6}
+          zoomOnPinch
+          zoomOnScroll
+          panOnScroll
+          panOnDrag
           proOptions={{ hideAttribution: true }}
           defaultEdgeOptions={{
             type: "smoothstep",

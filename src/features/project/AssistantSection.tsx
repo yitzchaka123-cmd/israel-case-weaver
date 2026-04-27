@@ -266,10 +266,45 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
   // highlighted message they just clicked through to.
   const focusInFlightRef = useRef(false);
 
+  // Track whether the user is "pinned to bottom". We only auto-scroll on new
+  // content (or streaming reasoning tokens) when they're already there. If
+  // they've scrolled up to read, we leave them put and surface a small
+  // "Jump to latest" pill instead.
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const [hasNewBelow, setHasNewBelow] = useState(false);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+      const atBottom = distance < 80;
+      setIsAtBottom(atBottom);
+      if (atBottom) setHasNewBelow(false);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
   useEffect(() => {
     if (focusInFlightRef.current) return;
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, sending]);
+    const el = scrollRef.current;
+    if (!el) return;
+    if (isAtBottom) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    } else {
+      // User is reading earlier messages — don't yank them. Just signal new
+      // content is available below.
+      setHasNewBelow(true);
+    }
+  }, [messages, sending, isAtBottom]);
+
+  const jumpToLatest = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    setHasNewBelow(false);
+  };
 
   // Scroll-to and briefly highlight a message when an outside component
   // (e.g. the AssistantOriginBadge on a suspect/document) asks to focus it.
@@ -524,7 +559,18 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
             </Link>
           )}
         </div>
-        <div ref={scrollRef} className="flex-1 overflow-auto">
+        <div className="flex-1 relative">
+        {hasNewBelow && !isAtBottom && (
+          <button
+            type="button"
+            onClick={jumpToLatest}
+            className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary text-primary-foreground shadow-pop px-3 py-1.5 text-xs font-medium hover:bg-primary/90 transition-colors"
+            title="Jump to the latest assistant message"
+          >
+            ↓ Jump to latest
+          </button>
+        )}
+        <div ref={scrollRef} className="absolute inset-0 overflow-auto">
           <div className="max-w-3xl mx-auto px-6 py-8 space-y-6">
             {messages.length === 0 && (
               <div className="text-center py-12">
@@ -606,6 +652,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
               );
             })()}
           </div>
+        </div>
         </div>
 
         {/* Composer */}

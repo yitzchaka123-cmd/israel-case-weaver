@@ -542,20 +542,38 @@ async function aiRefineGroups(
 ): Promise<{ groups: string[][] | null; notes?: string; effectiveModel?: string; fallback?: string }> {
   const compactNodes = nodes.map((n) => ({
     id: n.id, type: n.node_type, title: (n.title || "").slice(0, 80),
+    desc: (n.description || "").slice(0, 140),
   }));
   const compactEdges = edges.map((e) => ({ from: e.source_id, to: e.target_id, label: (e.label ?? "").slice(0, 40) }));
-  const sys = `You suggest READING-ORDER GROUPS for a mystery-game case board.
-You receive nodes (with id, type, title) and edges. You DO NOT compute coordinates.
-Return groups of node ids that should sit next to each other for clarity (e.g. all docs that belong to the same suspect, all clues that prove the same deduction). Each group is an ordered array of node ids. The deterministic layout engine will use these groups as hints — never invent positions.`;
+  const sys = `You are a story-structure editor for a printable mystery game's case board.
+
+Your job: read the case brief, the nodes (with id, type, title, description), and the edges, then RETURN NARRATIVE-ROLE CLUSTERS — ordered groups of node ids that should sit together because they share a narrative role. Examples of clusters you should produce when relevant:
+
+  • One cluster per SUSPECT — the suspect node + every clue, document, and deduction that points at (or away from) them, in the order the player will reach them.
+  • A separate cluster for the RED HERRING storyline (suspect + the misleading clues + the deduction that disproves them).
+  • A SOLUTION cluster — the final deductions and reveal at the end.
+  • A "ENVELOPES SPINE" cluster — every envelope in number order along its own row.
+  • A "FREE EVIDENCE" cluster for documents the player gets at the start that don't belong to a specific suspect chain.
+
+Each group is an ordered array of node ids. Inside a group, list ids in READING ORDER (left-to-right or top-to-bottom). The deterministic packer will use group index as the lane index, so the first group becomes the topmost lane / leftmost column.
+
+Rules:
+- Every node should appear in exactly ONE group when possible.
+- Use ids that exist in the input. Never invent ids.
+- Order groups by importance: suspect chains first, then red herring, then envelopes, then solution.
+- Add a 1-line "notes" string explaining the grouping (e.g. "3 suspect chains + 1 red herring + envelope spine + solution").
+
+You DO NOT compute coordinates.`;
   const userPrompt = `PROJECT: "${project?.title ?? ""}" — ${project?.subtitle ?? ""}
+${project?.solution_summary ? `SOLUTION SUMMARY (authoritative — use to identify the real killer vs red herrings):\n${project.solution_summary.slice(0, 1800)}\n` : ""}
 NODES (${compactNodes.length}): ${JSON.stringify(compactNodes)}
 EDGES (${compactEdges.length}): ${JSON.stringify(compactEdges)}
-Return logical groupings via the suggest_groups tool.`;
+Return narrative-role clusters via the suggest_groups tool.`;
   const tool = {
     type: "function",
     function: {
       name: "suggest_groups",
-      description: "Return ordered groups of node ids that should sit next to each other.",
+      description: "Return narrative-role clusters: ordered groups of node ids that should sit together (one cluster per suspect chain, red herring, envelope spine, solution, etc.).",
       parameters: {
         type: "object",
         properties: {

@@ -1,65 +1,105 @@
-# Fix four mid-flow bugs
+# Fix batch of 8 issues across canvas, marketing, assistant & media
 
-Four small but distinct issues to fix:
+## 1. Doc 0 envelopes are spoilers — hide their payloads
 
-## 1. Skipped step: summary went straight to "logic approved"
+In `loadDoc0InventoryContext` (`supabase/functions/generate-document/index.ts`), the envelope list is currently passed to the model with the full task text:
 
-**What happened:** After the user approved the solution summary, the assistant clicked "Approve logic & start producing documents" implicitly — there was no in-between "logic flow generated, please review & approve" step. The flow should be:
-1. Approve solution summary (Phase 2)
-2. → Generate Logic Flow → user reviews on Canvas → Approve logic flow
-3. → Phase 4 documents
+```
+- Envelope 2: Decode the cipher — open after you've identified the cipher key
+```
 
-**Fix in `supabase/functions/assistant-chat/index.ts`** (lines 304–314, the LOGIC APPROVAL block):
-- Replace the current rule, where the single "✅ Approve logic & start producing documents" button both stamps `mark_approved=true` AND continues to `propose_document_set`.
-- New rule: after `set_solution_summary` succeeds (no `mark_approved`), the two buttons become:
-  - **"✅ Approve summary & draw the logic flow"** → on click, the assistant calls `generate_logic_flow({use_existing_summary: true})` and tells the user to open Canvas → Logic Flow to watch it draw, and to come back to approve once it's settled.
-  - **"✏️ Let me edit the summary first"** → unchanged.
-- Add a NEW rule for the post-flow turn: when the flow finishes (the bell notification fires, or the user types something like "approve the flow", "looks good", "approve logic"), THEN show the two buttons:
-  - **"✅ Approve logic flow & start producing documents"** → calls `set_solution_summary(..., mark_approved: true)` then `propose_document_set`.
-  - **"✏️ Tweak the flow first"** → wait for instructions.
-- Keep the empty-board guard at line 1293 (`set_solution_summary` with `mark_approved=true` already refuses if the logic board is empty), so even if the model misfires, the flow can't be marked approved without a board.
+…which the model then prints into Doc 0. **Hard rule:** Doc 0 must list envelopes by NUMBER + LABEL only — never the task / payload / opening-trigger text. Strip envelope `task` (and any `opening_trigger`) from the inventory context, and add an explicit "envelope tasks are SPOILERS — never list them" rule to every Doc 0 prompt (text, file, image). Render envelopes as a separate "Sealed envelopes" section (numbered) in the inventory output.
 
-## 2. Document proposal didn't list envelopes
+## 2. "Refine with AI" arrange isn't doing what you expect
 
-**What happened:** The first time the assistant proposed the document set, only the docs were listed; envelopes were missing. The user expects the assistant to ALSO surface the planned sealed-task envelopes as a separate section so they can review the full physical box plan in one shot. Envelopes are NOT counted toward `target_doc_count`.
+The current `mode: "ai-refine"` only asks the LLM for **logical groupings** (which nodes should sit next to each other) and re-runs the deterministic packer. It never repositions individual nodes itself. That matches the original spec but clearly doesn't match what you want now.
 
-**Fix in `supabase/functions/assistant-chat/index.ts`** (the `propose_document_set` description at ~line 765 + the prose-presentation rules at ~lines 334 and 360):
-- Add to the prose presentation rule: when calling `propose_document_set`, the assistant MUST also list the sealed task envelopes as a separate "Sealed task envelopes (not counted in document total)" section underneath the numbered document list, drawing them from the existing envelope roster + envelope_settings (count, labels, trigger conditions). If envelopes have not been planned yet, the assistant must propose them in the same turn (envelope #0 = mission briefing, final envelope = accusation form, the rest = trigger-based gates).
-- Tighten the "TARGET DOCUMENT COUNT" rule at line 357 to spell out: "Envelopes are NEVER counted toward `target_doc_count`. Only the loose-pile documents (Doc 0 + every numbered evidence doc) count."
+**Question for you (asked below):** what should "Refine with AI" actually do?
 
-## 3. Envelope 0 button in Overview "didn't fill it in"
+Default plan if you confirm: rename the current button to "**Smart arrange**" (it already cycles deterministic variants), and rebuild "**Refine with AI**" to:
+- Read the current node titles, descriptions, edges, AND your case brief.
+- Re-cluster nodes by *narrative role* (suspect-by-suspect, clue-chain, red-herring sidebar, solution at the end).
+- Push the suggested grouping AND a per-cluster ordering (which clue comes first inside each cluster) back into the deterministic packer.
+- Add a 1-line summary toast: "AI grouped X clusters: <names>".
 
-**What happened:** The user clicked a button next to envelope 0 in the Overview, and the assistant didn't actually create / draft envelope 0.
+## 3. Canvas zoom — let me zoom way further out / in
 
-**Investigation note:** `ProjectOverview.tsx` doesn't currently render per-envelope buttons (only doc/canvas section navigation via `mystudio:navigate`); the user is most likely describing the "Brief me on envelopes" / per-slot draft button inside `EnvelopesSection.tsx`. We'll:
-- Confirm `EnvelopesSection`'s "Brief me" / "Generate all envelopes with AI" buttons forward a clear instruction to the assistant that includes envelope #0 explicitly (mission briefing).
-- In `supabase/functions/generate-envelopes/index.ts`: ensure envelope #0 is always seeded with the mission-briefing label/task even when AI generation skips it. (Read the function first; if it iterates `playbook.envelopes.count` it should already cover index 0 — verify and patch only if missing.)
-- In the assistant playbook (`supabase/functions/assistant-chat/index.ts` Phase 3 envelope rules at line 296): add an explicit "When the user asks for help with envelope #N (single envelope), call `update_envelope` for that specific slot — never silently no-op." rule, so the click reliably writes a draft.
+`CanvasSection.tsx` already sets `minZoom={0.05}` / `maxZoom={4}` but ReactFlow's default Controls toolbar caps zoom-out at the configured `minZoom` after a couple of clicks. Open up to `minZoom={0.02}` / `maxZoom={6}`, and also widen the keyboard/wheel pan/zoom range so trackpad pinch can get there too. `fitView` will use the same range.
 
-If after reading `generate-envelopes/index.ts` we find the bug is in the in-Overview button (not Envelopes panel), we'll patch the click handler instead. We'll confirm with one extra read before editing.
+## 4. Batch image generation — show "X / N generated" pill
 
-## 4. Doc 0 layout: shrink text, two-column, number from 1
+When the back-cover panel kicks 4 parallel jobs (`fireBackgroundImage` × N) there's currently no progress feedback. Add a sticky progress strip at the top of the **Marketing** tab (mirror of the existing one in `DocumentsSection.tsx` for `bulk_generation_jobs`).
 
-**What happened:** Doc 0's body text overflows; the user wants it to fit on a single sheet. They also want numbering to start at **1** (not 0), and a two-column layout if needed.
+Implementation: subscribe to `media_assets` realtime for the session's job ids and count them as they flip from `pending` → `generated`/`failed`. No new table — just track the kicked job ids in component state and display "Generated 2 / 4 …" with per-card spinners.
 
-**Fix in `supabase/functions/generate-document/index.ts`** (Doc 0 prompts at lines 330, 344, 432, 538):
-- Change the Doc 0 system + user prompt:
-  - "Number every line starting at **1** (do NOT include 'Doc 0' itself in the numbered list — list it as a small header line above the inventory or skip it entirely)."
-  - "The whole inventory MUST fit on a single sheet at the document's print_size. Use a compact body font and tighten line-height. If the list has more than ~20 items, render it in **two columns** side-by-side; otherwise one column is fine."
-  - In the direct-file (PDF/DOCX) prompt at line 432: explicitly request a 2-column layout when the inventory has > 20 entries, with auto-fit font sizing (target 9–11pt body) so the entire list fits on one page.
-  - In the image prompt at line 538: same — single sheet, two columns when needed, numbering starts at 1.
+## 5. Assistant keeps yanking back to bottom while reasoning
 
-## Files to change
+`AssistantSection.tsx` line 269-272 calls `scrollTo({ top: scrollHeight })` on every `messages` / `sending` change — including on every reasoning-token streaming update. Fix: only auto-scroll if the user is **already near the bottom** (within ~80 px of `scrollHeight`). If they've scrolled up to read, let them stay. Add a small "↓ Jump to latest" pill that fades in when the user is scrolled up and there's new content.
 
-- `supabase/functions/assistant-chat/index.ts` — split the logic-approval gate into two button steps; require envelopes alongside doc proposal; clarify envelope-count rule; envelope-#N click rule.
-- `supabase/functions/generate-document/index.ts` — Doc 0 prompts: start at 1, fit one page, two columns when needed.
-- `supabase/functions/generate-envelopes/index.ts` — verify envelope #0 is always drafted; patch only if missing.
-- (Read-only verification) `src/features/project/EnvelopesSection.tsx` to confirm where the failing click originates.
+## 6. Download icons in every media place
 
-## Out of scope
+Add a small download button to:
+- `ImageHistoryStrip` (top-right corner of each thumbnail's lightbox + a row in the strip)
+- `MediaSection` (every asset card)
+- `MediaLibrarySection` (every row)
+- `SuspectsSection` (suspect thumbnails)
+- `EnvelopesSection` (envelope cover mock-up)
+- `CoverAndVisuals` (extras grid + main cover)
+- `BarcodeAndBackPanel` (back-cover candidates + barcode + each QR PNG)
+- `HintsSection` / `MediaSection` document files
 
-- No DB schema changes.
-- No UI/layout changes in the Overview page beyond confirming the click target.
-- Existing approved logic flows are not affected; only NEW summaries take the two-step path.
+One shared helper `downloadAsset(url, filename)` in `src/lib/utils.ts` (fetches the URL → blob → `<a download>` click). Renames default to a slug of the project + asset title.
 
-Shall I proceed?
+## 7. Default image quality = high everywhere + assistant "high quality" trigger
+
+- Change `getStoredImageQuality(... fallback)` default from `"medium"` to `"high"` everywhere it's called (covers, suspects, envelopes, hint sheets, back cover, marketing extras, storyboard).
+- Change the `<select>` initial state in `ImageModelPicker.tsx` from `"medium"` to `"high"`.
+- Keep the High warning ("can take up to 2 min").
+- Add an assistant playbook rule: when the user says "high quality", "in high res", "redo at high quality", "regenerate hi-res" (and Hebrew variants "באיכות גבוהה"), the assistant must call the matching regenerate tool (cover / suspect / envelope / inline image / etc.) with `quality: "high"`. Existing tools all accept a `quality` arg; we'll just thread it through.
+
+## 8. "Generation" tab → simple prompt-and-go generator
+
+The Generation tab (`MediaSection.tsx`) overlaps with Marketing. Strip it down to:
+- One image-model picker
+- One `ImagePromptAssistant` (the same prompter used elsewhere)
+- One "Generate image" button
+- A single grid of every image generated from this surface (category = `external` / `manual`)
+- Download icon per item
+
+Remove the Cover / Back / News / Promo / External-uploads sub-tabs (they all live in Marketing now, except External uploads which stays as an upload box at the bottom of the simplified panel).
+
+## 9. Cover generators must use ALL the marketing copy + barcode + QR + 4 extra back-of-box images
+
+Front cover (`CoverAndVisuals.tsx` + `bakeCover.ts`):
+- **Block generation** if `project.title` is empty (front needs at minimum: title; uses subtitle + company logo if available). Show a clear "Fill in title (and ideally subtitle) on Overview before generating the cover."
+- The composed prompt now passes title, subtitle, mystery_type, setting, AND `front_subtext` / `front_company_slogan` / `front_logo_note` from `project_marketing` so the AI knows what zones to leave clean.
+- After generation the existing `bakeFrontCover` already paints title/subtitle/logo — extend it to also paint the company slogan (small, under logo) and any `front_subtext` (small, bottom-left).
+
+Back cover (`BarcodeAndBackPanel.tsx` + `bakeCover.ts`):
+- **Block generation** if any of these are missing: barcode, primary QR, back_headline, back_body, company name, company logo. Show a checklist of what's missing.
+- Pass barcode + primary-QR PNGs as `image_url` reference inputs (Nano Banana edit mode) so the AI builds the design AROUND the actual codes, not generic placeholders. Today they're only baked on after the fact.
+- The composed prompt (`composeFinalPrompt`) now also includes: `back_whats_in_box`, `back_how_to_play`, `back_feature_bullets`, `back_specs`, `back_content_note`, `back_footer_text`, every QR's label, the company name + tagline, and every "extra image" caption — so the AI lays out a real back-of-box, not just a vibe shot.
+- **Add 4 "box-side" image slots** to the back cover as discussed: spawn 4 small `marketing-back-extra` jobs using the back prompt's secondary scene description (component shots / mood pieces) and bake them along the right edge of the back cover at print time. Stored in the `marketing-back` category with `title` "Box side 1/2/3/4" so they're visible and downloadable in the Marketing gallery too.
+
+## Files touched
+
+- `supabase/functions/generate-document/index.ts` — Doc 0 envelope hiding
+- `supabase/functions/arrange-canvas/index.ts` — narrative-cluster AI refine
+- `supabase/functions/assistant-chat/index.ts` — "high quality" trigger
+- `src/features/project/CanvasSection.tsx` — zoom range
+- `src/features/project/AssistantSection.tsx` — sticky-only-when-at-bottom scroll
+- `src/features/project/MediaSection.tsx` — strip down to simple generator
+- `src/features/project/marketing/CoverAndVisuals.tsx` — gating + richer prompt
+- `src/features/project/marketing/BarcodeAndBackPanel.tsx` — gating + richer prompt + 4 box-side images + reference PNG passthrough
+- `src/features/project/marketing/bakeCover.ts` — extra slots + box-side painting
+- `src/components/ImageHistoryStrip.tsx` — download icon
+- `src/components/ImageModelPicker.tsx` — default quality = high
+- `src/lib/utils.ts` — `downloadAsset()` helper
+- `src/features/project/SuspectsSection.tsx` / `EnvelopesSection.tsx` / `MediaLibrarySection.tsx` — wire download icons
+- (no DB schema changes)
+
+## Out of scope for this turn
+- Drag-to-reorder QR codes
+- Storyboard-shot download icons (will land in a follow-up if you want)
+
+Couple of clarifying questions are below so I don't guess wrong on the two ambiguous items.

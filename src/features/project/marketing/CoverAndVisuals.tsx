@@ -203,7 +203,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
     try {
       if (coverOutputType === "image" || coverOutputType === "both") {
         const modelOverride = getStoredImageModel("marketing-cover", "chatgpt-image-2");
-        const quality = getStoredImageQuality("marketing-cover", "medium");
+        const quality = getStoredImageQuality("marketing-cover", "high");
         const result = await fireBackgroundImage({
           projectId,
           category: "cover",
@@ -233,7 +233,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
     try {
       if (extraOutputType === "image" || extraOutputType === "both") {
         const modelOverride = getStoredImageModel("marketing-cover", "chatgpt-image-2");
-        const quality = getStoredImageQuality("marketing-cover", "medium");
+        const quality = getStoredImageQuality("marketing-cover", "high");
         const result = await fireBackgroundImage({
           projectId,
           target: "media",

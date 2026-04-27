@@ -521,7 +521,7 @@ function DocDialog({ doc, gameLanguage, onClose }: { doc: Doc | null; gameLangua
           documentId: doc.id,
           mode,
           imageModelOverride: mode === "image" ? getStoredImageModel("document", "chatgpt-image") : undefined,
-          quality: mode === "image" ? getStoredImageQuality("document", "medium") : undefined,
+          quality: mode === "image" ? getStoredImageQuality("document", "high") : undefined,
           documentFormat: mode === "document" ? "pdf" : undefined,
         }),
       });

@@ -184,7 +184,7 @@ function CategoryPanel({ projectId, category, items }: { projectId: string; cate
     try {
       if (outputType === "image" || outputType === "both") {
         const modelOverride = getStoredImageModel("media", "chatgpt-image-2");
-        const quality = getStoredImageQuality("media", "medium");
+        const quality = getStoredImageQuality("media", "high");
         // Fire-and-forget: edge function returns 202 immediately; the new
         // media_assets row will arrive via realtime when generation finishes.
         const result = await fireBackgroundImage({
@@ -429,7 +429,7 @@ function AssetDialog({
     setRetrying(true);
     try {
       const modelOverride = getStoredImageModel("media", "chatgpt-image-2");
-      const quality = getStoredImageQuality("media", "medium");
+      const quality = getStoredImageQuality("media", "high");
       const result = await fireBackgroundImage({
         projectId,
         target: "media",

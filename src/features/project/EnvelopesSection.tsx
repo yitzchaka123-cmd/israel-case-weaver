@@ -380,7 +380,7 @@ function EnvelopeCard({
       return;
     }
     const modelOverride = getStoredImageModel("envelope", "chatgpt-image");
-    const quality = getStoredImageQuality("envelope", "medium");
+    const quality = getStoredImageQuality("envelope", "high");
     try {
       await coverJob.start({
         prompt,

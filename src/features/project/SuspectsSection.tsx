@@ -260,7 +260,7 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
       return;
     }
     const modelOverride = getStoredImageModel("suspect", "nano-banana-2");
-    const quality = getStoredImageQuality("suspect", "medium");
+    const quality = getStoredImageQuality("suspect", "high");
     try {
       await portraitJob.start({ prompt, modelOverride, aspect: "portrait", quality });
       toast.message("Generating in the background — you can close the tab.");
