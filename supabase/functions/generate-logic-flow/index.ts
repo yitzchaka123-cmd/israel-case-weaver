@@ -357,8 +357,8 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
         {
           model,
           messages: [
-            { role: "system", content: sys },
-            { role: "user", content: userPrompt },
+            { role: "system", content: finalSystem },
+            { role: "user", content: finalUserPrompt },
           ],
           tool,
         },
