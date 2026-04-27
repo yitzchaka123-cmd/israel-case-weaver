@@ -212,61 +212,38 @@ LAYOUT REQUIREMENTS:
 - Reserve clean negative space across the central body region for paragraph copy.
 - No text rendered into the artwork itself — typography will be added later.`;
 
-      let firstUrl: string | null = null;
-      let lastOrigin: typeof backOrigin = null;
+      let kicked = 0;
       if (backOutputType === "image" || backOutputType === "both") {
         const modelOverride = getStoredImageModel("marketing-back", "chatgpt-image-2");
         const quality = getStoredImageQuality("marketing-back", "medium");
-        for (let i = 0; i < generateCount; i += 1) {
-          const resp = await callEdge("generate-image", {
+        // Fire all variations as background jobs in parallel. The browser can
+        // close — Supabase keeps generating. The bake-and-stamp step happens
+        // client-side later, when the new media_assets row arrives via
+        // realtime (see the bake effect below).
+        const results = await Promise.all(
+          Array.from({ length: generateCount }).map((_, i) => fireBackgroundImage({
             projectId,
+            target: "media",
             category: "marketing-back",
             prompt: `${composedPrompt}\n\nVariation ${i + 1}: use a distinct composition, color balance, and focal image while preserving the reserved copy and barcode areas.`,
             title: `Back of box option ${i + 1}`,
             modelOverride,
             quality,
             aspect: "portrait",
-          });
-          const json = await resp.json().catch(() => ({}));
-          if (!resp.ok) {
-            toast.error(json.error ?? "Back-cover generation failed", { duration: 10000 });
-            if (backOutputType === "image") return;
-            break;
-          }
-          const baseUrl: string | undefined = json.url;
-          if (!baseUrl) {
-            toast.error("No image returned");
-            if (backOutputType === "image") return;
-            break;
-          }
-          lastOrigin = {
-            requested: (json.requestedModel as string) ?? null,
-            effective: (json.effectiveModel as string) ?? null,
-            fallback: (json.fallback as string) ?? "none",
-          };
-
-          let finalUrl = baseUrl;
-          try {
-            finalUrl = await bakeBarcodeIntoImage(baseUrl, data.barcode_url);
-          } catch (e) {
-            toast.error("Generated, but barcode overlay failed: " + (e instanceof Error ? e.message : "unknown"));
-          }
-          if (json.asset?.id) {
-            await supabase.from("media_assets").update({ url: finalUrl, title: `Back of box option ${i + 1}` }).eq("id", json.asset.id);
-          }
-          firstUrl ??= finalUrl;
+          })),
+        );
+        const failures = results.filter((r) => !r.ok);
+        kicked = results.length - failures.length;
+        if (failures.length) {
+          toast.error(failures[0].error ?? "Some back-cover jobs failed to start", { duration: 10000 });
+          if (backOutputType === "image" && kicked === 0) return;
         }
       }
       if (backOutputType === "document" || backOutputType === "both") {
         await supabase.from("media_assets").insert({ project_id: projectId, category: "marketing-back", title: "Back of box document prompt", prompt: composedPrompt, provider: "direct-model-file", asset_type: "document", document_format: "pdf", generation_mode: "direct_model_file", status: "failed", error_message: "Create a document row to generate a real file directly with the selected document model." } as never);
       }
-      if (firstUrl) {
-        setBackOrigin(lastOrigin);
-        await supabase.from("project_marketing").upsert({
-          project_id: projectId,
-          back_cover_url: firstUrl,
-        } as never, { onConflict: "project_id" });
-        toast.success(backOutputType === "both" ? `${generateCount} back-cover option${generateCount === 1 ? "" : "s"} ready; document prompt saved` : `${generateCount} back-cover option${generateCount === 1 ? "" : "s"} ready`);
+      if (kicked > 0) {
+        toast.success(`Generating ${kicked} back-cover option${kicked === 1 ? "" : "s"} in background — barcode will be stamped on automatically.`);
       } else if (backOutputType === "document") {
         toast.success("Back-cover document prompt saved");
       }
@@ -274,6 +251,41 @@ LAYOUT REQUIREMENTS:
       setGeneratingBack(false);
     }
   };
+
+  // After the worker writes a fresh marketing-back row into media_assets, we
+  // bake the barcode into the artwork client-side and replace the row's URL.
+  // Heuristic for "needs baking": the image url does not yet point to a
+  // back-final-* file (which only the bake step produces). We also persist a
+  // localStorage set so we never re-bake the same id across navigations.
+  const bakingRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!data?.barcode_url) return;
+    const list = backAssets ?? [];
+    const todo = list.filter((a) => a.url && !a.url.includes("back-final-") && !bakingRef.current.has(a.id));
+    if (todo.length === 0) return;
+    todo.forEach((asset) => {
+      bakingRef.current.add(asset.id);
+      void (async () => {
+        try {
+          const finalUrl = await bakeBarcodeIntoImage(asset.url!, data.barcode_url!);
+          await supabase.from("media_assets").update({ url: finalUrl }).eq("id", asset.id);
+          // Set the project_marketing.back_cover_url to the most recent baked image.
+          await supabase.from("project_marketing").upsert({
+            project_id: projectId,
+            back_cover_url: finalUrl,
+          } as never, { onConflict: "project_id" });
+          setBackOrigin({
+            requested: asset.model ?? null,
+            effective: asset.effective_model ?? null,
+            fallback: asset.fallback ?? null,
+          });
+        } catch (e) {
+          toast.error("Generated, but barcode overlay failed: " + (e instanceof Error ? e.message : "unknown"));
+          bakingRef.current.delete(asset.id);
+        }
+      })();
+    });
+  }, [backAssets, data?.barcode_url, projectId]);
 
   const barcodeReady = !!data?.barcode_url;
   const copyReady = !!data?.back_body && !!data?.back_headline;
