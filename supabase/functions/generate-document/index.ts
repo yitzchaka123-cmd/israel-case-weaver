@@ -322,10 +322,16 @@ OUTPUT RULES:
 
       const startedAt = Date.now();
       const callerUserId = await getUserIdFromAuth(req);
+      const resolvedSP = await resolveSystemPrompt({
+        supa, ownerId: project?.owner_id, surface: doc0 ? "generate-document:doc0" : "generate-document:text",
+        defaultBody: sys,
+      });
+      const systemPrompt = resolvedSP.system;
+      const finalUserPrompt = applyUserHeader(userPrompt, resolvedSP.userHeader);
       const resp = await chatCompletions({
         model,
         disableFallback: true,
-        messages: [{ role: "system", content: sys }, { role: "user", content: userPrompt }],
+        messages: [{ role: "system", content: systemPrompt }, { role: "user", content: finalUserPrompt }],
       });
       const fb = extractFallback(resp, model);
 
