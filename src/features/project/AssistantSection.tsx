@@ -274,7 +274,10 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
   // Scroll-to and briefly highlight a message when an outside component
   // (e.g. the AssistantOriginBadge on a suspect/document) asks to focus it.
   // Retries a few times because the messages query may not have rendered yet
-  // when the tab first switches in.
+  // when the tab first switches in. We intentionally do NOT depend on
+  // `messages` — otherwise every new chat message (or streaming token update)
+  // would re-trigger the scroll and yank the user back up to the focused
+  // message while they're trying to continue the conversation.
   useEffect(() => {
     if (!focusMessageId) return;
     focusInFlightRef.current = true;
@@ -292,7 +295,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
         return;
       }
       attempts += 1;
-      if (attempts < 12) window.setTimeout(tryFocus, 100);
+      if (attempts < 30) window.setTimeout(tryFocus, 120);
       else focusInFlightRef.current = false;
     };
     const t = window.setTimeout(tryFocus, 60);
@@ -300,7 +303,8 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
       cancelled = true;
       window.clearTimeout(t);
     };
-  }, [focusMessageId, messages]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusMessageId]);
 
   // Listen for external "send this prompt" requests (from the notification panel).
   useEffect(() => {
