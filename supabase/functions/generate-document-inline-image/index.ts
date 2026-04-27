@@ -313,6 +313,13 @@ Deno.serve(async (req) => {
       ? [{ at: new Date().toISOString(), prompt: row.prompt }, ...priorPromptHistory].slice(0, 20)
       : priorPromptHistory;
 
+    // Pin the anchor's FIRST generated image as the locked reference. Once
+    // set, anchor_reference_url is never overwritten by future regenerations
+    // — even if the user picks a different image as "final" from the reel,
+    // siblings will keep locking to this original reference.
+    const existingAnchorRef = (row as unknown as { anchor_reference_url?: string | null }).anchor_reference_url ?? null;
+    const anchorRefPatch = (row.is_anchor && !existingAnchorRef) ? { anchor_reference_url: pub.publicUrl } : {};
+
     await supa.from("document_inline_images").update({
       url: pub.publicUrl,
       active_version: "generated",
@@ -324,6 +331,7 @@ Deno.serve(async (req) => {
       error_message: null,
       url_history: newUrlHist,
       prompt_history: newPromptHist,
+      ...anchorRefPatch,
     } as never).eq("id", row.id);
 
     // History/origin entry in media_assets so the existing AI-origin badges
