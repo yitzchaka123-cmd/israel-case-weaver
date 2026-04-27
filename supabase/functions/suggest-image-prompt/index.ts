@@ -61,10 +61,13 @@ interface Body {
   userInstructions?: string; // free-text steering from Tab 1 of the new assistant
   currentDesign?: string;    // existing design_instructions to revise
   currentContent?: string;   // existing content (hebrew_content / envelope task) to revise
+  // Inline-image mode — embedded image inside a document slot
+  inlineImageId?: string;
 }
 
 const STRUCTURED_DOC = "document-structured";
 const STRUCTURED_ENV = "envelope-structured";
+const INLINE_IMAGE = "inline-image";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
