@@ -385,9 +385,26 @@ OUTPUT RULES:
         return new Response(JSON.stringify({ error: "Doc 0 file must be generated from the Final Flow. Create the Final Documents Map first, then retry Doc 0." }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       const plannedFile = doc0 ? null : await loadPlannedDocContext(supa, doc.project_id, documentId);
+      const { data: inlineImages } = await supa
+        .from("document_inline_images")
+        .select("position, slot_label, url, uploaded_url, active_version, prompt")
+        .eq("document_id", documentId)
+        .order("position", { ascending: true });
+      const usableInlineImages = (inlineImages ?? [])
+        .map((img) => ({
+          label: img.slot_label,
+          prompt: img.prompt ?? "",
+          url: img.active_version === "uploaded" ? (img.uploaded_url ?? img.url) : (img.url ?? img.uploaded_url),
+        }))
+        .filter((img) => !!img.url);
+      const inlineLayout = doc.inline_images_layout ?? "bottom-grid-2col";
+      const inlineCaption = (doc.inline_images_caption ?? "").trim();
+      const inlineImagesBlock = usableInlineImages.length > 0
+        ? `\n\nEMBEDDED IMAGES (must appear inside the rendered document):\nLayout: ${inlineLayout}${inlineCaption ? `\nSection caption: ${inlineCaption}` : ""}\n${usableInlineImages.map((img, i) => `${i + 1}. ${img.label} — ${img.prompt}\n   URL: ${img.url}`).join("\n")}\nPlace these images according to the layout hint (e.g. a 2-column grid at the bottom for "bottom-grid-2col"). Use each image URL as a real <img> / image embed, not a placeholder. Keep aspect ratios; add the slot label as a small caption beneath each image.`
+        : "";
       const directFilePrompt = doc0
         ? `Create the final ${documentFormat.toUpperCase()} directly if your API supports returning generated files. If you cannot return an actual file, say exactly: UNABLE_TO_CREATE_FILE.\n\nThis is Doc 0: a plain white printer-paper inventory sheet for a printable mystery game. NOT in-world evidence. NOT a styled prop. Use a clean modern layout: white background, simple sans-serif body, one short title line at the top, then a numbered list — one document per line, "<number>. <title>". No paper aging, no fold lines, no stamps, no coffee rings, no period typography, no signatures, no classification marks, no realism details of any kind. No descriptions or flavor next to each item.\n\nGame: ${project?.title ?? ""}\nLanguage: ${gameLanguage}\nDocument title: ${doc.title}\nPrint size: ${doc.print_size ?? inventory?.doc0?.print_size ?? "A4"}\n\nPlayer-facing content to lay out:\n${doc.hebrew_content ?? ""}`
-        : `Create the final ${documentFormat.toUpperCase()} document directly if your API supports returning generated files. If you cannot return an actual file, say exactly: UNABLE_TO_CREATE_FILE.\n\nThe document type is ONLY a visual / format hint (interrogation transcript, autopsy report, letter, etc.) — NOT a content template. The body content below was reasoned from the case's Logic Flow and is the source of truth. Lay it out faithfully in the chosen format.\n\nCase: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nDocument title: ${doc.title}\nFormat style hint: ${doc.doc_type ?? "evidence document"}\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\n${plannedFile?.purpose ? `Planned clue / role this document delivers: ${plannedFile.purpose}\n` : ""}\nContent:\n${doc.hebrew_content ?? ""}`;
+        : `Create the final ${documentFormat.toUpperCase()} document directly if your API supports returning generated files. If you cannot return an actual file, say exactly: UNABLE_TO_CREATE_FILE.\n\nThe document type is ONLY a visual / format hint (interrogation transcript, autopsy report, letter, etc.) — NOT a content template. The body content below was reasoned from the case's Logic Flow and is the source of truth. Lay it out faithfully in the chosen format.\n\nCase: ${project?.title ?? ""}\nGame language: ${gameLanguage}\nDocument title: ${doc.title}\nFormat style hint: ${doc.doc_type ?? "evidence document"}\nPrint size: ${doc.print_size ?? "A4"}\nDesign notes: ${doc.design_instructions ?? "—"}\n${plannedFile?.purpose ? `Planned clue / role this document delivers: ${plannedFile.purpose}\n` : ""}Content:\n${doc.hebrew_content ?? ""}${inlineImagesBlock}`;
       const startedAt = Date.now();
       const callerUserId = await getUserIdFromAuth(req);
       const saveDocumentPrompt = async (status: "ok" | "error", errorMessage?: string) => {
