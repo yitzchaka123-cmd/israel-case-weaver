@@ -215,6 +215,7 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
     const { data } = supabase.storage.from("suspects").getPublicUrl(path);
     await supabase.from("suspects").update({ uploaded_thumbnail_url: data.publicUrl, active_version: "uploaded" }).eq("id", suspect.id);
     setDraft({ ...draft, uploaded_thumbnail_url: data.publicUrl, active_version: "uploaded" });
+    void syncSuspectThumbnailToIntakeDocs({ projectId: suspect.project_id, suspectId: suspect.id, portraitUrl: data.publicUrl });
     toast.success("Upload set as the active portrait");
   };
 
