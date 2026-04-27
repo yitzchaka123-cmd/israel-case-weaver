@@ -4,7 +4,6 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { chatCompletions, providerLabel, generateImage, ImageGenError, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
 import { loadClaudeSkillsForSurface, preferredClaudeDocumentSkill, type ClaudeSkillRow } from "../_shared/claude-skills.ts";
 import { PLAYBOOK_DEFAULTS, resolvePlaybook } from "../_shared/assistant-playbook.ts";
-import { resolveSystemPrompt, applyUserHeader } from "../_shared/system-prompts.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -322,16 +321,10 @@ OUTPUT RULES:
 
       const startedAt = Date.now();
       const callerUserId = await getUserIdFromAuth(req);
-      const resolvedSP = await resolveSystemPrompt({
-        supa, ownerId: project?.owner_id, surface: doc0 ? "generate-document:doc0" : "generate-document:text",
-        defaultBody: sys,
-      });
-      const systemPrompt = resolvedSP.system;
-      const finalUserPrompt = applyUserHeader(userPrompt, resolvedSP.userHeader);
       const resp = await chatCompletions({
         model,
         disableFallback: true,
-        messages: [{ role: "system", content: systemPrompt }, { role: "user", content: finalUserPrompt }],
+        messages: [{ role: "system", content: sys }, { role: "user", content: userPrompt }],
       });
       const fb = extractFallback(resp, model);
 
@@ -348,7 +341,6 @@ OUTPUT RULES:
           status: "error", latencyMs: Date.now() - startedAt,
           errorMessage: `${provider} ${resp.status}: ${t.slice(0, 200)}`,
           targetId: documentId, promptExcerpt: userPrompt,
-          masterPromptVersion: resolvedSP.masterVersion, surfacePromptVersion: resolvedSP.surfaceVersion,
         });
         if (resp.status === 429) return new Response(JSON.stringify({ error: `${provider} rate limit` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         if (resp.status === 402) return new Response(JSON.stringify({ error: `${provider} credits/key issue` }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -374,7 +366,6 @@ OUTPUT RULES:
         requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
         status: "ok", latencyMs: Date.now() - startedAt,
         targetId: documentId, promptExcerpt: userPrompt,
-        masterPromptVersion: resolvedSP.masterVersion, surfacePromptVersion: resolvedSP.surfaceVersion,
       });
       return new Response(JSON.stringify({ ok: true, hebrew_content: bodyText, model, effectiveModel: fb.effectiveModel, fallback: fb.fallback }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

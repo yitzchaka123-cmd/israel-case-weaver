@@ -9,7 +9,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { chatCompletions, providerLabel, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
 import { claudeSkillPromptBlock, loadClaudeSkillsForSurface, withClaudeSkills } from "../_shared/claude-skills.ts";
-import { resolveSystemPrompt, applyUserHeader } from "../_shared/system-prompts.ts";
 import {
   canStream,
   extractCompletedArrayItems,
@@ -219,14 +218,6 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
     const startedAt = Date.now();
     const callerUserId = await getUserIdFromAuth(req);
 
-    const resolvedSP = await resolveSystemPrompt({
-      supa, ownerId: project.owner_id,
-      surface: useApproved ? "generate-logic-flow:from-approved" : "generate-logic-flow:fresh",
-      defaultBody: sys,
-    });
-    const finalSystem = resolvedSP.system;
-    const finalUserPrompt = applyUserHeader(userPrompt, resolvedSP.userHeader);
-
     // Snapshot pre-regen counts so we can decide whether to warn the user
     // that downstream artifacts (built from the OLD logic) are now stale.
     const [{ count: preDocCount }, { count: preEnvCount }, { count: preHintCount }, { count: preFinalCount }] = await Promise.all([
@@ -357,8 +348,8 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
         {
           model,
           messages: [
-            { role: "system", content: finalSystem },
-            { role: "user", content: finalUserPrompt },
+            { role: "system", content: sys },
+            { role: "user", content: userPrompt },
           ],
           tool,
         },
@@ -418,7 +409,7 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
       console.log(`[generate-logic-flow] batch path via ${model}`);
       const resp = await chatCompletions(withClaudeSkills({
         model,
-        messages: [{ role: "system", content: finalSystem }, { role: "user", content: finalUserPrompt }],
+        messages: [{ role: "system", content: sys }, { role: "user", content: userPrompt }],
         tools: [tool],
         tool_choice: { type: "function", function: { name: "emit_logic_flow" } },
       }, enabledSkills));
@@ -436,7 +427,6 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
           requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
           status: "error", latencyMs: Date.now() - startedAt,
           errorMessage: `${provider} ${resp.status}: ${t.slice(0, 200)}`, promptExcerpt: userPrompt,
-          masterPromptVersion: resolvedSP.masterVersion, surfacePromptVersion: resolvedSP.surfaceVersion,
         });
         if (resp.status === 429) return new Response(JSON.stringify({ error: `${provider} rate limit — try again shortly.` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         if (resp.status === 402) {
@@ -526,7 +516,6 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
       userId: callerUserId, projectId, surface: "generate-logic-flow",
       requestedModel: model, effectiveModel: effectiveModelOverride, fallback: streamingErr ? "stream-error" : "none",
       status: "ok", latencyMs: Date.now() - startedAt, promptExcerpt: userPrompt,
-      masterPromptVersion: resolvedSP.masterVersion, surfacePromptVersion: resolvedSP.surfaceVersion,
     });
 
     // Drop a notification so the user gets a clear "ready for approval" ping

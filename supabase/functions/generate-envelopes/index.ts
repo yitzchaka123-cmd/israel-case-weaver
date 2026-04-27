@@ -8,7 +8,6 @@ import {
   resolvePlaybook,
   renderEnvelopeDesignTemplate,
 } from "../_shared/assistant-playbook.ts";
-import { resolveSystemPrompt, applyUserHeader } from "../_shared/system-prompts.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -179,13 +178,9 @@ Produce all ${count} envelopes now in numerical order. Reuse the labels above as
 
     const startedAt = Date.now();
     const callerUserId = await getUserIdFromAuth(req);
-    const resolvedSP = await resolveSystemPrompt({
-      supa, ownerId: project.owner_id, surface: "generate-envelopes", defaultBody: sys,
-    });
-    const finalUserPrompt = applyUserHeader(userPrompt, resolvedSP.userHeader);
     const resp = await chatCompletions({
       model,
-      messages: [{ role: "system", content: resolvedSP.system }, { role: "user", content: finalUserPrompt }],
+      messages: [{ role: "system", content: sys }, { role: "user", content: userPrompt }],
       tools: [tool],
       tool_choice: { type: "function", function: { name: "emit_envelopes" } },
     });
@@ -200,7 +195,6 @@ Produce all ${count} envelopes now in numerical order. Reuse the labels above as
         requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
         status: "error", latencyMs: Date.now() - startedAt,
         errorMessage: `${provider} ${resp.status}: ${t.slice(0, 200)}`, promptExcerpt: userPrompt,
-        masterPromptVersion: resolvedSP.masterVersion, surfacePromptVersion: resolvedSP.surfaceVersion,
       });
       if (resp.status === 429) return new Response(JSON.stringify({ error: `${provider} rate limit — try again shortly.` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       if (resp.status === 402) return new Response(JSON.stringify({ error: `${provider} credits/key issue. Check Settings → AI provider routing.` }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -264,7 +258,6 @@ Produce all ${count} envelopes now in numerical order. Reuse the labels above as
       userId: callerUserId, projectId, surface: "generate-envelopes",
       requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
       status: "ok", latencyMs: Date.now() - startedAt, promptExcerpt: userPrompt,
-      masterPromptVersion: resolvedSP.masterVersion, surfacePromptVersion: resolvedSP.surfaceVersion,
     });
     return new Response(JSON.stringify({ ok: true, count: written, model, effectiveModel: fb.effectiveModel, fallback: fb.fallback }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

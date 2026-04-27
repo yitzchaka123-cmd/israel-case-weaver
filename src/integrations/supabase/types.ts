@@ -22,13 +22,11 @@ export type Database = {
           fallback: string
           id: string
           latency_ms: number | null
-          master_prompt_version: number | null
           project_id: string | null
           prompt_excerpt: string | null
           requested_model: string | null
           status: string
           surface: string
-          surface_prompt_version: number | null
           target_id: string | null
           user_id: string | null
         }
@@ -39,13 +37,11 @@ export type Database = {
           fallback?: string
           id?: string
           latency_ms?: number | null
-          master_prompt_version?: number | null
           project_id?: string | null
           prompt_excerpt?: string | null
           requested_model?: string | null
           status?: string
           surface: string
-          surface_prompt_version?: number | null
           target_id?: string | null
           user_id?: string | null
         }
@@ -56,13 +52,11 @@ export type Database = {
           fallback?: string
           id?: string
           latency_ms?: number | null
-          master_prompt_version?: number | null
           project_id?: string | null
           prompt_excerpt?: string | null
           requested_model?: string | null
           status?: string
           surface?: string
-          surface_prompt_version?: number | null
           target_id?: string | null
           user_id?: string | null
         }
@@ -1503,48 +1497,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
-      }
-      system_prompts: {
-        Row: {
-          body: string
-          created_at: string
-          created_by: string | null
-          id: string
-          injection_mode: string
-          is_active: boolean
-          notes: string | null
-          owner_id: string
-          surface: string
-          updated_at: string
-          version: number
-        }
-        Insert: {
-          body?: string
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          injection_mode?: string
-          is_active?: boolean
-          notes?: string | null
-          owner_id: string
-          surface: string
-          updated_at?: string
-          version?: number
-        }
-        Update: {
-          body?: string
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          injection_mode?: string
-          is_active?: boolean
-          notes?: string | null
-          owner_id?: string
-          surface?: string
-          updated_at?: string
-          version?: number
-        }
-        Relationships: []
       }
       user_access: {
         Row: {

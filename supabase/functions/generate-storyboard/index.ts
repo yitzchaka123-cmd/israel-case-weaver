@@ -16,7 +16,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { chatCompletions, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
 import { claudeSkillPromptBlock, loadClaudeSkillsForSurface, withClaudeSkills } from "../_shared/claude-skills.ts";
-import { resolveSystemPrompt, applyUserHeader } from "../_shared/system-prompts.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -152,15 +151,11 @@ Each shot must have:
 Return: {"shots": [ ... ]}`;
 
       const startedAt = Date.now();
-      const resolvedSP = await resolveSystemPrompt({
-        supa, ownerId: ctxData.project.owner_id, surface: "generate-storyboard:script", defaultBody: system,
-      });
-      const finalUserMsg = applyUserHeader(userMsg, resolvedSP.userHeader);
       const resp = await chatCompletions(withClaudeSkills({
         model,
         messages: [
-          { role: "system", content: resolvedSP.system },
-          { role: "user", content: finalUserMsg },
+          { role: "system", content: system },
+          { role: "user", content: userMsg },
         ],
         temperature: 0.85,
         response_format: { type: "json_object" },
@@ -176,7 +171,6 @@ Return: {"shots": [ ... ]}`;
           requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
           status: "error", latencyMs: Date.now() - startedAt,
           errorMessage: `${provider} ${resp.status}: ${t.slice(0, 200)}`, promptExcerpt: userMsg,
-          masterPromptVersion: resolvedSP.masterVersion, surfacePromptVersion: resolvedSP.surfaceVersion,
         });
         if (resp.status === 402) {
           return new Response(JSON.stringify({ error: `${provider} credits/key issue (status 402). Add credits in Settings → Workspace → Usage, or switch this project's planning provider.` }), {
@@ -219,7 +213,6 @@ Return: {"shots": [ ... ]}`;
         userId: callerUserId, projectId, surface: "generate-storyboard",
         requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
         status: "ok", latencyMs: Date.now() - startedAt, promptExcerpt: userMsg,
-        masterPromptVersion: resolvedSP.masterVersion, surfacePromptVersion: resolvedSP.surfaceVersion,
       });
       return new Response(JSON.stringify({ shots, model, effectiveModel: fb.effectiveModel, fallback: fb.fallback }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -242,15 +235,11 @@ ${body.engine_instructions ? `${engine.toUpperCase()} STYLE INSTRUCTIONS:\n${bod
 Write the ${engine} prompt now.`;
 
       const startedAt = Date.now();
-      const resolvedSP = await resolveSystemPrompt({
-        supa, ownerId: ctxData.project.owner_id, surface: "generate-storyboard:prompt", defaultBody: system,
-      });
-      const finalUserMsg = applyUserHeader(userMsg, resolvedSP.userHeader);
       const resp = await chatCompletions(withClaudeSkills({
         model,
         messages: [
-          { role: "system", content: resolvedSP.system },
-          { role: "user", content: finalUserMsg },
+          { role: "system", content: system },
+          { role: "user", content: userMsg },
         ],
         temperature: 0.85,
       }, enabledSkills));
@@ -265,7 +254,6 @@ Write the ${engine} prompt now.`;
           requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
           status: "error", latencyMs: Date.now() - startedAt,
           errorMessage: `${provider} ${resp.status}: ${t.slice(0, 200)}`, promptExcerpt: userMsg,
-          masterPromptVersion: resolvedSP.masterVersion, surfacePromptVersion: resolvedSP.surfaceVersion,
         });
         if (resp.status === 402) {
           return new Response(JSON.stringify({ error: `${provider} credits/key issue (status 402). Add credits in Settings → Workspace → Usage.` }), {
@@ -293,7 +281,6 @@ Write the ${engine} prompt now.`;
         userId: callerUserId, projectId, surface: "generate-storyboard",
         requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
         status: "ok", latencyMs: Date.now() - startedAt, promptExcerpt: userMsg,
-        masterPromptVersion: resolvedSP.masterVersion, surfacePromptVersion: resolvedSP.surfaceVersion,
       });
       return new Response(JSON.stringify({ prompt: text, model, effectiveModel: fb.effectiveModel, fallback: fb.fallback }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

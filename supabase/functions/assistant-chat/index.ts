@@ -2,7 +2,6 @@
 // Uses Lovable AI Gateway (Gemini + GPT-5). Tools mutate project state server-side.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { chatCompletions, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
-import { resolveSystemPrompt, applyUserHeader } from "../_shared/system-prompts.ts";
 import { modelSupportsStreamingReasoning, streamReasoningChat, type ChatMessageOut, type ReasoningSegment as StreamReasoningSegment } from "../_shared/stream-reasoning.ts";
 import {
   PLAYBOOK_DEFAULTS,
@@ -2048,16 +2047,7 @@ async function processConversation(
     ),
   };
   const isFirstTurn = (messages?.length ?? 0) <= 1;
-  const defaultSystemPrompt = buildSystemPrompt(project, rosters, tweaks, playbook, claudeChatSkills, isFirstTurn);
-  const resolvedSP = await resolveSystemPrompt({
-    supa, ownerId: project.owner_id, surface: "assistant-chat", defaultBody: defaultSystemPrompt,
-  });
-  const systemPrompt = resolvedSP.userHeader
-    ? `${resolvedSP.system}\n\n---\n\n${resolvedSP.userHeader}`
-    : resolvedSP.system;
-  // userHeader unused for chat (folded into system above) — variable referenced
-  // to silence linters in environments that warn on destructured unused.
-  void applyUserHeader;
+  const systemPrompt = buildSystemPrompt(project, rosters, tweaks, playbook, claudeChatSkills, isFirstTurn);
 
   const lastUser = [...messages].reverse().find((m) => (m as { role: string }).role === "user") as { content: string } | undefined;
   if (lastUser) {
@@ -2166,8 +2156,6 @@ async function processConversation(
       errorMessage: live.ok ? undefined : `status ${live.status}`,
       targetId: assistantMessageId,
       promptExcerpt: lastUser?.content ? String(lastUser.content) : undefined,
-      masterPromptVersion: resolvedSP.masterVersion,
-      surfacePromptVersion: resolvedSP.surfaceVersion,
     });
 
     if (!live.ok) {
@@ -2422,13 +2410,7 @@ Deno.serve(async (req) => {
     };
     const claudeChatSkills = model.startsWith("anthropic/") ? await loadClaudeSkillsForSurface(supa, "chat") : [];
     const isFirstTurn = (messages?.length ?? 0) <= 1;
-    const defaultSystemPrompt2 = buildSystemPrompt(project, rosters, tweaks, playbook, claudeChatSkills, isFirstTurn);
-    const resolvedSP2 = await resolveSystemPrompt({
-      supa, ownerId: project.owner_id, surface: "assistant-chat", defaultBody: defaultSystemPrompt2,
-    });
-    const systemPrompt = resolvedSP2.userHeader
-      ? `${resolvedSP2.system}\n\n---\n\n${resolvedSP2.userHeader}`
-      : resolvedSP2.system;
+    const systemPrompt = buildSystemPrompt(project, rosters, tweaks, playbook, claudeChatSkills, isFirstTurn);
 
     // Persist the last user message
     const lastUser = [...messages].reverse().find((m: { role: string }) => m.role === "user");
@@ -2538,8 +2520,6 @@ Deno.serve(async (req) => {
         errorMessage: live.ok ? undefined : `status ${live.status}`,
         targetId: assistantMessageId,
         promptExcerpt: lastUser?.content ? String(lastUser.content) : undefined,
-        masterPromptVersion: resolvedSP2.masterVersion,
-        surfacePromptVersion: resolvedSP2.surfaceVersion,
       });
 
       if (!live.ok) {

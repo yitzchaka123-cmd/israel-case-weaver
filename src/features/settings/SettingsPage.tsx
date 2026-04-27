@@ -18,21 +18,19 @@ import { ClaudeSkillsPanel } from "./ClaudeSkillsPanel";
 import { TeamAccessPanel } from "./TeamAccessPanel";
 import { AiRunLog } from "./AiRunLog";
 import { VisibleModelsPanel } from "./VisibleModelsPanel";
-import { PromptStudioPanel } from "./PromptStudioPanel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LOGIC_FLOW_MODELS, LOGIC_FLOW_MODEL_KEY, LOGIC_FLOW_MODEL_DEFAULT } from "@/features/project/CanvasSection";
 import { Textarea } from "@/components/ui/textarea";
 import { DISPLAY_BACKGROUNDS, DEFAULT_DISPLAY_BACKGROUND, normalizeDisplayBackground } from "@/lib/display-background";
 import { useHiddenModels, filterModelOptions } from "@/lib/hidden-models";
 
-export const SETTINGS_SECTIONS = [
+const SETTINGS_SECTIONS = [
   { id: "branding", label: "Branding" },
   { id: "appearance", label: "Appearance" },
   { id: "display", label: "Display" },
   { id: "profile", label: "Profile" },
   { id: "image-prompt-assistant", label: "Image prompt assistant" },
   { id: "assistant-rules", label: "Assistant rules" },
-  { id: "prompt-studio", label: "Prompt Studio" },
   { id: "ai-routing", label: "AI routing" },
   { id: "visible-models", label: "Visible models" },
   { id: "ai-connections", label: "AI connections" },
@@ -282,16 +280,6 @@ export function SettingsPage() {
                 <AssistantTweaksPanel />
               </div>
             </div>
-          </Section>
-        );
-      case "prompt-studio":
-        return (
-          <Section
-            id="prompt-studio"
-            title="Prompt Studio"
-            desc="Edit the global Master Prompt that wraps every AI call, plus per-surface system-prompt overrides. Changes apply on the next call — no deploy."
-          >
-            <PromptStudioPanel />
           </Section>
         );
       case "ai-routing":
