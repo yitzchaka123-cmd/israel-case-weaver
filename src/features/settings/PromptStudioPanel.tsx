@@ -107,9 +107,13 @@ const SURFACES: Array<{ group: string; items: Array<{ id: string; label: string;
   {
     group: "Image-prompt writer",
     items: [
-      { id: "suggest-image-prompt:structured-doc", label: "Image prompts — structured documents", desc: "Multi-section image briefs for documents." },
+      { id: "suggest-image-prompt:cover", label: "Image prompts — cover", desc: "Multi-section image brief for the box cover." },
+      { id: "suggest-image-prompt:suspect", label: "Image prompts — suspect portrait", desc: "Multi-section image brief for a suspect portrait." },
+      { id: "suggest-image-prompt:document", label: "Image prompts — document insert", desc: "Multi-section image brief for a document image." },
+      { id: "suggest-image-prompt:hint", label: "Image prompts — hint visual", desc: "Multi-section image brief for a hint-sheet image." },
+      { id: "suggest-image-prompt:media", label: "Image prompts — media library", desc: "Multi-section image brief for a media-library asset." },
       { id: "suggest-image-prompt:inline-image", label: "Image prompts — inline document slots", desc: "Drives the per-slot create-prompt and final-prompt." },
-      { id: "suggest-image-prompt:legacy", label: "Image prompts — legacy single prompt", desc: "Single-image prompt writer used by covers, suspects, hints." },
+      { id: "suggest-image-prompt:legacy", label: "Image prompts — legacy single prompt", desc: "Single-image prompt writer used by older code paths." },
     ],
   },
 ];
