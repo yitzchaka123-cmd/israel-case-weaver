@@ -141,9 +141,13 @@ ${playbook.explanations.include_suggestion ? "4. Any concrete suggestion to stre
 
     const startedAt = Date.now();
     const callerUserId = await getUserIdFromAuth(req);
+    const resolvedSP = await resolveSystemPrompt({
+      supa, ownerId: project?.owner_id, surface: "explain-canvas-node", defaultBody: sys,
+    });
+    const finalUserPrompt = applyUserHeader(userPrompt, resolvedSP.userHeader);
     const resp = await chatCompletions({
       model,
-      messages: [{ role: "system", content: sys }, { role: "user", content: userPrompt }],
+      messages: [{ role: "system", content: resolvedSP.system }, { role: "user", content: finalUserPrompt }],
     });
     const fb = extractFallback(resp, model);
 
