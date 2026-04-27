@@ -630,18 +630,30 @@ Square-ish print panel, no on-image text, no logos, no UI overlays. Will be crop
                 {backOrigin && (backOrigin.effective || backOrigin.requested) && (
                   <AiOriginBadge hoverOnly info={backOrigin} />
                 )}
+                <span className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <DownloadButton url={data.back_cover_url} title="back-of-box" />
+                </span>
               </>
             ) : (
               <span className="text-xs text-muted-foreground text-center px-4">
-                {!barcodeReady
-                  ? "Generate a barcode first."
-                  : !copyReady
-                    ? "Write box copy (headline + body) first."
-                    : "Click Generate to render the back cover."}
+                {!backReady
+                  ? `Missing: ${backMissing.join(", ")}.`
+                  : "Click Generate to render the back cover."}
               </span>
             )}
           </div>
           <div className="space-y-3">
+            {!backReady && (
+              <div className="rounded-md border border-amber-300/50 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-xs flex items-start gap-2">
+                <AlertTriangle className="h-3.5 w-3.5 text-amber-600 mt-0.5 shrink-0" />
+                <div>
+                  <div className="font-medium text-amber-800 dark:text-amber-200">Need these before generating:</div>
+                  <ul className="text-amber-800/80 dark:text-amber-200/80 mt-0.5 list-disc list-inside">
+                    {backMissing.map((m) => <li key={m}>{m}</li>)}
+                  </ul>
+                </div>
+              </div>
+            )}
             <ImagePromptAssistant
               projectId={projectId}
               surface="cover"
