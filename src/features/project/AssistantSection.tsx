@@ -559,7 +559,18 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
             </Link>
           )}
         </div>
-        <div ref={scrollRef} className="flex-1 overflow-auto">
+        <div className="flex-1 relative">
+        {hasNewBelow && !isAtBottom && (
+          <button
+            type="button"
+            onClick={jumpToLatest}
+            className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary text-primary-foreground shadow-pop px-3 py-1.5 text-xs font-medium hover:bg-primary/90 transition-colors"
+            title="Jump to the latest assistant message"
+          >
+            ↓ Jump to latest
+          </button>
+        )}
+        <div ref={scrollRef} className="absolute inset-0 overflow-auto">
           <div className="max-w-3xl mx-auto px-6 py-8 space-y-6">
             {messages.length === 0 && (
               <div className="text-center py-12">
