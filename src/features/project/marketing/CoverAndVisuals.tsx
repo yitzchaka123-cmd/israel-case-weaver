@@ -211,7 +211,41 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const cover = project?.cover_image_url;
   const extras = (assets ?? []).filter((a) => a.category === "marketing-extra" || a.category === "back" || a.category === "marketing-back");
 
+  const frontMissing: string[] = [];
+  if (!project?.title?.trim()) frontMissing.push("Title (Overview)");
+  // Subtitle is recommended but not required; warn rather than block.
+  const frontReady = frontMissing.length === 0;
+
+  const composeFrontPrompt = (basePrompt: string): string => {
+    const parts = [basePrompt.trim()];
+    const meta: string[] = [];
+    if (project?.title) meta.push(`TITLE (must appear large on cover): "${project.title}"`);
+    if (project?.subtitle) meta.push(`SUBTITLE: "${project.subtitle}"`);
+    if (project?.mystery_type) meta.push(`Mystery type: ${project.mystery_type}`);
+    if (project?.setting) meta.push(`Setting: ${project.setting}`);
+    if (project?.genre) meta.push(`Genre: ${project.genre}`);
+    if (project?.year) meta.push(`Year: ${project.year}`);
+    if (marketing?.tagline) meta.push(`Tagline: "${marketing.tagline}"`);
+    if (marketing?.front_subtext) meta.push(`Front subtext block: "${marketing.front_subtext}"`);
+    if (marketing?.front_company_slogan) meta.push(`Company slogan to leave room for: "${marketing.front_company_slogan}"`);
+    if (marketing?.front_logo_note) meta.push(`Logo placement: ${marketing.front_logo_note}`);
+    if (marketing?.front_title_note) meta.push(`Title styling note: ${marketing.front_title_note}`);
+    if (marketing?.front_bottom_explanation) meta.push(`Bottom strip text: "${marketing.front_bottom_explanation}"`);
+    if (company?.company_name) meta.push(`Publisher: ${company.company_name}`);
+    if (meta.length) {
+      parts.push("");
+      parts.push("BOX-COVER COPY DECK (leave clean zones for these — they will be baked on top):");
+      parts.push(meta.map((m) => `- ${m}`).join("\n"));
+    }
+    return parts.filter(Boolean).join("\n");
+  };
+
   const handleGenerateCover = async (prompt: string) => {
+    if (!frontReady) {
+      toast.error(`Fill in: ${frontMissing.join(", ")} before generating the front cover.`, { duration: 8000 });
+      return;
+    }
+    const finalPrompt = composeFrontPrompt(prompt);
     setGeneratingCover(true);
     try {
       if (coverOutputType === "image" || coverOutputType === "both") {
@@ -221,7 +255,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
           projectId,
           category: "cover",
           target: "project-cover",
-          prompt,
+          prompt: finalPrompt,
           modelOverride,
           aspect: "portrait",
           quality,
@@ -232,7 +266,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
         }
       }
       if (coverOutputType === "document" || coverOutputType === "both") {
-        await supabase.from("media_assets").insert({ project_id: projectId, category: "cover", title: "Cover document prompt", prompt, provider: "direct-model-file", asset_type: "document", document_format: "pdf", generation_mode: "direct_model_file", status: "failed", error_message: "Create a document row to generate a real file directly with the selected document model." } as never);
+        await supabase.from("media_assets").insert({ project_id: projectId, category: "cover", title: "Cover document prompt", prompt: finalPrompt, provider: "direct-model-file", asset_type: "document", document_format: "pdf", generation_mode: "direct_model_file", status: "failed", error_message: "Create a document row to generate a real file directly with the selected document model." } as never);
       }
       toast.success(coverOutputType === "document" ? "Cover document prompt saved" : "Generating cover in background — feel free to leave this page");
       qc.invalidateQueries({ queryKey: ["project-cover-only", projectId] });
