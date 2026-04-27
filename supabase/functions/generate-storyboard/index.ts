@@ -265,6 +265,7 @@ Write the ${engine} prompt now.`;
           requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
           status: "error", latencyMs: Date.now() - startedAt,
           errorMessage: `${provider} ${resp.status}: ${t.slice(0, 200)}`, promptExcerpt: userMsg,
+          masterPromptVersion: resolvedSP.masterVersion, surfacePromptVersion: resolvedSP.surfaceVersion,
         });
         if (resp.status === 402) {
           return new Response(JSON.stringify({ error: `${provider} credits/key issue (status 402). Add credits in Settings → Workspace → Usage.` }), {
