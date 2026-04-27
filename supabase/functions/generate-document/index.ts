@@ -348,6 +348,7 @@ OUTPUT RULES:
           status: "error", latencyMs: Date.now() - startedAt,
           errorMessage: `${provider} ${resp.status}: ${t.slice(0, 200)}`,
           targetId: documentId, promptExcerpt: userPrompt,
+          masterPromptVersion: resolvedSP.masterVersion, surfacePromptVersion: resolvedSP.surfaceVersion,
         });
         if (resp.status === 429) return new Response(JSON.stringify({ error: `${provider} rate limit` }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         if (resp.status === 402) return new Response(JSON.stringify({ error: `${provider} credits/key issue` }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
