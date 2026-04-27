@@ -278,6 +278,7 @@ ${isSellingPoint
       userId: callerUserId, projectId, surface: "generate-marketing-copy",
       requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
       status: "ok", latencyMs: Date.now() - startedAt, promptExcerpt: userMsg,
+      masterPromptVersion: resolvedSP.masterVersion, surfacePromptVersion: resolvedSP.surfaceVersion,
     });
     if (isSellingPoint) {
       return new Response(JSON.stringify({ value: copy.selling_point, model, effectiveModel: fb.effectiveModel, fallback: fb.fallback }), {
