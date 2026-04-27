@@ -46,13 +46,29 @@ const MARKETING_CATEGORIES = ["cover", "back", "marketing-back", "marketing-extr
 
 export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
+  const { user } = useAuth();
   const [adding, setAdding] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newHint, setNewHint] = useState("");
   const [generating, setGenerating] = useState(false);
   const [generatingCover, setGeneratingCover] = useState(false);
+  const [rebaking, setRebaking] = useState(false);
   const [coverOutputType, setCoverOutputType] = useState<OutputType>("image");
   const [extraOutputType, setExtraOutputType] = useState<OutputType>("image");
+
+  const { data: company } = useQuery({
+    queryKey: ["company-profile-for-front", user?.id],
+    queryFn: async () => {
+      if (!user) return null;
+      const { data } = await supabase
+        .from("company_profiles")
+        .select("logo_url, company_name")
+        .eq("owner_id", user.id)
+        .maybeSingle();
+      return data;
+    },
+    enabled: !!user,
+  });
 
   const { data: project } = useQuery({
     queryKey: ["project-cover-only", projectId],
