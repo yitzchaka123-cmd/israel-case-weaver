@@ -686,7 +686,7 @@ Square-ish print panel, no on-image text, no logos, no UI overlays. Will be crop
                 ))}
               </div>
             </div>
-            <Button onClick={handleGenerateBack} disabled={generatingBack || !barcodeReady || !copyReady || !promptDraft.trim()} size="sm" className="w-full gap-1.5">
+            <Button onClick={handleGenerateBack} disabled={generatingBack || !backReady || !promptDraft.trim()} size="sm" className="w-full gap-1.5">
               {generatingBack ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
               {data?.back_cover_url ? "Generate more back-cover options" : "Generate back-cover options"}
             </Button>
