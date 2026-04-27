@@ -245,6 +245,9 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
       setDraft((d) => d ? { ...d, thumbnail_url: url, active_version: "generated" } : d);
       setPortraitPrompt(draft?.thumbnail_prompt ?? "");
       refetchHistory();
+      if (suspect?.project_id && suspect?.id) {
+        void syncSuspectThumbnailToIntakeDocs({ projectId: suspect.project_id, suspectId: suspect.id, portraitUrl: url });
+      }
       toast.success("Portrait ready");
     },
     onError: (msg) => toast.error(msg, { duration: 15000 }),
