@@ -61,6 +61,8 @@ interface Doc {
   active_version: string;
   envelope_number: number | null;
   created_by_message_id: string | null;
+  inline_images_layout?: string | null;
+  inline_images_caption?: string | null;
 }
 
 export function DocumentsSection({ projectId }: { projectId: string }) {
