@@ -284,10 +284,15 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
     }
     setBusyShot((b) => ({ ...b, [shot.id]: "image" }));
     try {
+      // The worker patches project_storyboards.shots[id == shot.id] when done,
+      // so the shot must already be persisted in the row. Save first.
+      await persist();
       const modelOverride = getStoredImageModel("storyboard", "nano-banana-2");
       const quality = getStoredImageQuality("storyboard", "medium");
-      const resp = await callEdge("generate-image", {
+      const result = await fireBackgroundImage({
         projectId,
+        target: "storyboard-shot",
+        targetId: shot.id,
         category: "marketing-storyboard",
         prompt: `Cinematic single still keyframe (16:9) for trailer shot #${shot.n}.\n\n${shot.prompt}`,
         title: `Shot ${shot.n}`,
@@ -295,19 +300,14 @@ export function StoryboardStudio({ projectId }: { projectId: string }) {
         quality,
         aspect: "landscape",
       });
-      const json = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        toast.error(json.error ?? "Keyframe generation failed", { duration: 10000 });
+      if (!result.ok) {
+        toast.error(result.error ?? "Could not start keyframe generation", { duration: 10000 });
         return;
       }
-      updateShot(shot.id, {
-        image_url: json.url as string,
-        in_storyboard: true,
-        image_requested_model: (json.requestedModel as string) ?? modelOverride ?? null,
-        image_effective_model: (json.effectiveModel as string) ?? null,
-        image_fallback: (json.fallback as string) ?? "none",
-      });
-      toast.success(`Shot ${shot.n} keyframe ready`);
+      // Mark as on-storyboard so it appears immediately while the worker is
+      // still rendering. The image_url will fill in via realtime later.
+      updateShot(shot.id, { in_storyboard: true });
+      toast.success(`Shot ${shot.n} generating in background — feel free to leave this page`);
     } finally {
       setBusyShot((b) => ({ ...b, [shot.id]: undefined }));
     }
