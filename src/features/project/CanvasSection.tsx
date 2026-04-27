@@ -383,6 +383,12 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
         }),
       );
       qc.invalidateQueries({ queryKey: ["nodes", projectId, board] });
+      // Fit the camera to the freshly arranged graph so the user sees the
+      // entire bounding box without manually zooming out (matches ComfyUI /
+      // n8n "rearrange" behavior).
+      setTimeout(() => {
+        try { rf.fitView({ padding: 0.18, duration: 450, maxZoom: 1.15 }); } catch { /* ignore */ }
+      }, 60);
       const variantLabel = json.variant ? ` · ${json.variant}` : "";
       const variantHint =
         mode === "deterministic" && json.variantCount > 1
