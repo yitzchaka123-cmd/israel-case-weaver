@@ -11,6 +11,7 @@ import { ean13ToPngBlob, ean13ToSvg, generateEan13 } from "./ean13";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { useProjectNotifications } from "@/features/project/notifications/useProjectNotifications";
+import { fireBackgroundImage } from "@/features/project/fireBackgroundImage";
 
 type OutputType = "image" | "document" | "both";
 
