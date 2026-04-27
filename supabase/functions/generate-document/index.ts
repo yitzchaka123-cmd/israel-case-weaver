@@ -732,6 +732,7 @@ OUTPUT RULES:
       await supa.storage.from("documents").upload(path, bytes, { contentType: mime, upsert: true });
       const { data: pub } = supa.storage.from("documents").getPublicUrl(path);
       await supa.from("documents").update({ generated_asset_url: pub.publicUrl, active_version: "generated", status: "review", document_model: model, document_provider: imageProvider }).eq("id", documentId);
+      await mirrorStatusOnNodes("generated");
       await supa.from("prompts").insert({
         project_id: doc.project_id, scope: "document-image", target_id: documentId,
         original_prompt: imgPrompt, final_prompt: imgPrompt, provider: imageProvider, model,
