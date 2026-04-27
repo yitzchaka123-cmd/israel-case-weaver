@@ -1872,6 +1872,43 @@ async function executeTool(
         (r) => String(r.name ?? "—"),
       );
     }
+    if (name === "approve_document") {
+      const id = typeof (args as { id?: unknown }).id === "string" ? (args as { id: string }).id : "";
+      if (!id) return { ok: false, message: "approve_document needs id" };
+      const { data: docRow, error: docErr } = await supa
+        .from("documents")
+        .select("id, title, doc_number, project_id, linked_node_ids")
+        .eq("id", id)
+        .eq("project_id", projectId)
+        .single();
+      if (docErr || !docRow) return { ok: false, message: "Document not found in this project" };
+      await supa.from("documents").update(withMessage({ status: "final" })).eq("id", id);
+      // Mirror "approved" onto every Final Flow document node tied to this doc.
+      try {
+        const linked: string[] = Array.isArray(docRow.linked_node_ids) ? docRow.linked_node_ids : [];
+        const { data: nodes } = await supa
+          .from("canvas_nodes")
+          .select("id, data")
+          .eq("project_id", projectId)
+          .eq("board", "final")
+          .eq("node_type", "document");
+        const targets = (nodes ?? []).filter((n: any) =>
+          (n.data as { documentId?: string } | null)?.documentId === id ||
+          linked.includes(n.id)
+        );
+        for (const n of targets) {
+          const merged = { ...((n.data as Record<string, unknown> | null) ?? {}), generationStatus: "approved" };
+          await supa.from("canvas_nodes").update({ data: merged }).eq("id", n.id);
+        }
+      } catch (e) {
+        console.warn("[approve_document] node mirror failed", (e as Error).message);
+      }
+      return {
+        ok: true,
+        message: `Approved: #${docRow.doc_number ?? "?"} ${docRow.title ?? "—"} (status → final, Final Flow node turned green)`,
+        id,
+      };
+    }
     if (name === "update_document") {
       return await runUpdate(
         "documents",
