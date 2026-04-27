@@ -242,11 +242,15 @@ ${body.engine_instructions ? `${engine.toUpperCase()} STYLE INSTRUCTIONS:\n${bod
 Write the ${engine} prompt now.`;
 
       const startedAt = Date.now();
+      const resolvedSP = await resolveSystemPrompt({
+        supa, ownerId: ctxData.project.owner_id, surface: "generate-storyboard:prompt", defaultBody: system,
+      });
+      const finalUserMsg = applyUserHeader(userMsg, resolvedSP.userHeader);
       const resp = await chatCompletions(withClaudeSkills({
         model,
         messages: [
-          { role: "system", content: system },
-          { role: "user", content: userMsg },
+          { role: "system", content: resolvedSP.system },
+          { role: "user", content: finalUserMsg },
         ],
         temperature: 0.85,
       }, enabledSkills));
