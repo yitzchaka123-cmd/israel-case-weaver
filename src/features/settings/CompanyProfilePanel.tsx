@@ -24,6 +24,12 @@ interface CompanyProfile {
   age_rating: string | null;
   made_in: string | null;
   logo_url: string | null;
+  phone: string | null;
+  vat_number: string | null;
+  manufactured_by: string | null;
+  distributed_by: string | null;
+  warning_text: string | null;
+  box_footer_line: string | null;
   social: Record<string, string>;
 }
 
@@ -38,6 +44,12 @@ const EMPTY: Omit<CompanyProfile, "owner_id"> = {
   age_rating: "",
   made_in: "",
   logo_url: "",
+  phone: "",
+  vat_number: "",
+  manufactured_by: "",
+  distributed_by: "",
+  warning_text: "",
+  box_footer_line: "",
   social: {},
 };
 
@@ -77,6 +89,12 @@ export function CompanyProfilePanel() {
         age_rating: data.age_rating ?? "",
         made_in: data.made_in ?? "",
         logo_url: data.logo_url ?? "",
+        phone: data.phone ?? "",
+        vat_number: data.vat_number ?? "",
+        manufactured_by: data.manufactured_by ?? "",
+        distributed_by: data.distributed_by ?? "",
+        warning_text: data.warning_text ?? "",
+        box_footer_line: data.box_footer_line ?? "",
         social: (data.social ?? {}) as Record<string, string>,
       });
     }
@@ -157,10 +175,35 @@ export function CompanyProfilePanel() {
         <Field label="Tagline" value={form.tagline} onChange={(v) => update("tagline", v)} placeholder="Boxed mysteries, beautifully made." />
         <Field label="Support email" value={form.support_email} onChange={(v) => update("support_email", v)} placeholder="hello@acme.com" />
         <Field label="Website" value={form.website} onChange={(v) => update("website", v)} placeholder="https://acme.com" />
+        <Field label="Phone" value={form.phone} onChange={(v) => update("phone", v)} placeholder="+972 3 555 0100" />
+        <Field label="VAT number" value={form.vat_number} onChange={(v) => update("vat_number", v)} placeholder="IL 51-234567-8" />
         <Field label="Country" value={form.country} onChange={(v) => update("country", v)} placeholder="Israel" />
         <Field label="Made in" value={form.made_in} onChange={(v) => update("made_in", v)} placeholder="Made in Israel" />
+        <Field label="Manufactured by" value={form.manufactured_by} onChange={(v) => update("manufactured_by", v)} placeholder="Acme Print Works, Tel Aviv" />
+        <Field label="Distributed by" value={form.distributed_by} onChange={(v) => update("distributed_by", v)} placeholder="Distributor name & address" />
         <Field label="Age rating" value={form.age_rating} onChange={(v) => update("age_rating", v)} placeholder="14+" />
         <Field label="Address" value={form.address} onChange={(v) => update("address", v)} placeholder="Street, City, Postal code" />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Warning text (printed on the box)</Label>
+        <Textarea
+          rows={2}
+          value={form.warning_text ?? ""}
+          onChange={(e) => update("warning_text", e.target.value)}
+          placeholder="WARNING: Choking hazard — small parts. Not for children under 3."
+          className="text-sm"
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Box footer line (single line, optional)</Label>
+        <Input
+          value={form.box_footer_line ?? ""}
+          onChange={(e) => update("box_footer_line", e.target.value)}
+          placeholder="e.g. acme.com  ·  @acmemysteries"
+          className="text-sm"
+        />
       </div>
 
       <div className="space-y-1.5">
