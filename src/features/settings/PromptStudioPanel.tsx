@@ -302,6 +302,28 @@ function SurfaceItem({
   useEffect(() => { setBody(row?.body ?? ""); }, [row?.id, row?.body]);
   const hasOverride = !!row && row.body.trim().length > 0;
 
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [inspect, setInspect] = useState<InspectResult | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const openViewer = async () => {
+    setViewerOpen(true);
+    if (inspect) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("inspect-system-prompt", {
+        body: { surface },
+      });
+      if (error) throw error;
+      setInspect(data as InspectResult);
+    } catch (e) {
+      toast.error((e as Error)?.message ?? "Failed to load default");
+      setViewerOpen(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <AccordionItem value={surface}>
       <AccordionTrigger className="text-sm">
@@ -317,9 +339,14 @@ function SurfaceItem({
       </AccordionTrigger>
       <AccordionContent>
         <p className="text-xs text-muted-foreground mb-2">{desc}</p>
-        <p className="text-[11px] text-muted-foreground mb-2">
-          Surface key: <code className="bg-muted px-1 rounded">{surface}</code>
-        </p>
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <p className="text-[11px] text-muted-foreground">
+            Surface key: <code className="bg-muted px-1 rounded">{surface}</code>
+          </p>
+          <Button variant="outline" size="sm" className="h-7 text-[11px]" onClick={openViewer}>
+            <Eye className="h-3 w-3 mr-1" /> View hardcoded default
+          </Button>
+        </div>
         <Textarea
           rows={8}
           value={body}
@@ -334,6 +361,84 @@ function SurfaceItem({
           <Button size="sm" onClick={() => onSave(body)}>Save</Button>
         </div>
       </AccordionContent>
+
+      <Dialog open={viewerOpen} onOpenChange={setViewerOpen}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="text-base">{label}</DialogTitle>
+            <DialogDescription className="text-xs">
+              <code className="bg-muted px-1 rounded">{surface}</code>
+            </DialogDescription>
+          </DialogHeader>
+          {loading || !inspect ? (
+            <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Loading…
+            </div>
+          ) : (
+            <div className="overflow-y-auto space-y-5 pr-1">
+              <PromptBlock
+                title="Hardcoded default (the scaffold the model receives)"
+                body={inspect.defaultTemplate}
+              />
+              <div className="rounded-md border bg-muted/40 p-3">
+                <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">
+                  Dynamic context appended at runtime
+                </div>
+                <p className="text-xs leading-relaxed">{inspect.dynamicNotes}</p>
+              </div>
+              {(inspect.hasOverride || inspect.hasMaster) && (
+                <PromptBlock
+                  title={
+                    inspect.hasOverride && inspect.hasMaster
+                      ? "Assembled prompt (Master + your override)"
+                      : inspect.hasOverride
+                        ? "Assembled prompt (your override)"
+                        : "Assembled prompt (Master + default)"
+                  }
+                  body={inspect.assembledSystem}
+                  badge={[
+                    inspect.hasMaster ? `Master v${inspect.masterVersion}` : null,
+                    inspect.hasOverride ? `Override v${inspect.surfaceVersion}` : null,
+                  ].filter(Boolean).join(" · ")}
+                />
+              )}
+              {inspect.userHeader && (
+                <PromptBlock
+                  title="Injected as a header on the user message"
+                  body={inspect.userHeader}
+                />
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </AccordionItem>
+  );
+}
+
+function PromptBlock({ title, body, badge }: { title: string; body: string; badge?: string }) {
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2 mb-1.5">
+        <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{title}</div>
+        <div className="flex items-center gap-2">
+          {badge && <Badge variant="secondary" className="text-[10px]">{badge}</Badge>}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 text-[11px]"
+            onClick={() => {
+              navigator.clipboard.writeText(body);
+              toast.success("Copied");
+            }}
+          >
+            <Copy className="h-3 w-3 mr-1" /> Copy
+          </Button>
+        </div>
+      </div>
+      <pre className="text-[11px] leading-relaxed font-mono whitespace-pre-wrap bg-muted/40 border rounded-md p-3 max-h-[40vh] overflow-y-auto">
+        {body}
+      </pre>
+    </div>
   );
 }
