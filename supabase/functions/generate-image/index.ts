@@ -524,9 +524,34 @@ async function runImageGeneration(req: Request): Promise<Response> {
           updated_at: new Date().toISOString(),
         } as any, { onConflict: "project_id,stage" });
       }
+    } else if (target === "storyboard-shot" && targetId) {
+      // targetId = the shot's `id` (string, lives inside the project_storyboards.shots JSON array).
+      // We patch the matching shot in-place and bump updated_at.
+      const { data: row } = await supa
+        .from("project_storyboards")
+        .select("id, shots")
+        .eq("project_id", projectId)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (row?.id) {
+        const shots = Array.isArray((row as any).shots) ? ((row as any).shots as any[]) : [];
+        const next = shots.map((s) => s && s.id === targetId
+          ? {
+              ...s,
+              image_url: pub.publicUrl,
+              in_storyboard: true,
+              image_requested_model: requestedModelForLog,
+              image_effective_model: effectiveModel,
+              image_fallback: fallbackLabel,
+            }
+          : s);
+        await supa.from("project_storyboards").update({
+          shots: next,
+          updated_at: new Date().toISOString(),
+        } as any).eq("id", (row as any).id);
+      }
     }
-
-    // Always record into media_assets so EVERY surface (covers, suspects,
     // hints, etc.) has a history strip without needing a separate per-surface
     // history table. The `source_*` flags scope the history query.
     if (target !== "media") {
