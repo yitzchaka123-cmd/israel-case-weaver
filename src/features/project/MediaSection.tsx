@@ -11,6 +11,7 @@ import { Upload, Wand2, Loader2, Trash2, Image as ImageIcon, Video, Film, Newspa
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { ImagePromptAssistant } from "@/components/ImagePromptAssistant";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
+import { fireBackgroundImage } from "./fireBackgroundImage";
 import { toast } from "sonner";
 
 type OutputType = "image" | "document" | "both";
