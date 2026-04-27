@@ -293,6 +293,7 @@ Write the ${engine} prompt now.`;
         userId: callerUserId, projectId, surface: "generate-storyboard",
         requestedModel: model, effectiveModel: fb.effectiveModel, fallback: fb.fallback,
         status: "ok", latencyMs: Date.now() - startedAt, promptExcerpt: userMsg,
+        masterPromptVersion: resolvedSP.masterVersion, surfacePromptVersion: resolvedSP.surfaceVersion,
       });
       return new Response(JSON.stringify({ prompt: text, model, effectiveModel: fb.effectiveModel, fallback: fb.fallback }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
