@@ -1,23 +1,45 @@
-# Fix: Prompt Studio missing from Settings sidebar
+# View hardcoded defaults inside Prompt Studio
 
-## What's wrong
+## Goal
 
-The Prompt Studio section was wired up correctly inside `SettingsPage.tsx` (you can already reach it directly at `/settings#prompt-studio`), but the **left sidebar's settings menu lives in a different file** — `src/components/AppShell.tsx` — and that file has its own hardcoded list of section links that was never updated. So the section exists, it just has no link pointing to it.
+For every surface listed in Prompt Studio, let you click "View default" and see exactly what the system prompt looks like — the same string the model receives when you have no override saved.
 
-The same file is also missing the "Visible models" entry that was added to `SettingsPage.tsx`.
+## Important caveat (read this first)
 
-## Fix
+The "hardcoded default" for most surfaces is **not a single static string**. It's a template that's assembled at request time from:
+- a fixed scaffold (rules, voice, output format)
+- your assistant playbook + tweaks (Settings → Assistant rules)
+- live project context (case brief, suspects, document list, approved logic, etc.)
 
-In `src/components/AppShell.tsx`, update the `settingsSections` array (lines 12–22) so it matches the real list of sections in `SettingsPage.tsx`:
+So we can show you the default in two useful ways, and I'll build both:
 
-- Add `{ id: "prompt-studio", label: "Prompt Studio" }` (between "Assistant rules" and "AI routing")
-- Add `{ id: "visible-models", label: "Visible models" }` (between "AI routing" and "AI connections")
-- Add `{ id: "team-access", label: "Team access" }` (after "Usage, credits…") — also missing from the sidebar
+- **Static template** — the fixed scaffold portion only, exactly as it lives in the edge function source. Good for "what are the baseline instructions?"
+- **Live preview** — the fully assembled prompt for a specific project (you pick one), with all playbook + project context filled in. This is what the model actually sees.
 
-After this, refresh the page and Prompt Studio will appear in the left sidebar under Settings, right where you'd expect it.
+## What you'll get in the UI
 
-## Follow-up housekeeping (optional but recommended)
+Inside each accordion item in Prompt Studio:
 
-Right now there are **two copies** of the settings section list — one in `AppShell.tsx` and one in `SettingsPage.tsx` — and they have already drifted apart twice. To prevent this from happening again, I'll export the `SETTINGS_SECTIONS` constant from `SettingsPage.tsx` and import it in `AppShell.tsx`, so there's a single source of truth.
+1. A **"View default template"** button → opens a read-only viewer with the static scaffold for that surface, plus a one-line note about what dynamic context gets merged in at runtime (e.g. "+ playbook identity/voice + project case brief + suspect list").
+2. A **"Preview live for project…"** button → project picker, then calls a new edge function `preview-system-prompt` that runs the same assembly path and returns the final `system` string (and `userHeader` if your master prompt uses that mode), with the model call itself short-circuited. Output is shown in the same viewer with a "Copy" button.
+3. A small **diff toggle** when you have an override saved, so you can see Default vs Your Override side-by-side.
 
-Approve and I'll ship the fix.
+## Surface coverage fix
+
+While I'm in there, I'll also fix two surface-list gaps in `PromptStudioPanel.tsx`:
+- `suggest-image-prompt:structured-doc` is wrong — the real surface keys are per-category: `suggest-image-prompt:cover`, `:suspect`, `:document`, `:hint`, `:media`. I'll replace the single entry with the real five.
+- Add `generate-document-inline-image` (currently missing entirely).
+
+## Technical changes
+
+- **New edge function**: `supabase/functions/preview-system-prompt/index.ts`. Accepts `{ surface, projectId? }`, runs the same context-building code path as the real function but stops right after `resolveSystemPrompt` and returns `{ defaultBody, system, userHeader, masterVersion, surfaceVersion }`. Reuses the existing builders by extracting them into small helper functions where needed (`assistant-chat`, `generate-document`, `generate-envelopes`, etc.).
+- **Static templates registry**: `supabase/functions/_shared/prompt-defaults.ts` exports a `STATIC_DEFAULTS: Record<surface, { template: string; dynamicNotes: string }>` map. Each surface's source file imports its template from here instead of inlining the string, so the registry stays automatically in sync. This is a mechanical refactor — no behavior change.
+- **Frontend**: extend `SurfaceItem` in `PromptStudioPanel.tsx` with the two view buttons + a `<Dialog>` viewer component. Add a `useQuery` for the static template (fetched from a tiny new endpoint that just returns `STATIC_DEFAULTS[surface]`) and a `useMutation` for the live preview.
+- **Surface catalog**: split `suggest-image-prompt:structured-doc` into the 5 real categories and add the inline-image generator entry.
+
+## Out of scope for this pass
+
+- Editing defaults from the UI (defaults stay in code; you override via the existing textarea).
+- Per-project overrides (current model is per-user / per-workspace).
+
+Approve and I'll ship it.
