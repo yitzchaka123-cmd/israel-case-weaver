@@ -23,8 +23,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { Eye, Copy, Loader2 } from "lucide-react";
 
 type InjectionMode = "system_prefix" | "system_suffix" | "user_header" | "replace";
 
@@ -36,6 +44,18 @@ interface PromptRow {
   version: number;
   is_active: boolean;
   updated_at: string;
+}
+
+interface InspectResult {
+  surface: string;
+  defaultTemplate: string;
+  dynamicNotes: string;
+  assembledSystem: string;
+  userHeader: string;
+  surfaceVersion: number | null;
+  masterVersion: number | null;
+  hasOverride: boolean;
+  hasMaster: boolean;
 }
 
 // Catalog of known surfaces, grouped. Edge functions pass these strings to
