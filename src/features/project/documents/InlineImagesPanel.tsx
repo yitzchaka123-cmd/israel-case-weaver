@@ -6,9 +6,11 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Trash2, Sparkles, Loader2, Star, Upload, RotateCcw } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Plus, Trash2, Sparkles, Loader2, Star, Upload, RotateCcw, Wand2, Palette } from "lucide-react";
 import { toast } from "sonner";
 import { useState, useRef } from "react";
+import { getStoredWriterModel } from "@/components/PromptWriterModelPicker";
 
 interface InlineImage {
   id: string;
