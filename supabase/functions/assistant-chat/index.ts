@@ -2166,6 +2166,8 @@ async function processConversation(
       errorMessage: live.ok ? undefined : `status ${live.status}`,
       targetId: assistantMessageId,
       promptExcerpt: lastUser?.content ? String(lastUser.content) : undefined,
+      masterPromptVersion: resolvedSP.masterVersion,
+      surfacePromptVersion: resolvedSP.surfaceVersion,
     });
 
     if (!live.ok) {
