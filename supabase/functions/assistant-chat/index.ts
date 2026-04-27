@@ -2420,7 +2420,13 @@ Deno.serve(async (req) => {
     };
     const claudeChatSkills = model.startsWith("anthropic/") ? await loadClaudeSkillsForSurface(supa, "chat") : [];
     const isFirstTurn = (messages?.length ?? 0) <= 1;
-    const systemPrompt = buildSystemPrompt(project, rosters, tweaks, playbook, claudeChatSkills, isFirstTurn);
+    const defaultSystemPrompt2 = buildSystemPrompt(project, rosters, tweaks, playbook, claudeChatSkills, isFirstTurn);
+    const resolvedSP2 = await resolveSystemPrompt({
+      supa, ownerId: project.owner_id, surface: "assistant-chat", defaultBody: defaultSystemPrompt2,
+    });
+    const systemPrompt = resolvedSP2.userHeader
+      ? `${resolvedSP2.system}\n\n---\n\n${resolvedSP2.userHeader}`
+      : resolvedSP2.system;
 
     // Persist the last user message
     const lastUser = [...messages].reverse().find((m: { role: string }) => m.role === "user");
