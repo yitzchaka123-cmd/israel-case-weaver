@@ -46,6 +46,13 @@ interface Marketing {
   back_cover_url: string | null;
   qr_code_url: string | null;
   mini_movie_url: string | null;
+  back_teaser?: string | null;
+  back_whats_in_box?: string | null;
+  back_how_to_play?: string | null;
+  back_feature_bullets?: string | null;
+  back_specs?: string | null;
+  back_content_note?: string | null;
+  back_footer_text?: string | null;
 }
 
 interface MediaAsset {
@@ -319,6 +326,20 @@ export function BarcodeAndBackPanel({ projectId }: { projectId: string }) {
     const headline = data?.back_headline ?? "";
     const body = data?.back_body ?? "";
     const tagline = data?.tagline ?? "";
+    const primaryQr = (qrCodes ?? []).find((q) => q.is_primary);
+    const secondaryQrs = (qrCodes ?? []).filter((q) => !q.is_primary);
+    const copyDeck: string[] = [];
+    if (data?.back_teaser) copyDeck.push(`TEASER: "${data.back_teaser}"`);
+    if (data?.back_whats_in_box) copyDeck.push(`WHAT'S IN THE BOX: ${data.back_whats_in_box}`);
+    if (data?.back_how_to_play) copyDeck.push(`HOW TO PLAY: ${data.back_how_to_play}`);
+    if (data?.back_feature_bullets) copyDeck.push(`FEATURE BULLETS:\n${data.back_feature_bullets}`);
+    if (data?.back_specs) copyDeck.push(`SPECS: ${data.back_specs}`);
+    if (data?.back_content_note) copyDeck.push(`CONTENT NOTE: ${data.back_content_note}`);
+    if (data?.back_footer_text) copyDeck.push(`FOOTER LINE: "${data.back_footer_text}"`);
+    if (company?.company_name) copyDeck.push(`PUBLISHER: ${company.company_name}${company.tagline ? ` — "${company.tagline}"` : ""}`);
+    const qrLines: string[] = [];
+    if (primaryQr) qrLines.push(`Primary QR — label "${primaryQr.label ?? "Scan"}", will be baked LARGE in the LOWER-LEFT.`);
+    secondaryQrs.forEach((q, i) => qrLines.push(`Secondary QR ${i + 1} — label "${q.label ?? "Link"}", appears small in the strip below.`));
     return `Design a printable BACK-OF-BOX cover for a premium boxed murder-mystery game.
 
 ART DIRECTION FROM THE WRITER:
@@ -331,7 +352,24 @@ BODY COPY (reserve enough negative space for it; do NOT render this text):
 ${body}
 """
 
-${tagline ? `TAGLINE (small): "${tagline}"` : ""}${LAYOUT_SUFFIX}`;
+${tagline ? `TAGLINE (small): "${tagline}"\n` : ""}${copyDeck.length ? `\nADDITIONAL COPY DECK (the AI does not render these — leave clean negative space for them):\n${copyDeck.map((c) => `- ${c}`).join("\n")}\n` : ""}${qrLines.length ? `\nCODES & LINKS:\n${qrLines.map((l) => `- ${l}`).join("\n")}\nThe ACTUAL barcode (EAN-13 ${data?.barcode_value ?? ""}) and the ACTUAL QR PNGs will be stamped on after generation — do NOT invent fake codes.\n` : ""}${LAYOUT_SUFFIX}`;
+  };
+
+  // Build a short, safe scene description for one of the 4 box-side images.
+  const boxSidePrompt = (slot: number, draft: string): string => {
+    const tone = data?.back_teaser || data?.back_body || draft || "atmospheric mood piece";
+    const flavor = [
+      "an evocative close-up of a single key prop or clue (no text, no faces)",
+      "a wide environmental establishing shot of the case setting (no text)",
+      "a detail of a period-appropriate object or document on a table (no text)",
+      "a moody texture / atmospheric backdrop shot (no text, no characters)",
+    ][slot - 1] || "atmospheric mood piece";
+    return `Box-side panel image ${slot} of 4 for the same boxed murder-mystery game. Same world, same color palette and lighting as the back cover.
+
+Scene direction: ${flavor}.
+Story tone reference: ${tone.slice(0, 400)}
+
+Square-ish print panel, no on-image text, no logos, no UI overlays. Will be cropped/laid out along the side of the box.`;
   };
 
   const handleGenerateBack = async () => {
