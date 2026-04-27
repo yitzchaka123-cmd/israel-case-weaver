@@ -331,6 +331,9 @@ function SuspectDialog({ suspect, onClose }: { suspect: Suspect | null; onClose:
               <Button variant="outline" size="sm" className="w-full gap-2" onClick={() => fileInput.current?.click()}>
                 <Upload className="h-3.5 w-3.5" /> Upload
               </Button>
+              {activeUrl && (
+                <DownloadButton url={activeUrl} title={`suspect-${draft.name}`} size="sm" variant="outline" className="w-full" label="Download portrait" />
+              )}
               <ImageHistoryStrip
                 items={history ?? []}
                 currentUrl={draft.thumbnail_url}
