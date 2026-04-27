@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { useProjectNotifications } from "@/features/project/notifications/useProjectNotifications";
+import { fireBackgroundImage } from "@/features/project/fireBackgroundImage";
 
 type Engine = "sora" | "kling";
 type Length = 30 | 60 | 90 | 120;
