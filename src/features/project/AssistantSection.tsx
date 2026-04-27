@@ -465,6 +465,45 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
               </SelectContent>
             </Select>
           </div>
+          {/* Fast vs Thinking — flips project.ai_reasoning_effort between
+              "none" (no reasoning budget, snappy) and "high" (full chain-of-
+              thought streaming). Tools still work in either mode; Fast just
+              skips the planning depth so big "build the whole case" requests
+              degrade in quality. */}
+          <div
+            className="inline-flex rounded-md border bg-background overflow-hidden shrink-0"
+            role="group"
+            aria-label="Reasoning mode"
+            title="Fast: snappy replies, no reasoning. Thinking: full chain-of-thought, slower but better at planning, multi-step builds and tricky logic."
+          >
+            <button
+              type="button"
+              onClick={() => setProjectAi({ ai_reasoning_effort: "none" })}
+              className={`inline-flex items-center gap-1 px-2.5 h-8 text-xs font-medium transition-colors ${
+                reasoningMode === "fast"
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-muted/60"
+              }`}
+              aria-pressed={reasoningMode === "fast"}
+            >
+              <Sparkles className="h-3 w-3" /> Fast
+            </button>
+            <button
+              type="button"
+              onClick={() => setProjectAi({ ai_reasoning_effort: "high" })}
+              className={`inline-flex items-center gap-1 px-2.5 h-8 text-xs font-medium border-l transition-colors ${
+                reasoningMode === "thinking"
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-muted/60"
+              }`}
+              aria-pressed={reasoningMode === "thinking"}
+            >
+              <Brain className="h-3 w-3" /> Thinking
+              {reasoningMode === "thinking" && reasoningEffort !== "high" && (
+                <span className="ml-0.5 text-[10px] opacity-70">({reasoningEffort})</span>
+              )}
+            </button>
+          </div>
           <PromptInstructionsPopover
             imageInstructions={project?.image_prompt_instructions ?? ""}
             videoInstructions={project?.video_prompt_instructions ?? ""}
