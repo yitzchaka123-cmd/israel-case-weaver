@@ -718,6 +718,15 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
             Drawing live…
           </span>
         )}
+        {showPlanningPill && (
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-700 dark:text-amber-400 animate-pulse"
+            title="The AI is planning the logic flow. Nodes will start landing on the board within ~30–90 seconds."
+          >
+            <Loader2 className="h-3 w-3 animate-spin" />
+            🧠 Planning logic flow…
+          </span>
+        )}
         {board === "logic" && (
           <>
             <Select
