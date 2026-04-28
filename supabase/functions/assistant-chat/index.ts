@@ -607,7 +607,7 @@ function synthesizeOptionsFromProse(text: string): { options: Array<{ label: str
   // English keywords + Hebrew equivalents (בחר/בחרי/בחרו = pick, איזה/איזו = which).
   const looksLikeQuestion =
     /\?\s*$/.test(trimmed) ||
-    /\b(pick|choose|select|which|prefer|approve|confirm)\b/i.test(trimmed) ||
+    /\b(pick|choose|select|which|prefer|approve|confirm|reply|click|option)\b/i.test(trimmed) ||
     /(בחר|בחרי|בחרו|איזה|איזו|תבחר|מעדיף|מעדיפה|לאשר)/.test(trimmed);
   if (!looksLikeQuestion) return null;
 
@@ -615,7 +615,7 @@ function synthesizeOptionsFromProse(text: string): { options: Array<{ label: str
   // run of numbered items (1, 2, 3, …). The list may sit anywhere — top,
   // middle (followed by a "Pick one." closer), or bottom.
   const lines = trimmed.split("\n");
-  const itemLineRegex = /^\s*(\d+)[\.\)]\s+(.+?)\s*$/;
+  const itemLineRegex = /^\s*(?:[-*•]\s*)?(\d+)[\.\)]\s+(?:\*\*)?(.+?)(?:\*\*)?\s*$/;
   let bestRun: { startIdx: number; items: Array<{ n: number; text: string }> } | null = null;
   let i = 0;
   while (i < lines.length) {
@@ -653,7 +653,7 @@ function synthesizeOptionsFromProse(text: string): { options: Array<{ label: str
   // Strip trailing parenthetical/em-dash explanation for cleaner button text,
   // but cap to ~60 chars.
   const toLabel = (s: string) => {
-    const cleaned = s.replace(/\s+—\s+.*$/, "").replace(/\s*\(.*\)\s*$/, "").trim();
+    const cleaned = s.replace(/\*\*/g, "").replace(/\s+—\s+.*$/, "").replace(/\s*\(.*\)\s*$/, "").trim();
     const base = cleaned || s;
     return base.length > 60 ? `${base.slice(0, 57)}…` : base;
   };
