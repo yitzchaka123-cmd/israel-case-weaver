@@ -413,6 +413,9 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     const previousDepth = planningDepth;
     const saved = await setProjectAi({ planning_depth: nextDepth });
     if (!saved) return false;
+    if (source === "header") {
+      await supabase.from("projects").update({ last_seen_planning_depth: nextDepth }).eq("id", projectId);
+    }
     qc.setQueryData(["project-ai", projectId], (current: typeof project | undefined) => current ? { ...current, planning_depth: nextDepth } : current);
     if (source === "header" && nextDepth !== previousDepth) await announceDepthChange(nextDepth, previousDepth);
     return true;
