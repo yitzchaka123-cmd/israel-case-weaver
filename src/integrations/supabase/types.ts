@@ -1364,6 +1364,7 @@ export type Database = {
           id: string
           image_prompt_instructions: string | null
           last_assistant_acknowledged_at: string | null
+          last_seen_planning_depth: string | null
           logic_approved_at: string | null
           logic_version_id: string
           mystery_type: string | null
@@ -1410,6 +1411,7 @@ export type Database = {
           id?: string
           image_prompt_instructions?: string | null
           last_assistant_acknowledged_at?: string | null
+          last_seen_planning_depth?: string | null
           logic_approved_at?: string | null
           logic_version_id?: string
           mystery_type?: string | null
@@ -1456,6 +1458,7 @@ export type Database = {
           id?: string
           image_prompt_instructions?: string | null
           last_assistant_acknowledged_at?: string | null
+          last_seen_planning_depth?: string | null
           logic_approved_at?: string | null
           logic_version_id?: string
           mystery_type?: string | null
