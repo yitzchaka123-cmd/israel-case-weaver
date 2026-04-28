@@ -112,6 +112,7 @@ LAYOUT REQUIREMENTS (these are PRINT-CRITICAL — overlays will be added later):
 export function BarcodeAndBackPanel({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
   const { user } = useAuth();
+  const batch = useBatchProgress();
   const [generatingBarcode, setGeneratingBarcode] = useState(false);
   const [generatingBack, setGeneratingBack] = useState(false);
   const [generateCount, setGenerateCount] = useState<1 | 2 | 4>(4);
