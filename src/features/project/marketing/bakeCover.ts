@@ -22,6 +22,8 @@ interface BakeFrontInput {
   title?: string | null;
   subtitle?: string | null;
   logoUrl?: string | null;
+  companySlogan?: string | null;
+  frontSubtext?: string | null;
 }
 
 interface BakeBackInput {
