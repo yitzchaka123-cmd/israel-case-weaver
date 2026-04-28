@@ -2375,18 +2375,43 @@ Deno.serve(async (req) => {
       }
       const runId = runRow.id as string;
 
+      // Hard ceiling so a hung upstream call can never leave the run row in
+      // status='running' forever. 7 minutes is comfortably above any normal
+      // assistant turn but well below the Worker's outer kill-switch.
+      const HARD_TIMEOUT_MS = 7 * 60 * 1000;
+      let finished = false;
+      const markFinished = async (status: "done" | "error", error?: string) => {
+        if (finished) return;
+        finished = true;
+        await supa.from("assistant_runs").update({
+          status,
+          error: error ?? null,
+          finished_at: new Date().toISOString(),
+        }).eq("id", runId);
+      };
+
       const work = (async () => {
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error("assistant_run_timeout: exceeded 7 min hard limit")), HARD_TIMEOUT_MS);
+        });
         try {
-          await processConversation(supa, projectId, messages, callerUserId);
-          await supa.from("assistant_runs").update({
-            status: "done", finished_at: new Date().toISOString(),
-          }).eq("id", runId);
+          await Promise.race([
+            processConversation(supa, projectId, messages, callerUserId),
+            timeoutPromise,
+          ]);
+          await markFinished("done");
         } catch (err) {
           console.error("background assistant-chat failed", err);
           const msg = err instanceof Error ? err.message : "Unknown error";
-          await supa.from("assistant_runs").update({
-            status: "error", error: msg, finished_at: new Date().toISOString(),
-          }).eq("id", runId);
+          await markFinished("error", msg);
+        } finally {
+          // Last-ditch: if neither branch above ran (e.g. unhandled rejection in
+          // a microtask before await resumed), still close out the row.
+          if (!finished) {
+            try {
+              await markFinished("error", "Worker terminated mid-run");
+            } catch { /* swallow — nothing else we can do */ }
+          }
         }
       })();
 
