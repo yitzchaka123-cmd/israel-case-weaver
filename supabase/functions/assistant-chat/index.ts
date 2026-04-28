@@ -1701,11 +1701,54 @@ async function executeTool(
       const changeNote = noteParts.length
         ? ` ⚠️ Because the summary changed, ${noteParts.join(" and ")}. Offer the user the rebuild buttons (SUMMARY-REWRITE RULE) so they can regenerate and re-approve.`
         : "";
+
+      // 🛡️ SAFETY NET: when a fresh summary is saved (without mark_approved)
+      // and the logic board is empty + not approved, AUTO-START the logic
+      // flow generation in the background. The Express playbook tells the
+      // model to call `generate_logic_flow` next, but in practice it often
+      // forgets and just writes prose like "I've started drawing the flow…"
+      // — leaving the user staring at an empty Canvas. This server-side
+      // auto-trigger guarantees the flow build actually starts.
+      let autoStartedLogicFlow = false;
+      if (!markApproved) {
+        const { count: postLogicNodes } = await supa
+          .from("canvas_nodes")
+          .select("id", { count: "exact", head: true })
+          .eq("project_id", projectId)
+          .eq("board", "logic");
+        const stillUnapproved = !patch.logic_approved_at;
+        if ((postLogicNodes ?? 0) === 0 && stillUnapproved) {
+          const fireAndForget = fetch(`${SUPABASE_URL}/functions/v1/generate-logic-flow`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+            },
+            body: JSON.stringify({ projectId, replace: true, useExistingSummary: true }),
+          }).catch((err) => {
+            console.error("[assistant-chat] safety-net generate-logic-flow failed", err);
+          });
+          const runtime = (globalThis as { EdgeRuntime?: { waitUntil: (p: Promise<unknown>) => void } })
+            .EdgeRuntime;
+          if (runtime?.waitUntil) runtime.waitUntil(fireAndForget);
+          // Stamp the project as "building" immediately so the UI indicator
+          // lights up before the first node streams in.
+          await supa
+            .from("projects")
+            .update({ logic_flow_building_at: new Date().toISOString() })
+            .eq("id", projectId);
+          autoStartedLogicFlow = true;
+        }
+      }
+      const autoNote = autoStartedLogicFlow
+        ? " 🛠️ Logic Flow generation has been STARTED automatically in the background — tell the user to open Canvas → Logic Flow to watch it paint itself live (settles in 2–3 min). Do NOT call generate_logic_flow again this turn."
+        : "";
+
       return {
         ok: true,
         message: markApproved
           ? `Solution summary saved & logic approved (${wordCount} words). Visible on Case Board.`
-          : `Solution summary saved (${wordCount} words). Visible on Case Board's Solution-summary button.${changeNote}`,
+          : `Solution summary saved (${wordCount} words). Visible on Case Board's Solution-summary button.${changeNote}${autoNote}`,
       };
     }
     if (name === "add_suspect") {
