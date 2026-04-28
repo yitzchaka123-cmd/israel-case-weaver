@@ -2527,6 +2527,12 @@ Deno.serve(async (req) => {
       ),
     };
     const claudeChatSkills = model.startsWith("anthropic/") ? await loadClaudeSkillsForSurface(supa, "chat") : [];
+    const lastUser = [...messages].reverse().find((m: { role: string }) => m.role === "user") as { content: string } | undefined;
+    const chatDepthChoice = detectPlanningDepthChoice(lastUser?.content);
+    if (chatDepthChoice && normalizePlanningDepth((project as { planning_depth?: unknown }).planning_depth, playbook.planning_depth.default) !== chatDepthChoice) {
+      await supa.from("projects").update({ planning_depth: chatDepthChoice }).eq("id", projectId);
+      (project as { planning_depth?: PlanningDepth }).planning_depth = chatDepthChoice;
+    }
     const isFirstTurn = (messages?.length ?? 0) <= 1;
     const systemPrompt = buildSystemPrompt(project, rosters, tweaks, playbook, claudeChatSkills, isFirstTurn);
     // Stamp the depth we just rendered so the NEXT turn can detect a flip.
@@ -2541,7 +2547,6 @@ Deno.serve(async (req) => {
     }
 
     // Persist the last user message
-    const lastUser = [...messages].reverse().find((m: { role: string }) => m.role === "user");
     if (lastUser) {
       await supa.from("chat_messages").insert({
         project_id: projectId,
