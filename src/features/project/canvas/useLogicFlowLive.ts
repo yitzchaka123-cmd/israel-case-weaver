@@ -46,8 +46,12 @@ export function useLogicFlowLive(projectId: string): LogicFlowLiveState {
   }, [projectId]);
 
   useEffect(() => {
+    // Unique per-mount suffix prevents StrictMode double-mount (and rapid
+    // remounts) from grabbing the same already-subscribed channel and
+    // throwing "cannot add postgres_changes callbacks after subscribe()".
+    const uniqueSuffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const channel = supabase
-      .channel(`logic-flow-live-${projectId}`)
+      .channel(`logic-flow-live-${projectId}-${uniqueSuffix}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "canvas_nodes", filter: `project_id=eq.${projectId}` },
