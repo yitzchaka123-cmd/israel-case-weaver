@@ -203,6 +203,8 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
         title: project?.title ?? null,
         subtitle: project?.subtitle ?? null,
         logoUrl: company?.logo_url ?? null,
+        companySlogan: marketing?.front_company_slogan ?? null,
+        frontSubtext: marketing?.front_subtext ?? null,
       });
       await supabase.from("projects").update({ cover_image_url: finalUrl }).eq("id", projectId);
       toast.success("Cover re-baked with latest title, subtitle & logo");
