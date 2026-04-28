@@ -104,13 +104,13 @@ export type Playbook = {
     unusual_document_types: string[];
     diversity: {
       max_share_per_family_pct: number; // e.g. 25 = no doc_type family > 25% of the set
-      min_distinct_doc_types: number;   // floor on unique doc_type values across the proposal
+      min_distinct_doc_types: number; // floor on unique doc_type values across the proposal
       min_distinct_print_sizes: number; // floor on unique print_size values across the proposal
-      min_unusual_props_pct: number;    // floor share of unusual / creative-prop docs
-      min_handwritten_pct: number;      // floor share of handwritten/hand-made-feel docs
-      paper_palette: string[];          // explicit paper-stock + color/tint variety options to draw from
+      min_unusual_props_pct: number; // floor share of unusual / creative-prop docs
+      min_handwritten_pct: number; // floor share of handwritten/hand-made-feel docs
+      paper_palette: string[]; // explicit paper-stock + color/tint variety options to draw from
       family_groups: Record<string, string[]>; // doc_type → family bucket (so "report"/"autopsy report" both count as REPORT)
-      rules: string[];                  // free-text rules surfaced to the model
+      rules: string[]; // free-text rules surfaced to the model
     };
   };
   languages: {
@@ -146,8 +146,7 @@ export const PLAYBOOK_DEFAULTS: Playbook = {
     labels: ["Open First", "1", "2", "3", "4"],
     closing_line_he:
       "פתחו את המעטפה הבאה רק אם הגעתם לרגע המתאים בחקירה. כל המסמכים כבר בקופסה — המשיכו לחקור איתם.",
-    design_brief_template:
-      `GOAL
+    design_brief_template: `GOAL
 A single sealed kraft-paper envelope, photographed flat on a neutral background. This is an in-world TASK envelope — sealed shut so the player only opens it when they reach a specific beat in the case. The envelope must look heavy and important; what's inside is an instruction, a reveal, or a task — never the next batch of evidence (all evidence documents live loose in the box from the start).
 
 OUTPUT FORMAT
@@ -248,16 +247,56 @@ Looks like an actual archival envelope from the case era — NOT a modern Canva 
     "If the user asks for a document/file from a media or marketing prompt, preserve that prompt as a first-class project asset and route real file creation through the strict document generation flow rather than silently rendering a fake fallback.",
   ],
   design_skeleton: [
-    { key: "goal", name: "GOAL", note: "What the document is and what the player should feel.", enabled: true },
-    { key: "text_quality", name: "CRITICAL TEXT QUALITY RULES", note: "Hebrew must be perfect, no gibberish, no Latin filler.", enabled: true },
-    { key: "output_format", name: "OUTPUT FORMAT", note: "Size + DPI matching print_size.", enabled: true },
+    {
+      key: "goal",
+      name: "GOAL",
+      note: "What the document is and what the player should feel.",
+      enabled: true,
+    },
+    {
+      key: "text_quality",
+      name: "CRITICAL TEXT QUALITY RULES",
+      note: "Hebrew must be perfect, no gibberish, no Latin filler.",
+      enabled: true,
+    },
+    {
+      key: "output_format",
+      name: "OUTPUT FORMAT",
+      note: "Size + DPI matching print_size.",
+      enabled: true,
+    },
     { key: "visual_style", name: "VISUAL STYLE", note: "Era, palette, paper feel.", enabled: true },
     { key: "layout", name: "LAYOUT", note: "Numbered, document-type specific.", enabled: true },
-    { key: "typography", name: "TYPOGRAPHY", note: "Fonts, weights, alignment, RTL.", enabled: true },
-    { key: "authenticity", name: "AUTHENTICITY RULES", note: "Period-correct details, no anachronisms.", enabled: true },
-    { key: "exact_hebrew", name: "EXACT HEBREW TEXT TO PLACE", note: "Mirror the Hebrew body verbatim — no paraphrasing.", enabled: true },
-    { key: "realism_details", name: "ADDITIONAL REALISM DETAILS", note: "Concrete stains, stamps, marginalia, etc.", enabled: true },
-    { key: "final_instruction", name: "FINAL INSTRUCTION", note: "One-line directive to the image model.", enabled: true },
+    {
+      key: "typography",
+      name: "TYPOGRAPHY",
+      note: "Fonts, weights, alignment, RTL.",
+      enabled: true,
+    },
+    {
+      key: "authenticity",
+      name: "AUTHENTICITY RULES",
+      note: "Period-correct details, no anachronisms.",
+      enabled: true,
+    },
+    {
+      key: "exact_hebrew",
+      name: "EXACT HEBREW TEXT TO PLACE",
+      note: "Mirror the Hebrew body verbatim — no paraphrasing.",
+      enabled: true,
+    },
+    {
+      key: "realism_details",
+      name: "ADDITIONAL REALISM DETAILS",
+      note: "Concrete stains, stamps, marginalia, etc.",
+      enabled: true,
+    },
+    {
+      key: "final_instruction",
+      name: "FINAL INSTRUCTION",
+      note: "One-line directive to the image model.",
+      enabled: true,
+    },
   ],
   doc_mode_copy: {
     drafts_label: "Drafts only — I'll generate myself",
@@ -267,23 +306,69 @@ Looks like an actual archival envelope from the case era — NOT a modern Canva 
       "Before we generate documents, jump to the Canvas → Logic Flow board and click 'Generate logic flow'. Review the clues, red herrings and final solution it proposes, edit anything you want, then click 'Approve logic'. Once that solution summary is locked in, every document I write will be consistent with it.",
   },
   catalogs: {
-    print_sizes: ["A4", "A5", "Letter", "Half-letter", "Square 15×15", "Index card 4×6", "Photo 10×15"],
+    print_sizes: [
+      "A4",
+      "A5",
+      "Letter",
+      "Half-letter",
+      "Square 15×15",
+      "Index card 4×6",
+      "Photo 10×15",
+    ],
     document_types: [
-      "memo", "letter", "report", "transcript", "newspaper", "photo",
-      "ID card", "receipt", "telegram", "police form", "bank statement",
-      "medical record", "ticket stub", "business card", "map", "diagram",
-      "cipher", "blueprint", "ransom note",
+      "memo",
+      "letter",
+      "report",
+      "transcript",
+      "newspaper",
+      "photo",
+      "ID card",
+      "receipt",
+      "telegram",
+      "police form",
+      "bank statement",
+      "medical record",
+      "ticket stub",
+      "business card",
+      "map",
+      "diagram",
+      "cipher",
+      "blueprint",
+      "ransom note",
     ],
     unusual_document_types: [
-      "hand-drawn map", "treasure-style chart", "matchbook cover", "napkin sketch",
-      "tarot card", "playing card with markings", "photo collage", "surveillance polaroid",
-      "evidence bag tag", "ship/building blueprint", "coded crossword", "torn diary page",
-      "wax-sealed letter", "microfilm strip", "punched IBM card", "morse code sheet",
-      "one-time pad page", "invisible-ink note", "lipstick mirror message", "pressed flower with note",
-      "child's crayon drawing", "annotated photograph", "shopping list with hidden cipher",
-      "fortune-cookie slip", "pawn-shop receipt with code", "concert ticket with seat-number cipher",
-      "bus transfer with handwritten time", "library checkout slip", "dry-cleaning tag",
-      "audio cassette J-card", "VHS rental sleeve", "luggage tag",
+      "hand-drawn map",
+      "treasure-style chart",
+      "matchbook cover",
+      "napkin sketch",
+      "tarot card",
+      "playing card with markings",
+      "photo collage",
+      "surveillance polaroid",
+      "evidence bag tag",
+      "ship/building blueprint",
+      "coded crossword",
+      "torn diary page",
+      "wax-sealed letter",
+      "microfilm strip",
+      "punched IBM card",
+      "morse code sheet",
+      "one-time pad page",
+      "invisible-ink note",
+      "lipstick mirror message",
+      "pressed flower with note",
+      "child's crayon drawing",
+      "annotated photograph",
+      "shopping list with hidden cipher",
+      "fortune-cookie slip",
+      "pawn-shop receipt with code",
+      "concert ticket with seat-number cipher",
+      "bus transfer with handwritten time",
+      "library checkout slip",
+      "dry-cleaning tag",
+      "audio cassette J-card",
+      "VHS rental sleeve",
+      "luggage tag",
     ],
     diversity: {
       max_share_per_family_pct: 20,
@@ -311,16 +396,87 @@ Looks like an actual archival envelope from the case era — NOT a modern Canva 
         "blueprint cyan",
       ],
       family_groups: {
-        REPORT: ["report", "autopsy report", "forensic report", "incident report", "surveillance report", "intelligence report", "police report", "lab report", "after-action report"],
-        LETTER: ["letter", "memo", "ransom note", "telegram", "postcard", "wax-sealed letter", "torn diary page"],
+        REPORT: [
+          "report",
+          "autopsy report",
+          "forensic report",
+          "incident report",
+          "surveillance report",
+          "intelligence report",
+          "police report",
+          "lab report",
+          "after-action report",
+        ],
+        LETTER: [
+          "letter",
+          "memo",
+          "ransom note",
+          "telegram",
+          "postcard",
+          "wax-sealed letter",
+          "torn diary page",
+        ],
         TRANSCRIPT: ["transcript", "interrogation transcript", "wiretap transcript", "phone log"],
-        FORM: ["police form", "intake form", "evidence bag tag", "library checkout slip", "dry-cleaning tag", "luggage tag", "bus transfer", "pawn-shop receipt"],
-        FINANCIAL: ["receipt", "bank statement", "invoice", "ledger entry", "ticket stub", "concert ticket"],
+        FORM: [
+          "police form",
+          "intake form",
+          "evidence bag tag",
+          "library checkout slip",
+          "dry-cleaning tag",
+          "luggage tag",
+          "bus transfer",
+          "pawn-shop receipt",
+        ],
+        FINANCIAL: [
+          "receipt",
+          "bank statement",
+          "invoice",
+          "ledger entry",
+          "ticket stub",
+          "concert ticket",
+        ],
         ID: ["ID card", "business card", "passport page", "press pass", "badge"],
-        MEDIA: ["photo", "photograph", "annotated photograph", "surveillance polaroid", "photo collage", "newspaper", "newspaper clipping", "microfilm strip", "audio cassette J-card", "VHS rental sleeve"],
-        MAP_DIAGRAM: ["map", "hand-drawn map", "treasure-style chart", "diagram", "blueprint", "ship/building blueprint", "floor plan"],
-        CIPHER: ["cipher", "coded crossword", "morse code sheet", "one-time pad page", "invisible-ink note", "punched IBM card", "shopping list with hidden cipher"],
-        TACTILE: ["matchbook cover", "napkin sketch", "tarot card", "playing card with markings", "child's crayon drawing", "fortune-cookie slip", "lipstick mirror message", "pressed flower with note", "wax-sealed letter"],
+        MEDIA: [
+          "photo",
+          "photograph",
+          "annotated photograph",
+          "surveillance polaroid",
+          "photo collage",
+          "newspaper",
+          "newspaper clipping",
+          "microfilm strip",
+          "audio cassette J-card",
+          "VHS rental sleeve",
+        ],
+        MAP_DIAGRAM: [
+          "map",
+          "hand-drawn map",
+          "treasure-style chart",
+          "diagram",
+          "blueprint",
+          "ship/building blueprint",
+          "floor plan",
+        ],
+        CIPHER: [
+          "cipher",
+          "coded crossword",
+          "morse code sheet",
+          "one-time pad page",
+          "invisible-ink note",
+          "punched IBM card",
+          "shopping list with hidden cipher",
+        ],
+        TACTILE: [
+          "matchbook cover",
+          "napkin sketch",
+          "tarot card",
+          "playing card with markings",
+          "child's crayon drawing",
+          "fortune-cookie slip",
+          "lipstick mirror message",
+          "pressed flower with note",
+          "wax-sealed letter",
+        ],
       },
       rules: [
         "DIVERSITY IS MANDATORY. A document set is FAILED if more than ~20% of items belong to the same family bucket (e.g. > 7 REPORTs in a 35-doc case = REJECT and rebalance). Apply this BEFORE finalising the proposal — don't propose 18 reports and call it done.",
@@ -343,7 +499,8 @@ Looks like an actual archival envelope from the case era — NOT a modern Canva 
         key: "doc0_contents",
         enabled: true,
         title_template: "Doc 0 — Contents / Case File Inventory",
-        purpose: "Player-facing master inventory of the game box. List EVERY document in the box (the player has access to all of them from the start, organized however helps them — by topic, document type, or investigative area — NOT by envelope). Then list the sealed task envelopes separately, each shown as a sealed item with its trigger condition (when to open it). No solution spoilers.",
+        purpose:
+          "Player-facing master inventory of the game box. List EVERY document in the box (the player has access to all of them from the start, organized however helps them — by topic, document type, or investigative area — NOT by envelope). Then list the sealed task envelopes separately, each shown as a sealed item with its trigger condition (when to open it). No solution spoilers.",
         doc_type: "contents checklist",
         print_size: "A4",
         list_scope: "planned",
@@ -352,12 +509,38 @@ Looks like an actual archival envelope from the case era — NOT a modern Canva 
   },
   phases: [
     { key: "setup", label: "Setup", description: "Phase 1 — gather case identity & brief." },
-    { key: "summary", label: "Summary", description: "Phase 2 — write the news-style solution summary." },
-    { key: "structure", label: "Structure", description: "Phase 3 — suspects, clues, red herrings, deduction logic, sealed task-envelope plan." },
-    { key: "documents", label: "Documents", description: "Phase 4 — generate the printable documents (all in the box from the start)." },
-    { key: "envelopes", label: "Envelopes", description: "Phase 5 — finalise sealed task-gate envelopes (opening trigger + payload per envelope)." },
-    { key: "hints", label: "Hints", description: "Phase 6 — write the graduated hint ladder per stage." },
-    { key: "packaging", label: "Packaging", description: "Phase 7 — physical box / print / fulfilment notes." },
+    {
+      key: "summary",
+      label: "Summary",
+      description: "Phase 2 — write the news-style solution summary.",
+    },
+    {
+      key: "structure",
+      label: "Structure",
+      description:
+        "Phase 3 — suspects, clues, red herrings, deduction logic, sealed task-envelope plan.",
+    },
+    {
+      key: "documents",
+      label: "Documents",
+      description: "Phase 4 — generate the printable documents (all in the box from the start).",
+    },
+    {
+      key: "envelopes",
+      label: "Envelopes",
+      description:
+        "Phase 5 — finalise sealed task-gate envelopes (opening trigger + payload per envelope).",
+    },
+    {
+      key: "hints",
+      label: "Hints",
+      description: "Phase 6 — write the graduated hint ladder per stage.",
+    },
+    {
+      key: "packaging",
+      label: "Packaging",
+      description: "Phase 7 — physical box / print / fulfilment notes.",
+    },
     { key: "done", label: "Done", description: "Project complete and ready to ship." },
   ],
   planning_depth: {
@@ -432,7 +615,12 @@ const cleanVocab = (a: unknown, fallback: CanonicalValue[]): CanonicalValue[] =>
   return out.length > 0 ? out : fallback;
 };
 
-const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 32);
+const slug = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 32);
 
 const cleanSectionList = (
   a: unknown,
@@ -466,7 +654,10 @@ const cleanPhaseList = (a: unknown, fallback: PhaseDefinition[]): PhaseDefinitio
     .map((entry) => {
       if (!entry || typeof entry !== "object") return null;
       const e = entry as Partial<PhaseDefinition>;
-      let key = String(e.key ?? "").toLowerCase().replace(/[^a-z_]/g, "").slice(0, 32);
+      let key = String(e.key ?? "")
+        .toLowerCase()
+        .replace(/[^a-z_]/g, "")
+        .slice(0, 32);
       if (!key) key = slug(String(e.label ?? ""));
       if (!key || seen.has(key)) return null;
       seen.add(key);
@@ -479,7 +670,10 @@ const cleanPhaseList = (a: unknown, fallback: PhaseDefinition[]): PhaseDefinitio
   return out.length > 0 ? out : fallback;
 };
 
-const cleanUniversalDocs = (a: unknown, fallback: UniversalDocumentDefinition[]): UniversalDocumentDefinition[] => {
+const cleanUniversalDocs = (
+  a: unknown,
+  fallback: UniversalDocumentDefinition[],
+): UniversalDocumentDefinition[] => {
   if (!Array.isArray(a)) return fallback;
   const out = a
     .map((entry) => {
@@ -528,7 +722,12 @@ export function resolvePlaybook(override: unknown): Playbook {
       ? envLabels
       : envLabels.length > envCount
         ? envLabels.slice(0, envCount)
-        : [...envLabels, ...Array.from({ length: envCount - envLabels.length }, (_, i) => String(envLabels.length + i))];
+        : [
+            ...envLabels,
+            ...Array.from({ length: envCount - envLabels.length }, (_, i) =>
+              String(envLabels.length + i),
+            ),
+          ];
   const closing_line_he = cleanString(o.envelopes?.closing_line_he, d.envelopes.closing_line_he);
   const design_brief_template = cleanString(
     o.envelopes?.design_brief_template,
@@ -567,24 +766,42 @@ export function resolvePlaybook(override: unknown): Playbook {
   };
 
   const realism = {
-    realworld_min_details: clamp(Number(o.realism?.realworld_min_details ?? d.realism.realworld_min_details), 5, 60),
-    creative_min_details: clamp(Number(o.realism?.creative_min_details ?? d.realism.creative_min_details), 1, 40),
-    creative_max_details: clamp(Number(o.realism?.creative_max_details ?? d.realism.creative_max_details), 1, 60),
+    realworld_min_details: clamp(
+      Number(o.realism?.realworld_min_details ?? d.realism.realworld_min_details),
+      5,
+      60,
+    ),
+    creative_min_details: clamp(
+      Number(o.realism?.creative_min_details ?? d.realism.creative_min_details),
+      1,
+      40,
+    ),
+    creative_max_details: clamp(
+      Number(o.realism?.creative_max_details ?? d.realism.creative_max_details),
+      1,
+      60,
+    ),
   };
   if (realism.creative_max_details < realism.creative_min_details) {
     realism.creative_max_details = realism.creative_min_details;
   }
 
   const modeRaw = String(o.doc_generation?.default_mode ?? d.doc_generation.default_mode);
-  const default_mode = (["drafts", "auto", "ask", "unset"].includes(modeRaw) ? modeRaw : "unset") as Playbook["doc_generation"]["default_mode"];
-  const outputTypeRaw = String(o.doc_generation?.output_type_default ?? d.doc_generation.output_type_default);
+  const default_mode = (
+    ["drafts", "auto", "ask", "unset"].includes(modeRaw) ? modeRaw : "unset"
+  ) as Playbook["doc_generation"]["default_mode"];
+  const outputTypeRaw = String(
+    o.doc_generation?.output_type_default ?? d.doc_generation.output_type_default,
+  );
   const doc_generation = {
     default_mode,
     ask_each_new_project: o.doc_generation?.ask_each_new_project !== false,
     direct_file_first: o.doc_generation?.direct_file_first !== false,
     strict_model_ownership: o.doc_generation?.strict_model_ownership !== false,
     save_file_prompts: o.doc_generation?.save_file_prompts !== false,
-    output_type_default: (["image", "document", "both", "ask"].includes(outputTypeRaw) ? outputTypeRaw : "ask") as Playbook["doc_generation"]["output_type_default"],
+    output_type_default: (["image", "document", "both", "ask"].includes(outputTypeRaw)
+      ? outputTypeRaw
+      : "ask") as Playbook["doc_generation"]["output_type_default"],
   };
 
   const explanations = {
@@ -595,7 +812,10 @@ export function resolvePlaybook(override: unknown): Playbook {
 
   const identity = {
     planning_language: cleanString(o.identity?.planning_language, d.identity.planning_language),
-    final_content_language: cleanString(o.identity?.final_content_language, d.identity.final_content_language),
+    final_content_language: cleanString(
+      o.identity?.final_content_language,
+      d.identity.final_content_language,
+    ),
     brand_voice: cleanString(o.identity?.brand_voice, d.identity.brand_voice),
     setting_flavor: cleanString(o.identity?.setting_flavor, d.identity.setting_flavor),
   };
@@ -607,13 +827,19 @@ export function resolvePlaybook(override: unknown): Playbook {
     drafts_label: cleanString(o.doc_mode_copy?.drafts_label, d.doc_mode_copy.drafts_label),
     auto_label: cleanString(o.doc_mode_copy?.auto_label, d.doc_mode_copy.auto_label),
     ask_label: cleanString(o.doc_mode_copy?.ask_label, d.doc_mode_copy.ask_label),
-    logic_gate_refusal: cleanString(o.doc_mode_copy?.logic_gate_refusal, d.doc_mode_copy.logic_gate_refusal),
+    logic_gate_refusal: cleanString(
+      o.doc_mode_copy?.logic_gate_refusal,
+      d.doc_mode_copy.logic_gate_refusal,
+    ),
   };
 
   const divRaw = (o.catalogs?.diversity ?? {}) as Partial<Playbook["catalogs"]["diversity"]>;
   const dDiv = d.catalogs.diversity;
   const cleanFamilyGroups = (() => {
-    const src = (divRaw.family_groups && typeof divRaw.family_groups === "object") ? divRaw.family_groups : null;
+    const src =
+      divRaw.family_groups && typeof divRaw.family_groups === "object"
+        ? divRaw.family_groups
+        : null;
     if (!src) return dDiv.family_groups;
     const out: Record<string, string[]> = {};
     for (const [k, v] of Object.entries(src)) {
@@ -623,10 +849,14 @@ export function resolvePlaybook(override: unknown): Playbook {
     }
     return Object.keys(out).length > 0 ? out : dDiv.family_groups;
   })();
-  const num = (v: unknown, fb: number) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : fb);
+  const num = (v: unknown, fb: number) =>
+    typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : fb;
   const catalogs = {
     print_sizes: cleanStringArray(o.catalogs?.print_sizes, d.catalogs.print_sizes).slice(0, 24),
-    document_types: cleanStringArray(o.catalogs?.document_types, d.catalogs.document_types).slice(0, 60),
+    document_types: cleanStringArray(o.catalogs?.document_types, d.catalogs.document_types).slice(
+      0,
+      60,
+    ),
     unusual_document_types: cleanStringArray(
       o.catalogs?.unusual_document_types,
       d.catalogs.unusual_document_types,
@@ -659,13 +889,14 @@ export function resolvePlaybook(override: unknown): Playbook {
     pdRaw?.default === "express" || pdRaw?.default === "deep" || pdRaw?.default === "guided"
       ? pdRaw.default
       : d.planning_depth.default;
-  const expressFill = (pdRaw?.express?.auto_fill_defaults && typeof pdRaw.express.auto_fill_defaults === "object")
-    ? Object.fromEntries(
-        Object.entries(pdRaw.express.auto_fill_defaults)
-          .filter(([k, v]) => typeof k === "string" && typeof v === "string")
-          .map(([k, v]) => [k, String(v)])
-      )
-    : d.planning_depth.express.auto_fill_defaults;
+  const expressFill =
+    pdRaw?.express?.auto_fill_defaults && typeof pdRaw.express.auto_fill_defaults === "object"
+      ? Object.fromEntries(
+          Object.entries(pdRaw.express.auto_fill_defaults)
+            .filter(([k, v]) => typeof k === "string" && typeof v === "string")
+            .map(([k, v]) => [k, String(v)]),
+        )
+      : d.planning_depth.express.auto_fill_defaults;
   const planning_depth = {
     default: defaultDepth,
     express: {
@@ -713,9 +944,7 @@ export function renderHintsLine(p: Playbook): string {
 }
 
 export function renderHintsSystemBlock(p: Playbook): string {
-  const ladder = p.hints.ladder_labels
-    .map((label, i) => `  Level ${i + 1} — ${label}`)
-    .join("\n");
+  const ladder = p.hints.ladder_labels.map((label, i) => `  Level ${i + 1} — ${label}`).join("\n");
   return `HINT SYSTEM (Phase 5/6 — read carefully)
 Each "stage" represents ONE moment in the player's solving journey where they get stuck (a specific clue, deduction, or envelope task). For every stage you write a graduated ladder of ${p.hints.per_stage} Hebrew hints, escalating from a soft nudge to a near-spoiler:
 ${ladder}
@@ -741,18 +970,16 @@ ${p.envelopes.design_brief_template}`;
 export function renderPhase1OrderSentence(p: Playbook): string {
   const enabled = p.phase1_setup.order.filter((s) => s.enabled);
   const parts = enabled.map((s) =>
-    s.key === "titles" ? `${p.phase1_setup.title_options_count} numbered Hebrew title options` : s.label.toLowerCase(),
+    s.key === "titles"
+      ? `${p.phase1_setup.title_options_count} numbered Hebrew title options`
+      : s.label.toLowerCase(),
   );
   return `Phase 1 Setup: ${parts.join(" → ")}. Save game language to game_language before writing final in-game content. For Hard games discuss an "extra selling point" (physical artifact, USB puzzle, coded insert, etc.).`;
 }
 
 export function renderCanonicalVocabBlock(p: Playbook): string {
   const fmt = (list: CanonicalValue[]) => list.map((v) => v.value).join(", ");
-  const examples = [
-    ...p.vocab.mystery_type,
-    ...p.vocab.genre,
-    ...p.vocab.difficulty,
-  ]
+  const examples = [...p.vocab.mystery_type, ...p.vocab.genre, ...p.vocab.difficulty]
     .flatMap((v) => v.synonyms.map((syn) => `  "${syn}" → "${v.value}"`))
     .slice(0, 12)
     .join("\n");
@@ -837,13 +1064,18 @@ export function renderLanguagesBlock(p: Playbook): string {
 export function renderUniversalDocumentsBlock(p: Playbook): string {
   const docs = p.universal_documents.docs
     .filter((d) => d.enabled)
-    .map((d, i) => `${i + 1}. ${d.title_template} (${d.doc_type}, ${d.print_size}) — ${d.purpose} List scope: ${d.list_scope}.`)
+    .map(
+      (d, i) =>
+        `${i + 1}. ${d.title_template} (${d.doc_type}, ${d.print_size}) — ${d.purpose} List scope: ${d.list_scope}.`,
+    )
     .join("\n");
   return `UNIVERSAL DOCUMENTS (apply to every game)\nDoc 0 enabled: ${p.universal_documents.doc0_enabled ? "yes" : "no"}.\n${docs || "No universal documents enabled."}`;
 }
 
 export function renderPhaseEnumComment(p: Playbook): string {
-  const lines = p.phases.map((ph) => `  • ${ph.key} — ${ph.label}${ph.description ? `: ${ph.description}` : ""}`).join("\n");
+  const lines = p.phases
+    .map((ph) => `  • ${ph.key} — ${ph.label}${ph.description ? `: ${ph.description}` : ""}`)
+    .join("\n");
   return `PHASES (the \`phase\` field on update_project must be one of these keys):\n${lines}`;
 }
 
@@ -853,7 +1085,10 @@ export function getPhaseEnum(p: Playbook): string[] {
 
 // ---------- Planning depth ----------
 
-export function normalizePlanningDepth(value: unknown, fallback: PlanningDepth = "guided"): PlanningDepth {
+export function normalizePlanningDepth(
+  value: unknown,
+  fallback: PlanningDepth = "guided",
+): PlanningDepth {
   if (value === "express" || value === "guided" || value === "deep") return value;
   return fallback;
 }
@@ -863,7 +1098,8 @@ export function renderPlanningDepthBlock(
   p: Playbook,
   prevDepth?: PlanningDepth | null,
 ): string {
-  const effectivePrevDepth = prevDepth ?? (depth !== p.planning_depth.default ? p.planning_depth.default : null);
+  const effectivePrevDepth =
+    prevDepth ?? (depth !== p.planning_depth.default ? p.planning_depth.default : null);
   const depthJustChanged = !!effectivePrevDepth && effectivePrevDepth !== depth;
   const changeNotice = depthJustChanged
     ? `🔁 DEPTH CHANGE NOTICE — the user just flipped the Depth selector from "${effectivePrevDepth}" to "${depth}" mid-conversation. Your previous assistant turn was written under the OLD depth ("${effectivePrevDepth}") and is now STALE.
@@ -876,12 +1112,16 @@ On THIS turn you MUST:
 
 `
     : "";
-  const header = changeNotice + `The current PLANNING DEPTH is "${depth}". This value comes from the **Depth selector** in the Assistant header — it is the single source of truth. NEVER ask the user "how deep should we plan?" and NEVER call propose_options for depth choices; the selector already answered. If the user explicitly picks a depth in chat anyway ("Express", "Guided", or "Deep Dive"), immediately call update_project({planning_depth: ...}) before doing anything else so the header selector stays synchronized. The user may flip the selector to a different depth at ANY point during the build (Phase 1, 2, 3, mid-document, anywhere). When they do, the next system prompt arrives with a 🔁 DEPTH CHANGE NOTICE — adopt it immediately on your next turn without re-asking, without restarting earlier work, and without prompting them to confirm. Preserve everything already approved (case identity, summary, suspects, logic flow, document proposals) and just adjust how much you ask going forward.\n\n`;
+  const header =
+    changeNotice +
+    `The current PLANNING DEPTH is "${depth}". This value comes from the **Depth selector** in the Assistant header — it is the single source of truth. NEVER ask the user "how deep should we plan?" and NEVER call propose_options for depth choices; the selector already answered. If the user explicitly picks a depth in chat anyway ("Express", "Guided", or "Deep Dive"), immediately call update_project({planning_depth: ...}) before doing anything else so the header selector stays synchronized. The user may flip the selector to a different depth at ANY point during the build (Phase 1, 2, 3, mid-document, anywhere). When they do, the next system prompt arrives with a 🔁 DEPTH CHANGE NOTICE — adopt it immediately on your next turn without re-asking, without restarting earlier work, and without prompting them to confirm. Preserve everything already approved (case identity, summary, suspects, logic flow, document proposals) and just adjust how much you ask going forward.\n\n`;
   if (depth === "express") {
     const fills = Object.entries(p.planning_depth.express.auto_fill_defaults)
       .map(([k, v]) => `      ${k} = ${v}`)
       .join("\n");
-    return header + `PLANNING DEPTH = EXPRESS (the user wants the AI to plan everything, ask almost nothing)
+    return (
+      header +
+      `PLANNING DEPTH = EXPRESS (the user wants the AI to plan everything, ask almost nothing)
 
 There are TWO sub-cases — pick the one that matches CURRENT PROJECT STATE:
 
@@ -912,11 +1152,16 @@ SUB-CASE B — EXPRESS MID-BUILD (project.title is already a real title — swit
 ═══════════════════════════════════════════════════════════════════
 APPLIES TO BOTH SUB-CASES:
 - Do NOT ask the user about: player_role, case_goal, setting, selling_point, mystery_type, genre, year, difficulty, suspects' motives, suspects' secrets, contradictions, red herrings, clue-by-clue reasoning, or anything else. The user has explicitly chosen to skip these questions.
-- The user may still volunteer extra info — if they do, persist it via update_project and continue.`;
+- The user may still volunteer extra info — if they do, persist it via update_project and continue.`
+    );
   }
   if (depth === "deep") {
-    const probes = p.planning_depth.deep.extra_probes.map((x) => `  - ${x.replaceAll("_", " ")}`).join("\n");
-    return header + `PLANNING DEPTH = DEEP DIVE (the user wants to plan thoroughly with lots of detail)
+    const probes = p.planning_depth.deep.extra_probes
+      .map((x) => `  - ${x.replaceAll("_", " ")}`)
+      .join("\n");
+    return (
+      header +
+      `PLANNING DEPTH = DEEP DIVE (the user wants to plan thoroughly with lots of detail)
 - Use the FULL Phase 1 setup ladder (one question per turn, propose_options where applicable). Do not skip any setup field.
 - During Phase 2 / Phase 3 (summary + structure), interrogate the case in depth. For each of these probes, ask a separate question and capture the answer:
 ${probes}
@@ -924,14 +1169,18 @@ ${probes}
 - For every clue: confirm out loud what it proves, what it eliminates, and what red herring (if any) it counters.
 - Before moving from Phase 3 to Phase 3.5 (Logic Flow), summarise the deduction chain in prose and ask the user to confirm "yes, generate the Logic Flow" or "wait, I want to revise X".
 - Take more turns. The user picked Deep Dive precisely to be asked these questions — do NOT shortcut them.
-- IF SWITCHING INTO DEEP DIVE MID-BUILD: do NOT re-litigate already-approved fields from CURRENT PROJECT STATE. Only open up deeper probes for the phase you're currently on or the next one ahead.`;
+- IF SWITCHING INTO DEEP DIVE MID-BUILD: do NOT re-litigate already-approved fields from CURRENT PROJECT STATE. Only open up deeper probes for the phase you're currently on or the next one ahead.`
+    );
   }
   // guided (default)
   const ask = p.planning_depth.guided.ask_steps.join(", ");
-  return header + `PLANNING DEPTH = GUIDED (default — basic questions only)
+  return (
+    header +
+    `PLANNING DEPTH = GUIDED (default — basic questions only)
 - During Phase 1, ask only the basics IN THIS ORDER, ONE QUESTION PER TURN: ${ask}.
 - Skip player_role, case_goal, setting, selling_point unless the user volunteers them in their own message. If they're missing when Phase 1 ends, fill them silently with sensible defaults via update_project — do NOT ask.
 - After the year/setting question, propose generating the Logic Flow with propose_options ("Generate Logic Flow now" / "Add a player role first" / "Add a case goal first"). Default to generating immediately.
 - During Phase 3 (Structure), ask high-level questions only — name + role for each suspect, the murder weapon, the location. Do NOT ask separately about motives / secrets / contradictions per suspect (Deep Dive does that).
-- IF SWITCHING INTO GUIDED MID-BUILD: simply resume basics-only questioning for whatever phase is currently in progress. Do NOT restart Phase 1 if it's already complete; pick up from the next unanswered basic question (or from Phase 2/3 if Phase 1 is done).`;
+- IF SWITCHING INTO GUIDED MID-BUILD: simply resume basics-only questioning for whatever phase is currently in progress. Do NOT restart Phase 1 if it's already complete; pick up from the next unanswered basic question (or from Phase 2/3 if Phase 1 is done).`
+  );
 }
