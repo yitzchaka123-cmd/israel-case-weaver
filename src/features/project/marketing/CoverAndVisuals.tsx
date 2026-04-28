@@ -298,6 +298,8 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
         if (!result.ok) {
           toast.error(result.error ?? "Could not start image generation", { duration: 10000 });
           if (extraOutputType === "image") return;
+        } else if (result.jobId) {
+          batch?.start([result.jobId], newTitle || "Marketing image");
         }
       }
       if (extraOutputType === "document" || extraOutputType === "both") {
