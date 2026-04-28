@@ -6,10 +6,40 @@ import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Label } from "@/components/ui/label";
-import { Sparkles, Send, Loader2, Bot, User, Wand2, CheckCircle2, Cpu, Image as ImageIcon, FileText, Settings2, Video, ChevronRight, ExternalLink, AlertCircle, Mic, MicOff, Sliders, Pencil, X, Check, Copy, Brain } from "lucide-react";
+import {
+  Sparkles,
+  Send,
+  Loader2,
+  Bot,
+  User,
+  Wand2,
+  CheckCircle2,
+  Cpu,
+  Image as ImageIcon,
+  FileText,
+  Settings2,
+  Video,
+  ChevronRight,
+  ExternalLink,
+  AlertCircle,
+  Mic,
+  MicOff,
+  Sliders,
+  Pencil,
+  X,
+  Check,
+  Copy,
+  Brain,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useVoiceInput } from "@/hooks/use-voice-input";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
@@ -66,6 +96,35 @@ type ToolCall = {
 };
 
 type QuickOption = { label: string; send: string };
+type PlanningDepth = "express" | "guided" | "deep";
+
+const PLANNING_DEPTH_LABELS: Record<PlanningDepth, string> = {
+  express: "⚡ Express",
+  guided: "🎯 Guided",
+  deep: "🔬 Deep Dive",
+};
+
+const PLANNING_DEPTH_DESCRIPTIONS: Record<PlanningDepth, string> = {
+  express: "I’ll plan everything and ask almost nothing after the title",
+  guided: "I’ll ask only the core setup questions",
+  deep: "I’ll walk through the case in detail",
+};
+
+function detectPlanningDepthChoice(text: string): PlanningDepth | null {
+  const s = text.trim().toLowerCase();
+  if (!s) return null;
+  if (/^(⚡\s*)?express\b/.test(s) || /\bchoose\s+express\b/.test(s) || /you plan it all/.test(s))
+    return "express";
+  if (/^(🎯\s*)?guided\b/.test(s) || /\bchoose\s+guided\b/.test(s) || /ask me the basics/.test(s))
+    return "guided";
+  if (
+    /^(🔬\s*)?(deep\s*dive|deep)\b/.test(s) ||
+    /\bchoose\s+deep\b/.test(s) ||
+    /walk me through every detail/.test(s)
+  )
+    return "deep";
+  return null;
+}
 
 type ReasoningSegment = { type: "thinking" | "summary"; text: string };
 type ReasoningRound = { round: number; segments: ReasoningSegment[] };
@@ -76,7 +135,18 @@ type Msg = {
   id: string;
   role: "user" | "assistant";
   content: string;
-  metadata?: { tools?: ToolCall[]; options?: QuickOption[]; question?: string | null; model?: string | null; effective_model?: string | null; fallback?: string | null; in_progress?: boolean | null; stage?: string | null; stage_history?: StageEvent[] | null; reasoning?: ReasoningRound[] | null } | null;
+  metadata?: {
+    tools?: ToolCall[];
+    options?: QuickOption[];
+    question?: string | null;
+    model?: string | null;
+    effective_model?: string | null;
+    fallback?: string | null;
+    in_progress?: boolean | null;
+    stage?: string | null;
+    stage_history?: StageEvent[] | null;
+    reasoning?: ReasoningRound[] | null;
+  } | null;
   created_at?: string;
 };
 
@@ -97,7 +167,15 @@ const STARTERS = [
   "Draft the suspect list and deduction structure.",
 ];
 
-export function AssistantSection({ projectId, phase, focusMessageId }: { projectId: string; phase: string; focusMessageId?: string | null }) {
+export function AssistantSection({
+  projectId,
+  phase,
+  focusMessageId,
+}: {
+  projectId: string;
+  phase: string;
+  focusMessageId?: string | null;
+}) {
   const qc = useQueryClient();
   const { user } = useAuth();
   const [input, setInput] = useState("");
@@ -111,7 +189,11 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     queryKey: ["assistant-tweaks-count", user?.id],
     queryFn: async () => {
       if (!user) return 0;
-      const { data } = await supabase.from("profiles").select("assistant_tweaks").eq("id", user.id).maybeSingle();
+      const { data } = await supabase
+        .from("profiles")
+        .select("assistant_tweaks")
+        .eq("id", user.id)
+        .maybeSingle();
       const raw = (data as { assistant_tweaks?: unknown } | null)?.assistant_tweaks;
       return Array.isArray(raw) ? raw.length : 0;
     },
@@ -144,7 +226,9 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     queryFn: async () => {
       const { data, error } = await supabase
         .from("projects")
-        .select("ai_provider_planning, ai_provider_images, image_prompt_instructions, video_prompt_instructions, planning_depth, ai_reasoning_effort, logic_approved_at, solution_summary")
+        .select(
+          "ai_provider_planning, ai_provider_images, image_prompt_instructions, video_prompt_instructions, planning_depth, ai_reasoning_effort, logic_approved_at, solution_summary",
+        )
         .eq("id", projectId)
         .single();
       if (error) throw error;
@@ -199,11 +283,16 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
 
   const planningModel = project?.ai_provider_planning ?? "openai-5.2";
   const imageModel = project?.ai_provider_images ?? "nano-banana-2";
-  const planningDepth = (project?.planning_depth ?? "guided") as "express" | "guided" | "deep";
+  const planningDepth = (project?.planning_depth ?? "guided") as PlanningDepth;
   // Fast vs Thinking: stored as the existing project.ai_reasoning_effort column.
   // "none" = ⚡ Fast (no reasoning budget), anything else = 🧠 Thinking. New
   // projects default to "high" so the assistant starts in deep-reasoning mode.
-  const reasoningEffort = (project?.ai_reasoning_effort ?? "high") as "none" | "low" | "medium" | "high" | "xhigh";
+  const reasoningEffort = (project?.ai_reasoning_effort ?? "high") as
+    | "none"
+    | "low"
+    | "medium"
+    | "high"
+    | "xhigh";
   const reasoningMode: "fast" | "thinking" = reasoningEffort === "none" ? "fast" : "thinking";
   const { hidden: hiddenModels } = useHiddenModels();
   const visiblePlanningModels = filterModelOptions(PLANNING_MODELS, hiddenModels, planningModel);
@@ -214,7 +303,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     ai_provider_images?: string;
     image_prompt_instructions?: string;
     video_prompt_instructions?: string;
-    planning_depth?: "express" | "guided" | "deep";
+    planning_depth?: PlanningDepth;
     ai_reasoning_effort?: "none" | "low" | "medium" | "high" | "xhigh";
   }) => {
     // .select() forces PostgREST to return the affected row so we can detect
@@ -234,15 +323,18 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
       return;
     }
     if (!data) {
-      console.error("[setProjectAi] update returned no rows (RLS or wrong id)", { projectId, patch });
+      console.error("[setProjectAi] update returned no rows (RLS or wrong id)", {
+        projectId,
+        patch,
+      });
       toast.error("Couldn't save — no row was updated. Check your access.");
       return;
     }
-    if (patch.planning_depth) {
-      const labels = { express: "⚡ Express", guided: "🎯 Guided", deep: "🔬 Deep Dive" } as const;
-      toast.success(`Depth set to ${labels[patch.planning_depth]} — the assistant will adopt it on its next reply.`);
-    }
+    if (patch.planning_depth)
+      toast.success(`Depth set to ${PLANNING_DEPTH_LABELS[patch.planning_depth]}`);
     qc.invalidateQueries({ queryKey: ["project-ai", projectId] });
+    qc.invalidateQueries({ queryKey: ["project", projectId] });
+    return data;
   };
 
   const { data: messages = [] } = useQuery<Msg[]>({
@@ -264,7 +356,12 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
       .channel(`chat-${projectId}-${Math.random().toString(36).slice(2, 8)}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "chat_messages", filter: `project_id=eq.${projectId}` },
+        {
+          event: "*",
+          schema: "public",
+          table: "chat_messages",
+          filter: `project_id=eq.${projectId}`,
+        },
         () => qc.invalidateQueries({ queryKey: ["chat", projectId] }),
       )
       .subscribe();
@@ -349,7 +446,9 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
         setHighlightedId(focusMessageId);
         window.setTimeout(() => setHighlightedId(null), 2400);
         // Release the auto-scroll lock a bit after the smooth-scroll completes.
-        window.setTimeout(() => { focusInFlightRef.current = false; }, 800);
+        window.setTimeout(() => {
+          focusInFlightRef.current = false;
+        }, 800);
         return;
       }
       attempts += 1;
@@ -377,9 +476,43 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     return () => window.removeEventListener("mystudio:assistant-prompt", handler as EventListener);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, messages, sending]);
+  const announceDepthChange = async (nextDepth: PlanningDepth, previousDepth = planningDepth) => {
+    const text = `Got it — switching from ${PLANNING_DEPTH_LABELS[previousDepth]} to ${PLANNING_DEPTH_LABELS[nextDepth]}. From now on ${PLANNING_DEPTH_DESCRIPTIONS[nextDepth]}.`;
+    await supabase.from("chat_messages").insert({
+      project_id: projectId,
+      role: "assistant",
+      content: text,
+      metadata: { options: [], question: null, depth_change_ack: true, in_progress: false },
+    });
+    qc.invalidateQueries({ queryKey: ["chat", projectId] });
+  };
+
+  const changePlanningDepth = async (nextDepth: PlanningDepth, source: "header" | "chat") => {
+    const previousDepth = planningDepth;
+    const saved = await setProjectAi({ planning_depth: nextDepth });
+    if (!saved) return false;
+    if (source === "header") {
+      await supabase
+        .from("projects")
+        .update({ last_seen_planning_depth: nextDepth })
+        .eq("id", projectId);
+    }
+    qc.setQueryData(["project-ai", projectId], (current: typeof project | undefined) =>
+      current ? { ...current, planning_depth: nextDepth } : current,
+    );
+    if (source === "header" && nextDepth !== previousDepth)
+      await announceDepthChange(nextDepth, previousDepth);
+    return true;
+  };
+
   const send = async (text: string, baseMessages?: Msg[]) => {
     const content = text.trim();
     if (!content) return;
+    const depthChoice = detectPlanningDepthChoice(content);
+    if (depthChoice) {
+      const changed = await changePlanningDepth(depthChoice, "chat");
+      if (!changed) return;
+    }
     setInput("");
     const source = baseMessages ?? messages;
     // Trim to the last 16 turns. The server prompt re-renders fresh project
@@ -452,8 +585,8 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
                   state === "active"
                     ? "bg-accent/10 text-foreground border border-accent/20"
                     : state === "done"
-                    ? "text-muted-foreground"
-                    : "text-muted-foreground/70"
+                      ? "text-muted-foreground"
+                      : "text-muted-foreground/70"
                 }`}
               >
                 <div
@@ -461,8 +594,8 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
                     state === "active"
                       ? "bg-accent text-accent-foreground"
                       : state === "done"
-                      ? "bg-muted text-foreground"
-                      : "bg-muted/50"
+                        ? "bg-muted text-foreground"
+                        : "bg-muted/50"
                   }`}
                 >
                   {state === "done" ? <CheckCircle2 className="h-3.5 w-3.5" /> : i + 1}
@@ -473,7 +606,8 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
           })}
         </div>
         <div className="p-3 border-t text-[11px] text-muted-foreground leading-relaxed">
-          The assistant writes directly to your project — suspects, documents and canvas nodes update live as they're approved.
+          The assistant writes directly to your project — suspects, documents and canvas nodes
+          update live as they're approved.
         </div>
       </aside>
 
@@ -486,19 +620,29 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
           </div>
           <div className="flex items-center gap-2">
             <span className="text-[11px] text-muted-foreground">Chat</span>
-            <Select value={planningModel} onValueChange={(v) => setProjectAi({ ai_provider_planning: v })}>
-              <SelectTrigger className="h-8 text-xs w-[210px]"><SelectValue /></SelectTrigger>
+            <Select
+              value={planningModel}
+              onValueChange={(v) => setProjectAi({ ai_provider_planning: v })}
+            >
+              <SelectTrigger className="h-8 text-xs w-[210px]">
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 {visiblePlanningModels.map((m) => {
                   if ((m as { header?: boolean }).header) {
                     return (
-                      <div key={m.value} className="px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      <div
+                        key={m.value}
+                        className="px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+                      >
                         {m.label}
                       </div>
                     );
                   }
                   return (
-                    <SelectItem key={m.value} value={m.value} className="text-xs">{m.label}</SelectItem>
+                    <SelectItem key={m.value} value={m.value} className="text-xs">
+                      {m.label}
+                    </SelectItem>
                   );
                 })}
               </SelectContent>
@@ -507,23 +651,44 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
           <div className="flex items-center gap-2">
             <ImageIcon className="h-3 w-3 text-muted-foreground" />
             <span className="text-[11px] text-muted-foreground">Images</span>
-            <Select value={imageModel} onValueChange={(v) => setProjectAi({ ai_provider_images: v })}>
-              <SelectTrigger className="h-8 text-xs w-[260px]"><SelectValue /></SelectTrigger>
+            <Select
+              value={imageModel}
+              onValueChange={(v) => setProjectAi({ ai_provider_images: v })}
+            >
+              <SelectTrigger className="h-8 text-xs w-[260px]">
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 {visibleImageModels.map((m) => (
-                  <SelectItem key={m.value} value={m.value} className="text-xs">{m.label}</SelectItem>
+                  <SelectItem key={m.value} value={m.value} className="text-xs">
+                    {m.label}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-center gap-2" title="Express = ask only the title and auto-fill the rest. Guided = basics only. Deep Dive = walk through every detail.">
+          <div
+            className="flex items-center gap-2"
+            title="Express = ask only the title and auto-fill the rest. Guided = basics only. Deep Dive = walk through every detail."
+          >
             <span className="text-[11px] text-muted-foreground">Depth</span>
-            <Select value={planningDepth} onValueChange={(v) => setProjectAi({ planning_depth: v as "express" | "guided" | "deep" })}>
-              <SelectTrigger className="h-8 text-xs w-[170px]"><SelectValue /></SelectTrigger>
+            <Select
+              value={planningDepth}
+              onValueChange={(v) => void changePlanningDepth(v as PlanningDepth, "header")}
+            >
+              <SelectTrigger className="h-8 text-xs w-[170px]">
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
-                <SelectItem value="express" className="text-xs">⚡ Express</SelectItem>
-                <SelectItem value="guided" className="text-xs">🎯 Guided (default)</SelectItem>
-                <SelectItem value="deep" className="text-xs">🔬 Deep Dive</SelectItem>
+                <SelectItem value="express" className="text-xs">
+                  ⚡ Express
+                </SelectItem>
+                <SelectItem value="guided" className="text-xs">
+                  🎯 Guided (default)
+                </SelectItem>
+                <SelectItem value="deep" className="text-xs">
+                  🔬 Deep Dive
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -583,124 +748,136 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
           )}
         </div>
         <div className="flex-1 relative">
-        {hasNewBelow && !isAtBottom && (
-          <button
-            type="button"
-            onClick={jumpToLatest}
-            className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary text-primary-foreground shadow-pop px-3 py-1.5 text-xs font-medium hover:bg-primary/90 transition-colors"
-            title="Jump to the latest assistant message"
-          >
-            ↓ Jump to latest
-          </button>
-        )}
-        <div ref={scrollRef} className="absolute inset-0 overflow-auto">
-          <div className="max-w-3xl mx-auto px-6 py-8 space-y-6">
-            {messages.length === 0 && (
-              <div className="text-center py-12">
-                <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-brand shadow-glow mb-5">
-                  <Wand2 className="h-6 w-6 text-white" />
-                </div>
-                <h2 className="font-display text-3xl">Mystery Studio Assistant</h2>
-                <p className="mt-2 text-muted-foreground max-w-md mx-auto">
-                  I'll guide you phase by phase through creating a premium Israeli mystery game. Everything I create updates your project instantly.
-                </p>
-                <div className="mt-8 grid sm:grid-cols-2 gap-2.5 text-left">
-                  {STARTERS.map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => send(s)}
-                      className="rounded-lg border bg-surface hover:bg-muted/60 transition-colors p-4 text-sm text-left"
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {messages.map((m, idx) => {
-              const hidden = isHiddenAssistantPlaceholder(m);
-              if (hidden) return null;
-              const isLastVisible = messages.slice(idx + 1).every(isHiddenAssistantPlaceholder);
-              return (
-                <MessageBubble
-                  key={m.id}
-                  msg={m}
-                  isLast={isLastVisible}
-                  onPickOption={(text) => send(text)}
-                  onEdit={(newText) => editAndResend(m.id, newText)}
-                  disabled={sending}
-                  highlighted={m.id === highlightedId}
-                  onOpenAsset={setLightbox}
-                />
-              );
-            })}
-
-            {sending && (() => {
-              // Find the most recent in-progress assistant placeholder. The
-              // edge function streams `stage`, `stage_history`, `tools` and
-              // accumulated `reasoning` into its metadata between rounds via
-              // realtime UPDATE on chat_messages, so this bubble shows live
-              // thinking/tool activity instead of a silent spinner.
-              const inFlight = [...messages].reverse().find((m) => m.role === "assistant" && m.metadata?.in_progress);
-              const stage = inFlight?.metadata?.stage ?? null;
-              const liveTools = inFlight?.metadata?.tools ?? [];
-              const liveReasoning = inFlight?.metadata?.reasoning ?? [];
-              const stageHistory = inFlight?.metadata?.stage_history ?? [];
-              const liveMsgId = inFlight?.id ?? "pending";
-              return (
-                <div className="flex gap-3 items-start">
-                  <Avatar role="assistant" />
-                  <div className="flex-1 pt-1.5 space-y-2">
-                    <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      <span className="inline-flex items-center gap-1.5">
-                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
-                        {stage ? stage : "Starting…"}
-                      </span>
-                    </div>
-                    <ThinkingDisclosure
-                      key={liveMsgId}
-                      msgId={liveMsgId}
-                      reasoning={liveReasoning}
-                      stageHistory={stageHistory}
-                      live
-                      defaultOpen
-                    />
-                    {liveTools.length > 0 && (
-                      <ToolReceipts tools={liveTools} onOpenAsset={setLightbox} />
-                    )}
+          {hasNewBelow && !isAtBottom && (
+            <button
+              type="button"
+              onClick={jumpToLatest}
+              className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-1.5 rounded-full border border-primary/40 bg-primary text-primary-foreground shadow-pop px-3 py-1.5 text-xs font-medium hover:bg-primary/90 transition-colors"
+              title="Jump to the latest assistant message"
+            >
+              ↓ Jump to latest
+            </button>
+          )}
+          <div ref={scrollRef} className="absolute inset-0 overflow-auto">
+            <div className="max-w-3xl mx-auto px-6 py-8 space-y-6">
+              {messages.length === 0 && (
+                <div className="text-center py-12">
+                  <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-brand shadow-glow mb-5">
+                    <Wand2 className="h-6 w-6 text-white" />
+                  </div>
+                  <h2 className="font-display text-3xl">Mystery Studio Assistant</h2>
+                  <p className="mt-2 text-muted-foreground max-w-md mx-auto">
+                    I'll guide you phase by phase through creating a premium Israeli mystery game.
+                    Everything I create updates your project instantly.
+                  </p>
+                  <div className="mt-8 grid sm:grid-cols-2 gap-2.5 text-left">
+                    {STARTERS.map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => send(s)}
+                        className="rounded-lg border bg-surface hover:bg-muted/60 transition-colors p-4 text-sm text-left"
+                      >
+                        {s}
+                      </button>
+                    ))}
                   </div>
                 </div>
-              );
-            })()}
+              )}
+
+              {messages.map((m, idx) => {
+                const hidden = isHiddenAssistantPlaceholder(m);
+                if (hidden) return null;
+                const isLastVisible = messages.slice(idx + 1).every(isHiddenAssistantPlaceholder);
+                return (
+                  <MessageBubble
+                    key={m.id}
+                    msg={m}
+                    isLast={isLastVisible}
+                    onPickOption={(text) => send(text)}
+                    onEdit={(newText) => editAndResend(m.id, newText)}
+                    disabled={sending}
+                    highlighted={m.id === highlightedId}
+                    onOpenAsset={setLightbox}
+                  />
+                );
+              })}
+
+              {sending &&
+                (() => {
+                  // Find the most recent in-progress assistant placeholder. The
+                  // edge function streams `stage`, `stage_history`, `tools` and
+                  // accumulated `reasoning` into its metadata between rounds via
+                  // realtime UPDATE on chat_messages, so this bubble shows live
+                  // thinking/tool activity instead of a silent spinner.
+                  const inFlight = [...messages]
+                    .reverse()
+                    .find((m) => m.role === "assistant" && m.metadata?.in_progress);
+                  const stage = inFlight?.metadata?.stage ?? null;
+                  const liveTools = inFlight?.metadata?.tools ?? [];
+                  const liveReasoning = inFlight?.metadata?.reasoning ?? [];
+                  const stageHistory = inFlight?.metadata?.stage_history ?? [];
+                  const liveMsgId = inFlight?.id ?? "pending";
+                  return (
+                    <div className="flex gap-3 items-start">
+                      <Avatar role="assistant" />
+                      <div className="flex-1 pt-1.5 space-y-2">
+                        <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="inline-block h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
+                            {stage ? stage : "Starting…"}
+                          </span>
+                        </div>
+                        <ThinkingDisclosure
+                          key={liveMsgId}
+                          msgId={liveMsgId}
+                          reasoning={liveReasoning}
+                          stageHistory={stageHistory}
+                          live
+                          defaultOpen
+                        />
+                        {liveTools.length > 0 && (
+                          <ToolReceipts tools={liveTools} onOpenAsset={setLightbox} />
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+            </div>
           </div>
-        </div>
         </div>
 
         {/* Composer */}
         <div className="border-t bg-surface/60 backdrop-blur">
-          {!project?.logic_approved_at && project?.solution_summary?.trim() && (logicNodeCount ?? 0) > 0 && (
-            <div className="max-w-3xl mx-auto px-6 pt-3">
-              <div className="flex items-center gap-3 rounded-lg border border-accent/30 bg-accent/10 px-3 py-2">
-                <CheckCircle2 className="h-4 w-4 text-accent shrink-0" />
-                <div className="flex-1 text-xs text-foreground/80">
-                  A solution summary is saved. Approve it to unlock document generation.
+          {!project?.logic_approved_at &&
+            project?.solution_summary?.trim() &&
+            (logicNodeCount ?? 0) > 0 && (
+              <div className="max-w-3xl mx-auto px-6 pt-3">
+                <div className="flex items-center gap-3 rounded-lg border border-accent/30 bg-accent/10 px-3 py-2">
+                  <CheckCircle2 className="h-4 w-4 text-accent shrink-0" />
+                  <div className="flex-1 text-xs text-foreground/80">
+                    A solution summary is saved. Approve it to unlock document generation.
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={approveLogicFromAssistant}
+                    disabled={sending}
+                    className="h-8 gap-1.5"
+                  >
+                    {sending ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                    )}
+                    Approve logic
+                  </Button>
                 </div>
-                <Button
-                  size="sm"
-                  onClick={approveLogicFromAssistant}
-                  disabled={sending}
-                  className="h-8 gap-1.5"
-                >
-                  {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                  Approve logic
-                </Button>
               </div>
-            </div>
-          )}
+            )}
           <div className="max-w-3xl mx-auto px-6 py-4">
-            <div className={`relative rounded-xl border bg-background shadow-sm focus-within:ring-2 focus-within:ring-accent/30 transition ${voice.listening ? "ring-2 ring-destructive/40" : ""}`}>
+            <div
+              className={`relative rounded-xl border bg-background shadow-sm focus-within:ring-2 focus-within:ring-accent/30 transition ${voice.listening ? "ring-2 ring-destructive/40" : ""}`}
+            >
               <Textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -710,7 +887,13 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
                     if (!sending) send(input);
                   }
                 }}
-                placeholder={voice.listening ? "Listening… speak now" : sending ? "Assistant is thinking — keep typing your next message…" : "Describe what you want to build, approve a proposal, or ask for the next step…"}
+                placeholder={
+                  voice.listening
+                    ? "Listening… speak now"
+                    : sending
+                      ? "Assistant is thinking — keep typing your next message…"
+                      : "Describe what you want to build, approve a proposal, or ask for the next step…"
+                }
                 className="min-h-[80px] resize-none border-0 focus-visible:ring-0 bg-transparent pr-24"
               />
               <Button
@@ -718,7 +901,13 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
                 size="icon"
                 variant={voice.listening ? "destructive" : "ghost"}
                 onClick={toggleVoice}
-                title={voice.supported ? (voice.listening ? "Stop recording" : "Dictate with voice") : "Voice not supported in this browser"}
+                title={
+                  voice.supported
+                    ? voice.listening
+                      ? "Stop recording"
+                      : "Dictate with voice"
+                    : "Voice not supported in this browser"
+                }
                 aria-label={voice.listening ? "Stop voice input" : "Start voice input"}
                 className={`absolute bottom-2.5 right-14 h-9 w-9 rounded-lg ${voice.listening ? "animate-pulse" : ""}`}
               >
@@ -730,12 +919,19 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
                 disabled={sending || !input.trim()}
                 className="absolute bottom-2.5 right-2.5 h-9 w-9 rounded-lg"
               >
-                {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                {sending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
               </Button>
             </div>
             <div className="mt-2 text-[11px] text-muted-foreground text-center">
               {voice.listening ? (
-                <span className="inline-flex items-center gap-1.5 text-destructive"><span className="inline-block h-1.5 w-1.5 rounded-full bg-destructive animate-pulse" /> Recording — click the mic again to stop</span>
+                <span className="inline-flex items-center gap-1.5 text-destructive">
+                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-destructive animate-pulse" />{" "}
+                  Recording — click the mic again to stop
+                </span>
               ) : (
                 "⏎ to send · Shift+⏎ for newline · 🎤 to dictate"
               )}
@@ -760,7 +956,9 @@ function Avatar({ role }: { role: "user" | "assistant" }) {
   return (
     <div
       className={`h-8 w-8 shrink-0 rounded-lg flex items-center justify-center ${
-        role === "assistant" ? "bg-gradient-brand text-white shadow-glow" : "bg-muted text-foreground"
+        role === "assistant"
+          ? "bg-gradient-brand text-white shadow-glow"
+          : "bg-muted text-foreground"
       }`}
     >
       {role === "assistant" ? <Bot className="h-4 w-4" /> : <User className="h-4 w-4" />}
@@ -800,8 +998,8 @@ function MessageBubble({
     const numberedItems = extractNumberedListItems(msg.content);
     if (numberedItems.length === 0) return rawMetaOptions;
     const haystack = numberedItems.join(" \n ").toLowerCase();
-    const anyMatches = rawMetaOptions.some((o) =>
-      o.label && haystack.includes(o.label.trim().toLowerCase()),
+    const anyMatches = rawMetaOptions.some(
+      (o) => o.label && haystack.includes(o.label.trim().toLowerCase()),
     );
     return anyMatches ? rawMetaOptions : [];
   })();
@@ -809,11 +1007,13 @@ function MessageBubble({
   // Client-side fallback: if the assistant wrote a numbered choice list in
   // prose but the server didn't attach any options (older messages, or model
   // forgot the tool call AND server fallback didn't catch it), synthesize
-  // buttons from the prose so they still appear.
-  const synth = msg.role === "assistant" && isLast && metaOptions.length === 0
-    ? synthesizeOptionsFromProse(msg.content)
-    : null;
-  const options: QuickOption[] = metaOptions.length > 0 ? metaOptions : synth?.options ?? [];
+  // buttons from the prose so they still appear. This intentionally supports
+  // bullets and bold markdown too — setup questions often use those formats.
+  const synth =
+    msg.role === "assistant" && isLast && metaOptions.length === 0
+      ? synthesizeOptionsFromProse(msg.content)
+      : null;
+  const options: QuickOption[] = metaOptions.length > 0 ? metaOptions : (synth?.options ?? []);
   const question = metaQuestion ?? synth?.question ?? null;
   // Only render quick-reply buttons on the most recent assistant message —
   // older proposals are stale and clicking them would be confusing.
@@ -874,12 +1074,20 @@ function MessageBubble({
       } ${highlighted ? "bg-accent/15 ring-2 ring-accent/50 -mx-2 px-2 py-2" : ""}`}
     >
       {/* Header row: role label + timestamp + actions */}
-      <div className={`flex items-center gap-2 mb-1 px-1 text-[11px] text-muted-foreground ${isUser ? "flex-row-reverse" : ""}`}>
-        <span className={`inline-flex items-center gap-1.5 font-semibold tracking-wide uppercase text-[10px] ${isUser ? "text-accent" : "text-foreground/70"}`}>
+      <div
+        className={`flex items-center gap-2 mb-1 px-1 text-[11px] text-muted-foreground ${isUser ? "flex-row-reverse" : ""}`}
+      >
+        <span
+          className={`inline-flex items-center gap-1.5 font-semibold tracking-wide uppercase text-[10px] ${isUser ? "text-accent" : "text-foreground/70"}`}
+        >
           {isUser ? (
-            <><User className="h-2.5 w-2.5" /> You</>
+            <>
+              <User className="h-2.5 w-2.5" /> You
+            </>
           ) : (
-            <><Bot className="h-2.5 w-2.5" /> Assistant</>
+            <>
+              <Bot className="h-2.5 w-2.5" /> Assistant
+            </>
           )}
         </span>
         {msg.created_at && (
@@ -948,10 +1156,22 @@ function MessageBubble({
                   Re-running will delete the assistant's reply and any later messages.
                 </p>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <Button type="button" variant="ghost" size="sm" onClick={cancelEdit} className="h-7 px-2 text-xs">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={cancelEdit}
+                    className="h-7 px-2 text-xs"
+                  >
                     <X className="h-3.5 w-3.5 mr-1" /> Cancel
                   </Button>
-                  <Button type="button" size="sm" onClick={submitEdit} disabled={!draft.trim()} className="h-7 px-2.5 text-xs">
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={submitEdit}
+                    disabled={!draft.trim()}
+                    className="h-7 px-2.5 text-xs"
+                  >
                     <Check className="h-3.5 w-3.5 mr-1" /> Save & re-run
                   </Button>
                 </div>
@@ -993,11 +1213,19 @@ function MessageBubble({
               </div>
             </div>
           )}
-          {!editing && ((msg.metadata?.reasoning?.length ?? 0) > 0 || (msg.metadata?.stage_history?.length ?? 0) > 0) && (
-            <ThinkingDisclosure msgId={msg.id} reasoning={msg.metadata?.reasoning ?? []} stageHistory={msg.metadata?.stage_history ?? []} />
-          )}
+          {!editing &&
+            ((msg.metadata?.reasoning?.length ?? 0) > 0 ||
+              (msg.metadata?.stage_history?.length ?? 0) > 0) && (
+              <ThinkingDisclosure
+                msgId={msg.id}
+                reasoning={msg.metadata?.reasoning ?? []}
+                stageHistory={msg.metadata?.stage_history ?? []}
+              />
+            )}
           {!editing && tools.length > 0 && <ToolReceipts tools={tools} onOpenAsset={onOpenAsset} />}
-          {!editing && tools.length > 0 && <GeneratedAssetsStrip tools={tools} onOpenAsset={onOpenAsset} />}
+          {!editing && tools.length > 0 && (
+            <GeneratedAssetsStrip tools={tools} onOpenAsset={onOpenAsset} />
+          )}
         </div>
       </div>
     </div>
@@ -1046,8 +1274,12 @@ function ThinkingDisclosure({
   };
 
   const label = live
-    ? open ? "Hide live thinking" : "Show live thinking"
-    : open ? "Hide thinking" : "Show thinking";
+    ? open
+      ? "Hide live thinking"
+      : "Show live thinking"
+    : open
+      ? "Hide thinking"
+      : "Show thinking";
 
   return (
     <div className="mt-2">
@@ -1061,12 +1293,11 @@ function ThinkingDisclosure({
           {label}
           {totalSegments > 0 && (
             <span className="opacity-70">
-              · {totalSegments} segment{totalSegments === 1 ? "" : "s"} · {totalChars.toLocaleString()} chars
+              · {totalSegments} segment{totalSegments === 1 ? "" : "s"} ·{" "}
+              {totalChars.toLocaleString()} chars
             </span>
           )}
-          {totalSegments === 0 && live && (
-            <span className="opacity-70">· streaming…</span>
-          )}
+          {totalSegments === 0 && live && <span className="opacity-70">· streaming…</span>}
         </button>
         {open && totalSegments > 0 && (
           <button
@@ -1100,7 +1331,8 @@ function ThinkingDisclosure({
           )}
           {totalSegments === 0 && live && (
             <div className="text-[11px] italic text-muted-foreground/70">
-              Model is working — reasoning will appear here as it streams in. Some fast / low-effort models don't expose any.
+              Model is working — reasoning will appear here as it streams in. Some fast / low-effort
+              models don't expose any.
             </div>
           )}
           {reasoning.map((round, i) => (
@@ -1108,7 +1340,9 @@ function ThinkingDisclosure({
               {reasoning.length > 1 && (
                 <div className="flex items-center gap-2 text-[10px] uppercase tracking-wide text-muted-foreground/70 border-b border-border/40 pb-1">
                   <span>Round {round.round}</span>
-                  <span className="opacity-60">· {round.segments.length} segment{round.segments.length === 1 ? "" : "s"}</span>
+                  <span className="opacity-60">
+                    · {round.segments.length} segment{round.segments.length === 1 ? "" : "s"}
+                  </span>
                 </div>
               )}
               {round.segments.map((seg, j) => (
@@ -1151,9 +1385,7 @@ function LiveReasoningSegment({
 }) {
   const alreadyRevealed = REVEALED_SEGMENT_IDS.has(segId);
   const shouldAnimate = live && !alreadyRevealed;
-  const [revealedChars, setRevealedChars] = useState<number>(
-    shouldAnimate ? 0 : text.length,
-  );
+  const [revealedChars, setRevealedChars] = useState<number>(shouldAnimate ? 0 : text.length);
 
   useEffect(() => {
     if (!shouldAnimate) {
@@ -1204,7 +1436,9 @@ function LiveReasoningSegment({
   const stillTyping = revealedChars < text.length;
 
   return (
-    <div className={`whitespace-pre-wrap font-mono leading-relaxed text-foreground/75 ${compact ? "text-[10.5px]" : "text-[11px]"}`}>
+    <div
+      className={`whitespace-pre-wrap font-mono leading-relaxed text-foreground/75 ${compact ? "text-[10.5px]" : "text-[11px]"}`}
+    >
       <span
         className={`mr-1.5 rounded px-1 py-0.5 text-[9px] font-semibold uppercase ${
           type === "summary" ? "bg-accent/20 text-accent" : "bg-primary/15 text-primary"
@@ -1253,7 +1487,9 @@ function extractNumberedListItems(text: string): string[] {
 // When the model wrote a numbered choice list in prose but no `options` were
 // attached to the message metadata (e.g. older messages, or the server
 // fallback also missed it), parse the prose and surface buttons.
-function synthesizeOptionsFromProse(text: string): { options: QuickOption[]; question: string | null } | null {
+function synthesizeOptionsFromProse(
+  text: string,
+): { options: QuickOption[]; question: string | null } | null {
   if (!text) return null;
   const trimmed = text.trim();
   if (!trimmed) return null;
@@ -1261,7 +1497,7 @@ function synthesizeOptionsFromProse(text: string): { options: QuickOption[]; que
   // Scan the WHOLE message line-by-line for a contiguous run of numbered
   // items (1, 2, 3, …) — list may sit anywhere, not just last paragraph.
   const lines = trimmed.split("\n");
-  const itemLineRegex = /^\s*(\d+)[\.\)]\s+(.+?)\s*$/;
+  const itemLineRegex = /^\s*(?:[-*•]\s*)?(\d+)[\.\)]\s+(?:\*\*)?(.+?)(?:\*\*)?\s*$/;
   let bestRun: { startIdx: number; items: Array<{ n: number; text: string }> } | null = null;
   let i = 0;
   while (i < lines.length) {
@@ -1294,7 +1530,11 @@ function synthesizeOptionsFromProse(text: string): { options: QuickOption[]; que
   }
 
   const toLabel = (s: string) => {
-    const cleaned = s.replace(/\s+—\s+.*$/, "").replace(/\s*\(.*\)\s*$/, "").trim();
+    const cleaned = s
+      .replace(/\*\*/g, "")
+      .replace(/\s+—\s+.*$/, "")
+      .replace(/\s*\(.*\)\s*$/, "")
+      .trim();
     const base = cleaned || s;
     return base.length > 60 ? `${base.slice(0, 57)}…` : base;
   };
@@ -1363,6 +1603,7 @@ const PROJECT_FIELD_LABELS: Record<string, string> = {
   setting: "Setting",
   selling_point: "Selling point",
   target_doc_count: "Target doc count",
+  planning_depth: "Planning depth",
   packaging_notes: "Packaging notes",
   image_prompt_instructions: "Image prompt style",
   video_prompt_instructions: "Video prompt style",
@@ -1387,17 +1628,36 @@ function formatFieldValue(v: unknown): string {
       .map(([k, val]) => {
         let s: string;
         if (val === null || val === undefined) s = "—";
-        else if (typeof val === "string" || typeof val === "number" || typeof val === "boolean") s = String(val);
-        else { try { s = JSON.stringify(val); } catch { s = String(val); } }
+        else if (typeof val === "string" || typeof val === "number" || typeof val === "boolean")
+          s = String(val);
+        else {
+          try {
+            s = JSON.stringify(val);
+          } catch {
+            s = String(val);
+          }
+        }
         return `${k}: ${s}`;
       })
       .join(", ");
     return summary.length > 80 ? `${summary.slice(0, 77)}…` : summary;
   }
-  try { return JSON.stringify(v); } catch { return String(v); }
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return String(v);
+  }
 }
 
-function ProjectUpdateReceipt({ args, ok, message }: { args: Record<string, unknown>; ok: boolean; message: string }) {
+function ProjectUpdateReceipt({
+  args,
+  ok,
+  message,
+}: {
+  args: Record<string, unknown>;
+  ok: boolean;
+  message: string;
+}) {
   const entries = Object.entries(args).filter(([, v]) => v !== undefined);
   const handleJump = () => {
     if (!ok) return;
@@ -1431,7 +1691,9 @@ function ProjectUpdateReceipt({ args, ok, message }: { args: Record<string, unkn
       <dl className="grid grid-cols-1 sm:grid-cols-[max-content_1fr] gap-x-3 gap-y-1 text-[12px] leading-snug">
         {entries.map(([k, v]) => (
           <div key={k} className="contents">
-            <dt className="text-muted-foreground capitalize">{PROJECT_FIELD_LABELS[k] ?? k.replace(/_/g, " ")}</dt>
+            <dt className="text-muted-foreground capitalize">
+              {PROJECT_FIELD_LABELS[k] ?? k.replace(/_/g, " ")}
+            </dt>
             <dd className="text-foreground/90 break-words">{formatFieldValue(v)}</dd>
           </div>
         ))}
@@ -1459,7 +1721,12 @@ function GeneratedDocReceipt({
   documentFormat?: string;
   documentModel?: string;
   documentSkillId?: string;
-  imageOrigin?: { requested?: string | null; effective?: string | null; provider?: string | null; fallback?: string | null } | null;
+  imageOrigin?: {
+    requested?: string | null;
+    effective?: string | null;
+    provider?: string | null;
+    fallback?: string | null;
+  } | null;
   documentId?: string;
   onOpenAsset?: (asset: LightboxAsset) => void;
 }) {
@@ -1479,7 +1746,11 @@ function GeneratedDocReceipt({
         className="flex w-full items-center justify-between gap-2 text-left text-foreground/90 font-medium hover:text-accent-foreground"
       >
         <span className="inline-flex items-center gap-1.5">
-          {documentUrl ? <FileText className="h-3.5 w-3.5 opacity-70" /> : <ImageIcon className="h-3.5 w-3.5 opacity-70" />}
+          {documentUrl ? (
+            <FileText className="h-3.5 w-3.5 opacity-70" />
+          ) : (
+            <ImageIcon className="h-3.5 w-3.5 opacity-70" />
+          )}
           {message}
         </span>
         <ExternalLink className="h-3 w-3 shrink-0 opacity-60" />
@@ -1487,11 +1758,20 @@ function GeneratedDocReceipt({
       {documentUrl && (
         <button
           type="button"
-          onClick={() => onOpenAsset?.({ url: documentUrl, title: message, mimeType: documentFormat === "pdf" ? "application/pdf" : undefined, previewUrl: imageUrl, openInTab: { tab: "documents", targetId: documentId, label: "Open in Documents" } })}
+          onClick={() =>
+            onOpenAsset?.({
+              url: documentUrl,
+              title: message,
+              mimeType: documentFormat === "pdf" ? "application/pdf" : undefined,
+              previewUrl: imageUrl,
+              openInTab: { tab: "documents", targetId: documentId, label: "Open in Documents" },
+            })
+          }
           className="flex w-full items-center justify-between gap-2 rounded-md border border-border/50 bg-background/70 px-2.5 py-2 text-left text-xs hover:ring-2 hover:ring-accent/30 transition"
         >
           <span className="min-w-0 truncate">
-            {(documentFormat ?? "file").toUpperCase()} • {documentModel ?? "Selected model"}{documentSkillId ? ` • Skill ${documentSkillId}` : ""}
+            {(documentFormat ?? "file").toUpperCase()} • {documentModel ?? "Selected model"}
+            {documentSkillId ? ` • Skill ${documentSkillId}` : ""}
           </span>
           <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" />
         </button>
@@ -1500,12 +1780,24 @@ function GeneratedDocReceipt({
         {imageUrl && (
           <button
             type="button"
-            onClick={() => onOpenAsset?.({ url: imageUrl, title: message, origin: imageOrigin, openInTab: { tab: "documents", targetId: documentId, label: "Open in Documents" } })}
+            onClick={() =>
+              onOpenAsset?.({
+                url: imageUrl,
+                title: message,
+                origin: imageOrigin,
+                openInTab: { tab: "documents", targetId: documentId, label: "Open in Documents" },
+              })
+            }
             className="group relative shrink-0 block rounded-md overflow-hidden border border-border/60 bg-background hover:ring-2 hover:ring-accent/40 transition"
             title="View full size"
           >
             <AiOriginBadge info={imageOrigin} hoverOnly />
-            <img src={imageUrl} alt="Generated document preview" className="h-32 w-auto object-cover" loading="lazy" />
+            <img
+              src={imageUrl}
+              alt="Generated document preview"
+              className="h-32 w-auto object-cover"
+              loading="lazy"
+            />
           </button>
         )}
         {hebrewPreview && (
@@ -1539,7 +1831,10 @@ function ImageReceipt({
   targetId?: string;
   onOpenAsset?: (asset: LightboxAsset) => void;
 }) {
-  const jump = () => window.dispatchEvent(new CustomEvent("mystudio:navigate", { detail: { tab: destTab, targetId } }));
+  const jump = () =>
+    window.dispatchEvent(
+      new CustomEvent("mystudio:navigate", { detail: { tab: destTab, targetId } }),
+    );
   return (
     <div className="rounded-lg border border-border/60 bg-muted/30 p-2.5 space-y-2">
       <button
@@ -1557,7 +1852,13 @@ function ImageReceipt({
       <div className="flex gap-3 items-start">
         <button
           type="button"
-          onClick={() => onOpenAsset?.({ url: imageUrl, title, openInTab: { tab: destTab, targetId, label: destLabel } })}
+          onClick={() =>
+            onOpenAsset?.({
+              url: imageUrl,
+              title,
+              openInTab: { tab: destTab, targetId, label: destLabel },
+            })
+          }
           className="shrink-0 block rounded-md overflow-hidden border border-border/60 bg-background hover:ring-2 hover:ring-accent/40 transition"
           title="View full size"
         >
@@ -1579,16 +1880,73 @@ function ImageReceipt({
 }
 
 // Aggregates every image generated in this turn into one horizontal strip.
-function GeneratedAssetsStrip({ tools, onOpenAsset }: { tools: ToolCall[]; onOpenAsset: (asset: LightboxAsset) => void }) {
-  const items: Array<{ key: string; url: string; title: string; tab: string; targetId?: string; label: string; mimeType?: string; previewUrl?: string }> = [];
+function GeneratedAssetsStrip({
+  tools,
+  onOpenAsset,
+}: {
+  tools: ToolCall[];
+  onOpenAsset: (asset: LightboxAsset) => void;
+}) {
+  const items: Array<{
+    key: string;
+    url: string;
+    title: string;
+    tab: string;
+    targetId?: string;
+    label: string;
+    mimeType?: string;
+    previewUrl?: string;
+  }> = [];
   tools.forEach((t, i) => {
     if (!t.result?.ok) return;
     const id = t.result.id;
-    if (t.result.image_url) items.push({ key: `${i}-img`, url: t.result.image_url, title: t.result.message || "Document", tab: "documents", targetId: id, label: "Open in Documents" });
-    if (t.result.document_url) items.push({ key: `${i}-doc`, url: t.result.document_url, title: t.result.message || "Document file", tab: "documents", targetId: id, label: "Open in Documents", mimeType: t.result.document_format === "pdf" ? "application/pdf" : undefined, previewUrl: t.result.image_url });
-    if (t.result.thumbnail_url) items.push({ key: `${i}-th`, url: t.result.thumbnail_url, title: t.result.message || "Suspect", tab: "suspects", targetId: id, label: "Open in Suspects" });
-    if (t.result.alt_thumbnail_url) items.push({ key: `${i}-alt`, url: t.result.alt_thumbnail_url, title: `${t.result.message || "Suspect"} (alt)`, tab: "suspects", targetId: id, label: "Open in Suspects" });
-    if (t.result.cover_image_url) items.push({ key: `${i}-cov`, url: t.result.cover_image_url, title: t.result.message || "Envelope cover", tab: "envelopes", targetId: id, label: "Open in Envelopes" });
+    if (t.result.image_url)
+      items.push({
+        key: `${i}-img`,
+        url: t.result.image_url,
+        title: t.result.message || "Document",
+        tab: "documents",
+        targetId: id,
+        label: "Open in Documents",
+      });
+    if (t.result.document_url)
+      items.push({
+        key: `${i}-doc`,
+        url: t.result.document_url,
+        title: t.result.message || "Document file",
+        tab: "documents",
+        targetId: id,
+        label: "Open in Documents",
+        mimeType: t.result.document_format === "pdf" ? "application/pdf" : undefined,
+        previewUrl: t.result.image_url,
+      });
+    if (t.result.thumbnail_url)
+      items.push({
+        key: `${i}-th`,
+        url: t.result.thumbnail_url,
+        title: t.result.message || "Suspect",
+        tab: "suspects",
+        targetId: id,
+        label: "Open in Suspects",
+      });
+    if (t.result.alt_thumbnail_url)
+      items.push({
+        key: `${i}-alt`,
+        url: t.result.alt_thumbnail_url,
+        title: `${t.result.message || "Suspect"} (alt)`,
+        tab: "suspects",
+        targetId: id,
+        label: "Open in Suspects",
+      });
+    if (t.result.cover_image_url)
+      items.push({
+        key: `${i}-cov`,
+        url: t.result.cover_image_url,
+        title: t.result.message || "Envelope cover",
+        tab: "envelopes",
+        targetId: id,
+        label: "Open in Envelopes",
+      });
   });
   if (items.length === 0) return null;
   return (
@@ -1601,11 +1959,28 @@ function GeneratedAssetsStrip({ tools, onOpenAsset }: { tools: ToolCall[]; onOpe
           <button
             key={it.key}
             type="button"
-            onClick={() => onOpenAsset({ url: it.url, title: it.title, mimeType: it.mimeType, previewUrl: it.previewUrl, openInTab: { tab: it.tab, targetId: it.targetId, label: it.label } })}
+            onClick={() =>
+              onOpenAsset({
+                url: it.url,
+                title: it.title,
+                mimeType: it.mimeType,
+                previewUrl: it.previewUrl,
+                openInTab: { tab: it.tab, targetId: it.targetId, label: it.label },
+              })
+            }
             className="group relative shrink-0 rounded-md overflow-hidden border border-border/60 hover:ring-2 hover:ring-accent/40 transition"
             title={it.title}
           >
-            {it.mimeType === "application/pdf" && !it.previewUrl ? <FileText className="h-20 w-20 p-6 text-muted-foreground bg-background" /> : <img src={it.previewUrl ?? it.url} alt={it.title} className="h-20 w-20 object-cover" loading="lazy" />}
+            {it.mimeType === "application/pdf" && !it.previewUrl ? (
+              <FileText className="h-20 w-20 p-6 text-muted-foreground bg-background" />
+            ) : (
+              <img
+                src={it.previewUrl ?? it.url}
+                alt={it.title}
+                className="h-20 w-20 object-cover"
+                loading="lazy"
+              />
+            )}
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition flex items-end justify-end p-1">
               <ExternalLink className="h-3 w-3 text-white opacity-0 group-hover:opacity-100 transition" />
             </div>
@@ -1616,9 +1991,13 @@ function GeneratedAssetsStrip({ tools, onOpenAsset }: { tools: ToolCall[]; onOpe
   );
 }
 
-
-
-function ToolReceipts({ tools, onOpenAsset }: { tools: ToolCall[]; onOpenAsset?: (asset: LightboxAsset) => void }) {
+function ToolReceipts({
+  tools,
+  onOpenAsset,
+}: {
+  tools: ToolCall[];
+  onOpenAsset?: (asset: LightboxAsset) => void;
+}) {
   const [open, setOpen] = useState(false);
   const okCount = tools.filter((t) => t.result.ok).length;
   const failCount = tools.length - okCount;
@@ -1655,8 +2034,14 @@ function ToolReceipts({ tools, onOpenAsset }: { tools: ToolCall[]; onOpenAsset?:
             if (t.name === "update_project") {
               return (
                 <li key={i} className="flex items-start gap-2">
-                  <span className={`mt-1 ${t.result.ok ? "text-accent-foreground/80" : "text-destructive"}`}>
-                    {t.result.ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
+                  <span
+                    className={`mt-1 ${t.result.ok ? "text-accent-foreground/80" : "text-destructive"}`}
+                  >
+                    {t.result.ok ? (
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                    ) : (
+                      <AlertCircle className="h-3.5 w-3.5" />
+                    )}
                   </span>
                   <div className="flex-1 min-w-0">
                     <ProjectUpdateReceipt
@@ -1671,7 +2056,11 @@ function ToolReceipts({ tools, onOpenAsset }: { tools: ToolCall[]; onOpenAsset?:
 
             // Special-case generate_document_assets: render an inline preview
             // card with the Hebrew snippet (RTL) and a clickable image thumbnail.
-            if (t.name === "generate_document_assets" && t.result.ok && (t.result.hebrew_preview || t.result.image_url || t.result.document_url)) {
+            if (
+              t.name === "generate_document_assets" &&
+              t.result.ok &&
+              (t.result.hebrew_preview || t.result.image_url || t.result.document_url)
+            ) {
               return (
                 <li key={i} className="flex items-start gap-2">
                   <span className="mt-1 text-accent-foreground/80">
@@ -1688,7 +2077,8 @@ function ToolReceipts({ tools, onOpenAsset }: { tools: ToolCall[]; onOpenAsset?:
                       documentSkillId={t.result.document_skill_id}
                       imageOrigin={{
                         requested: t.result.image_requested_model ?? null,
-                        effective: t.result.image_effective_model ?? t.result.image_requested_model ?? null,
+                        effective:
+                          t.result.image_effective_model ?? t.result.image_requested_model ?? null,
                         provider: t.result.image_provider ?? null,
                         fallback: t.result.image_fallback ?? "none",
                       }}
@@ -1703,11 +2093,17 @@ function ToolReceipts({ tools, onOpenAsset }: { tools: ToolCall[]; onOpenAsset?:
             // Inline image receipts for suspect / envelope when their tool
             // call returned a thumbnail/cover URL — saves the user a tab hop
             // and links straight to the prompt textarea.
-            if ((t.name === "add_suspect" || t.name === "update_suspect") && t.result.ok && (t.result.thumbnail_url || t.result.alt_thumbnail_url)) {
+            if (
+              (t.name === "add_suspect" || t.name === "update_suspect") &&
+              t.result.ok &&
+              (t.result.thumbnail_url || t.result.alt_thumbnail_url)
+            ) {
               const url = t.result.thumbnail_url ?? t.result.alt_thumbnail_url!;
               return (
                 <li key={i} className="flex items-start gap-2">
-                  <span className="mt-1 text-accent-foreground/80"><CheckCircle2 className="h-3.5 w-3.5" /></span>
+                  <span className="mt-1 text-accent-foreground/80">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  </span>
                   <div className="flex-1 min-w-0">
                     <ImageReceipt
                       imageUrl={url}
@@ -1722,10 +2118,16 @@ function ToolReceipts({ tools, onOpenAsset }: { tools: ToolCall[]; onOpenAsset?:
                 </li>
               );
             }
-            if ((t.name === "add_envelope" || t.name === "update_envelope") && t.result.ok && t.result.cover_image_url) {
+            if (
+              (t.name === "add_envelope" || t.name === "update_envelope") &&
+              t.result.ok &&
+              t.result.cover_image_url
+            ) {
               return (
                 <li key={i} className="flex items-start gap-2">
-                  <span className="mt-1 text-accent-foreground/80"><CheckCircle2 className="h-3.5 w-3.5" /></span>
+                  <span className="mt-1 text-accent-foreground/80">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  </span>
                   <div className="flex-1 min-w-0">
                     <ImageReceipt
                       imageUrl={t.result.cover_image_url}
@@ -1761,8 +2163,14 @@ function ToolReceipts({ tools, onOpenAsset }: { tools: ToolCall[]; onOpenAsset?:
             const verb = t.name.replace(/_/g, " ");
             return (
               <li key={i} className="flex items-start gap-2 text-[12px] leading-snug">
-                <span className={`mt-0.5 ${t.result.ok ? "text-accent-foreground/80" : "text-destructive"}`}>
-                  {t.result.ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
+                <span
+                  className={`mt-0.5 ${t.result.ok ? "text-accent-foreground/80" : "text-destructive"}`}
+                >
+                  {t.result.ok ? (
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  ) : (
+                    <AlertCircle className="h-3.5 w-3.5" />
+                  )}
                 </span>
                 <div className="flex-1 min-w-0">
                   {t.result.ok && entityName ? (
@@ -1782,13 +2190,17 @@ function ToolReceipts({ tools, onOpenAsset }: { tools: ToolCall[]; onOpenAsset?:
                   ) : (
                     <div className="flex flex-wrap items-baseline gap-x-2">
                       <span className="text-foreground/90 font-medium capitalize">{verb}</span>
-                      <span className={`text-[11px] truncate ${t.result.ok ? "text-muted-foreground" : "text-destructive/90"}`}>
+                      <span
+                        className={`text-[11px] truncate ${t.result.ok ? "text-muted-foreground" : "text-destructive/90"}`}
+                      >
                         {t.result.message}
                       </span>
                     </div>
                   )}
                   {t.result.ok && entityName && (
-                    <div className="text-[10.5px] text-muted-foreground/80 capitalize mt-0.5">{verb}</div>
+                    <div className="text-[10.5px] text-muted-foreground/80 capitalize mt-0.5">
+                      {verb}
+                    </div>
                   )}
                 </div>
               </li>
@@ -1807,7 +2219,10 @@ function PromptInstructionsPopover({
 }: {
   imageInstructions: string;
   videoInstructions: string;
-  onSave: (patch: { image_prompt_instructions?: string; video_prompt_instructions?: string }) => void;
+  onSave: (patch: {
+    image_prompt_instructions?: string;
+    video_prompt_instructions?: string;
+  }) => void;
 }) {
   const [imgDraft, setImgDraft] = useState(imageInstructions);
   const [vidDraft, setVidDraft] = useState(videoInstructions);
@@ -1819,7 +2234,8 @@ function PromptInstructionsPopover({
     toast.success("Generation instructions saved");
   };
 
-  const hasContent = (imageInstructions?.trim().length ?? 0) > 0 || (videoInstructions?.trim().length ?? 0) > 0;
+  const hasContent =
+    (imageInstructions?.trim().length ?? 0) > 0 || (videoInstructions?.trim().length ?? 0) > 0;
 
   return (
     <Popover>
@@ -1839,8 +2255,9 @@ function PromptInstructionsPopover({
             </Label>
           </div>
           <p className="text-[11px] text-muted-foreground mb-2 leading-relaxed">
-            Prepended to every image prompt (covers, suspects, documents, media). Use this to lock in style,
-            language, lighting, paper texture, do/don'ts. Applies to Nano Banana 2, Pro, OpenAI image, and any future model.
+            Prepended to every image prompt (covers, suspects, documents, media). Use this to lock
+            in style, language, lighting, paper texture, do/don'ts. Applies to Nano Banana 2, Pro,
+            OpenAI image, and any future model.
           </p>
           <Textarea
             rows={5}
@@ -1858,7 +2275,8 @@ function PromptInstructionsPopover({
             </Label>
           </div>
           <p className="text-[11px] text-muted-foreground mb-2 leading-relaxed">
-            Prepended to every video prompt. Use this for camera motion, pacing, mood, color grading, aspect ratio guidance.
+            Prepended to every video prompt. Use this for camera motion, pacing, mood, color
+            grading, aspect ratio guidance.
           </p>
           <Textarea
             rows={4}
@@ -1869,7 +2287,9 @@ function PromptInstructionsPopover({
           />
         </div>
         <div className="flex justify-end pt-1">
-          <Button size="sm" onClick={save}>Save instructions</Button>
+          <Button size="sm" onClick={save}>
+            Save instructions
+          </Button>
         </div>
       </PopoverContent>
     </Popover>

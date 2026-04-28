@@ -83,11 +83,16 @@ export function useAssistantRun(projectId: string) {
       if (!row) return;
       const ageMs = Date.now() - new Date(row.started_at).getTime();
       if (ageMs > STALE_AFTER_MS) {
-        if (cur.isRunning) setRunState(qc, projectId, { isRunning: false, controller: cur.controller });
+        if (cur.isRunning)
+          setRunState(qc, projectId, { isRunning: false, controller: cur.controller });
         toast.message("Recovered a stuck assistant run — you can send a new message.");
         void supabase
           .from("assistant_runs")
-          .update({ status: "error", error: "stale_recovered: client watchdog", finished_at: new Date().toISOString() })
+          .update({
+            status: "error",
+            error: "stale_recovered: client watchdog",
+            finished_at: new Date().toISOString(),
+          })
           .eq("id", row.id);
         return;
       }
@@ -103,7 +108,12 @@ export function useAssistantRun(projectId: string) {
       .channel(channelName)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "assistant_runs", filter: `project_id=eq.${projectId}` },
+        {
+          event: "*",
+          schema: "public",
+          table: "assistant_runs",
+          filter: `project_id=eq.${projectId}`,
+        },
         (payload) => {
           const row = (payload.new ?? payload.old) as { status?: string } | null;
           const status = row?.status;
@@ -116,6 +126,7 @@ export function useAssistantRun(projectId: string) {
             // Refresh anything the assistant might have touched so other tabs
             // (Suspects, Documents, Case Board) auto-update without a visit.
             qc.invalidateQueries({ queryKey: ["chat", projectId] });
+            qc.invalidateQueries({ queryKey: ["project-ai", projectId] });
             qc.invalidateQueries({ queryKey: ["project", projectId] });
             qc.invalidateQueries({ queryKey: ["suspects", projectId] });
             qc.invalidateQueries({ queryKey: ["documents", projectId] });
@@ -128,7 +139,9 @@ export function useAssistantRun(projectId: string) {
             else if ((payload.new as { error?: string } | null)?.error) {
               const error = (payload.new as { error: string }).error;
               toast.error(error, { duration: 9000 });
-              void writeAssistantError(projectId, error).then(() => qc.invalidateQueries({ queryKey: ["chat", projectId] }));
+              void writeAssistantError(projectId, error).then(() =>
+                qc.invalidateQueries({ queryKey: ["chat", projectId] }),
+              );
             }
           }
         },
@@ -158,7 +171,9 @@ export function useAssistantRun(projectId: string) {
     try {
       const convo = [...(baseMessages ?? []), { role: "user" as const, content }];
 
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/assistant-chat`, {
         method: "POST",
         headers: {
@@ -171,11 +186,12 @@ export function useAssistantRun(projectId: string) {
 
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({ error: "Request failed" }));
-        const message = resp.status === 429
-          ? "Rate limit — please wait a moment."
-          : resp.status === 402
-            ? "Out of AI credits. Top up in Settings → Workspace → Usage."
-            : (err.error ?? "Assistant error");
+        const message =
+          resp.status === 429
+            ? "Rate limit — please wait a moment."
+            : resp.status === 402
+              ? "Out of AI credits. Top up in Settings → Workspace → Usage."
+              : (err.error ?? "Assistant error");
         toast.error(message, { duration: 9000 });
         await writeAssistantError(projectId, message);
         qc.invalidateQueries({ queryKey: ["chat", projectId] });
@@ -184,7 +200,8 @@ export function useAssistantRun(projectId: string) {
         return;
       }
       const accepted = await resp.json().catch(() => ({}));
-      if (accepted?.runId) setRunState(qc, projectId, { isRunning: true, runId: accepted.runId, controller });
+      if (accepted?.runId)
+        setRunState(qc, projectId, { isRunning: true, runId: accepted.runId, controller });
       // Background mode: server accepted the run and will write the assistant
       // message asynchronously. The realtime subscription on assistant_runs
       // will flip isRunning back to false when it finishes. We immediately
@@ -213,7 +230,11 @@ export function useAssistantRun(projectId: string) {
     if (cur.runId) {
       void supabase
         .from("assistant_runs")
-        .update({ status: "error", error: "Cancelled for edit and re-run", finished_at: new Date().toISOString() })
+        .update({
+          status: "error",
+          error: "Cancelled for edit and re-run",
+          finished_at: new Date().toISOString(),
+        })
         .eq("id", cur.runId);
     }
   };

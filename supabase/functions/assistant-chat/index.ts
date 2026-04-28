@@ -1,8 +1,18 @@
 // Mystery Studio Assistant — streaming chat with structured tool calls
 // Uses Lovable AI Gateway (Gemini + GPT-5). Tools mutate project state server-side.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { chatCompletions, extractFallback, logAiRun, getUserIdFromAuth } from "../_shared/ai-router.ts";
-import { modelSupportsStreamingReasoning, streamReasoningChat, type ChatMessageOut, type ReasoningSegment as StreamReasoningSegment } from "../_shared/stream-reasoning.ts";
+import {
+  chatCompletions,
+  extractFallback,
+  logAiRun,
+  getUserIdFromAuth,
+} from "../_shared/ai-router.ts";
+import {
+  modelSupportsStreamingReasoning,
+  streamReasoningChat,
+  type ChatMessageOut,
+  type ReasoningSegment as StreamReasoningSegment,
+} from "../_shared/stream-reasoning.ts";
 import {
   PLAYBOOK_DEFAULTS,
   resolvePlaybook,
@@ -28,7 +38,12 @@ import {
   type Playbook,
   type PlanningDepth,
 } from "../_shared/assistant-playbook.ts";
-import { claudeSkillRequestShape, loadClaudeSkillsForSurface, renderClaudeSkillCatalog, type ClaudeSkillRow } from "../_shared/claude-skills.ts";
+import {
+  claudeSkillRequestShape,
+  loadClaudeSkillsForSurface,
+  renderClaudeSkillCatalog,
+  type ClaudeSkillRow,
+} from "../_shared/claude-skills.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -58,7 +73,15 @@ async function runRoundWithLiveReasoning(args: {
   priorReasoningRounds: Array<{ round: number; segments: StreamReasoningSegment[] }>;
   roundIndex: number;
   baseMetadata: Record<string, unknown>;
-}): Promise<{ ok: true; message: ChatMessageOut; effectiveModel: string; fallback: "none" | "openai-direct" | "lovable-ai" } | { ok: false; status: number; errorText: string }> {
+}): Promise<
+  | {
+      ok: true;
+      message: ChatMessageOut;
+      effectiveModel: string;
+      fallback: "none" | "openai-direct" | "lovable-ai";
+    }
+  | { ok: false; status: number; errorText: string }
+> {
   const { supa, messageId, model, body, priorReasoningRounds, roundIndex, baseMetadata } = args;
 
   // Helper: write current state to chat_messages with debounce.
@@ -97,23 +120,39 @@ async function runRoundWithLiveReasoning(args: {
       return;
     }
     if (pendingFlush != null) return;
-    pendingFlush = setTimeout(() => {
-      pendingFlush = null;
-      lastFlushAt = Date.now();
-      void writeNow();
-    }, FLUSH_INTERVAL_MS - (now - lastFlushAt)) as unknown as number;
+    pendingFlush = setTimeout(
+      () => {
+        pendingFlush = null;
+        lastFlushAt = Date.now();
+        void writeNow();
+      },
+      FLUSH_INTERVAL_MS - (now - lastFlushAt),
+    ) as unknown as number;
   };
 
   const supportsStreaming = modelSupportsStreamingReasoning(model);
   const wantsThinking = (body.reasoningEffort as string | undefined) !== "none";
 
   if (supportsStreaming) {
-    const effort = (body.reasoningEffort as "none" | "low" | "medium" | "high" | "xhigh" | undefined) ?? "medium";
+    const effort =
+      (body.reasoningEffort as "none" | "low" | "medium" | "high" | "xhigh" | undefined) ??
+      "medium";
     const result = await streamReasoningChat(
       {
         model,
-        messages: body.messages as Array<{ role: string; content?: unknown; tool_calls?: unknown; tool_call_id?: string; thinking?: unknown }>,
-        tools: body.tools as Array<{ type: string; function: { name: string; description?: string; parameters: unknown } }> | undefined,
+        messages: body.messages as Array<{
+          role: string;
+          content?: unknown;
+          tool_calls?: unknown;
+          tool_call_id?: string;
+          thinking?: unknown;
+        }>,
+        tools: body.tools as
+          | Array<{
+              type: string;
+              function: { name: string; description?: string; parameters: unknown };
+            }>
+          | undefined,
         effort,
         max_tokens: body.max_tokens as number | undefined,
         anthropicTools: body.anthropicTools as Array<Record<string, unknown>> | undefined,
@@ -131,7 +170,10 @@ async function runRoundWithLiveReasoning(args: {
         },
       },
     );
-    if (pendingFlush != null) { clearTimeout(pendingFlush); pendingFlush = null; }
+    if (pendingFlush != null) {
+      clearTimeout(pendingFlush);
+      pendingFlush = null;
+    }
     // Final flush so the last chunk lands in the DB before the round returns.
     await writeNow();
     if (result.ok) {
@@ -139,7 +181,9 @@ async function runRoundWithLiveReasoning(args: {
       return { ok: true, message: result.message, effectiveModel: model, fallback };
     }
     // Streaming failed — log and fall through to non-streaming path.
-    console.warn(`[stream-fallback] streaming failed for ${model} (status ${result.status}); falling back to non-streaming chatCompletions`);
+    console.warn(
+      `[stream-fallback] streaming failed for ${model} (status ${result.status}); falling back to non-streaming chatCompletions`,
+    );
   }
 
   // Non-streaming path (used for models that don't stream OR after a stream error).
@@ -152,14 +196,20 @@ async function runRoundWithLiveReasoning(args: {
   }
   const data = await resp.json();
   const choice = data.choices?.[0];
-  const message: ChatMessageOut = (choice?.message ?? { role: "assistant", content: "" }) as ChatMessageOut;
+  const message: ChatMessageOut = (choice?.message ?? {
+    role: "assistant",
+    content: "",
+  }) as ChatMessageOut;
   // Push the final reasoning/text into metadata one last time so the live UI
   // catches up to the full result.
   if (Array.isArray(message.reasoning) && message.reasoning.length > 0) {
     const allRounds = [...priorReasoningRounds, { round: roundIndex, segments: message.reasoning }];
-    await supa.from("chat_messages").update({
-      metadata: { ...baseMetadata, reasoning: allRounds },
-    }).eq("id", messageId);
+    await supa
+      .from("chat_messages")
+      .update({
+        metadata: { ...baseMetadata, reasoning: allRounds },
+      })
+      .eq("id", messageId);
   }
   return {
     ok: true,
@@ -168,7 +218,6 @@ async function runRoundWithLiveReasoning(args: {
     fallback: fb.fallback,
   };
 }
-
 
 // Map provider preferences to provider-prefixed model ids understood by the
 // shared AI router. Prefix legend:
@@ -214,11 +263,34 @@ type Rosters = {
   logic_dirty_since_approval?: boolean;
 };
 function truncate(s: unknown, n = 60): string {
-  const str = String(s ?? "").replace(/\s+/g, " ").trim();
+  const str = String(s ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
   if (!str) return "—";
   return str.length > n ? `${str.slice(0, n - 1)}…` : str;
 }
-function formatRoster(rows: RosterRow[], render: (r: RosterRow, i: number) => string, empty: string): string {
+function detectPlanningDepthChoice(text: unknown): PlanningDepth | null {
+  const s = String(text ?? "")
+    .trim()
+    .toLowerCase();
+  if (!s) return null;
+  if (/^(⚡\s*)?express\b/.test(s) || /\bchoose\s+express\b/.test(s) || /you plan it all/.test(s))
+    return "express";
+  if (/^(🎯\s*)?guided\b/.test(s) || /\bchoose\s+guided\b/.test(s) || /ask me the basics/.test(s))
+    return "guided";
+  if (
+    /^(🔬\s*)?(deep\s*dive|deep)\b/.test(s) ||
+    /\bchoose\s+deep\b/.test(s) ||
+    /walk me through every detail/.test(s)
+  )
+    return "deep";
+  return null;
+}
+function formatRoster(
+  rows: RosterRow[],
+  render: (r: RosterRow, i: number) => string,
+  empty: string,
+): string {
   if (!rows || rows.length === 0) return empty;
   return rows.map((r, i) => `  ${i + 1}. ${render(r, i)}`).join("\n");
 }
@@ -234,12 +306,14 @@ function buildSystemPrompt(
   const docCount = rosters.documents.length;
   const suspectsList = formatRoster(
     rosters.suspects,
-    (r) => `[id=${r.id}] ${truncate(r.name)}${r.role_in_case ? ` — ${truncate(r.role_in_case, 40)}` : ""}`,
+    (r) =>
+      `[id=${r.id}] ${truncate(r.name)}${r.role_in_case ? ` — ${truncate(r.role_in_case, 40)}` : ""}`,
     "  (none yet)",
   );
   const documentsList = formatRoster(
     rosters.documents,
-    (r) => `[id=${r.id}] #${r.doc_number ?? "?"} ${truncate(r.title)}${r.doc_type ? ` (${truncate(r.doc_type, 30)})` : ""} · ${r.status ?? "draft"}`,
+    (r) =>
+      `[id=${r.id}] #${r.doc_number ?? "?"} ${truncate(r.title)}${r.doc_type ? ` (${truncate(r.doc_type, 30)})` : ""} · ${r.status ?? "draft"}`,
     "  (none yet)",
   );
   const envelopesList = formatRoster(
@@ -257,9 +331,10 @@ function buildSystemPrompt(
     (r) => `[id=${r.id}] ${truncate(r.title)} (${r.node_type}, board=${r.board})`,
     "  (none yet)",
   );
-  const overrides = tweaks.length > 0
-    ? `\n\nUSER OVERRIDES (highest priority — follow these even if they conflict with earlier instructions, UNLESS they violate CONTENT RULES above which always win):\n${tweaks.map((t, i) => `${i + 1}. ${t.text}`).join("\n")}`
-    : "";
+  const overrides =
+    tweaks.length > 0
+      ? `\n\nUSER OVERRIDES (highest priority — follow these even if they conflict with earlier instructions, UNLESS they violate CONTENT RULES above which always win):\n${tweaks.map((t, i) => `${i + 1}. ${t.text}`).join("\n")}`
+      : "";
   const planningDepth: PlanningDepth = normalizePlanningDepth(
     (project as { planning_depth?: unknown }).planning_depth,
     playbook.planning_depth.default,
@@ -397,9 +472,13 @@ ${renderDocModeButtonsBlock(playbook)}
 8. If the user asks to install/add a Claude Skill from chat and there is no attached installable package, call explain_claude_skill_install. Claude can automatically choose among enabled installed skills passed to it, but the app must manage installation.`;
 })()}
 
-${claudeSkills.length > 0 ? `AVAILABLE CLAUDE SKILLS FOR THIS SURFACE
+${
+  claudeSkills.length > 0
+    ? `AVAILABLE CLAUDE SKILLS FOR THIS SURFACE
 ${renderClaudeSkillCatalog(claudeSkills)}
-Claude Skills are SKILL.md-based packages. Their descriptions tell Claude when to use them; full instructions/supporting files are only available when the Skill is invoked by Claude's runtime.` : ""}
+Claude Skills are SKILL.md-based packages. Their descriptions tell Claude when to use them; full instructions/supporting files are only available when the Skill is invoked by Claude's runtime.`
+    : ""
+}
 ${renderEnvelopesLine(playbook)}
 ${renderHintsLine(playbook)}
 
@@ -493,12 +572,31 @@ Player role: ${project.player_role ?? "—"}
 Case goal: ${project.case_goal ?? "—"}
 Setting: ${project.setting ?? "—"}
 Extra selling point: ${project.selling_point ?? "—"}
-Target documents: ${(() => { const n = Number((project as { target_doc_count?: unknown }).target_doc_count ?? 0); return n >= 10 ? n : `NOT SET (currently ${n || "—"}) — you MUST ask the user before calling propose_document_set; suggest 30/35/40 with propose_options, then call update_project({target_doc_count: N}) before proposing`; })()}
+Target documents: ${(() => {
+    const n = Number((project as { target_doc_count?: unknown }).target_doc_count ?? 0);
+    return n >= 10
+      ? n
+      : `NOT SET (currently ${n || "—"}) — you MUST ask the user before calling propose_document_set; suggest 30/35/40 with propose_options, then call update_project({target_doc_count: N}) before proposing`;
+  })()}
 Packaging notes: ${truncate(project.packaging_notes, 120)}
 Image prompt style: ${truncate(project.image_prompt_instructions, 120)}
 Video prompt style: ${truncate(project.video_prompt_instructions, 120)}
-Hint settings: ${(() => { const v = project.hint_settings as Record<string, unknown> | null; if (!v || typeof v !== "object") return "—"; const keys = Object.keys(v); return keys.length === 0 ? "(empty)" : `(${keys.length} keys: ${truncate(keys.join(", "), 80)})`; })()}
-Envelope settings: ${(() => { const v = project.envelope_settings as Record<string, unknown> | null; if (!v || typeof v !== "object") return "—"; const keys = Object.keys(v); return keys.length === 0 ? "(empty)" : `(${keys.length} keys: ${truncate(keys.join(", "), 80)})`; })()}
+Hint settings: ${(() => {
+    const v = project.hint_settings as Record<string, unknown> | null;
+    if (!v || typeof v !== "object") return "—";
+    const keys = Object.keys(v);
+    return keys.length === 0
+      ? "(empty)"
+      : `(${keys.length} keys: ${truncate(keys.join(", "), 80)})`;
+  })()}
+Envelope settings: ${(() => {
+    const v = project.envelope_settings as Record<string, unknown> | null;
+    if (!v || typeof v !== "object") return "—";
+    const keys = Object.keys(v);
+    return keys.length === 0
+      ? "(empty)"
+      : `(${keys.length} keys: ${truncate(keys.join(", "), 80)})`;
+  })()}
 ${suspectCount > 0 ? `Existing suspects (${suspectCount}):\n${suspectsList}` : ""}
 ${docCount > 0 ? `Existing documents (${docCount}):\n${documentsList}` : ""}
 ${rosters.envelopes.length > 0 ? `Existing envelopes (${rosters.envelopes.length}):\n${envelopesList}` : ""}
@@ -513,16 +611,20 @@ ${project.solution_summary ? `\n--- BEGIN solution_summary (paste this back verb
 ${(() => {
   const set = (project as { proposed_document_set?: unknown }).proposed_document_set;
   if (!Array.isArray(set) || set.length === 0) return "";
-  const status = (project as { proposed_document_set_status?: string }).proposed_document_set_status ?? "proposed";
-  const lines = (set as Array<Record<string, unknown>>).map((d, i) => {
-    const num = (d.doc_number as number | undefined) ?? i + 1;
-    const title = String(d.title ?? "(untitled)");
-    const dt = String(d.doc_type ?? "");
-    const ps = String(d.print_size ?? "");
-    const purpose = String(d.purpose ?? "");
-    const meta = [dt, ps].filter(Boolean).join(", ");
-    return `  ${num}. ${title}${meta ? ` (${meta})` : ""} — ${purpose}`;
-  }).join("\n");
+  const status =
+    (project as { proposed_document_set_status?: string }).proposed_document_set_status ??
+    "proposed";
+  const lines = (set as Array<Record<string, unknown>>)
+    .map((d, i) => {
+      const num = (d.doc_number as number | undefined) ?? i + 1;
+      const title = String(d.title ?? "(untitled)");
+      const dt = String(d.doc_type ?? "");
+      const ps = String(d.print_size ?? "");
+      const purpose = String(d.purpose ?? "");
+      const meta = [dt, ps].filter(Boolean).join(", ");
+      return `  ${num}. ${title}${meta ? ` (${meta})` : ""} — ${purpose}`;
+    })
+    .join("\n");
   return `Proposed document set (status: ${status}, count: ${set.length} — paste this back if the user asks "show me the documents" or "what was proposed"):\n${lines}\n`;
 })()}
 Doc generation mode: ${project.doc_generation_mode ? `"${project.doc_generation_mode}"` : "NOT YET CHOSEN — ask the user with propose_options before the first add_document in Phase 4 (see DOCUMENT GENERATION WORKFLOW)"}
@@ -551,7 +653,8 @@ ${(() => {
     if (s === "" || s === "—") return false;
     return !origins[k]; // no assistant stamp = user-entered
   });
-  if (userEdited.length === 0) return "USER-EDITED FIELDS: (none — every populated field was set by the assistant)";
+  if (userEdited.length === 0)
+    return "USER-EDITED FIELDS: (none — every populated field was set by the assistant)";
   const lines = userEdited.map(([k, v]) => `- ${k}: "${truncate(v, 120)}"`).join("\n");
   return `USER-EDITED FIELDS (the user typed these themselves — do NOT propose to fill them; instead acknowledge in your next reply, e.g. "I see you already filled in <field> as '<value>' — want me to refine it or move on?"):\n${lines}`;
 })()}
@@ -579,18 +682,20 @@ function optionsMatchProse(
   prose: string,
 ): boolean {
   if (!options || options.length === 0 || !prose) return true; // nothing to check
-  const itemRe = /^\s*\d+[\.\)]\s+(.+?)\s*$/;
+  const itemRe = /^\s*(?:[-*•]\s*)?\d+[\.\)]\s+(?:\*\*)?(.+?)(?:\*\*)?\s*$/;
   const items: string[] = [];
   for (const line of prose.split("\n")) {
     const m = itemRe.exec(line);
-    if (m) items.push(m[1].trim().toLowerCase());
+    if (m) items.push(m[1].replace(/\*\*/g, "").trim().toLowerCase());
   }
   if (items.length === 0) return true; // no numbered list in prose → can't check
   const haystack = items.join(" \n ");
   return options.some((o) => o?.label && haystack.includes(o.label.trim().toLowerCase()));
 }
 
-function synthesizeOptionsFromProse(text: string): { options: Array<{ label: string; send: string }>; question: string | null } | null {
+function synthesizeOptionsFromProse(
+  text: string,
+): { options: Array<{ label: string; send: string }>; question: string | null } | null {
   if (!text) return null;
   const trimmed = text.trim();
   if (trimmed.length === 0) return null;
@@ -599,7 +704,7 @@ function synthesizeOptionsFromProse(text: string): { options: Array<{ label: str
   // English keywords + Hebrew equivalents (בחר/בחרי/בחרו = pick, איזה/איזו = which).
   const looksLikeQuestion =
     /\?\s*$/.test(trimmed) ||
-    /\b(pick|choose|select|which|prefer|approve|confirm)\b/i.test(trimmed) ||
+    /\b(pick|choose|select|which|prefer|approve|confirm|reply|click|option)\b/i.test(trimmed) ||
     /(בחר|בחרי|בחרו|איזה|איזו|תבחר|מעדיף|מעדיפה|לאשר)/.test(trimmed);
   if (!looksLikeQuestion) return null;
 
@@ -607,7 +712,7 @@ function synthesizeOptionsFromProse(text: string): { options: Array<{ label: str
   // run of numbered items (1, 2, 3, …). The list may sit anywhere — top,
   // middle (followed by a "Pick one." closer), or bottom.
   const lines = trimmed.split("\n");
-  const itemLineRegex = /^\s*(\d+)[\.\)]\s+(.+?)\s*$/;
+  const itemLineRegex = /^\s*(?:[-*•]\s*)?(\d+)[\.\)]\s+(?:\*\*)?(.+?)(?:\*\*)?\s*$/;
   let bestRun: { startIdx: number; items: Array<{ n: number; text: string }> } | null = null;
   let i = 0;
   while (i < lines.length) {
@@ -645,7 +750,11 @@ function synthesizeOptionsFromProse(text: string): { options: Array<{ label: str
   // Strip trailing parenthetical/em-dash explanation for cleaner button text,
   // but cap to ~60 chars.
   const toLabel = (s: string) => {
-    const cleaned = s.replace(/\s+—\s+.*$/, "").replace(/\s*\(.*\)\s*$/, "").trim();
+    const cleaned = s
+      .replace(/\*\*/g, "")
+      .replace(/\s+—\s+.*$/, "")
+      .replace(/\s*\(.*\)\s*$/, "")
+      .trim();
     const base = cleaned || s;
     return base.length > 60 ? `${base.slice(0, 57)}…` : base;
   };
@@ -675,29 +784,68 @@ const BASE_TOOLS = [
     type: "function",
     function: {
       name: "update_project",
-      description: "Update project metadata. Covers Case Identity (title, subtitle, phase, mystery_type, genre, year, difficulty, game_language, player_role, case_goal, setting, selling_point, target_doc_count) AND case-level briefs (packaging_notes, image_prompt_instructions, video_prompt_instructions, hint_settings, envelope_settings). Pass ONLY the fields that changed — undefined keys are ignored. For hint_settings/envelope_settings, pass the FULL object you want stored (it overwrites, no shallow merge).",
+      description:
+        "Update project metadata. Covers Case Identity (title, subtitle, phase, mystery_type, genre, year, difficulty, game_language, player_role, case_goal, setting, selling_point, target_doc_count) AND case-level briefs (packaging_notes, image_prompt_instructions, video_prompt_instructions, hint_settings, envelope_settings). Pass ONLY the fields that changed — undefined keys are ignored. For hint_settings/envelope_settings, pass the FULL object you want stored (it overwrites, no shallow merge).",
       parameters: {
         type: "object",
         properties: {
           title: { type: "string" },
           subtitle: { type: "string" },
-          phase: { type: "string", enum: ["setup", "summary", "structure", "documents", "envelopes", "hints", "packaging", "done"] },
+          phase: {
+            type: "string",
+            enum: [
+              "setup",
+              "summary",
+              "structure",
+              "documents",
+              "envelopes",
+              "hints",
+              "packaging",
+              "done",
+            ],
+          },
           mystery_type: { type: "string" },
           genre: { type: "string" },
           year: { type: "number" },
           difficulty: { type: "string", enum: ["easy", "medium", "hard"] },
-          game_language: { type: "string", description: "Per-case language for final in-game content. Use one of the playbook language options when possible." },
+          game_language: {
+            type: "string",
+            description:
+              "Per-case language for final in-game content. Use one of the playbook language options when possible.",
+          },
           player_role: { type: "string" },
           case_goal: { type: "string" },
           setting: { type: "string" },
           selling_point: { type: "string" },
           target_doc_count: { type: "number" },
-          packaging_notes: { type: "string", description: "Phase 7 packaging brief — physical box / print / fulfilment notes." },
-          image_prompt_instructions: { type: "string", description: "Per-project visual style guide injected into every image-prompt call." },
-          video_prompt_instructions: { type: "string", description: "Per-project style guide for video prompts." },
-          hint_settings: { type: "object", description: "Stage/level hint configuration object. Replaces the existing value (no shallow merge)." },
-          envelope_settings: { type: "object", description: "Envelope numbering & defaults object. Replaces the existing value (no shallow merge)." },
-          planning_depth: { type: "string", enum: ["express", "guided", "deep"], description: "How thoroughly the assistant should plan this case: 'express' = ask only the title and auto-fill the rest; 'guided' = basics only; 'deep' = walk through every detail. Set this when the user picks a depth on the first turn or asks to switch later." },
+          packaging_notes: {
+            type: "string",
+            description: "Phase 7 packaging brief — physical box / print / fulfilment notes.",
+          },
+          image_prompt_instructions: {
+            type: "string",
+            description: "Per-project visual style guide injected into every image-prompt call.",
+          },
+          video_prompt_instructions: {
+            type: "string",
+            description: "Per-project style guide for video prompts.",
+          },
+          hint_settings: {
+            type: "object",
+            description:
+              "Stage/level hint configuration object. Replaces the existing value (no shallow merge).",
+          },
+          envelope_settings: {
+            type: "object",
+            description:
+              "Envelope numbering & defaults object. Replaces the existing value (no shallow merge).",
+          },
+          planning_depth: {
+            type: "string",
+            enum: ["express", "guided", "deep"],
+            description:
+              "How thoroughly the assistant should plan this case: 'express' = ask only the title and auto-fill the rest; 'guided' = basics only; 'deep' = walk through every detail. Set this when the user picks a depth on the first turn or asks to switch later.",
+          },
         },
         additionalProperties: false,
       },
@@ -714,11 +862,13 @@ const BASE_TOOLS = [
         properties: {
           summary: {
             type: "string",
-            description: "Full multi-paragraph solution summary (English or Hebrew). 3–8 paragraphs covering setup → clue chain → red herrings → deduction → reveal. For regeneration, it must be materially different from the prior saved summary while preserving approved Phase 1 constraints.",
+            description:
+              "Full multi-paragraph solution summary (English or Hebrew). 3–8 paragraphs covering setup → clue chain → red herrings → deduction → reveal. For regeneration, it must be materially different from the prior saved summary while preserving approved Phase 1 constraints.",
           },
           mark_approved: {
             type: "boolean",
-            description: "Set to true to also stamp logic_approved_at = now (unlocks document generation). Default false.",
+            description:
+              "Set to true to also stamp logic_approved_at = now (unlocks document generation). Default false.",
           },
         },
         required: ["summary"],
@@ -761,8 +911,15 @@ const BASE_TOOLS = [
           print_size: { type: "string" },
           design_instructions: { type: "string" },
           hebrew_content: { type: "string" },
-          envelope_number: { type: "number", description: "DEPRECATED for distribution. Leave null in nearly all cases. All documents are in the box from the start. Set this ONLY if the user explicitly wants this document physically tucked inside a sealed task envelope (rare)." },
-          final_node_id: { type: "string", description: "Optional Final board document-node id this row is being created from." },
+          envelope_number: {
+            type: "number",
+            description:
+              "DEPRECATED for distribution. Leave null in nearly all cases. All documents are in the box from the start. Set this ONLY if the user explicitly wants this document physically tucked inside a sealed task envelope (rare).",
+          },
+          final_node_id: {
+            type: "string",
+            description: "Optional Final board document-node id this row is being created from.",
+          },
         },
         required: ["title"],
         additionalProperties: false,
@@ -784,13 +941,34 @@ const BASE_TOOLS = [
             items: {
               type: "object",
               properties: {
-                doc_number: { type: "number", description: "Optional. Leave blank to auto-number from 1 upward." },
+                doc_number: {
+                  type: "number",
+                  description: "Optional. Leave blank to auto-number from 1 upward.",
+                },
                 title: { type: "string" },
-                doc_type: { type: "string", description: "Format / visual style hint only (NOT a content template)." },
-                print_size: { type: "string", description: "e.g. A4, A5, photo, ticket-stub, etc." },
-                envelope_number: { type: "number", description: "DEPRECATED for distribution. Leave blank/null. Documents are not gated by envelopes." },
-                purpose: { type: "string", description: "The specific clue / role this document delivers in THIS case. Reason from the Logic Flow — not generic." },
-                linked_logic_node_ids: { type: "array", items: { type: "string" }, description: "Canvas Logic Flow node ids this document supports." },
+                doc_type: {
+                  type: "string",
+                  description: "Format / visual style hint only (NOT a content template).",
+                },
+                print_size: {
+                  type: "string",
+                  description: "e.g. A4, A5, photo, ticket-stub, etc.",
+                },
+                envelope_number: {
+                  type: "number",
+                  description:
+                    "DEPRECATED for distribution. Leave blank/null. Documents are not gated by envelopes.",
+                },
+                purpose: {
+                  type: "string",
+                  description:
+                    "The specific clue / role this document delivers in THIS case. Reason from the Logic Flow — not generic.",
+                },
+                linked_logic_node_ids: {
+                  type: "array",
+                  items: { type: "string" },
+                  description: "Canvas Logic Flow node ids this document supports.",
+                },
               },
               required: ["title", "purpose"],
               additionalProperties: false,
@@ -806,11 +984,15 @@ const BASE_TOOLS = [
     type: "function",
     function: {
       name: "create_final_documents_map",
-      description: "Build the Final board production map from the approved proposed_document_set (preferred) — falls back to logic-flow padding only when no proposal exists. Call this AFTER propose_document_set has been approved by the user (or after the user clicked 'Just build it' to bypass review).",
+      description:
+        "Build the Final board production map from the approved proposed_document_set (preferred) — falls back to logic-flow padding only when no proposal exists. Call this AFTER propose_document_set has been approved by the user (or after the user clicked 'Just build it' to bypass review).",
       parameters: {
         type: "object",
         properties: {
-          replace: { type: "boolean", description: "Default true. Replace existing unlinked Final-board document nodes." },
+          replace: {
+            type: "boolean",
+            description: "Default true. Replace existing unlinked Final-board document nodes.",
+          },
         },
         required: [],
         additionalProperties: false,
@@ -821,11 +1003,15 @@ const BASE_TOOLS = [
     type: "function",
     function: {
       name: "generate_logic_flow",
-      description: "Generate or replace the Canvas Logic Flow board from the case brief/approved summary. The user must still review and approve it before final document generation.",
+      description:
+        "Generate or replace the Canvas Logic Flow board from the case brief/approved summary. The user must still review and approve it before final document generation.",
       parameters: {
         type: "object",
         properties: {
-          use_existing_summary: { type: "boolean", description: "Use the saved solution_summary when present. Default true." },
+          use_existing_summary: {
+            type: "boolean",
+            description: "Use the saved solution_summary when present. Default true.",
+          },
         },
         required: [],
         additionalProperties: false,
@@ -836,15 +1022,35 @@ const BASE_TOOLS = [
     type: "function",
     function: {
       name: "add_canvas_node",
-      description: "Add a node to the logic canvas. CRITICAL: when the node is a clue, deduction, contradiction, red_herring, document, or solution and the project already has other nodes, you MUST in the SAME turn also call add_canvas_edge at least once to wire this node into the existing graph (otherwise it floats disconnected and breaks the Logic Flow). If logic_approved_at is set, you must also follow the POST-APPROVAL EDIT RULE.",
+      description:
+        "Add a node to the logic canvas. CRITICAL: when the node is a clue, deduction, contradiction, red_herring, document, or solution and the project already has other nodes, you MUST in the SAME turn also call add_canvas_edge at least once to wire this node into the existing graph (otherwise it floats disconnected and breaks the Logic Flow). If logic_approved_at is set, you must also follow the POST-APPROVAL EDIT RULE.",
       parameters: {
         type: "object",
         properties: {
-          node_type: { type: "string", enum: ["clue", "suspect", "deduction", "contradiction", "red_herring", "envelope", "solution", "document", "hint", "note"] },
+          node_type: {
+            type: "string",
+            enum: [
+              "clue",
+              "suspect",
+              "deduction",
+              "contradiction",
+              "red_herring",
+              "envelope",
+              "solution",
+              "document",
+              "hint",
+              "note",
+            ],
+          },
           title: { type: "string" },
           description: { type: "string" },
           color: { type: "string" },
-          board: { type: "string", enum: ["logic", "final"], description: "Defaults to 'logic'. Use 'final' only when explicitly editing the production map." },
+          board: {
+            type: "string",
+            enum: ["logic", "final"],
+            description:
+              "Defaults to 'logic'. Use 'final' only when explicitly editing the production map.",
+          },
         },
         required: ["node_type", "title"],
         additionalProperties: false,
@@ -855,13 +1061,22 @@ const BASE_TOOLS = [
     type: "function",
     function: {
       name: "add_canvas_edge",
-      description: "Connect two existing canvas nodes with a directional edge (source → target). Use immediately after add_canvas_node to wire the new node into the graph, or any time the user asks you to link / connect / draw a line between nodes. The label is optional but strongly recommended for logic clarity (e.g. 'leads to', 'contradicts', 'supports', 'reveals').",
+      description:
+        "Connect two existing canvas nodes with a directional edge (source → target). Use immediately after add_canvas_node to wire the new node into the graph, or any time the user asks you to link / connect / draw a line between nodes. The label is optional but strongly recommended for logic clarity (e.g. 'leads to', 'contradicts', 'supports', 'reveals').",
       parameters: {
         type: "object",
         properties: {
-          source_id: { type: "string", description: "Canvas node id the edge starts from (from the Existing canvas nodes roster)." },
+          source_id: {
+            type: "string",
+            description:
+              "Canvas node id the edge starts from (from the Existing canvas nodes roster).",
+          },
           target_id: { type: "string", description: "Canvas node id the edge points to." },
-          label: { type: "string", description: "Optional short label shown on the edge (e.g. 'reveals', 'contradicts', 'supports')." },
+          label: {
+            type: "string",
+            description:
+              "Optional short label shown on the edge (e.g. 'reveals', 'contradicts', 'supports').",
+          },
           board: { type: "string", enum: ["logic", "final"], description: "Defaults to 'logic'." },
         },
         required: ["source_id", "target_id"],
@@ -880,7 +1095,8 @@ const BASE_TOOLS = [
         properties: {
           question: {
             type: "string",
-            description: "Optional one-line restatement of the question being asked (shown above the buttons).",
+            description:
+              "Optional one-line restatement of the question being asked (shown above the buttons).",
           },
           options: {
             type: "array",
@@ -889,8 +1105,14 @@ const BASE_TOOLS = [
             items: {
               type: "object",
               properties: {
-                label: { type: "string", description: "Short button text the user sees (under ~60 chars)." },
-                send: { type: "string", description: "The message text sent when clicked. Defaults to label if omitted." },
+                label: {
+                  type: "string",
+                  description: "Short button text the user sees (under ~60 chars).",
+                },
+                send: {
+                  type: "string",
+                  description: "The message text sent when clicked. Defaults to label if omitted.",
+                },
               },
               required: ["label"],
               additionalProperties: false,
@@ -927,9 +1149,20 @@ const BASE_TOOLS = [
       parameters: {
         type: "object",
         properties: {
-          document_id: { type: "string", description: "ID returned by the most recent add_document call." },
-          mode: { type: "string", enum: ["text", "image", "document", "both"], description: "Which assets to generate. Default 'both'." },
-          document_format: { type: "string", enum: ["pdf", "docx", "pptx", "xlsx"], description: "Document file format when mode is document/both. Default pdf." },
+          document_id: {
+            type: "string",
+            description: "ID returned by the most recent add_document call.",
+          },
+          mode: {
+            type: "string",
+            enum: ["text", "image", "document", "both"],
+            description: "Which assets to generate. Default 'both'.",
+          },
+          document_format: {
+            type: "string",
+            enum: ["pdf", "docx", "pptx", "xlsx"],
+            description: "Document file format when mode is document/both. Default pdf.",
+          },
         },
         required: ["document_id"],
         additionalProperties: false,
@@ -945,8 +1178,15 @@ const BASE_TOOLS = [
       parameters: {
         type: "object",
         properties: {
-          requested_skill: { type: "string", description: "Short name/description of the skill the user asked for." },
-          intended_use: { type: "string", description: "Where the skill should be used, e.g. documents, marketing, logic analysis." },
+          requested_skill: {
+            type: "string",
+            description: "Short name/description of the skill the user asked for.",
+          },
+          intended_use: {
+            type: "string",
+            description:
+              "Where the skill should be used, e.g. documents, marketing, logic analysis.",
+          },
         },
         required: ["requested_skill"],
         additionalProperties: false,
@@ -992,7 +1232,11 @@ const BASE_TOOLS = [
           print_size: { type: "string" },
           design_instructions: { type: "string" },
           hebrew_content: { type: "string" },
-          envelope_number: { type: "number", description: "DEPRECATED for distribution. Almost always leave null. Documents are in the box from the start; only set if the user explicitly wants this doc physically inside a sealed task envelope." },
+          envelope_number: {
+            type: "number",
+            description:
+              "DEPRECATED for distribution. Almost always leave null. Documents are in the box from the start; only set if the user explicitly wants this doc physically inside a sealed task envelope.",
+          },
           status: { type: "string" },
         },
         required: ["id"],
@@ -1009,7 +1253,11 @@ const BASE_TOOLS = [
       parameters: {
         type: "object",
         properties: {
-          id: { type: "string", description: "Document id from the Existing documents roster (the doc the user just approved)." },
+          id: {
+            type: "string",
+            description:
+              "Document id from the Existing documents roster (the doc the user just approved).",
+          },
         },
         required: ["id"],
         additionalProperties: false,
@@ -1027,8 +1275,16 @@ const BASE_TOOLS = [
         properties: {
           id: { type: "string", description: "Envelope id from the roster." },
           label: { type: "string" },
-          task: { type: "string", description: "Short, bold, in-language instruction the player reads when they open this envelope at the right moment. Never the next batch of evidence." },
-          notes: { type: "string", description: "Start with 'Opening trigger: <when to open>'. Then any internal design notes." },
+          task: {
+            type: "string",
+            description:
+              "Short, bold, in-language instruction the player reads when they open this envelope at the right moment. Never the next batch of evidence.",
+          },
+          notes: {
+            type: "string",
+            description:
+              "Start with 'Opening trigger: <when to open>'. Then any internal design notes.",
+          },
           status: { type: "string" },
           number: { type: "number" },
         },
@@ -1065,9 +1321,19 @@ const BASE_TOOLS = [
       parameters: {
         type: "object",
         properties: {
-          stage: { type: "number", description: "Stage number (1-based). Each stage represents one moment the player gets stuck." },
-          level: { type: "number", description: "Hint level within the stage (1=vague, 2=helpful, 3=reveals the task)." },
-          text: { type: "string", description: "Hebrew hint text, RTL, grammatical, one or two short sentences." },
+          stage: {
+            type: "number",
+            description:
+              "Stage number (1-based). Each stage represents one moment the player gets stuck.",
+          },
+          level: {
+            type: "number",
+            description: "Hint level within the stage (1=vague, 2=helpful, 3=reveals the task).",
+          },
+          text: {
+            type: "string",
+            description: "Hebrew hint text, RTL, grammatical, one or two short sentences.",
+          },
         },
         required: ["stage", "level"],
         additionalProperties: false,
@@ -1088,12 +1354,14 @@ const BASE_TOOLS = [
             type: "array",
             minItems: 1,
             maxItems: 6,
-            description: "Hint rungs for this stage, ordered from vague (level 1) to reveal (last level). Each item is the Hebrew hint text for that rung.",
+            description:
+              "Hint rungs for this stage, ordered from vague (level 1) to reveal (last level). Each item is the Hebrew hint text for that rung.",
             items: { type: "string" },
           },
           context: {
             type: "string",
-            description: "Optional one-line description of which clue/deduction/task this stage hints toward. Helps the user audit later.",
+            description:
+              "Optional one-line description of which clue/deduction/task this stage hints toward. Helps the user audit later.",
           },
         },
         required: ["stage", "hints"],
@@ -1113,7 +1381,21 @@ const BASE_TOOLS = [
           id: { type: "string", description: "Canvas node id from the roster." },
           title: { type: "string" },
           description: { type: "string" },
-          node_type: { type: "string", enum: ["clue", "suspect", "deduction", "contradiction", "red_herring", "envelope", "solution", "document", "hint", "note"] },
+          node_type: {
+            type: "string",
+            enum: [
+              "clue",
+              "suspect",
+              "deduction",
+              "contradiction",
+              "red_herring",
+              "envelope",
+              "solution",
+              "document",
+              "hint",
+              "note",
+            ],
+          },
           color: { type: "string" },
           position_x: { type: "number" },
           position_y: { type: "number" },
@@ -1133,10 +1415,21 @@ const BASE_TOOLS = [
       parameters: {
         type: "object",
         properties: {
-          title: { type: "string", description: "Short headline shown in the bell panel (under ~80 chars)." },
+          title: {
+            type: "string",
+            description: "Short headline shown in the bell panel (under ~80 chars).",
+          },
           body: { type: "string", description: "Optional 1–2 sentence detail." },
-          starter_prompt: { type: "string", description: "Optional message text sent to you when the user clicks 'Open in Assistant'." },
-          kind: { type: "string", description: "Short slug for grouping (e.g. 'reminder', 'follow_up', 'planning'). Defaults to 'general'." },
+          starter_prompt: {
+            type: "string",
+            description:
+              "Optional message text sent to you when the user clicks 'Open in Assistant'.",
+          },
+          kind: {
+            type: "string",
+            description:
+              "Short slug for grouping (e.g. 'reminder', 'follow_up', 'planning'). Defaults to 'general'.",
+          },
         },
         required: ["title"],
         additionalProperties: false,
@@ -1152,10 +1445,27 @@ const BASE_TOOLS = [
       parameters: {
         type: "object",
         properties: {
-          document_id: { type: "string", description: "Existing document id (from the Existing documents roster, or returned by add_document)." },
-          layout: { type: "string", enum: ["bottom-grid-2col", "bottom-grid-3col", "inline-after-text", "gallery"], description: "How the renderer arranges the images at the bottom of the document. Defaults to 'bottom-grid-2col'." },
-          caption: { type: "string", description: "Optional shared caption rendered above the image grid (e.g. 'Aerial reconnaissance — 14:23, June 9.')." },
-          group_key: { type: "string", description: "Optional shared key linking siblings for visual consistency (e.g. 'drone-feed', 'evidence-set'). All images in the same group inherit the anchor's look." },
+          document_id: {
+            type: "string",
+            description:
+              "Existing document id (from the Existing documents roster, or returned by add_document).",
+          },
+          layout: {
+            type: "string",
+            enum: ["bottom-grid-2col", "bottom-grid-3col", "inline-after-text", "gallery"],
+            description:
+              "How the renderer arranges the images at the bottom of the document. Defaults to 'bottom-grid-2col'.",
+          },
+          caption: {
+            type: "string",
+            description:
+              "Optional shared caption rendered above the image grid (e.g. 'Aerial reconnaissance — 14:23, June 9.').",
+          },
+          group_key: {
+            type: "string",
+            description:
+              "Optional shared key linking siblings for visual consistency (e.g. 'drone-feed', 'evidence-set'). All images in the same group inherit the anchor's look.",
+          },
           images: {
             type: "array",
             minItems: 1,
@@ -1163,9 +1473,21 @@ const BASE_TOOLS = [
             items: {
               type: "object",
               properties: {
-                slot_label: { type: "string", description: "Short editable label shown above the slot in the editor (e.g. 'Drone shot 1 — wide')." },
-                prompt: { type: "string", description: "Per-image prompt brief. For the anchor: a strong opinionated reference shot. For children: a SHORT description of how this slot's framing/angle differs from the anchor (the consistency lock is added automatically)." },
-                is_anchor: { type: "boolean", description: "True for exactly ONE image per group_key — the visual reference all siblings inherit from. The first image in the array is auto-anchored if none is marked." },
+                slot_label: {
+                  type: "string",
+                  description:
+                    "Short editable label shown above the slot in the editor (e.g. 'Drone shot 1 — wide').",
+                },
+                prompt: {
+                  type: "string",
+                  description:
+                    "Per-image prompt brief. For the anchor: a strong opinionated reference shot. For children: a SHORT description of how this slot's framing/angle differs from the anchor (the consistency lock is added automatically).",
+                },
+                is_anchor: {
+                  type: "boolean",
+                  description:
+                    "True for exactly ONE image per group_key — the visual reference all siblings inherit from. The first image in the array is auto-anchored if none is marked.",
+                },
               },
               required: ["slot_label"],
               additionalProperties: false,
@@ -1185,7 +1507,9 @@ function buildTools(playbook: Playbook): typeof BASE_TOOLS {
   return BASE_TOOLS.map((tool) => {
     if (tool.function?.name !== "update_project") return tool;
     const cloned = JSON.parse(JSON.stringify(tool)) as typeof tool;
-    const props = (cloned.function.parameters as unknown as { properties?: Record<string, { enum?: string[] }> }).properties;
+    const props = (
+      cloned.function.parameters as unknown as { properties?: Record<string, { enum?: string[] }> }
+    ).properties;
     if (props?.phase) props.phase.enum = phaseEnum;
     return cloned;
   });
@@ -1204,18 +1528,43 @@ async function executeTool(
   playbook: Playbook = PLAYBOOK_DEFAULTS,
 ) {
   try {
-    const withMessage = (payload: Record<string, unknown>) => (
-      messageId ? { ...payload, created_by_message_id: messageId } : payload
-    );
-    if (!messageId && ["add_document", "update_document", "add_suspect", "update_suspect", "add_canvas_node", "update_canvas_node", "add_canvas_edge"].includes(name)) {
-      return { ok: false, message: "Assistant message could not be saved, so I did not create linked project rows. Please retry this step." };
+    const withMessage = (payload: Record<string, unknown>) =>
+      messageId ? { ...payload, created_by_message_id: messageId } : payload;
+    if (
+      !messageId &&
+      [
+        "add_document",
+        "update_document",
+        "add_suspect",
+        "update_suspect",
+        "add_canvas_node",
+        "update_canvas_node",
+        "add_canvas_edge",
+      ].includes(name)
+    ) {
+      return {
+        ok: false,
+        message:
+          "Assistant message could not be saved, so I did not create linked project rows. Please retry this step.",
+      };
     }
     // Helper: when the project has already been logic-approved, any edit to the
     // logic graph (add/update node, add edge) means the saved solution_summary
     // and any existing Final Flow are now potentially stale. We attach a
     // `requires_followup` payload to the receipt so the assistant must surface
     // it as quick-reply buttons in the same turn (see POST-APPROVAL EDIT RULE).
-    const buildPostApprovalFollowup = async (changeKind: string): Promise<{ requires_followup: { reason: string; stale: string[]; offer: Array<{ key: string; label: string; send: string }> } } | Record<string, never>> => {
+    const buildPostApprovalFollowup = async (
+      changeKind: string,
+    ): Promise<
+      | {
+          requires_followup: {
+            reason: string;
+            stale: string[];
+            offer: Array<{ key: string; label: string; send: string }>;
+          };
+        }
+      | Record<string, never>
+    > => {
       const { data: proj } = await supa
         .from("projects")
         .select("logic_approved_at, solution_summary, proposed_document_set_status")
@@ -1264,7 +1613,7 @@ async function executeTool(
         .select("assistant_origins")
         .eq("id", projectId)
         .single();
-      const origins = { ...(current?.assistant_origins as Record<string, string> ?? {}) };
+      const origins = { ...((current?.assistant_origins as Record<string, string>) ?? {}) };
       if (messageId) for (const k of Object.keys(args)) origins[k] = messageId;
       const { error } = await supa
         .from("projects")
@@ -1282,9 +1631,12 @@ async function executeTool(
         .select("assistant_origins, solution_summary, logic_approved_at")
         .eq("id", projectId)
         .single();
-      const origins = { ...(current?.assistant_origins as Record<string, string> ?? {}) };
+      const origins = { ...((current?.assistant_origins as Record<string, string>) ?? {}) };
       if (messageId) origins.solution_summary = messageId;
-      const patch: Record<string, unknown> = { solution_summary: summary, assistant_origins: origins };
+      const patch: Record<string, unknown> = {
+        solution_summary: summary,
+        assistant_origins: origins,
+      };
       // Approval is bound to the EXACT summary text it approved. Any rewrite
       // (without an explicit re-approval in the same call) invalidates the
       // prior approval so the Case Board no longer shows a stale green badge.
@@ -1342,7 +1694,10 @@ async function executeTool(
       const wordCount = summary.split(/\s+/).filter(Boolean).length;
       const noteParts: string[] = [];
       if (approvalCleared) noteParts.push("the previous logic approval was cleared");
-      if (logicWiped) noteParts.push("the old Logic Flow board was wiped (it was built from the previous summary)");
+      if (logicWiped)
+        noteParts.push(
+          "the old Logic Flow board was wiped (it was built from the previous summary)",
+        );
       const changeNote = noteParts.length
         ? ` ⚠️ Because the summary changed, ${noteParts.join(" and ")}. Offer the user the rebuild buttons (SUMMARY-REWRITE RULE) so they can regenerate and re-approve.`
         : "";
@@ -1393,7 +1748,8 @@ async function executeTool(
       if (!finalDocCount) {
         return {
           ok: false,
-          message: "Cannot create final documents yet — the Final Flow is not mapped. Ask the user whether to generate the Final Flow now; if they say yes, call create_final_documents_map first, then create documents from those nodes.",
+          message:
+            "Cannot create final documents yet — the Final Flow is not mapped. Ask the user whether to generate the Final Flow now; if they say yes, call create_final_documents_map first, then create documents from those nodes.",
         };
       }
       const finalNodeId = typeof args.final_node_id === "string" ? args.final_node_id : null;
@@ -1401,9 +1757,16 @@ async function executeTool(
       delete insertArgs.final_node_id;
       const docNumber = insertArgs.doc_number ?? Math.floor(100 + Math.random() * 900);
       const linkedNodeIds = finalNodeId ? [finalNodeId] : undefined;
-      const isDoc0 = Number(docNumber) === 0 || /\bdoc\s*0\b|document\s*0|contents|inventory|תוכן עניינים|רשימת תכולה/i.test(String(insertArgs.title ?? "")) || String(insertArgs.doc_type ?? "").toLowerCase() === "contents checklist";
+      const isDoc0 =
+        Number(docNumber) === 0 ||
+        /\bdoc\s*0\b|document\s*0|contents|inventory|תוכן עניינים|רשימת תכולה/i.test(
+          String(insertArgs.title ?? ""),
+        ) ||
+        String(insertArgs.doc_type ?? "").toLowerCase() === "contents checklist";
       if (isDoc0) {
-        const doc0Def = playbook.universal_documents.docs.find((doc) => doc.key === "doc0_contents") ?? PLAYBOOK_DEFAULTS.universal_documents.docs[0];
+        const doc0Def =
+          playbook.universal_documents.docs.find((doc) => doc.key === "doc0_contents") ??
+          PLAYBOOK_DEFAULTS.universal_documents.docs[0];
         insertArgs.title = insertArgs.title || doc0Def.title_template;
         insertArgs.doc_type = doc0Def.doc_type || "contents checklist";
         insertArgs.print_size = insertArgs.print_size || doc0Def.print_size || "A4";
@@ -1416,12 +1779,17 @@ async function executeTool(
           .order("position_y", { ascending: true });
         const inventoryLines = (finalDocNodes ?? [])
           .filter((node: any) => Number(node.data?.docNumber) !== 0)
-          .map((node: any) => `- #${node.data?.docNumber ?? "?"} ${node.title} (${node.data?.docType ?? "document"}, ${node.data?.printSize ?? "A4"})${node.data?.envelopeNumber ? ` — envelope ${node.data.envelopeNumber}` : ""}`);
+          .map(
+            (node: any) =>
+              `- #${node.data?.docNumber ?? "?"} ${node.title} (${node.data?.docType ?? "document"}, ${node.data?.printSize ?? "A4"})${node.data?.envelopeNumber ? ` — envelope ${node.data.envelopeNumber}` : ""}`,
+          );
         if (inventoryLines.length > 0) {
           insertArgs.hebrew_content = [
             String(insertArgs.hebrew_content ?? "").trim(),
             `\n\nAuthoritative Final Flow inventory source for Doc 0:\n- Doc 0 — ${insertArgs.title}\n${inventoryLines.join("\n")}`,
-          ].filter(Boolean).join("\n");
+          ]
+            .filter(Boolean)
+            .join("\n");
         }
         const { data: existingDoc0 } = await supa
           .from("documents")
@@ -1434,42 +1802,92 @@ async function executeTool(
         if (existingDoc0) {
           await supa
             .from("documents")
-            .update(withMessage({ ...insertArgs, doc_number: 0, doc_type: insertArgs.doc_type ?? "contents checklist", ...(linkedNodeIds ? { linked_node_ids: linkedNodeIds } : {}) }))
+            .update(
+              withMessage({
+                ...insertArgs,
+                doc_number: 0,
+                doc_type: insertArgs.doc_type ?? "contents checklist",
+                ...(linkedNodeIds ? { linked_node_ids: linkedNodeIds } : {}),
+              }),
+            )
             .eq("id", existingDoc0.id);
-          if (finalNodeId) await supa.from("canvas_nodes").update({ data: { documentId: existingDoc0.id, generationStatus: "draft row created" } }).eq("id", finalNodeId).eq("project_id", projectId);
-          return { ok: true, message: `Doc 0 updated: ${insertArgs.title ?? existingDoc0.title} (#0)`, id: existingDoc0.id };
+          if (finalNodeId)
+            await supa
+              .from("canvas_nodes")
+              .update({
+                data: { documentId: existingDoc0.id, generationStatus: "draft row created" },
+              })
+              .eq("id", finalNodeId)
+              .eq("project_id", projectId);
+          return {
+            ok: true,
+            message: `Doc 0 updated: ${insertArgs.title ?? existingDoc0.title} (#0)`,
+            id: existingDoc0.id,
+          };
         }
       }
       const { data, error } = await supa
         .from("documents")
-        .insert(withMessage({ ...insertArgs, doc_number: isDoc0 ? 0 : docNumber, project_id: projectId, doc_type: isDoc0 ? (insertArgs.doc_type ?? "contents checklist") : insertArgs.doc_type, ...(linkedNodeIds ? { linked_node_ids: linkedNodeIds } : {}) }))
+        .insert(
+          withMessage({
+            ...insertArgs,
+            doc_number: isDoc0 ? 0 : docNumber,
+            project_id: projectId,
+            doc_type: isDoc0 ? (insertArgs.doc_type ?? "contents checklist") : insertArgs.doc_type,
+            ...(linkedNodeIds ? { linked_node_ids: linkedNodeIds } : {}),
+          }),
+        )
         .select("id, title")
         .single();
       if (error) throw error;
       if (finalNodeId) {
-        await supa.from("canvas_nodes").update({ data: { documentId: data.id, generationStatus: "draft row created" } }).eq("id", finalNodeId).eq("project_id", projectId);
+        await supa
+          .from("canvas_nodes")
+          .update({ data: { documentId: data.id, generationStatus: "draft row created" } })
+          .eq("id", finalNodeId)
+          .eq("project_id", projectId);
       }
       return { ok: true, message: `Document created: ${data.title} (#${docNumber})`, id: data.id };
     }
     if (name === "propose_document_set") {
-      const proposalDocs = Array.isArray((args as { documents?: unknown[] }).documents) ? (args as { documents: unknown[] }).documents : [];
-      if (proposalDocs.length === 0) return { ok: false, message: "propose_document_set needs at least one document" };
+      const proposalDocs = Array.isArray((args as { documents?: unknown[] }).documents)
+        ? (args as { documents: unknown[] }).documents
+        : [];
+      if (proposalDocs.length === 0)
+        return { ok: false, message: "propose_document_set needs at least one document" };
       // Sanitize entries — keep only the planning fields, drop unknowns.
       const cleaned = proposalDocs.map((raw, i) => {
         const d = (raw ?? {}) as Record<string, unknown>;
         return {
           doc_number: typeof d.doc_number === "number" ? d.doc_number : null,
           title: String(d.title ?? `Planned document ${i + 1}`).slice(0, 200),
-          doc_type: typeof d.doc_type === "string" && d.doc_type.trim().length > 0 ? d.doc_type.trim() : "case evidence",
-          print_size: typeof d.print_size === "string" && d.print_size.trim().length > 0 ? d.print_size.trim() : "A4",
+          doc_type:
+            typeof d.doc_type === "string" && d.doc_type.trim().length > 0
+              ? d.doc_type.trim()
+              : "case evidence",
+          print_size:
+            typeof d.print_size === "string" && d.print_size.trim().length > 0
+              ? d.print_size.trim()
+              : "A4",
           envelope_number: typeof d.envelope_number === "number" ? d.envelope_number : null,
-          purpose: String(d.purpose ?? "Planned by the assistant from the Logic Flow.").slice(0, 1200),
-          linked_logic_node_ids: Array.isArray(d.linked_logic_node_ids) ? (d.linked_logic_node_ids as unknown[]).filter((x): x is string => typeof x === "string") : [],
+          purpose: String(d.purpose ?? "Planned by the assistant from the Logic Flow.").slice(
+            0,
+            1200,
+          ),
+          linked_logic_node_ids: Array.isArray(d.linked_logic_node_ids)
+            ? (d.linked_logic_node_ids as unknown[]).filter(
+                (x): x is string => typeof x === "string",
+              )
+            : [],
         };
       });
       const { error } = await supa
         .from("projects")
-        .update({ proposed_document_set: cleaned, proposed_document_set_status: "proposed", proposed_document_set_approved_at: null })
+        .update({
+          proposed_document_set: cleaned,
+          proposed_document_set_status: "proposed",
+          proposed_document_set_approved_at: null,
+        })
         .eq("id", projectId);
       if (error) return { ok: false, message: `Failed to save proposal: ${error.message}` };
       return {
@@ -1480,19 +1898,45 @@ async function executeTool(
     }
     if (name === "create_final_documents_map") {
       // Mark proposal as approved (or bypassed if there is none) before building.
-      const { data: proj } = await supa.from("projects").select("proposed_document_set, proposed_document_set_status").eq("id", projectId).single();
-      const hasProposal = Array.isArray(proj?.proposed_document_set) && (proj?.proposed_document_set as unknown[]).length > 0;
-      const nextStatus = hasProposal ? (proj?.proposed_document_set_status === "approved" ? "approved" : "approved") : "bypassed";
-      await supa.from("projects").update({ proposed_document_set_status: nextStatus, proposed_document_set_approved_at: new Date().toISOString() }).eq("id", projectId);
+      const { data: proj } = await supa
+        .from("projects")
+        .select("proposed_document_set, proposed_document_set_status")
+        .eq("id", projectId)
+        .single();
+      const hasProposal =
+        Array.isArray(proj?.proposed_document_set) &&
+        (proj?.proposed_document_set as unknown[]).length > 0;
+      const nextStatus = hasProposal
+        ? proj?.proposed_document_set_status === "approved"
+          ? "approved"
+          : "approved"
+        : "bypassed";
+      await supa
+        .from("projects")
+        .update({
+          proposed_document_set_status: nextStatus,
+          proposed_document_set_approved_at: new Date().toISOString(),
+        })
+        .eq("id", projectId);
       const base = `${SUPABASE_URL}/functions/v1/create-final-documents-map`;
       const resp = await fetch(base, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
-        body: JSON.stringify({ projectId, replace: (args as { replace?: boolean }).replace !== false, createdByMessageId: messageId }),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        },
+        body: JSON.stringify({
+          projectId,
+          replace: (args as { replace?: boolean }).replace !== false,
+          createdByMessageId: messageId,
+        }),
       });
       const payload = await resp.json().catch(() => ({}));
       if (!resp.ok) return { ok: false, message: payload.error ?? "Final Flow creation failed" };
-      return { ok: true, message: `Final Flow created with ${payload.nodeCount ?? 0} nodes, including ${payload.documentNodeCount ?? 0} planned documents and ${payload.edgeCount ?? 0} connecting lines${hasProposal ? " (built from your approved proposal)" : ""}. Review the Final board before creating document rows.` };
+      return {
+        ok: true,
+        message: `Final Flow created with ${payload.nodeCount ?? 0} nodes, including ${payload.documentNodeCount ?? 0} planned documents and ${payload.edgeCount ?? 0} connecting lines${hasProposal ? " (built from your approved proposal)" : ""}. Review the Final board before creating document rows.`,
+      };
     }
     if (name === "generate_logic_flow") {
       // generate-logic-flow can take 2-3 minutes (heavy planning model call),
@@ -1503,18 +1947,23 @@ async function executeTool(
       const body = JSON.stringify({
         projectId,
         replace: true,
-        useExistingSummary: (args as { use_existing_summary?: boolean }).use_existing_summary !== false,
+        useExistingSummary:
+          (args as { use_existing_summary?: boolean }).use_existing_summary !== false,
       });
       const fireAndForget = fetch(`${SUPABASE_URL}/functions/v1/generate-logic-flow`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        },
         body,
       }).catch((err) => {
         console.error("[assistant-chat] generate-logic-flow background fetch failed", err);
       });
       // Keep the worker alive long enough to send the request without blocking
       // the assistant turn on the full 2-3 min response.
-      const runtime = (globalThis as { EdgeRuntime?: { waitUntil: (p: Promise<unknown>) => void } }).EdgeRuntime;
+      const runtime = (globalThis as { EdgeRuntime?: { waitUntil: (p: Promise<unknown>) => void } })
+        .EdgeRuntime;
       if (runtime?.waitUntil) runtime.waitUntil(fireAndForget);
       return {
         ok: true,
@@ -1538,15 +1987,22 @@ async function executeTool(
         .single();
       if (error) throw error;
       const followup = await buildPostApprovalFollowup(`add_canvas_node (${data.title})`);
-      return { ok: true, message: `Canvas node added: ${data.title}. ${('requires_followup' in followup) ? "REMEMBER: also call add_canvas_edge to wire it into the graph, then surface the post-approval follow-up buttons." : "REMEMBER: if there are existing nodes this should connect to, call add_canvas_edge in the same turn."}`, id: data.id, ...followup };
+      return {
+        ok: true,
+        message: `Canvas node added: ${data.title}. ${"requires_followup" in followup ? "REMEMBER: also call add_canvas_edge to wire it into the graph, then surface the post-approval follow-up buttons." : "REMEMBER: if there are existing nodes this should connect to, call add_canvas_edge in the same turn."}`,
+        id: data.id,
+        ...followup,
+      };
     }
     if (name === "add_canvas_edge") {
       const sourceId = String((args as { source_id?: string }).source_id ?? "").trim();
       const targetId = String((args as { target_id?: string }).target_id ?? "").trim();
       const label = (args as { label?: string }).label;
       const board = String((args as { board?: string }).board ?? "logic").trim();
-      if (!sourceId || !targetId) return { ok: false, message: "source_id and target_id are required" };
-      if (sourceId === targetId) return { ok: false, message: "source_id and target_id must be different nodes" };
+      if (!sourceId || !targetId)
+        return { ok: false, message: "source_id and target_id are required" };
+      if (sourceId === targetId)
+        return { ok: false, message: "source_id and target_id must be different nodes" };
       // Verify both nodes exist on the same board within this project.
       const { data: nodes, error: lookupErr } = await supa
         .from("canvas_nodes")
@@ -1555,7 +2011,11 @@ async function executeTool(
         .eq("project_id", projectId);
       if (lookupErr) throw lookupErr;
       if (!nodes || nodes.length !== 2) {
-        return { ok: false, message: "One or both node ids were not found in this project. Pass valid ids from the Existing canvas nodes roster." };
+        return {
+          ok: false,
+          message:
+            "One or both node ids were not found in this project. Pass valid ids from the Existing canvas nodes roster.",
+        };
       }
       const { data, error } = await supa
         .from("canvas_edges")
@@ -1569,21 +2029,31 @@ async function executeTool(
         .select("id")
         .single();
       if (error) throw error;
-      const src = (nodes as Array<{ id: string; title: string }>).find((n) => n.id === sourceId)?.title ?? sourceId;
-      const tgt = (nodes as Array<{ id: string; title: string }>).find((n) => n.id === targetId)?.title ?? targetId;
+      const src =
+        (nodes as Array<{ id: string; title: string }>).find((n) => n.id === sourceId)?.title ??
+        sourceId;
+      const tgt =
+        (nodes as Array<{ id: string; title: string }>).find((n) => n.id === targetId)?.title ??
+        targetId;
       const followup = await buildPostApprovalFollowup(`add_canvas_edge (${src} → ${tgt})`);
-      return { ok: true, message: `Edge created: ${src} → ${tgt}${label ? ` ("${label}")` : ""}`, id: data.id, ...followup };
+      return {
+        ok: true,
+        message: `Edge created: ${src} → ${tgt}${label ? ` ("${label}")` : ""}`,
+        id: data.id,
+        ...followup,
+      };
     }
     if (name === "propose_options") {
       // No state mutation — this tool exists purely so the model can attach
       // quick-reply button data to its reply. The args are surfaced verbatim
       // to the client through the tool result.
-      const opts = (args as { options?: Array<{ label: string; send?: string }>; question?: string });
+      const opts = args as { options?: Array<{ label: string; send?: string }>; question?: string };
       const cleaned = (opts.options ?? [])
         .filter((o) => o && typeof o.label === "string" && o.label.trim().length > 0)
         .slice(0, 6)
         .map((o) => ({ label: o.label.trim(), send: (o.send ?? o.label).trim() }));
-      if (cleaned.length < 2) return { ok: false, message: "propose_options needs at least 2 valid options" };
+      if (cleaned.length < 2)
+        return { ok: false, message: "propose_options needs at least 2 valid options" };
       return {
         ok: true,
         message: `Quick-reply buttons proposed (${cleaned.length})`,
@@ -1601,24 +2071,27 @@ async function executeTool(
         .select("assistant_origins")
         .eq("id", projectId)
         .single();
-      const origins = { ...(current?.assistant_origins as Record<string, string> ?? {}) };
+      const origins = { ...((current?.assistant_origins as Record<string, string>) ?? {}) };
       if (messageId) origins.doc_generation_mode = messageId;
       const { error } = await supa
         .from("projects")
         .update({ doc_generation_mode: mode, assistant_origins: origins })
         .eq("id", projectId);
       if (error) throw error;
-      const friendly = mode === "drafts"
-        ? "Drafts only — I'll write the rows, you press Generate"
-        : mode === "auto"
-          ? "Full auto — after each doc I'll ask Image, PDF, or Both before generating"
-          : "Ask each time — I'll check Image, PDF, Both, or draft before generating";
+      const friendly =
+        mode === "drafts"
+          ? "Drafts only — I'll write the rows, you press Generate"
+          : mode === "auto"
+            ? "Full auto — after each doc I'll ask Image, PDF, or Both before generating"
+            : "Ask each time — I'll check Image, PDF, Both, or draft before generating";
       return { ok: true, message: `Document workflow set: ${friendly}` };
     }
     if (name === "generate_document_assets") {
       const documentId = String((args as { document_id?: string }).document_id ?? "").trim();
       const requestedMode = String((args as { mode?: string }).mode ?? "both").trim();
-      const documentFormat = String((args as { document_format?: string }).document_format ?? "pdf").trim();
+      const documentFormat = String(
+        (args as { document_format?: string }).document_format ?? "pdf",
+      ).trim();
       if (!documentId) return { ok: false, message: "document_id is required" };
       if (!["text", "image", "document", "both"].includes(requestedMode)) {
         return { ok: false, message: "mode must be 'text', 'image', 'document', or 'both'" };
@@ -1635,7 +2108,8 @@ async function executeTool(
       if (!proj?.solution_summary || !proj?.logic_approved_at) {
         return {
           ok: false,
-          message: "Cannot generate — Logic Flow not approved yet. Tell the user to approve it on the Canvas first.",
+          message:
+            "Cannot generate — Logic Flow not approved yet. Tell the user to approve it on the Canvas first.",
         };
       }
       const { data: docRow } = await supa
@@ -1647,7 +2121,12 @@ async function executeTool(
         return { ok: false, message: "Document not found in this project." };
       }
 
-      const imageOrigins: Array<{ requested?: string | null; effective?: string | null; provider?: string | null; fallback?: string | null }> = [];
+      const imageOrigins: Array<{
+        requested?: string | null;
+        effective?: string | null;
+        provider?: string | null;
+        fallback?: string | null;
+      }> = [];
       const callGenerate = async (m: "text" | "image" | "document") => {
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), 120_000);
@@ -1673,7 +2152,15 @@ async function executeTool(
           return { ok: r.ok, status: r.status, body };
         } catch (e) {
           const aborted = (e as Error)?.name === "AbortError";
-          return { ok: false, status: aborted ? 504 : 500, body: { error: aborted ? "timeout after 120s — generation continues server-side, check Documents tab" : (e as Error)?.message ?? "fetch failed" } };
+          return {
+            ok: false,
+            status: aborted ? 504 : 500,
+            body: {
+              error: aborted
+                ? "timeout after 120s — generation continues server-side, check Documents tab"
+                : ((e as Error)?.message ?? "fetch failed"),
+            },
+          };
         } finally {
           clearTimeout(timer);
         }
@@ -1688,7 +2175,10 @@ async function executeTool(
       }
       if (requestedMode === "document" || requestedMode === "both") {
         const r = await callGenerate("document");
-        if (!r.ok) errors.push(`direct ${documentFormat.toUpperCase()} file failed: ${r.body?.error ?? r.status}`);
+        if (!r.ok)
+          errors.push(
+            `direct ${documentFormat.toUpperCase()} file failed: ${r.body?.error ?? r.status}`,
+          );
         else completed.push(`${documentFormat.toUpperCase()} file`);
       }
       if (requestedMode === "image" || requestedMode === "both") {
@@ -1700,7 +2190,9 @@ async function executeTool(
       // Re-read row to grab whatever made it through.
       const { data: finalDoc } = await supa
         .from("documents")
-        .select("hebrew_content, generated_asset_url, generated_document_url, generated_pdf_url, document_format, document_model, document_provider, document_skill_id, title")
+        .select(
+          "hebrew_content, generated_asset_url, generated_document_url, generated_pdf_url, document_format, document_model, document_provider, document_skill_id, title",
+        )
         .eq("id", documentId)
         .single();
       const hebrew = (finalDoc?.hebrew_content ?? "").toString();
@@ -1709,10 +2201,17 @@ async function executeTool(
       const documentUrl = finalDoc?.generated_document_url ?? finalDoc?.generated_pdf_url ?? null;
 
       if (errors.length > 0 && !imageUrl && !hebrew && !documentUrl) {
-        return { ok: false, message: `Generation failed for "${finalDoc?.title ?? "document"}" — ${errors.join("; ")}. You can retry this same document safely.`, id: documentId };
+        return {
+          ok: false,
+          message: `Generation failed for "${finalDoc?.title ?? "document"}" — ${errors.join("; ")}. You can retry this same document safely.`,
+          id: documentId,
+        };
       }
       const done = completed.length > 0 ? ` Completed: ${completed.join(", ")}.` : "";
-      const partial = errors.length > 0 ? ` Partial issues: ${errors.join("; ")}. You can retry failed parts from this same document.` : "";
+      const partial =
+        errors.length > 0
+          ? ` Partial issues: ${errors.join("; ")}. You can retry failed parts from this same document.`
+          : "";
       return {
         ok: true,
         message: `Generated assets for "${finalDoc?.title ?? "document"}".${done}${partial}`,
@@ -1730,8 +2229,13 @@ async function executeTool(
       };
     }
     if (name === "explain_claude_skill_install") {
-      const requested = String((args as { requested_skill?: string }).requested_skill ?? "Claude Skill").trim() || "Claude Skill";
-      const intendedUse = String((args as { intended_use?: string }).intended_use ?? "relevant Claude tasks").trim() || "relevant Claude tasks";
+      const requested =
+        String((args as { requested_skill?: string }).requested_skill ?? "Claude Skill").trim() ||
+        "Claude Skill";
+      const intendedUse =
+        String(
+          (args as { intended_use?: string }).intended_use ?? "relevant Claude tasks",
+        ).trim() || "relevant Claude tasks";
       return {
         ok: true,
         message: `Claude Skill install request noted: ${requested}. To install it, upload a Claude Skill package/file in Settings → Assistant Rules → Claude Skills, then enable it for ${intendedUse}. Once installed, Claude requests will receive the enabled skill list automatically.`,
@@ -1742,7 +2246,9 @@ async function executeTool(
       const layout = String((args as { layout?: string }).layout ?? "bottom-grid-2col").trim();
       const caption = (args as { caption?: string }).caption?.trim() || null;
       const groupKey = (args as { group_key?: string }).group_key?.trim() || null;
-      const rawImages = Array.isArray((args as { images?: unknown[] }).images) ? (args as { images: unknown[] }).images : [];
+      const rawImages = Array.isArray((args as { images?: unknown[] }).images)
+        ? (args as { images: unknown[] }).images
+        : [];
       if (!documentId) return { ok: false, message: "document_id is required" };
       if (rawImages.length === 0) return { ok: false, message: "Pass at least one image slot." };
 
@@ -1757,10 +2263,20 @@ async function executeTool(
       }
 
       // Persist layout + caption on the document.
-      await supa.from("documents").update({
-        inline_images_layout: ["bottom-grid-2col", "bottom-grid-3col", "inline-after-text", "gallery"].includes(layout) ? layout : "bottom-grid-2col",
-        ...(caption !== null ? { inline_images_caption: caption } : {}),
-      } as never).eq("id", documentId);
+      await supa
+        .from("documents")
+        .update({
+          inline_images_layout: [
+            "bottom-grid-2col",
+            "bottom-grid-3col",
+            "inline-after-text",
+            "gallery",
+          ].includes(layout)
+            ? layout
+            : "bottom-grid-2col",
+          ...(caption !== null ? { inline_images_caption: caption } : {}),
+        } as never)
+        .eq("id", documentId);
 
       // Find the next position offset (so we append, not overwrite).
       const { count: existing } = await supa
@@ -1770,7 +2286,9 @@ async function executeTool(
       const offset = existing ?? 0;
 
       // Determine which slot is the anchor — first one marked, else slot 0.
-      let anchorIdx = rawImages.findIndex((r) => (r as { is_anchor?: boolean })?.is_anchor === true);
+      let anchorIdx = rawImages.findIndex(
+        (r) => (r as { is_anchor?: boolean })?.is_anchor === true,
+      );
       if (anchorIdx < 0) anchorIdx = 0;
 
       // Insert anchor first so children can reference its id.
@@ -1790,7 +2308,8 @@ async function executeTool(
         } as never)
         .select("id")
         .single();
-      if (anchorErr) return { ok: false, message: `Could not create anchor slot: ${anchorErr.message}` };
+      if (anchorErr)
+        return { ok: false, message: `Could not create anchor slot: ${anchorErr.message}` };
       const anchorId = (anchorRow as { id: string }).id;
 
       // Insert children pointing at the anchor.
@@ -1810,8 +2329,11 @@ async function executeTool(
           ...(messageId ? { created_by_message_id: messageId } : {}),
         }));
       if (childRows.length > 0) {
-        const { error: childErr } = await supa.from("document_inline_images").insert(childRows as never);
-        if (childErr) return { ok: false, message: `Anchor created, but children failed: ${childErr.message}` };
+        const { error: childErr } = await supa
+          .from("document_inline_images")
+          .insert(childRows as never);
+        if (childErr)
+          return { ok: false, message: `Anchor created, but children failed: ${childErr.message}` };
       }
 
       return {
@@ -1867,10 +2389,14 @@ async function executeTool(
       const niceName = formatName((updated ?? {}) as unknown as Record<string, unknown>);
       const u = (updated ?? {}) as unknown as Record<string, unknown>;
       const extras: Record<string, unknown> = {};
-      if (typeof u.thumbnail_url === "string" && u.thumbnail_url) extras.thumbnail_url = u.thumbnail_url;
-      if (typeof u.alt_thumbnail_url === "string" && u.alt_thumbnail_url) extras.alt_thumbnail_url = u.alt_thumbnail_url;
-      if (typeof u.cover_image_url === "string" && u.cover_image_url) extras.cover_image_url = u.cover_image_url;
-      if (typeof u.generated_asset_url === "string" && u.generated_asset_url) extras.image_url = u.generated_asset_url;
+      if (typeof u.thumbnail_url === "string" && u.thumbnail_url)
+        extras.thumbnail_url = u.thumbnail_url;
+      if (typeof u.alt_thumbnail_url === "string" && u.alt_thumbnail_url)
+        extras.alt_thumbnail_url = u.alt_thumbnail_url;
+      if (typeof u.cover_image_url === "string" && u.cover_image_url)
+        extras.cover_image_url = u.cover_image_url;
+      if (typeof u.generated_asset_url === "string" && u.generated_asset_url)
+        extras.image_url = u.generated_asset_url;
       return {
         ok: true,
         message: `Updated ${label}: ${niceName} (${changed.join(", ")})`,
@@ -1889,7 +2415,8 @@ async function executeTool(
       );
     }
     if (name === "approve_document") {
-      const id = typeof (args as { id?: unknown }).id === "string" ? (args as { id: string }).id : "";
+      const id =
+        typeof (args as { id?: unknown }).id === "string" ? (args as { id: string }).id : "";
       if (!id) return { ok: false, message: "approve_document needs id" };
       const { data: docRow, error: docErr } = await supa
         .from("documents")
@@ -1898,22 +2425,30 @@ async function executeTool(
         .eq("project_id", projectId)
         .single();
       if (docErr || !docRow) return { ok: false, message: "Document not found in this project" };
-      await supa.from("documents").update(withMessage({ status: "final" })).eq("id", id);
+      await supa
+        .from("documents")
+        .update(withMessage({ status: "final" }))
+        .eq("id", id);
       // Mirror "approved" onto every Final Flow document node tied to this doc.
       try {
-        const linked: string[] = Array.isArray(docRow.linked_node_ids) ? docRow.linked_node_ids : [];
+        const linked: string[] = Array.isArray(docRow.linked_node_ids)
+          ? docRow.linked_node_ids
+          : [];
         const { data: nodes } = await supa
           .from("canvas_nodes")
           .select("id, data")
           .eq("project_id", projectId)
           .eq("board", "final")
           .eq("node_type", "document");
-        const targets = (nodes ?? []).filter((n: any) =>
-          (n.data as { documentId?: string } | null)?.documentId === id ||
-          linked.includes(n.id)
+        const targets = (nodes ?? []).filter(
+          (n: any) =>
+            (n.data as { documentId?: string } | null)?.documentId === id || linked.includes(n.id),
         );
         for (const n of targets) {
-          const merged = { ...((n.data as Record<string, unknown> | null) ?? {}), generationStatus: "approved" };
+          const merged = {
+            ...((n.data as Record<string, unknown> | null) ?? {}),
+            generationStatus: "approved",
+          };
           await supa.from("canvas_nodes").update({ data: merged }).eq("id", n.id);
         }
       } catch (e) {
@@ -1953,12 +2488,8 @@ async function executeTool(
       );
     }
     if (name === "update_canvas_node") {
-      const result = await runUpdate(
-        "canvas_nodes",
-        "node",
-        true,
-        "id, title, data",
-        (r) => String(r.title ?? "—"),
+      const result = await runUpdate("canvas_nodes", "node", true, "id, title, data", (r) =>
+        String(r.title ?? "—"),
       );
       if ((result as { ok?: boolean })?.ok) {
         const followup = await buildPostApprovalFollowup("update_canvas_node");
@@ -1970,8 +2501,10 @@ async function executeTool(
       const a = args as { stage?: number; level?: number; text?: string };
       const stage = Number(a.stage);
       const level = Number(a.level);
-      if (!Number.isFinite(stage) || stage < 1) return { ok: false, message: "stage must be a positive number" };
-      if (!Number.isFinite(level) || level < 1) return { ok: false, message: "level must be a positive number" };
+      if (!Number.isFinite(stage) || stage < 1)
+        return { ok: false, message: "stage must be a positive number" };
+      if (!Number.isFinite(level) || level < 1)
+        return { ok: false, message: "level must be a positive number" };
       const { data, error } = await supa
         .from("hints")
         .insert({
@@ -1983,18 +2516,24 @@ async function executeTool(
         .select("id, stage, level")
         .single();
       if (error) throw error;
-      return { ok: true, message: `Hint added: stage ${data.stage} · level ${data.level}`, id: data.id };
+      return {
+        ok: true,
+        message: `Hint added: stage ${data.stage} · level ${data.level}`,
+        id: data.id,
+      };
     }
     if (name === "generate_hint_stage") {
       const a = args as { stage?: number; hints?: unknown[]; context?: string };
       const stage = Number(a.stage);
-      if (!Number.isFinite(stage) || stage < 1) return { ok: false, message: "stage must be a positive number" };
+      if (!Number.isFinite(stage) || stage < 1)
+        return { ok: false, message: "stage must be a positive number" };
       const rawHints = Array.isArray(a.hints) ? a.hints : [];
       const cleaned = rawHints
         .map((h) => (typeof h === "string" ? h.trim() : ""))
         .filter((h) => h.length > 0)
         .slice(0, 6);
-      if (cleaned.length === 0) return { ok: false, message: "Provide at least one Hebrew hint string" };
+      if (cleaned.length === 0)
+        return { ok: false, message: "Provide at least one Hebrew hint string" };
       // Replace any existing rows for this stage so the ladder stays clean.
       await supa.from("hints").delete().eq("project_id", projectId).eq("stage", stage);
       const rows = cleaned.map((text, i) => ({
@@ -2015,17 +2554,15 @@ async function executeTool(
       const a = args as { title?: string; body?: string; starter_prompt?: string; kind?: string };
       const title = String(a.title ?? "").trim();
       if (!title) return { ok: false, message: "title is required" };
-      const { error } = await supa
-        .from("project_notifications")
-        .insert({
-          project_id: projectId,
-          kind: String(a.kind ?? "general").trim() || "general",
-          title,
-          body: a.body ? String(a.body).trim() : null,
-          starter_prompt: a.starter_prompt ? String(a.starter_prompt).trim() : null,
-          created_by: "assistant",
-          status: "unread",
-        });
+      const { error } = await supa.from("project_notifications").insert({
+        project_id: projectId,
+        kind: String(a.kind ?? "general").trim() || "general",
+        title,
+        body: a.body ? String(a.body).trim() : null,
+        starter_prompt: a.starter_prompt ? String(a.starter_prompt).trim() : null,
+        created_by: "assistant",
+        status: "unread",
+      });
       if (error) throw error;
       return { ok: true, message: `Notification dropped: ${title}` };
     }
@@ -2077,13 +2614,48 @@ async function processConversation(
     { data: latestNode },
   ] = await Promise.all([
     supa.from("projects").select("*").eq("id", projectId).single(),
-    supa.from("suspects").select("id, name, role_in_case").eq("project_id", projectId).order("position", { ascending: true }).limit(25),
-    supa.from("documents").select("id, doc_number, title, doc_type, status").eq("project_id", projectId).order("doc_number", { ascending: true, nullsFirst: false }).limit(25),
-    supa.from("envelopes").select("id, number, label").eq("project_id", projectId).order("number", { ascending: true }).limit(25),
-    supa.from("hints").select("id, stage, level").eq("project_id", projectId).order("stage", { ascending: true }).order("level", { ascending: true }).limit(25),
-    supa.from("canvas_nodes").select("id, title, node_type, board").eq("project_id", projectId).order("created_at", { ascending: true }).limit(25),
-    supa.from("canvas_edges").select("id", { count: "exact", head: true }).eq("project_id", projectId),
-    supa.from("canvas_nodes").select("updated_at").eq("project_id", projectId).order("updated_at", { ascending: false }).limit(1).maybeSingle(),
+    supa
+      .from("suspects")
+      .select("id, name, role_in_case")
+      .eq("project_id", projectId)
+      .order("position", { ascending: true })
+      .limit(25),
+    supa
+      .from("documents")
+      .select("id, doc_number, title, doc_type, status")
+      .eq("project_id", projectId)
+      .order("doc_number", { ascending: true, nullsFirst: false })
+      .limit(25),
+    supa
+      .from("envelopes")
+      .select("id, number, label")
+      .eq("project_id", projectId)
+      .order("number", { ascending: true })
+      .limit(25),
+    supa
+      .from("hints")
+      .select("id, stage, level")
+      .eq("project_id", projectId)
+      .order("stage", { ascending: true })
+      .order("level", { ascending: true })
+      .limit(25),
+    supa
+      .from("canvas_nodes")
+      .select("id, title, node_type, board")
+      .eq("project_id", projectId)
+      .order("created_at", { ascending: true })
+      .limit(25),
+    supa
+      .from("canvas_edges")
+      .select("id", { count: "exact", head: true })
+      .eq("project_id", projectId),
+    supa
+      .from("canvas_nodes")
+      .select("updated_at")
+      .eq("project_id", projectId)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
   if (!project) throw new Error("Project not found");
 
@@ -2095,14 +2667,16 @@ async function processConversation(
       .select("assistant_tweaks, assistant_playbook")
       .eq("id", project.owner_id)
       .maybeSingle();
-    const raw = (ownerProfile as { assistant_tweaks?: unknown; assistant_playbook?: unknown } | null);
+    const raw = ownerProfile as { assistant_tweaks?: unknown; assistant_playbook?: unknown } | null;
     if (raw && Array.isArray(raw.assistant_tweaks)) tweaks = raw.assistant_tweaks as Tweak[];
     if (raw) playbook = resolvePlaybook(raw.assistant_playbook);
   }
 
   const modelKey = String(project.ai_provider_planning ?? "openai-5.2");
   const model = PROVIDER_MODEL[modelKey] ?? PROVIDER_MODEL["openai-5.2"] ?? PROVIDER_MODEL.lovable;
-  const claudeChatSkills = model.startsWith("anthropic/") ? await loadClaudeSkillsForSurface(supa, "chat") : [];
+  const claudeChatSkills = model.startsWith("anthropic/")
+    ? await loadClaudeSkillsForSurface(supa, "chat")
+    : [];
   const rosters: Rosters = {
     suspects: (suspectsRoster ?? []) as RosterRow[],
     documents: (documentsRoster ?? []) as RosterRow[],
@@ -2111,12 +2685,35 @@ async function processConversation(
     canvas_nodes: (nodesRoster ?? []) as RosterRow[],
     canvas_edges_count: edgesCount ?? 0,
     logic_dirty_since_approval: Boolean(
-      project.logic_approved_at && (latestNode as { updated_at?: string } | null)?.updated_at
-        && new Date((latestNode as { updated_at: string }).updated_at).getTime() > new Date(project.logic_approved_at).getTime(),
+      project.logic_approved_at &&
+      (latestNode as { updated_at?: string } | null)?.updated_at &&
+      new Date((latestNode as { updated_at: string }).updated_at).getTime() >
+        new Date(project.logic_approved_at).getTime(),
     ),
   };
+  const lastUser = [...messages].reverse().find((m) => (m as { role: string }).role === "user") as
+    | { content: string }
+    | undefined;
+  const chatDepthChoice = detectPlanningDepthChoice(lastUser?.content);
+  if (
+    chatDepthChoice &&
+    normalizePlanningDepth(
+      (project as { planning_depth?: unknown }).planning_depth,
+      playbook.planning_depth.default,
+    ) !== chatDepthChoice
+  ) {
+    await supa.from("projects").update({ planning_depth: chatDepthChoice }).eq("id", projectId);
+    (project as { planning_depth?: PlanningDepth }).planning_depth = chatDepthChoice;
+  }
   const isFirstTurn = (messages?.length ?? 0) <= 1;
-  const systemPrompt = buildSystemPrompt(project, rosters, tweaks, playbook, claudeChatSkills, isFirstTurn);
+  const systemPrompt = buildSystemPrompt(
+    project,
+    rosters,
+    tweaks,
+    playbook,
+    claudeChatSkills,
+    isFirstTurn,
+  );
   // Stamp the depth we just rendered so the NEXT turn can detect a flip.
   // Fire-and-forget; failure here must not block the chat reply.
   {
@@ -2124,15 +2721,21 @@ async function processConversation(
       (project as { planning_depth?: unknown }).planning_depth,
       playbook.planning_depth.default,
     );
-    if ((project as { last_seen_planning_depth?: unknown }).last_seen_planning_depth !== currentDepth) {
-      void supa.from("projects").update({ last_seen_planning_depth: currentDepth }).eq("id", projectId);
+    if (
+      (project as { last_seen_planning_depth?: unknown }).last_seen_planning_depth !== currentDepth
+    ) {
+      void supa
+        .from("projects")
+        .update({ last_seen_planning_depth: currentDepth })
+        .eq("id", projectId);
     }
   }
 
-  const lastUser = [...messages].reverse().find((m) => (m as { role: string }).role === "user") as { content: string } | undefined;
   if (lastUser) {
     await supa.from("chat_messages").insert({
-      project_id: projectId, role: "user", content: lastUser.content,
+      project_id: projectId,
+      role: "user",
+      content: lastUser.content,
     });
   }
 
@@ -2151,12 +2754,18 @@ async function processConversation(
   });
   if (assistantPlaceholderError) {
     console.error("assistant placeholder insert failed", assistantPlaceholderError);
-    throw new Error("I couldn't start a safe assistant message for this run. Please retry; no document rows were created with broken assistant links.");
+    throw new Error(
+      "I couldn't start a safe assistant message for this run. Please retry; no document rows were created with broken assistant links.",
+    );
   }
   const toolMessageId = assistantMessageId;
 
-  const convo: Array<Record<string, unknown>> = [{ role: "system", content: systemPrompt }, ...messages];
-  const executedTools: Array<{ name: string; args?: Record<string, unknown>; result: unknown }> = [];
+  const convo: Array<Record<string, unknown>> = [
+    { role: "system", content: systemPrompt },
+    ...messages,
+  ];
+  const executedTools: Array<{ name: string; args?: Record<string, unknown>; result: unknown }> =
+    [];
   // Per-round reasoning traces collected from supporting models. Empty unless
   // the project has ai_reasoning_effort != 'none' AND the model supports it.
   type ReasoningSegment = { type: "thinking" | "summary"; text: string };
@@ -2172,7 +2781,8 @@ async function processConversation(
   // instead of only after the run completes. Fire-and-forget — never block.
   const flushProgress = (stage: string) => {
     pushStage(stage);
-    void supa.from("chat_messages")
+    void supa
+      .from("chat_messages")
       .update({
         metadata: {
           in_progress: true,
@@ -2188,10 +2798,15 @@ async function processConversation(
   };
   // Default to "low" — chat is short turn-by-turn and tool calls don't need
   // heavy reasoning. Users who want deeper thinking can crank ai_reasoning_effort.
-  const baseEffort = String((project as { ai_reasoning_effort?: string }).ai_reasoning_effort ?? "high");
+  const baseEffort = String(
+    (project as { ai_reasoning_effort?: string }).ai_reasoning_effort ?? "high",
+  );
   const TOOLS = buildTools(playbook);
   const MAX_ROUNDS = 4;
-  let lastFb: { effectiveModel: string; fallback: string } = { effectiveModel: model, fallback: "none" };
+  let lastFb: { effectiveModel: string; fallback: string } = {
+    effectiveModel: model,
+    fallback: "none",
+  };
   flushProgress("preparing prompt…");
   flushProgress("contacting model…");
   for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -2200,8 +2815,20 @@ async function processConversation(
     // round, but never go below the user's chosen baseEffort — otherwise
     // models silently return zero reasoning segments and the "Show thinking"
     // panel never has anything to display.
-    const roundEffort = isFinalRound ? baseEffort : (baseEffort === "high" ? "medium" : baseEffort === "medium" ? "low" : baseEffort);
-    const body: Record<string, unknown> = { model, messages: convo, stream: false, reasoningEffort: roundEffort, ...claudeSkillRequestShape(claudeChatSkills) };
+    const roundEffort = isFinalRound
+      ? baseEffort
+      : baseEffort === "high"
+        ? "medium"
+        : baseEffort === "medium"
+          ? "low"
+          : baseEffort;
+    const body: Record<string, unknown> = {
+      model,
+      messages: convo,
+      stream: false,
+      reasoningEffort: roundEffort,
+      ...claudeSkillRequestShape(claudeChatSkills),
+    };
     if (!isFinalRound) body.tools = TOOLS;
 
     if (round > 0) {
@@ -2209,13 +2836,17 @@ async function processConversation(
       const stage = isFinalRound ? "writing reply" : lastTool ? `after ${lastTool}…` : "thinking…";
       flushProgress(stage);
     }
-    flushProgress(isFinalRound ? `writing reply (round ${round + 1})…` : `calling model (round ${round + 1})…`);
+    flushProgress(
+      isFinalRound ? `writing reply (round ${round + 1})…` : `calling model (round ${round + 1})…`,
+    );
 
     const roundStartedAt = Date.now();
     const liveBaseMetadata: Record<string, unknown> = {
       in_progress: true,
       model,
-      stage: isFinalRound ? `writing reply (round ${round + 1})…` : `calling model (round ${round + 1})…`,
+      stage: isFinalRound
+        ? `writing reply (round ${round + 1})…`
+        : `calling model (round ${round + 1})…`,
       stage_history: stageHistory,
       partial_tools: executedTools.length,
       tools: executedTools,
@@ -2230,34 +2861,55 @@ async function processConversation(
       baseMetadata: liveBaseMetadata,
     });
     logAiRun({
-      userId: callerUserId, projectId, surface: "assistant-chat",
-      requestedModel: model, effectiveModel: live.ok ? live.effectiveModel : model, fallback: live.ok ? live.fallback : "none",
-      status: live.ok ? "ok" : "error", latencyMs: Date.now() - roundStartedAt,
+      userId: callerUserId,
+      projectId,
+      surface: "assistant-chat",
+      requestedModel: model,
+      effectiveModel: live.ok ? live.effectiveModel : model,
+      fallback: live.ok ? live.fallback : "none",
+      status: live.ok ? "ok" : "error",
+      latencyMs: Date.now() - roundStartedAt,
       errorMessage: live.ok ? undefined : `status ${live.status}`,
       targetId: assistantMessageId,
       promptExcerpt: lastUser?.content ? String(lastUser.content) : undefined,
     });
 
     if (!live.ok) {
-      const provider = model.startsWith("openai/") ? "OpenAI"
-        : model.startsWith("anthropic/") ? "Anthropic"
-        : model.startsWith("gemini-direct/") ? "Google Gemini"
-        : "Lovable AI";
+      const provider = model.startsWith("openai/")
+        ? "OpenAI"
+        : model.startsWith("anthropic/")
+          ? "Anthropic"
+          : model.startsWith("gemini-direct/")
+            ? "Google Gemini"
+            : "Lovable AI";
       console.error(`${provider} error`, live.status, live.errorText);
       let errMsg: string;
       if (live.status === 429) errMsg = `${provider} rate limit — try again in a moment.`;
       else if (live.status === 402) errMsg = `${provider} credits/key issue (status 402).`;
-      else if (live.status === 401) errMsg = `${provider} authentication failed — check the API key in Settings → API keys.`;
+      else if (live.status === 401)
+        errMsg = `${provider} authentication failed — check the API key in Settings → API keys.`;
       else errMsg = `${provider} error (status ${live.status})`;
 
       if (executedTools.length > 0) {
         const okCount = executedTools.filter((t) => (t.result as { ok?: boolean })?.ok).length;
         const totalCount = executedTools.length;
         const recoveryNote = `⚠️ ${errMsg}\n\nBefore this happened I successfully executed ${okCount} of ${totalCount} actions (see receipts below). They are already saved — you don't need to redo them. Reply "continue" once the issue is resolved and I'll pick up where I left off.`;
-        await supa.from("chat_messages").update({
-          content: recoveryNote,
-          metadata: { model, effective_model: lastFb.effectiveModel, fallback: lastFb.fallback, tools: executedTools, ...(reasoningRounds.length ? { reasoning: reasoningRounds } : {}), partial: true, error: errMsg, in_progress: false },
-        }).eq("id", assistantMessageId);
+        await supa
+          .from("chat_messages")
+          .update({
+            content: recoveryNote,
+            metadata: {
+              model,
+              effective_model: lastFb.effectiveModel,
+              fallback: lastFb.fallback,
+              tools: executedTools,
+              ...(reasoningRounds.length ? { reasoning: reasoningRounds } : {}),
+              partial: true,
+              error: errMsg,
+              in_progress: false,
+            },
+          })
+          .eq("id", assistantMessageId);
         return;
       }
       throw new Error(errMsg);
@@ -2272,8 +2924,12 @@ async function processConversation(
       // moment this round's reasoning lands — don't wait for the next loop.
       flushProgress(`thought through round ${round + 1}`);
     }
-    const toolCalls = msg.tool_calls as Array<{ id: string; function: { name: string; arguments: string } }> | undefined;
-    const thinkingBlocks = (msg as { thinking_blocks?: Array<{ type: "thinking"; text: string; signature?: string }> }).thinking_blocks;
+    const toolCalls = msg.tool_calls as
+      | Array<{ id: string; function: { name: string; arguments: string } }>
+      | undefined;
+    const thinkingBlocks = (
+      msg as { thinking_blocks?: Array<{ type: "thinking"; text: string; signature?: string }> }
+    ).thinking_blocks;
 
     if (toolCalls && toolCalls.length > 0) {
       // If the model returned no reasoning segments this round, synthesize a
@@ -2285,61 +2941,103 @@ async function processConversation(
           try {
             const obj = JSON.parse(c.function.arguments || "{}") as Record<string, unknown>;
             const keys = Object.keys(obj).slice(0, 4);
-            preview = keys.map((k) => {
-              const v = obj[k];
-              const s = typeof v === "string" ? v : JSON.stringify(v);
-              return `${k}: ${s.length > 60 ? s.slice(0, 57) + "…" : s}`;
-            }).join(", ");
-          } catch { /* ignore */ }
-          return { type: "thinking", text: `Calling ${c.function.name}${preview ? ` — ${preview}` : ""}` };
+            preview = keys
+              .map((k) => {
+                const v = obj[k];
+                const s = typeof v === "string" ? v : JSON.stringify(v);
+                return `${k}: ${s.length > 60 ? s.slice(0, 57) + "…" : s}`;
+              })
+              .join(", ");
+          } catch {
+            /* ignore */
+          }
+          return {
+            type: "thinking",
+            text: `Calling ${c.function.name}${preview ? ` — ${preview}` : ""}`,
+          };
         });
         if (segs.length) reasoningRounds.push({ round, segments: segs });
       }
-      convo.push({ role: "assistant", content: msg.content ?? "", tool_calls: toolCalls, ...(thinkingBlocks?.length ? { thinking: thinkingBlocks } : {}) });
+      convo.push({
+        role: "assistant",
+        content: msg.content ?? "",
+        tool_calls: toolCalls,
+        ...(thinkingBlocks?.length ? { thinking: thinkingBlocks } : {}),
+      });
       for (const call of toolCalls) {
         let args: Record<string, unknown> = {};
-        try { args = JSON.parse(call.function.arguments || "{}"); } catch { /* ignore */ }
+        try {
+          args = JSON.parse(call.function.arguments || "{}");
+        } catch {
+          /* ignore */
+        }
         flushProgress(`running ${call.function.name}…`);
-        const result = await executeTool(supa, projectId, call.function.name, args, toolMessageId, playbook);
+        const result = await executeTool(
+          supa,
+          projectId,
+          call.function.name,
+          args,
+          toolMessageId,
+          playbook,
+        );
         const argsForUi = call.function.name === "propose_options" ? undefined : args;
         executedTools.push({ name: call.function.name, args: argsForUi, result });
         convo.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
         flushProgress(`finished ${call.function.name}`);
       }
       if (round === MAX_ROUNDS - 3) {
-        convo.push({ role: "system", content: "You have one tool round left. Make any remaining tool calls in a single batch this turn, then write your reply." });
+        convo.push({
+          role: "system",
+          content:
+            "You have one tool round left. Make any remaining tool calls in a single batch this turn, then write your reply.",
+        });
       }
       continue;
     }
 
     const finalText = msg.content ?? "";
-    const lastOptionsTool = [...executedTools].reverse().find(
-      (t) => t.name === "propose_options" && (t.result as { ok?: boolean })?.ok,
-    );
-    const optionsResult = lastOptionsTool?.result as { options?: Array<{ label: string; send: string }>; question?: string } | undefined;
+    const lastOptionsTool = [...executedTools]
+      .reverse()
+      .find((t) => t.name === "propose_options" && (t.result as { ok?: boolean })?.ok);
+    const optionsResult = lastOptionsTool?.result as
+      | { options?: Array<{ label: string; send: string }>; question?: string }
+      | undefined;
     let quickOptions = optionsResult?.options ?? null;
     let quickQuestion = optionsResult?.question ?? null;
     // Stale-args guard: model sometimes copies the previous turn's
     // propose_options arguments verbatim. Reject if labels don't appear in
     // this turn's prose, then fall through to the prose synthesizer.
     if (quickOptions && quickOptions.length > 0 && !optionsMatchProse(quickOptions, finalText)) {
-      console.warn("[assistant-chat] propose_options stale — labels don't match prose, falling back to synth", { labels: quickOptions.map((o) => o.label) });
+      console.warn(
+        "[assistant-chat] propose_options stale — labels don't match prose, falling back to synth",
+        { labels: quickOptions.map((o) => o.label) },
+      );
       quickOptions = null;
       quickQuestion = null;
     }
     if (!quickOptions || quickOptions.length === 0) {
       const synth = synthesizeOptionsFromProse(finalText);
-      if (synth) { quickOptions = synth.options; quickQuestion = synth.question; }
+      if (synth) {
+        quickOptions = synth.options;
+        quickQuestion = synth.question;
+      }
     }
 
-    await supa.from("chat_messages").update({
-      content: finalText,
-      metadata: {
-        model, effective_model: lastFb.effectiveModel, fallback: lastFb.fallback, tools: executedTools, in_progress: false,
-        ...(reasoningRounds.length ? { reasoning: reasoningRounds } : {}),
-        ...(quickOptions ? { options: quickOptions, question: quickQuestion } : {}),
-      },
-    }).eq("id", assistantMessageId);
+    await supa
+      .from("chat_messages")
+      .update({
+        content: finalText,
+        metadata: {
+          model,
+          effective_model: lastFb.effectiveModel,
+          fallback: lastFb.fallback,
+          tools: executedTools,
+          in_progress: false,
+          ...(reasoningRounds.length ? { reasoning: reasoningRounds } : {}),
+          ...(quickOptions ? { options: quickOptions, question: quickQuestion } : {}),
+        },
+      })
+      .eq("id", assistantMessageId);
     return;
   }
   throw new Error("Too many tool-call rounds");
@@ -2379,7 +3077,8 @@ Deno.serve(async (req) => {
       if (runErr) {
         console.error("assistant_runs insert failed", runErr);
         return new Response(JSON.stringify({ error: "Failed to start run" }), {
-          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       const runId = runRow.id as string;
@@ -2392,16 +3091,22 @@ Deno.serve(async (req) => {
       const markFinished = async (status: "done" | "error", error?: string) => {
         if (finished) return;
         finished = true;
-        await supa.from("assistant_runs").update({
-          status,
-          error: error ?? null,
-          finished_at: new Date().toISOString(),
-        }).eq("id", runId);
+        await supa
+          .from("assistant_runs")
+          .update({
+            status,
+            error: error ?? null,
+            finished_at: new Date().toISOString(),
+          })
+          .eq("id", runId);
       };
 
       const work = (async () => {
         const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error("assistant_run_timeout: exceeded 7 min hard limit")), HARD_TIMEOUT_MS);
+          setTimeout(
+            () => reject(new Error("assistant_run_timeout: exceeded 7 min hard limit")),
+            HARD_TIMEOUT_MS,
+          );
         });
         try {
           await Promise.race([
@@ -2419,7 +3124,9 @@ Deno.serve(async (req) => {
           if (!finished) {
             try {
               await markFinished("error", "Worker terminated mid-run");
-            } catch { /* swallow — nothing else we can do */ }
+            } catch {
+              /* swallow — nothing else we can do */
+            }
           }
         }
       })();
@@ -2450,34 +3157,48 @@ Deno.serve(async (req) => {
       { data: latestNode },
     ] = await Promise.all([
       supa.from("projects").select("*").eq("id", projectId).single(),
-      supa.from("suspects")
+      supa
+        .from("suspects")
         .select("id, name, role_in_case")
         .eq("project_id", projectId)
         .order("position", { ascending: true })
         .limit(50),
-      supa.from("documents")
+      supa
+        .from("documents")
         .select("id, doc_number, title, doc_type, status")
         .eq("project_id", projectId)
         .order("doc_number", { ascending: true, nullsFirst: false })
         .limit(100),
-      supa.from("envelopes")
+      supa
+        .from("envelopes")
         .select("id, number, label")
         .eq("project_id", projectId)
         .order("number", { ascending: true })
         .limit(50),
-      supa.from("hints")
+      supa
+        .from("hints")
         .select("id, stage, level")
         .eq("project_id", projectId)
         .order("stage", { ascending: true })
         .order("level", { ascending: true })
         .limit(50),
-      supa.from("canvas_nodes")
+      supa
+        .from("canvas_nodes")
         .select("id, title, node_type, board")
         .eq("project_id", projectId)
         .order("created_at", { ascending: true })
         .limit(100),
-      supa.from("canvas_edges").select("id", { count: "exact", head: true }).eq("project_id", projectId),
-      supa.from("canvas_nodes").select("updated_at").eq("project_id", projectId).order("updated_at", { ascending: false }).limit(1).maybeSingle(),
+      supa
+        .from("canvas_edges")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", projectId),
+      supa
+        .from("canvas_nodes")
+        .select("updated_at")
+        .eq("project_id", projectId)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
     ]);
     if (!project) {
       return new Response(JSON.stringify({ error: "Project not found" }), {
@@ -2495,12 +3216,18 @@ Deno.serve(async (req) => {
         .select("assistant_tweaks, assistant_playbook")
         .eq("id", project.owner_id)
         .maybeSingle();
-      const raw = (ownerProfile as { assistant_tweaks?: unknown; assistant_playbook?: unknown } | null);
+      const raw = ownerProfile as {
+        assistant_tweaks?: unknown;
+        assistant_playbook?: unknown;
+      } | null;
       if (raw && Array.isArray(raw.assistant_tweaks)) tweaks = raw.assistant_tweaks as Tweak[];
       if (raw) playbook = resolvePlaybook(raw.assistant_playbook);
     }
 
-    const model = PROVIDER_MODEL[project.ai_provider_planning ?? "openai-5.2"] ?? PROVIDER_MODEL["openai-5.2"] ?? PROVIDER_MODEL.lovable;
+    const model =
+      PROVIDER_MODEL[project.ai_provider_planning ?? "openai-5.2"] ??
+      PROVIDER_MODEL["openai-5.2"] ??
+      PROVIDER_MODEL.lovable;
     const rosters: Rosters = {
       suspects: (suspectsRoster ?? []) as RosterRow[],
       documents: (documentsRoster ?? []) as RosterRow[],
@@ -2509,26 +3236,56 @@ Deno.serve(async (req) => {
       canvas_nodes: (nodesRoster ?? []) as RosterRow[],
       canvas_edges_count: edgesCount ?? 0,
       logic_dirty_since_approval: Boolean(
-        project.logic_approved_at && (latestNode as { updated_at?: string } | null)?.updated_at
-          && new Date((latestNode as { updated_at: string }).updated_at).getTime() > new Date(project.logic_approved_at).getTime(),
+        project.logic_approved_at &&
+        (latestNode as { updated_at?: string } | null)?.updated_at &&
+        new Date((latestNode as { updated_at: string }).updated_at).getTime() >
+          new Date(project.logic_approved_at).getTime(),
       ),
     };
-    const claudeChatSkills = model.startsWith("anthropic/") ? await loadClaudeSkillsForSurface(supa, "chat") : [];
+    const claudeChatSkills = model.startsWith("anthropic/")
+      ? await loadClaudeSkillsForSurface(supa, "chat")
+      : [];
+    const lastUser = [...messages].reverse().find((m: { role: string }) => m.role === "user") as
+      | { content: string }
+      | undefined;
+    const chatDepthChoice = detectPlanningDepthChoice(lastUser?.content);
+    if (
+      chatDepthChoice &&
+      normalizePlanningDepth(
+        (project as { planning_depth?: unknown }).planning_depth,
+        playbook.planning_depth.default,
+      ) !== chatDepthChoice
+    ) {
+      await supa.from("projects").update({ planning_depth: chatDepthChoice }).eq("id", projectId);
+      (project as { planning_depth?: PlanningDepth }).planning_depth = chatDepthChoice;
+    }
     const isFirstTurn = (messages?.length ?? 0) <= 1;
-    const systemPrompt = buildSystemPrompt(project, rosters, tweaks, playbook, claudeChatSkills, isFirstTurn);
+    const systemPrompt = buildSystemPrompt(
+      project,
+      rosters,
+      tweaks,
+      playbook,
+      claudeChatSkills,
+      isFirstTurn,
+    );
     // Stamp the depth we just rendered so the NEXT turn can detect a flip.
     {
       const currentDepth = normalizePlanningDepth(
         (project as { planning_depth?: unknown }).planning_depth,
         playbook.planning_depth.default,
       );
-      if ((project as { last_seen_planning_depth?: unknown }).last_seen_planning_depth !== currentDepth) {
-        void supa.from("projects").update({ last_seen_planning_depth: currentDepth }).eq("id", projectId);
+      if (
+        (project as { last_seen_planning_depth?: unknown }).last_seen_planning_depth !==
+        currentDepth
+      ) {
+        void supa
+          .from("projects")
+          .update({ last_seen_planning_depth: currentDepth })
+          .eq("id", projectId);
       }
     }
 
     // Persist the last user message
-    const lastUser = [...messages].reverse().find((m: { role: string }) => m.role === "user");
     if (lastUser) {
       await supa.from("chat_messages").insert({
         project_id: projectId,
@@ -2554,10 +3311,16 @@ Deno.serve(async (req) => {
     });
     if (assistantPlaceholderError) {
       console.error("assistant placeholder insert failed", assistantPlaceholderError);
-      return new Response(JSON.stringify({ error: "I couldn't start a safe assistant message for this run. Please retry; no document rows were created with broken assistant links." }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({
+          error:
+            "I couldn't start a safe assistant message for this run. Please retry; no document rows were created with broken assistant links.",
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
     const toolMessageId = assistantMessageId;
 
@@ -2566,7 +3329,8 @@ Deno.serve(async (req) => {
       { role: "system", content: systemPrompt },
       ...messages,
     ];
-    const executedTools: Array<{ name: string; args?: Record<string, unknown>; result: unknown }> = [];
+    const executedTools: Array<{ name: string; args?: Record<string, unknown>; result: unknown }> =
+      [];
     type ReasoningSegment = { type: "thinking" | "summary"; text: string };
     const reasoningRounds: Array<{ round: number; segments: ReasoningSegment[] }> = [];
     const stageHistory: Array<{ at: string; label: string }> = [];
@@ -2577,7 +3341,8 @@ Deno.serve(async (req) => {
     };
     const flushProgress = (stage: string) => {
       pushStage(stage);
-      void supa.from("chat_messages")
+      void supa
+        .from("chat_messages")
         .update({
           metadata: {
             in_progress: true,
@@ -2591,30 +3356,55 @@ Deno.serve(async (req) => {
         })
         .eq("id", assistantMessageId);
     };
-    const baseEffort = String((project as { ai_reasoning_effort?: string }).ai_reasoning_effort ?? "high");
+    const baseEffort = String(
+      (project as { ai_reasoning_effort?: string }).ai_reasoning_effort ?? "high",
+    );
     const TOOLS = buildTools(playbook);
 
     const MAX_ROUNDS = 4;
     const callerUserId = await getUserIdFromAuth(req);
-    let lastFb: { effectiveModel: string; fallback: string } = { effectiveModel: model, fallback: "none" };
+    let lastFb: { effectiveModel: string; fallback: string } = {
+      effectiveModel: model,
+      fallback: "none",
+    };
     flushProgress("preparing prompt…");
     flushProgress("contacting model…");
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const isFinalRound = round === MAX_ROUNDS - 1;
-      const roundEffort = isFinalRound ? baseEffort : (baseEffort === "high" ? "medium" : baseEffort === "medium" ? "low" : baseEffort);
-      const body: Record<string, unknown> = { model, messages: convo, stream: false, reasoningEffort: roundEffort, ...claudeSkillRequestShape(claudeChatSkills) };
+      const roundEffort = isFinalRound
+        ? baseEffort
+        : baseEffort === "high"
+          ? "medium"
+          : baseEffort === "medium"
+            ? "low"
+            : baseEffort;
+      const body: Record<string, unknown> = {
+        model,
+        messages: convo,
+        stream: false,
+        reasoningEffort: roundEffort,
+        ...claudeSkillRequestShape(claudeChatSkills),
+      };
       if (!isFinalRound) body.tools = TOOLS;
       if (round > 0) {
         const lastTool = executedTools[executedTools.length - 1]?.name;
-        flushProgress(isFinalRound ? "writing reply" : lastTool ? `after ${lastTool}…` : "thinking…");
+        flushProgress(
+          isFinalRound ? "writing reply" : lastTool ? `after ${lastTool}…` : "thinking…",
+        );
       }
-      flushProgress(isFinalRound ? `writing reply (round ${round + 1})…` : `calling model (round ${round + 1})…`);
+      flushProgress(
+        isFinalRound
+          ? `writing reply (round ${round + 1})…`
+          : `calling model (round ${round + 1})…`,
+      );
 
       const roundStartedAt = Date.now();
       const liveBaseMetadata: Record<string, unknown> = {
         in_progress: true,
         model,
-        stage: isFinalRound ? `writing reply (round ${round + 1})…` : `calling model (round ${round + 1})…`,
+        stage: isFinalRound
+          ? `writing reply (round ${round + 1})…`
+          : `calling model (round ${round + 1})…`,
         stage_history: stageHistory,
         partial_tools: executedTools.length,
         tools: executedTools,
@@ -2629,9 +3419,14 @@ Deno.serve(async (req) => {
         baseMetadata: liveBaseMetadata,
       });
       logAiRun({
-        userId: callerUserId, projectId, surface: "assistant-chat",
-        requestedModel: model, effectiveModel: live.ok ? live.effectiveModel : model, fallback: live.ok ? live.fallback : "none",
-        status: live.ok ? "ok" : "error", latencyMs: Date.now() - roundStartedAt,
+        userId: callerUserId,
+        projectId,
+        surface: "assistant-chat",
+        requestedModel: model,
+        effectiveModel: live.ok ? live.effectiveModel : model,
+        fallback: live.ok ? live.fallback : "none",
+        status: live.ok ? "ok" : "error",
+        latencyMs: Date.now() - roundStartedAt,
         errorMessage: live.ok ? undefined : `status ${live.status}`,
         targetId: assistantMessageId,
         promptExcerpt: lastUser?.content ? String(lastUser.content) : undefined,
@@ -2653,9 +3448,10 @@ Deno.serve(async (req) => {
           errMsg = `${provider} rate limit — try again in a moment.`;
           errStatus = 429;
         } else if (live.status === 402) {
-          const hint = provider === "Lovable AI"
-            ? "Add credits in Settings → Workspace → Usage, or switch this project's planning provider."
-            : `Check your ${provider} account billing or switch this project's planning provider.`;
+          const hint =
+            provider === "Lovable AI"
+              ? "Add credits in Settings → Workspace → Usage, or switch this project's planning provider."
+              : `Check your ${provider} account billing or switch this project's planning provider.`;
           errMsg = `${provider} credits/key issue (status 402). ${hint}`;
           errStatus = 402;
         } else if (live.status === 401) {
@@ -2674,10 +3470,22 @@ Deno.serve(async (req) => {
             `Before this happened I successfully executed ${okCount} of ${totalCount} actions ` +
             `(see receipts below). They are already saved — you don't need to redo them. ` +
             `Reply "continue" once the issue is resolved and I'll pick up where I left off.`;
-          await supa.from("chat_messages").update({
-            content: recoveryNote,
-            metadata: { model, effective_model: lastFb.effectiveModel, fallback: lastFb.fallback, tools: executedTools, ...(reasoningRounds.length ? { reasoning: reasoningRounds } : {}), partial: true, error: errMsg, in_progress: false },
-          }).eq("id", assistantMessageId);
+          await supa
+            .from("chat_messages")
+            .update({
+              content: recoveryNote,
+              metadata: {
+                model,
+                effective_model: lastFb.effectiveModel,
+                fallback: lastFb.fallback,
+                tools: executedTools,
+                ...(reasoningRounds.length ? { reasoning: reasoningRounds } : {}),
+                partial: true,
+                error: errMsg,
+                in_progress: false,
+              },
+            })
+            .eq("id", assistantMessageId);
           return new Response(
             JSON.stringify({
               content: recoveryNote,
@@ -2706,8 +3514,12 @@ Deno.serve(async (req) => {
         // moment this round's reasoning lands — don't wait for the next loop.
         flushProgress(`thought through round ${round + 1}`);
       }
-      const toolCalls = msg.tool_calls as Array<{ id: string; function: { name: string; arguments: string } }> | undefined;
-      const thinkingBlocks = (msg as { thinking_blocks?: Array<{ type: "thinking"; text: string; signature?: string }> }).thinking_blocks;
+      const toolCalls = msg.tool_calls as
+        | Array<{ id: string; function: { name: string; arguments: string } }>
+        | undefined;
+      const thinkingBlocks = (
+        msg as { thinking_blocks?: Array<{ type: "thinking"; text: string; signature?: string }> }
+      ).thinking_blocks;
 
       if (toolCalls && toolCalls.length > 0) {
         if (!Array.isArray(msgReasoning) || msgReasoning.length === 0) {
@@ -2716,22 +3528,45 @@ Deno.serve(async (req) => {
             try {
               const obj = JSON.parse(c.function.arguments || "{}") as Record<string, unknown>;
               const keys = Object.keys(obj).slice(0, 4);
-              preview = keys.map((k) => {
-                const v = obj[k];
-                const s = typeof v === "string" ? v : JSON.stringify(v);
-                return `${k}: ${s.length > 60 ? s.slice(0, 57) + "…" : s}`;
-              }).join(", ");
-            } catch { /* ignore */ }
-            return { type: "thinking", text: `Calling ${c.function.name}${preview ? ` — ${preview}` : ""}` };
+              preview = keys
+                .map((k) => {
+                  const v = obj[k];
+                  const s = typeof v === "string" ? v : JSON.stringify(v);
+                  return `${k}: ${s.length > 60 ? s.slice(0, 57) + "…" : s}`;
+                })
+                .join(", ");
+            } catch {
+              /* ignore */
+            }
+            return {
+              type: "thinking",
+              text: `Calling ${c.function.name}${preview ? ` — ${preview}` : ""}`,
+            };
           });
           if (segs.length) reasoningRounds.push({ round, segments: segs });
         }
-        convo.push({ role: "assistant", content: msg.content ?? "", tool_calls: toolCalls, ...(thinkingBlocks?.length ? { thinking: thinkingBlocks } : {}) });
+        convo.push({
+          role: "assistant",
+          content: msg.content ?? "",
+          tool_calls: toolCalls,
+          ...(thinkingBlocks?.length ? { thinking: thinkingBlocks } : {}),
+        });
         for (const call of toolCalls) {
           let args: Record<string, unknown> = {};
-          try { args = JSON.parse(call.function.arguments || "{}"); } catch { /* ignore */ }
+          try {
+            args = JSON.parse(call.function.arguments || "{}");
+          } catch {
+            /* ignore */
+          }
           flushProgress(`running ${call.function.name}…`);
-          const result = await executeTool(supa, projectId, call.function.name, args, toolMessageId, playbook);
+          const result = await executeTool(
+            supa,
+            projectId,
+            call.function.name,
+            args,
+            toolMessageId,
+            playbook,
+          );
           const argsForUi = call.function.name === "propose_options" ? undefined : args;
           executedTools.push({ name: call.function.name, args: argsForUi, result });
           convo.push({
@@ -2745,9 +3580,9 @@ Deno.serve(async (req) => {
       }
 
       const finalText = msg.content ?? "";
-      const lastOptionsTool = [...executedTools].reverse().find(
-        (t) => t.name === "propose_options" && (t.result as { ok?: boolean })?.ok,
-      );
+      const lastOptionsTool = [...executedTools]
+        .reverse()
+        .find((t) => t.name === "propose_options" && (t.result as { ok?: boolean })?.ok);
       const optionsResult = lastOptionsTool?.result as
         | { options?: Array<{ label: string; send: string }>; question?: string }
         | undefined;
@@ -2758,7 +3593,10 @@ Deno.serve(async (req) => {
       // a previous turn's propose_options arguments, none of the labels will
       // appear in this turn's numbered list. Reject and fall through to synth.
       if (quickOptions && quickOptions.length > 0 && !optionsMatchProse(quickOptions, finalText)) {
-        console.warn("[assistant-chat] propose_options stale — labels don't match prose, falling back to synth", { labels: quickOptions.map((o) => o.label) });
+        console.warn(
+          "[assistant-chat] propose_options stale — labels don't match prose, falling back to synth",
+          { labels: quickOptions.map((o) => o.label) },
+        );
         quickOptions = null;
         quickQuestion = null;
       }
@@ -2774,31 +3612,47 @@ Deno.serve(async (req) => {
         }
       }
 
-      await supa.from("chat_messages").update({
-        content: finalText,
-        metadata: {
-          model,
-          effective_model: lastFb.effectiveModel,
-          fallback: lastFb.fallback,
-          tools: executedTools,
-          in_progress: false,
-          ...(reasoningRounds.length ? { reasoning: reasoningRounds } : {}),
-          ...(quickOptions ? { options: quickOptions, question: quickQuestion } : {}),
-        },
-      }).eq("id", assistantMessageId);
+      await supa
+        .from("chat_messages")
+        .update({
+          content: finalText,
+          metadata: {
+            model,
+            effective_model: lastFb.effectiveModel,
+            fallback: lastFb.fallback,
+            tools: executedTools,
+            in_progress: false,
+            ...(reasoningRounds.length ? { reasoning: reasoningRounds } : {}),
+            ...(quickOptions ? { options: quickOptions, question: quickQuestion } : {}),
+          },
+        })
+        .eq("id", assistantMessageId);
 
-      return new Response(JSON.stringify({ content: finalText, tools: executedTools, model, messageId: assistantMessageId }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({
+          content: finalText,
+          tools: executedTools,
+          model,
+          messageId: assistantMessageId,
+        }),
+        {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
     }
 
     return new Response(JSON.stringify({ error: "Too many tool-call rounds" }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
     console.error("assistant-chat error", e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
-      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
+      {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   }
 });
