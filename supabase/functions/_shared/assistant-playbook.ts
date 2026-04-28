@@ -102,6 +102,16 @@ export type Playbook = {
     print_sizes: string[];
     document_types: string[];
     unusual_document_types: string[];
+    diversity: {
+      max_share_per_family_pct: number; // e.g. 25 = no doc_type family > 25% of the set
+      min_distinct_doc_types: number;   // floor on unique doc_type values across the proposal
+      min_distinct_print_sizes: number; // floor on unique print_size values across the proposal
+      min_unusual_props_pct: number;    // floor share of unusual / creative-prop docs
+      min_handwritten_pct: number;      // floor share of handwritten/hand-made-feel docs
+      paper_palette: string[];          // explicit paper-stock + color/tint variety options to draw from
+      family_groups: Record<string, string[]>; // doc_type → family bucket (so "report"/"autopsy report" both count as REPORT)
+      rules: string[];                  // free-text rules surfaced to the model
+    };
   };
   languages: {
     options: string[];
@@ -275,6 +285,53 @@ Looks like an actual archival envelope from the case era — NOT a modern Canva 
       "bus transfer with handwritten time", "library checkout slip", "dry-cleaning tag",
       "audio cassette J-card", "VHS rental sleeve", "luggage tag",
     ],
+    diversity: {
+      max_share_per_family_pct: 20,
+      min_distinct_doc_types: 12,
+      min_distinct_print_sizes: 4,
+      min_unusual_props_pct: 25,
+      min_handwritten_pct: 15,
+      paper_palette: [
+        "white office bond",
+        "cream archival",
+        "manila / kraft tan",
+        "yellow legal pad",
+        "pink carbon-copy",
+        "blue carbon-copy",
+        "green ledger",
+        "newsprint grey",
+        "graph paper",
+        "lined notebook",
+        "onion-skin onionskin",
+        "telex / thermal roll",
+        "photo glossy",
+        "photo matte",
+        "vellum / tracing",
+        "brown cardboard tag",
+        "blueprint cyan",
+      ],
+      family_groups: {
+        REPORT: ["report", "autopsy report", "forensic report", "incident report", "surveillance report", "intelligence report", "police report", "lab report", "after-action report"],
+        LETTER: ["letter", "memo", "ransom note", "telegram", "postcard", "wax-sealed letter", "torn diary page"],
+        TRANSCRIPT: ["transcript", "interrogation transcript", "wiretap transcript", "phone log"],
+        FORM: ["police form", "intake form", "evidence bag tag", "library checkout slip", "dry-cleaning tag", "luggage tag", "bus transfer", "pawn-shop receipt"],
+        FINANCIAL: ["receipt", "bank statement", "invoice", "ledger entry", "ticket stub", "concert ticket"],
+        ID: ["ID card", "business card", "passport page", "press pass", "badge"],
+        MEDIA: ["photo", "photograph", "annotated photograph", "surveillance polaroid", "photo collage", "newspaper", "newspaper clipping", "microfilm strip", "audio cassette J-card", "VHS rental sleeve"],
+        MAP_DIAGRAM: ["map", "hand-drawn map", "treasure-style chart", "diagram", "blueprint", "ship/building blueprint", "floor plan"],
+        CIPHER: ["cipher", "coded crossword", "morse code sheet", "one-time pad page", "invisible-ink note", "punched IBM card", "shopping list with hidden cipher"],
+        TACTILE: ["matchbook cover", "napkin sketch", "tarot card", "playing card with markings", "child's crayon drawing", "fortune-cookie slip", "lipstick mirror message", "pressed flower with note", "wax-sealed letter"],
+      },
+      rules: [
+        "DIVERSITY IS MANDATORY. A document set is FAILED if more than ~20% of items belong to the same family bucket (e.g. > 7 REPORTs in a 35-doc case = REJECT and rebalance). Apply this BEFORE finalising the proposal — don't propose 18 reports and call it done.",
+        "Every proposal must hit at least 12 DISTINCT doc_type values (not 12 reports with different titles). Spread across REPORT, LETTER, TRANSCRIPT, FORM, FINANCIAL, ID, MEDIA, MAP_DIAGRAM, CIPHER and TACTILE families — aim for at least 6 different families represented.",
+        "Use at least 4 DISTINCT print_size values across the set. A box where every doc is A4 is a failure. Mix in A5, photo sizes, index cards, ticket stubs, half-letter, square formats — drive size off what the prop physically is in the real world.",
+        "At least ~25% of the documents should be UNUSUAL / creative-prop types (matchbooks, napkin sketches, tarot, polaroids, hand-drawn maps, cassette J-cards, etc.) — not bureaucratic paperwork. These are what make the box feel tactile.",
+        "At least ~15% of the documents should feel HANDWRITTEN or hand-made (margin notes, diary pages, crayon, lipstick, ransom notes) — not typed/printed.",
+        "COLOR & PAPER VARIETY: pick paper stock per document from the paper_palette (white bond, cream archival, manila, yellow legal pad, pink/blue carbon, green ledger, newsprint, graph, blueprint cyan, photo glossy, etc.). The proposal must list visibly different paper colors/tints. A monochrome white-paper box is a failure.",
+        "Self-audit BEFORE calling propose_document_set: count items per family, count distinct doc_types, count distinct print_sizes, count unusual %, count handwritten %, list paper colors used. If any threshold fails, rebalance the proposal first — do not ship a failing set.",
+      ],
+    },
   },
   languages: {
     options: ["Hebrew", "English", "Arabic", "Spanish", "French", "German", "Russian"],
@@ -553,6 +610,20 @@ export function resolvePlaybook(override: unknown): Playbook {
     logic_gate_refusal: cleanString(o.doc_mode_copy?.logic_gate_refusal, d.doc_mode_copy.logic_gate_refusal),
   };
 
+  const divRaw = (o.catalogs?.diversity ?? {}) as Partial<Playbook["catalogs"]["diversity"]>;
+  const dDiv = d.catalogs.diversity;
+  const cleanFamilyGroups = (() => {
+    const src = (divRaw.family_groups && typeof divRaw.family_groups === "object") ? divRaw.family_groups : null;
+    if (!src) return dDiv.family_groups;
+    const out: Record<string, string[]> = {};
+    for (const [k, v] of Object.entries(src)) {
+      if (typeof k !== "string" || !Array.isArray(v)) continue;
+      const arr = v.filter((x): x is string => typeof x === "string" && x.trim().length > 0);
+      if (arr.length > 0) out[k] = arr;
+    }
+    return Object.keys(out).length > 0 ? out : dDiv.family_groups;
+  })();
+  const num = (v: unknown, fb: number) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : fb);
   const catalogs = {
     print_sizes: cleanStringArray(o.catalogs?.print_sizes, d.catalogs.print_sizes).slice(0, 24),
     document_types: cleanStringArray(o.catalogs?.document_types, d.catalogs.document_types).slice(0, 60),
@@ -560,6 +631,16 @@ export function resolvePlaybook(override: unknown): Playbook {
       o.catalogs?.unusual_document_types,
       d.catalogs.unusual_document_types,
     ).slice(0, 60),
+    diversity: {
+      max_share_per_family_pct: num(divRaw.max_share_per_family_pct, dDiv.max_share_per_family_pct),
+      min_distinct_doc_types: num(divRaw.min_distinct_doc_types, dDiv.min_distinct_doc_types),
+      min_distinct_print_sizes: num(divRaw.min_distinct_print_sizes, dDiv.min_distinct_print_sizes),
+      min_unusual_props_pct: num(divRaw.min_unusual_props_pct, dDiv.min_unusual_props_pct),
+      min_handwritten_pct: num(divRaw.min_handwritten_pct, dDiv.min_handwritten_pct),
+      paper_palette: cleanStringArray(divRaw.paper_palette, dDiv.paper_palette).slice(0, 32),
+      family_groups: cleanFamilyGroups,
+      rules: cleanStringArray(divRaw.rules, dDiv.rules).slice(0, 16),
+    },
   };
 
   const languages = {
