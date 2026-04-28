@@ -215,6 +215,13 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
     return () => window.clearInterval(t);
   }, [isLiveBuilding]);
 
+  // Pre-stream "planning" indicator: the project flag is set the moment the
+  // backend kicks off generate-logic-flow, but the model can spend 30-90s
+  // thinking before the first node lands. This bridges that gap so the user
+  // always sees that something is happening.
+  const { isBuilding: logicFlowBuilding } = useLogicFlowLive(projectId);
+  const showPlanningPill = board === "logic" && logicFlowBuilding && !isLiveBuilding;
+
   // Pick up changes made from Settings → AI provider routing → Logic Flow.
   useEffect(() => {
     if (typeof window === "undefined") return;
