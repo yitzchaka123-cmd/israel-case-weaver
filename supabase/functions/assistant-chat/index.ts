@@ -264,6 +264,11 @@ function buildSystemPrompt(
     (project as { planning_depth?: unknown }).planning_depth,
     playbook.planning_depth.default,
   );
+  const prevDepthRaw = (project as { last_seen_planning_depth?: unknown }).last_seen_planning_depth;
+  const prevDepth: PlanningDepth | null =
+    prevDepthRaw === "express" || prevDepthRaw === "guided" || prevDepthRaw === "deep"
+      ? prevDepthRaw
+      : null;
   const firstTurnDepthPrompt = isFirstTurn
     ? `\n\nFIRST-TURN NOTE
 The planning depth has already been chosen by the user via the **Depth selector** in the Assistant header (current value: "${planningDepth}"). DO NOT ask the user to pick a depth — the selector IS the answer. Do NOT call propose_options for depth. Just open the case per the PLANNING DEPTH block above for "${planningDepth}".`
@@ -278,7 +283,7 @@ ${renderPhaseEnumComment(playbook)}
 
 ${renderLanguagesBlock(playbook)}
 
-${renderPlanningDepthBlock(planningDepth, playbook)}${firstTurnDepthPrompt}
+${renderPlanningDepthBlock(planningDepth, playbook, isFirstTurn ? null : prevDepth)}${firstTurnDepthPrompt}
 
 WORKFLOW — proceed ONE STEP AT A TIME, WAIT FOR APPROVAL before advancing phases. The PLANNING DEPTH block above OVERRIDES the default Phase 1 order — follow that block first.
 ${renderPhase1OrderSentence(playbook)}
