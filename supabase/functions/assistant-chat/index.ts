@@ -2123,6 +2123,12 @@ async function processConversation(
         && new Date((latestNode as { updated_at: string }).updated_at).getTime() > new Date(project.logic_approved_at).getTime(),
     ),
   };
+  const lastUser = [...messages].reverse().find((m) => (m as { role: string }).role === "user") as { content: string } | undefined;
+  const chatDepthChoice = detectPlanningDepthChoice(lastUser?.content);
+  if (chatDepthChoice && normalizePlanningDepth((project as { planning_depth?: unknown }).planning_depth, playbook.planning_depth.default) !== chatDepthChoice) {
+    await supa.from("projects").update({ planning_depth: chatDepthChoice }).eq("id", projectId);
+    (project as { planning_depth?: PlanningDepth }).planning_depth = chatDepthChoice;
+  }
   const isFirstTurn = (messages?.length ?? 0) <= 1;
   const systemPrompt = buildSystemPrompt(project, rosters, tweaks, playbook, claudeChatSkills, isFirstTurn);
   // Stamp the depth we just rendered so the NEXT turn can detect a flip.
@@ -2137,7 +2143,6 @@ async function processConversation(
     }
   }
 
-  const lastUser = [...messages].reverse().find((m) => (m as { role: string }).role === "user") as { content: string } | undefined;
   if (lastUser) {
     await supa.from("chat_messages").insert({
       project_id: projectId, role: "user", content: lastUser.content,
