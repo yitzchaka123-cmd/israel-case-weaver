@@ -165,7 +165,7 @@ export async function bakeFrontCover(input: BakeFrontInput): Promise<string> {
     }
   }
 
-  // Company logo (top right, small)
+  // Company logo (top right, small) + optional slogan beneath it
   if (logo) {
     const targetW = Math.round(W * 0.13);
     const targetH = Math.round((targetW / logo.naturalWidth) * logo.naturalHeight);
@@ -177,6 +177,44 @@ export async function bakeFrontCover(input: BakeFrontInput): Promise<string> {
     ctx.fillStyle = "rgba(255,255,255,0.88)";
     ctx.fillRect(x - cardPad, y - cardPad, targetW + cardPad * 2, targetH + cardPad * 2);
     ctx.drawImage(logo, x, y, targetW, targetH);
+
+    if (companySlogan) {
+      const slogSize = Math.round(W * 0.018);
+      ctx.font = `500 ${slogSize}px 'Inter', 'Helvetica Neue', sans-serif`;
+      ctx.fillStyle = "#fff";
+      ctx.textAlign = "right";
+      ctx.textBaseline = "top";
+      ctx.shadowColor = "rgba(0,0,0,0.65)";
+      ctx.shadowBlur = Math.round(slogSize * 0.5);
+      const slogLines = wrapText(ctx, companySlogan, targetW * 1.4);
+      let sy = y + targetH + cardPad + Math.round(slogSize * 0.4);
+      for (const line of slogLines) {
+        ctx.fillText(line, W - pad, sy);
+        sy += slogSize * 1.25;
+      }
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  // Front subtext block (bottom-left, small)
+  if (frontSubtext) {
+    const subSize = Math.round(W * 0.022);
+    ctx.font = `400 ${subSize}px 'Inter', 'Helvetica Neue', sans-serif`;
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "bottom";
+    ctx.shadowColor = "rgba(0,0,0,0.7)";
+    ctx.shadowBlur = Math.round(subSize * 0.55);
+    const pad = Math.round(W * 0.035);
+    const lines = wrapText(ctx, frontSubtext, W * 0.55);
+    let yy = H - pad;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      ctx.fillText(lines[i], pad, yy);
+      yy -= subSize * 1.3;
+    }
+    ctx.shadowBlur = 0;
+    ctx.textAlign = "start";
+    ctx.textBaseline = "alphabetic";
   }
 
   const blob = await new Promise<Blob>((res, rej) =>
