@@ -19,6 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { nodeTypes as caseNodeTypes, getNodeMeta, NODE_META } from "./canvas/CanvasNodeTypes";
+import { useLogicFlowLive } from "./canvas/useLogicFlowLive";
 
 // Hand the user's Canvas-side approval over to the assistant so the chat
 // continues automatically. Mirrors useAssistantRun.send() in background mode:
