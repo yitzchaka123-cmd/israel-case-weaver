@@ -50,6 +50,7 @@ const MARKETING_CATEGORIES = ["cover", "back", "marketing-back", "marketing-extr
 export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
   const { user } = useAuth();
+  const batch = useBatchProgress();
   const [adding, setAdding] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newHint, setNewHint] = useState("");
