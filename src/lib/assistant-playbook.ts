@@ -858,13 +858,35 @@ export function normalizePlanningDepth(value: unknown, fallback: PlanningDepth =
   return fallback;
 }
 
-export function renderPlanningDepthBlock(depth: PlanningDepth, p: Playbook): string {
-  const header = `The current PLANNING DEPTH is "${depth}". This value comes from the **Depth selector** in the Assistant header — it is the single source of truth. NEVER ask the user "how deep should we plan?" and NEVER call propose_options for depth choices; the selector already answered. The user may flip the selector to a different depth at ANY point during the build (Phase 1, 2, 3, mid-document, anywhere). When they do, the next system prompt will arrive with the new depth — adopt it immediately on your next turn without re-asking, without restarting earlier work, and without prompting them to confirm. Preserve everything already approved (case identity, summary, suspects, logic flow, document proposals) and just adjust how much you ask going forward: switching to Express means stop asking and auto-fill remaining gaps; switching to Deep Dive means open up more probing questions on whatever phase you're currently in; switching to Guided means return to basics-only questions.\n\n`;
+export function renderPlanningDepthBlock(
+  depth: PlanningDepth,
+  p: Playbook,
+  prevDepth?: PlanningDepth | null,
+): string {
+  const depthJustChanged = !!prevDepth && prevDepth !== depth;
+  const changeNotice = depthJustChanged
+    ? `🔁 DEPTH CHANGE NOTICE — the user just flipped the Depth selector from "${prevDepth}" to "${depth}" mid-conversation. Your previous assistant turn was written under the OLD depth ("${prevDepth}") and is now STALE.
+
+On THIS turn you MUST:
+  - Do NOT continue the question ladder you were running under "${prevDepth}". If your last assistant message asked the user to pick option 1–5 / step N / a phase choice that only existed because of the OLD depth, treat that question as CANCELLED.
+  - Open with ONE short acknowledgement sentence ("Got it — switching to ${depth} mode.") and then act per the "${depth}" rules below from this point on.
+  - Keep everything that's already APPROVED and PERSISTED in CURRENT PROJECT STATE (title, language, target docs, mystery type, genre, year, difficulty, player role, case goal, setting, selling point, summary, suspects, logic flow, documents). Do NOT re-ask for any of those. Do NOT restart Phase 1 from scratch.
+  - Just adjust how much you ask GOING FORWARD per the "${depth}" rules.
+
+`
+    : "";
+  const header = changeNotice + `The current PLANNING DEPTH is "${depth}". This value comes from the **Depth selector** in the Assistant header — it is the single source of truth. NEVER ask the user "how deep should we plan?" and NEVER call propose_options for depth choices; the selector already answered. The user may flip the selector to a different depth at ANY point during the build (Phase 1, 2, 3, mid-document, anywhere). When they do, the next system prompt arrives with a 🔁 DEPTH CHANGE NOTICE — adopt it immediately on your next turn without re-asking, without restarting earlier work, and without prompting them to confirm. Preserve everything already approved (case identity, summary, suspects, logic flow, document proposals) and just adjust how much you ask going forward.\n\n`;
   if (depth === "express") {
     const fills = Object.entries(p.planning_depth.express.auto_fill_defaults)
       .map(([k, v]) => `      ${k} = ${v}`)
       .join("\n");
     return header + `PLANNING DEPTH = EXPRESS (the user wants the AI to plan everything, ask almost nothing)
+
+There are TWO sub-cases — pick the one that matches CURRENT PROJECT STATE:
+
+═══════════════════════════════════════════════════════════════════
+SUB-CASE A — EXPRESS ON A FRESH CASE (project.title is empty / placeholder like "New Case", "Untitled", "Test 1" with no other fields filled)
+═══════════════════════════════════════════════════════════════════
 - Ask the user for ONLY ONE thing: the case TITLE. Either propose 5 Hebrew title options with propose_options OR accept whatever they type.
 - After the title is locked in, IMMEDIATELY:
     1. Call \`update_project\` once, passing ALL of these fields together (skip any the user already filled):
@@ -872,9 +894,24 @@ ${fills}
     2. Then write a short solution summary on your own (3–6 paragraphs) and call \`set_solution_summary\`.
     3. Then call \`generate_logic_flow\`.
     4. Then send ONE assistant message: "✨ Express mode: I've drafted the case identity, summary, and logic flow. Open the Canvas tab, review the Logic Flow board, and click 'Approve logic' when you're happy. From there I'll keep going on documents."
+
+═══════════════════════════════════════════════════════════════════
+SUB-CASE B — EXPRESS MID-BUILD (project.title is already a real title — switching INTO Express partway through)
+═══════════════════════════════════════════════════════════════════
+- Do NOT ask for the title again — it's already set.
+- Do NOT continue any Phase 1 question ladder. STOP asking the user step-by-step questions immediately.
+- In the SAME turn:
+    1. Look at CURRENT PROJECT STATE. For every Phase 1 field that is currently null or empty (player_role, case_goal, setting, selling_point, mystery_type, genre, year, difficulty), pick a sensible default that fits what's already locked in.
+    2. Call \`update_project\` ONCE with all those filled-in defaults together. Skip any field the user already answered.
+    3. If \`solution_summary\` is empty, draft a short summary (3–6 paragraphs) and call \`set_solution_summary\`.
+    4. If \`logic_approved_at\` is null AND a summary now exists, call \`generate_logic_flow\`.
+    5. Send ONE short assistant message: "✨ Switched to Express. I filled the remaining setup, drafted the summary, and queued the logic flow — review and approve on the Canvas when ready."
+- Do NOT pause for confirmation between steps. The depth switch IS the green light.
+
+═══════════════════════════════════════════════════════════════════
+APPLIES TO BOTH SUB-CASES:
 - Do NOT ask the user about: player_role, case_goal, setting, selling_point, mystery_type, genre, year, difficulty, suspects' motives, suspects' secrets, contradictions, red herrings, clue-by-clue reasoning, or anything else. The user has explicitly chosen to skip these questions.
-- The user may still volunteer extra info — if they do, persist it via update_project and continue.
-- Do NOT pause for confirmation between the title and the logic flow. Treat the title as the green light to do everything.`;
+- The user may still volunteer extra info — if they do, persist it via update_project and continue.`;
   }
   if (depth === "deep") {
     const probes = p.planning_depth.deep.extra_probes.map((x) => `  - ${x.replaceAll("_", " ")}`).join("\n");
@@ -885,7 +922,8 @@ ${probes}
 - For every suspect: ask SEPARATELY about their motive, their secret, their contradiction, and how they relate to the victim. Persist each via update_suspect the moment it's confirmed.
 - For every clue: confirm out loud what it proves, what it eliminates, and what red herring (if any) it counters.
 - Before moving from Phase 3 to Phase 3.5 (Logic Flow), summarise the deduction chain in prose and ask the user to confirm "yes, generate the Logic Flow" or "wait, I want to revise X".
-- Take more turns. The user picked Deep Dive precisely to be asked these questions — do NOT shortcut them.`;
+- Take more turns. The user picked Deep Dive precisely to be asked these questions — do NOT shortcut them.
+- IF SWITCHING INTO DEEP DIVE MID-BUILD: do NOT re-litigate already-approved fields from CURRENT PROJECT STATE. Only open up deeper probes for the phase you're currently on or the next one ahead.`;
   }
   // guided (default)
   const ask = p.planning_depth.guided.ask_steps.join(", ");
@@ -893,5 +931,6 @@ ${probes}
 - During Phase 1, ask only the basics IN THIS ORDER, ONE QUESTION PER TURN: ${ask}.
 - Skip player_role, case_goal, setting, selling_point unless the user volunteers them in their own message. If they're missing when Phase 1 ends, fill them silently with sensible defaults via update_project — do NOT ask.
 - After the year/setting question, propose generating the Logic Flow with propose_options ("Generate Logic Flow now" / "Add a player role first" / "Add a case goal first"). Default to generating immediately.
-- During Phase 3 (Structure), ask high-level questions only — name + role for each suspect, the murder weapon, the location. Do NOT ask separately about motives / secrets / contradictions per suspect (Deep Dive does that).`;
+- During Phase 3 (Structure), ask high-level questions only — name + role for each suspect, the murder weapon, the location. Do NOT ask separately about motives / secrets / contradictions per suspect (Deep Dive does that).
+- IF SWITCHING INTO GUIDED MID-BUILD: simply resume basics-only questioning for whatever phase is currently in progress. Do NOT restart Phase 1 if it's already complete; pick up from the next unanswered basic question (or from Phase 2/3 if Phase 1 is done).`;
 }
