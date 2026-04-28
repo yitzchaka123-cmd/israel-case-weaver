@@ -63,20 +63,35 @@ export function useAssistantRun(projectId: string) {
   // and show the spinner.
   useEffect(() => {
     let cancelled = false;
-    // Bootstrap: check current DB state for this project.
+    // Bootstrap: check current DB state. If the most recent "running" row is
+    // older than the server-side hard timeout (7 min), treat it as a zombie
+    // and self-heal: locally clear the spinner AND write status='error' so
+    // other tabs/devices recover too. Without this, a Worker that died mid-run
+    // would leave the chat spinner stuck forever.
+    const STALE_AFTER_MS = 8 * 60 * 1000;
     void (async () => {
       const { data } = await supabase
         .from("assistant_runs")
-        .select("status")
+        .select("id,started_at")
         .eq("project_id", projectId)
         .eq("status", "running")
         .order("started_at", { ascending: false })
         .limit(1);
       if (cancelled) return;
-      const dbRunning = (data ?? []).length > 0;
+      const row = (data ?? [])[0] as { id: string; started_at: string } | undefined;
       const cur = readRunState(projectId);
-      // Only override if local state agrees there's nothing in flight.
-      if (!cur.isRunning && dbRunning) setRunState(qc, projectId, { isRunning: true });
+      if (!row) return;
+      const ageMs = Date.now() - new Date(row.started_at).getTime();
+      if (ageMs > STALE_AFTER_MS) {
+        if (cur.isRunning) setRunState(qc, projectId, { isRunning: false, controller: cur.controller });
+        toast.message("Recovered a stuck assistant run — you can send a new message.");
+        void supabase
+          .from("assistant_runs")
+          .update({ status: "error", error: "stale_recovered: client watchdog", finished_at: new Date().toISOString() })
+          .eq("id", row.id);
+        return;
+      }
+      if (!cur.isRunning) setRunState(qc, projectId, { isRunning: true, runId: row.id });
     })();
 
     // Unique channel name per mount — prevents "cannot add callbacks after

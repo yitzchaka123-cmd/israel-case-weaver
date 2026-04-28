@@ -1,105 +1,56 @@
-# Fix batch of 8 issues across canvas, marketing, assistant & media
+# Fix: stuck assistant run + lost/failed batch images
 
-## 1. Doc 0 envelopes are spoilers — hide their payloads
+Two real bugs found from the live data:
 
-In `loadDoc0InventoryContext` (`supabase/functions/generate-document/index.ts`), the envelope list is currently passed to the model with the full task text:
+**Bug A — assistant_runs row stuck "running" for ~10 hours.**
+Row `5543baa5-28df-4ac8-9abb-9436f358b80a` has `status='running'`, `started_at=2026-04-27 23:01:55`, `finished_at=null`, `error=null`. The Edge Function bumped it to "running", then either the Worker was killed mid-stream or `processConversation` threw outside the try/catch. The client realtime hook (`useAssistantRun.ts`) only flips `isRunning=false` when it sees `status=done|error`, so the UI shows the assistant "thinking" forever and refuses new sends (`if (readRunState(projectId).isRunning) return;`).
 
-```
-- Envelope 2: Decode the cipher — open after you've identified the cipher key
-```
+**Bug B — batch image jobs that never get a row, or come back broken.**
+The progress pill in `useBatchImageProgress.ts` only counts ids that were successfully INSERTed as `media_assets` rows. If `fireBackgroundImage` returns `{ ok:false, jobId:null }` (e.g. the queue function 5xx'd), that slot is never tracked — the user expects 10 thumbnails and only gets the ones that made it. Today's data shows 10 docs all wrote rows AND came back `status='generated'` — so any "missing" perception is either a) ids that never made it into `start([...])`, or b) the image came back blank / off-prompt with no error surfaced. There's no "this generation looked broken" affordance and no retry button per cell.
 
-…which the model then prints into Doc 0. **Hard rule:** Doc 0 must list envelopes by NUMBER + LABEL only — never the task / payload / opening-trigger text. Strip envelope `task` (and any `opening_trigger`) from the inventory context, and add an explicit "envelope tasks are SPOILERS — never list them" rule to every Doc 0 prompt (text, file, image). Render envelopes as a separate "Sealed envelopes" section (numbered) in the inventory output.
+## What I'll change
 
-## 2. "Refine with AI" arrange isn't doing what you expect
+### 1. Self-heal stuck assistant runs (highest-priority — unblocks the user right now)
 
-The current `mode: "ai-refine"` only asks the LLM for **logical groupings** (which nodes should sit next to each other) and re-runs the deterministic packer. It never repositions individual nodes itself. That matches the original spec but clearly doesn't match what you want now.
+**Server (`assistant-chat/index.ts`):**
+- Wrap the background `work` IIFE in a hard timeout (e.g. 7 min). If exceeded, mark the row `status='error', error='Timed out — assistant exceeded 7 min limit'` and return.
+- Add a top-level safety net AFTER the try/catch — if the function instance is being torn down, write `error='Worker terminated mid-run'` via a final `addEventListener('beforeunload')` style hook (use `EdgeRuntime` lifecycle or a `try { ... } finally { if (!finished) markError(...) }` pattern).
 
-**Question for you (asked below):** what should "Refine with AI" actually do?
+**Client watchdog (`useAssistantRun.ts`):**
+- On bootstrap, when we find a `status='running'` row, ALSO check `started_at`. If `now() - started_at > 7 minutes`, treat it as stale: locally show `isRunning=false`, show a small toast "Previous run timed out — you can send again", and write `status='error', error='stale_timeout'` to the row so other tabs/devices recover too.
+- Add the same staleness check to the realtime UPDATE handler.
 
-Default plan if you confirm: rename the current button to "**Smart arrange**" (it already cycles deterministic variants), and rebuild "**Refine with AI**" to:
-- Read the current node titles, descriptions, edges, AND your case brief.
-- Re-cluster nodes by *narrative role* (suspect-by-suspect, clue-chain, red-herring sidebar, solution at the end).
-- Push the suggested grouping AND a per-cluster ordering (which clue comes first inside each cluster) back into the deterministic packer.
-- Add a 1-line summary toast: "AI grouped X clusters: <names>".
+**One-time cleanup:** issue an UPDATE to flip the existing zombie row (`5543baa5...`) and any other `assistant_runs` where `status='running' AND started_at < now() - interval '15 minutes'` to `status='error', error='stale_recovered', finished_at=now()`. This unsticks the user immediately.
 
-## 3. Canvas zoom — let me zoom way further out / in
+### 2. Make batch image generation honest about what failed
 
-`CanvasSection.tsx` already sets `minZoom={0.05}` / `maxZoom={4}` but ReactFlow's default Controls toolbar caps zoom-out at the configured `minZoom` after a couple of clicks. Open up to `minZoom={0.02}` / `maxZoom={6}`, and also widen the keyboard/wheel pan/zoom range so trackpad pinch can get there too. `fitView` will use the same range.
+**`fireBackgroundImage.ts`:** when the kicker call fails BEFORE inserting a `media_assets` row, synthesize a local pseudo-id and return it with `ok:false, kickFailed:true` so the caller can still register that slot in the progress pill.
 
-## 4. Batch image generation — show "X / N generated" pill
+**`useBatchImageProgress.ts`:**
+- Accept "kick-failed" pseudo-ids and immediately mark them `failed` so the pill reads `Generated 8 / 10 — 2 failed (kick failed)` instead of silently shrinking the denominator.
+- Keep the failed pill on screen until the user dismisses it (don't auto-clear if `failed > 0`).
+- Add a "Retry failed" button that re-fires only the failed slots (cover, side, document, whatever the original `target` was).
 
-When the back-cover panel kicks 4 parallel jobs (`fireBackgroundImage` × N) there's currently no progress feedback. Add a sticky progress strip at the top of the **Marketing** tab (mirror of the existing one in `DocumentsSection.tsx` for `bulk_generation_jobs`).
+**`MarketingSection.tsx` / `BarcodeAndBackPanel.tsx` / `CoverAndVisuals.tsx`:** when registering the batch, also pass per-slot labels (e.g. "Box side 2", "Back option 1") so the failure list can name them.
 
-Implementation: subscribe to `media_assets` realtime for the session's job ids and count them as they flip from `pending` → `generated`/`failed`. No new table — just track the kicked job ids in component state and display "Generated 2 / 4 …" with per-card spinners.
+**Per-card "Regenerate" affordance:** every image card in `MediaSection`, `MarketingSection`, `BarcodeAndBackPanel.tsx`, and `CoverAndVisuals.tsx` already has a thumbnail — add a small "↻ Regenerate" button that re-runs the same prompt with the same model/quality. This covers case (b) where the image arrived but looked wrong.
 
-## 5. Assistant keeps yanking back to bottom while reasoning
+### 3. Surface assistant timeouts in the UI
 
-`AssistantSection.tsx` line 269-272 calls `scrollTo({ top: scrollHeight })` on every `messages` / `sending` change — including on every reasoning-token streaming update. Fix: only auto-scroll if the user is **already near the bottom** (within ~80 px of `scrollHeight`). If they've scrolled up to read, let them stay. Add a small "↓ Jump to latest" pill that fades in when the user is scrolled up and there's new content.
-
-## 6. Download icons in every media place
-
-Add a small download button to:
-- `ImageHistoryStrip` (top-right corner of each thumbnail's lightbox + a row in the strip)
-- `MediaSection` (every asset card)
-- `MediaLibrarySection` (every row)
-- `SuspectsSection` (suspect thumbnails)
-- `EnvelopesSection` (envelope cover mock-up)
-- `CoverAndVisuals` (extras grid + main cover)
-- `BarcodeAndBackPanel` (back-cover candidates + barcode + each QR PNG)
-- `HintsSection` / `MediaSection` document files
-
-One shared helper `downloadAsset(url, filename)` in `src/lib/utils.ts` (fetches the URL → blob → `<a download>` click). Renames default to a slug of the project + asset title.
-
-## 7. Default image quality = high everywhere + assistant "high quality" trigger
-
-- Change `getStoredImageQuality(... fallback)` default from `"medium"` to `"high"` everywhere it's called (covers, suspects, envelopes, hint sheets, back cover, marketing extras, storyboard).
-- Change the `<select>` initial state in `ImageModelPicker.tsx` from `"medium"` to `"high"`.
-- Keep the High warning ("can take up to 2 min").
-- Add an assistant playbook rule: when the user says "high quality", "in high res", "redo at high quality", "regenerate hi-res" (and Hebrew variants "באיכות גבוהה"), the assistant must call the matching regenerate tool (cover / suspect / envelope / inline image / etc.) with `quality: "high"`. Existing tools all accept a `quality` arg; we'll just thread it through.
-
-## 8. "Generation" tab → simple prompt-and-go generator
-
-The Generation tab (`MediaSection.tsx`) overlaps with Marketing. Strip it down to:
-- One image-model picker
-- One `ImagePromptAssistant` (the same prompter used elsewhere)
-- One "Generate image" button
-- A single grid of every image generated from this surface (category = `external` / `manual`)
-- Download icon per item
-
-Remove the Cover / Back / News / Promo / External-uploads sub-tabs (they all live in Marketing now, except External uploads which stays as an upload box at the bottom of the simplified panel).
-
-## 9. Cover generators must use ALL the marketing copy + barcode + QR + 4 extra back-of-box images
-
-Front cover (`CoverAndVisuals.tsx` + `bakeCover.ts`):
-- **Block generation** if `project.title` is empty (front needs at minimum: title; uses subtitle + company logo if available). Show a clear "Fill in title (and ideally subtitle) on Overview before generating the cover."
-- The composed prompt now passes title, subtitle, mystery_type, setting, AND `front_subtext` / `front_company_slogan` / `front_logo_note` from `project_marketing` so the AI knows what zones to leave clean.
-- After generation the existing `bakeFrontCover` already paints title/subtitle/logo — extend it to also paint the company slogan (small, under logo) and any `front_subtext` (small, bottom-left).
-
-Back cover (`BarcodeAndBackPanel.tsx` + `bakeCover.ts`):
-- **Block generation** if any of these are missing: barcode, primary QR, back_headline, back_body, company name, company logo. Show a checklist of what's missing.
-- Pass barcode + primary-QR PNGs as `image_url` reference inputs (Nano Banana edit mode) so the AI builds the design AROUND the actual codes, not generic placeholders. Today they're only baked on after the fact.
-- The composed prompt (`composeFinalPrompt`) now also includes: `back_whats_in_box`, `back_how_to_play`, `back_feature_bullets`, `back_specs`, `back_content_note`, `back_footer_text`, every QR's label, the company name + tagline, and every "extra image" caption — so the AI lays out a real back-of-box, not just a vibe shot.
-- **Add 4 "box-side" image slots** to the back cover as discussed: spawn 4 small `marketing-back-extra` jobs using the back prompt's secondary scene description (component shots / mood pieces) and bake them along the right edge of the back cover at print time. Stored in the `marketing-back` category with `title` "Box side 1/2/3/4" so they're visible and downloadable in the Marketing gallery too.
+When `assistant_runs.status='error'`, show the `error` text in the Assistant timeline as a red system message ("⚠️ Last response failed: <reason>. Try again.") instead of nothing. Today the UI just goes quiet.
 
 ## Files touched
 
-- `supabase/functions/generate-document/index.ts` — Doc 0 envelope hiding
-- `supabase/functions/arrange-canvas/index.ts` — narrative-cluster AI refine
-- `supabase/functions/assistant-chat/index.ts` — "high quality" trigger
-- `src/features/project/CanvasSection.tsx` — zoom range
-- `src/features/project/AssistantSection.tsx` — sticky-only-when-at-bottom scroll
-- `src/features/project/MediaSection.tsx` — strip down to simple generator
-- `src/features/project/marketing/CoverAndVisuals.tsx` — gating + richer prompt
-- `src/features/project/marketing/BarcodeAndBackPanel.tsx` — gating + richer prompt + 4 box-side images + reference PNG passthrough
-- `src/features/project/marketing/bakeCover.ts` — extra slots + box-side painting
-- `src/components/ImageHistoryStrip.tsx` — download icon
-- `src/components/ImageModelPicker.tsx` — default quality = high
-- `src/lib/utils.ts` — `downloadAsset()` helper
-- `src/features/project/SuspectsSection.tsx` / `EnvelopesSection.tsx` / `MediaLibrarySection.tsx` — wire download icons
-- (no DB schema changes)
+- `supabase/functions/assistant-chat/index.ts` — hard timeout + finally-block safety net
+- `src/features/project/assistant/useAssistantRun.ts` — stale-run detection (bootstrap + realtime)
+- `src/features/project/AssistantSection.tsx` — render error rows from `assistant_runs`
+- `src/features/project/fireBackgroundImage.ts` — return kick-fail pseudo ids
+- `src/features/project/marketing/useBatchImageProgress.ts` — track kick-fails, "Retry failed" hook, no auto-clear when failed > 0
+- `src/features/project/marketing/BatchProgressPill.tsx` — show failed names + retry button
+- `src/features/project/marketing/BarcodeAndBackPanel.tsx`, `CoverAndVisuals.tsx`, `MediaSection.tsx` — per-card "↻ Regenerate" button + pass slot labels into batch
+- One-shot SQL: flip stale `assistant_runs` rows to `status='error'`
 
-## Out of scope for this turn
-- Drag-to-reorder QR codes
-- Storyboard-shot download icons (will land in a follow-up if you want)
+## Out of scope this turn
 
-Couple of clarifying questions are below so I don't guess wrong on the two ambiguous items.
+- Rewriting `assistant-chat` to a queue + cron (would also fix the timeout, but is much larger and the watchdog already unblocks the user).
+- Showing image-quality issues automatically (no good signal — the model returns a URL even when the image is bad).
