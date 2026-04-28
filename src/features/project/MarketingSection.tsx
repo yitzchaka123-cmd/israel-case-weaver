@@ -70,7 +70,7 @@ function MarketingSectionInner({ projectId }: { projectId: string }) {
         </div>
       </div>
 
-      {batch && <BatchProgressPill progress={batch.progress} />}
+      {batch && <BatchProgressPill progress={batch.progress} onDismiss={batch.dismiss} />}
 
       <section id="marketing-cover-visuals" className="scroll-mt-24">
         <CoverAndVisuals projectId={projectId} />
