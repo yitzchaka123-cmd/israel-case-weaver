@@ -435,6 +435,14 @@ Square-ish print panel, no on-image text, no logos, no UI overlays. Will be crop
         if (sideFails > 0) {
           toast.message(`${4 - sideFails} of 4 box-side images started — ${sideFails} failed to kick off.`);
         }
+
+        // Register every kicked job with the shared batch progress pill.
+        const allIds = [...results, ...sideResults]
+          .map((r) => r.jobId)
+          .filter((id): id is string => Boolean(id));
+        if (allIds.length > 0) {
+          batch?.start(allIds, "Back cover + box sides");
+        }
       }
       if (backOutputType === "document" || backOutputType === "both") {
         await supabase.from("media_assets").insert({ project_id: projectId, category: "marketing-back", title: "Back of box document prompt", prompt: composedPrompt, provider: "direct-model-file", asset_type: "document", document_format: "pdf", generation_mode: "direct_model_file", status: "failed", error_message: "Create a document row to generate a real file directly with the selected document model." } as never);
