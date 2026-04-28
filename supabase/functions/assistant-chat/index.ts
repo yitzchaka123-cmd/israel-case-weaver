@@ -265,15 +265,8 @@ function buildSystemPrompt(
     playbook.planning_depth.default,
   );
   const firstTurnDepthPrompt = isFirstTurn
-    ? `\n\nFIRST-TURN PLANNING DEPTH PICKER (this is the very first assistant message in this project)
-Your VERY FIRST reply MUST do exactly two things, in order:
-  1. Greet the user warmly in one short sentence and explain there are three planning styles for this case.
-  2. Call \`propose_options\` with EXACTLY these three buttons (label / send identical):
-       • "⚡ Express — you plan it all, just ask me the title"
-       • "🎯 Guided — ask me the basics only (default)"
-       • "🔬 Deep Dive — walk me through every detail"
-     Also include the same three lines as a numbered list in your prose.
-Do NOT ask any other question in this turn. After the user picks, you must immediately call \`update_project\` with planning_depth set to "express", "guided", or "deep" respectively, then continue per the matching PLANNING DEPTH block below. The current depth is "${planningDepth}".`
+    ? `\n\nFIRST-TURN NOTE
+The planning depth has already been chosen by the user via the **Depth selector** in the Assistant header (current value: "${planningDepth}"). DO NOT ask the user to pick a depth — the selector IS the answer. Do NOT call propose_options for depth. Just open the case per the PLANNING DEPTH block above for "${planningDepth}".`
     : "";
   return `You are the Mystery Studio Assistant — a professional creator of premium, printable Israeli detective / mystery games sold to Israeli audiences.
 
