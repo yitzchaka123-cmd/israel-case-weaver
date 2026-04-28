@@ -2117,6 +2117,17 @@ async function processConversation(
   };
   const isFirstTurn = (messages?.length ?? 0) <= 1;
   const systemPrompt = buildSystemPrompt(project, rosters, tweaks, playbook, claudeChatSkills, isFirstTurn);
+  // Stamp the depth we just rendered so the NEXT turn can detect a flip.
+  // Fire-and-forget; failure here must not block the chat reply.
+  {
+    const currentDepth = normalizePlanningDepth(
+      (project as { planning_depth?: unknown }).planning_depth,
+      playbook.planning_depth.default,
+    );
+    if ((project as { last_seen_planning_depth?: unknown }).last_seen_planning_depth !== currentDepth) {
+      void supa.from("projects").update({ last_seen_planning_depth: currentDepth }).eq("id", projectId);
+    }
+  }
 
   const lastUser = [...messages].reverse().find((m) => (m as { role: string }).role === "user") as { content: string } | undefined;
   if (lastUser) {
