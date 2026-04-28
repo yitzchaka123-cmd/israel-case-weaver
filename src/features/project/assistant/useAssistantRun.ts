@@ -116,6 +116,7 @@ export function useAssistantRun(projectId: string) {
             // Refresh anything the assistant might have touched so other tabs
             // (Suspects, Documents, Case Board) auto-update without a visit.
             qc.invalidateQueries({ queryKey: ["chat", projectId] });
+            qc.invalidateQueries({ queryKey: ["project-ai", projectId] });
             qc.invalidateQueries({ queryKey: ["project", projectId] });
             qc.invalidateQueries({ queryKey: ["suspects", projectId] });
             qc.invalidateQueries({ queryKey: ["documents", projectId] });
