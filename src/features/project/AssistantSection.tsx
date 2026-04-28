@@ -221,7 +221,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
 
   const planningModel = project?.ai_provider_planning ?? "openai-5.2";
   const imageModel = project?.ai_provider_images ?? "nano-banana-2";
-  const planningDepth = (project?.planning_depth ?? "guided") as "express" | "guided" | "deep";
+  const planningDepth = (project?.planning_depth ?? "guided") as PlanningDepth;
   // Fast vs Thinking: stored as the existing project.ai_reasoning_effort column.
   // "none" = ⚡ Fast (no reasoning budget), anything else = 🧠 Thinking. New
   // projects default to "high" so the assistant starts in deep-reasoning mode.
@@ -236,7 +236,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     ai_provider_images?: string;
     image_prompt_instructions?: string;
     video_prompt_instructions?: string;
-    planning_depth?: "express" | "guided" | "deep";
+    planning_depth?: PlanningDepth;
     ai_reasoning_effort?: "none" | "low" | "medium" | "high" | "xhigh";
   }) => {
     // .select() forces PostgREST to return the affected row so we can detect
@@ -260,11 +260,10 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
       toast.error("Couldn't save — no row was updated. Check your access.");
       return;
     }
-    if (patch.planning_depth) {
-      const labels = { express: "⚡ Express", guided: "🎯 Guided", deep: "🔬 Deep Dive" } as const;
-      toast.success(`Depth set to ${labels[patch.planning_depth]} — the assistant will adopt it on its next reply.`);
-    }
+    if (patch.planning_depth) toast.success(`Depth set to ${PLANNING_DEPTH_LABELS[patch.planning_depth]}`);
     qc.invalidateQueries({ queryKey: ["project-ai", projectId] });
+    qc.invalidateQueries({ queryKey: ["project", projectId] });
+    return data;
   };
 
   const { data: messages = [] } = useQuery<Msg[]>({
