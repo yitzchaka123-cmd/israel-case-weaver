@@ -863,12 +863,13 @@ export function renderPlanningDepthBlock(
   p: Playbook,
   prevDepth?: PlanningDepth | null,
 ): string {
-  const depthJustChanged = !!prevDepth && prevDepth !== depth;
+  const effectivePrevDepth = prevDepth ?? (depth !== p.planning_depth.default ? p.planning_depth.default : null);
+  const depthJustChanged = !!effectivePrevDepth && effectivePrevDepth !== depth;
   const changeNotice = depthJustChanged
-    ? `🔁 DEPTH CHANGE NOTICE — the user just flipped the Depth selector from "${prevDepth}" to "${depth}" mid-conversation. Your previous assistant turn was written under the OLD depth ("${prevDepth}") and is now STALE.
+    ? `🔁 DEPTH CHANGE NOTICE — the user just flipped the Depth selector from "${effectivePrevDepth}" to "${depth}" mid-conversation. Your previous assistant turn was written under the OLD depth ("${effectivePrevDepth}") and is now STALE.
 
 On THIS turn you MUST:
-  - Do NOT continue the question ladder you were running under "${prevDepth}". If your last assistant message asked the user to pick option 1–5 / step N / a phase choice that only existed because of the OLD depth, treat that question as CANCELLED.
+  - Do NOT continue the question ladder you were running under "${effectivePrevDepth}". If your last assistant message asked the user to pick option 1–5 / step N / a phase choice that only existed because of the OLD depth, treat that question as CANCELLED.
   - Open with ONE short acknowledgement sentence ("Got it — switching to ${depth} mode.") and then act per the "${depth}" rules below from this point on.
   - Keep everything that's already APPROVED and PERSISTED in CURRENT PROJECT STATE (title, language, target docs, mystery type, genre, year, difficulty, player role, case goal, setting, selling point, summary, suspects, logic flow, documents). Do NOT re-ask for any of those. Do NOT restart Phase 1 from scratch.
   - Just adjust how much you ask GOING FORWARD per the "${depth}" rules.
