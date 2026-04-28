@@ -1366,6 +1366,7 @@ export type Database = {
           last_assistant_acknowledged_at: string | null
           last_seen_planning_depth: string | null
           logic_approved_at: string | null
+          logic_flow_building_at: string | null
           logic_version_id: string
           mystery_type: string | null
           owner_id: string
@@ -1413,6 +1414,7 @@ export type Database = {
           last_assistant_acknowledged_at?: string | null
           last_seen_planning_depth?: string | null
           logic_approved_at?: string | null
+          logic_flow_building_at?: string | null
           logic_version_id?: string
           mystery_type?: string | null
           owner_id: string
@@ -1460,6 +1462,7 @@ export type Database = {
           last_assistant_acknowledged_at?: string | null
           last_seen_planning_depth?: string | null
           logic_approved_at?: string | null
+          logic_flow_building_at?: string | null
           logic_version_id?: string
           mystery_type?: string | null
           owner_id?: string
