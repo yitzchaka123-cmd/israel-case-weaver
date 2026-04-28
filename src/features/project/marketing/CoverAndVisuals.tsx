@@ -266,6 +266,8 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
         if (!result.ok) {
           toast.error(result.error ?? "Could not start cover generation", { duration: 10000 });
           if (coverOutputType === "image") return;
+        } else if (result.jobId) {
+          batch?.start([result.jobId], "Front cover");
         }
       }
       if (coverOutputType === "document" || coverOutputType === "both") {
