@@ -25,6 +25,7 @@ import { DownloadButton } from "@/components/DownloadButton";
 import { downloadAsset, slugify } from "@/lib/utils";
 import { useProjectNotifications } from "@/features/project/notifications/useProjectNotifications";
 import { fireBackgroundImage } from "@/features/project/fireBackgroundImage";
+import { useBatchProgress } from "./BatchProgressContext";
 
 type OutputType = "image" | "document" | "both";
 
