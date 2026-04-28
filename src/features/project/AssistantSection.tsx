@@ -1410,6 +1410,7 @@ const PROJECT_FIELD_LABELS: Record<string, string> = {
   setting: "Setting",
   selling_point: "Selling point",
   target_doc_count: "Target doc count",
+  planning_depth: "Planning depth",
   packaging_notes: "Packaging notes",
   image_prompt_instructions: "Image prompt style",
   video_prompt_instructions: "Video prompt style",
