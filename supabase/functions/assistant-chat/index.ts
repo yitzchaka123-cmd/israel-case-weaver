@@ -587,11 +587,11 @@ function optionsMatchProse(
   prose: string,
 ): boolean {
   if (!options || options.length === 0 || !prose) return true; // nothing to check
-  const itemRe = /^\s*\d+[\.\)]\s+(.+?)\s*$/;
+  const itemRe = /^\s*(?:[-*•]\s*)?\d+[\.\)]\s+(?:\*\*)?(.+?)(?:\*\*)?\s*$/;
   const items: string[] = [];
   for (const line of prose.split("\n")) {
     const m = itemRe.exec(line);
-    if (m) items.push(m[1].trim().toLowerCase());
+    if (m) items.push(m[1].replace(/\*\*/g, "").trim().toLowerCase());
   }
   if (items.length === 0) return true; // no numbered list in prose → can't check
   const haystack = items.join(" \n ");
