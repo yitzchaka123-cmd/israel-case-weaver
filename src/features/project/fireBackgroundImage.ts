@@ -30,9 +30,17 @@ export interface FireBackgroundImageInput {
 
 export interface FireBackgroundImageResult {
   ok: boolean;
-  jobId?: string;
+  jobId?: string;        // real media_assets row id (only when ok=true)
+  pseudoId?: string;     // synthesized id when the kick failed before INSERT
+  kickFailed?: boolean;  // true when the queue function 5xx'd / network died
   status?: number;
   error?: string;
+}
+
+let pseudoCounter = 0;
+function makePseudoId(): string {
+  pseudoCounter += 1;
+  return `kick-failed-${Date.now()}-${pseudoCounter}`;
 }
 
 export async function fireBackgroundImage(input: FireBackgroundImageInput): Promise<FireBackgroundImageResult> {
@@ -48,10 +56,16 @@ export async function fireBackgroundImage(input: FireBackgroundImageInput): Prom
     });
     const json = await resp.json().catch(() => ({}));
     if (!resp.ok || !json.jobId) {
-      return { ok: false, status: resp.status, error: json.error ?? `Failed (${resp.status})` };
+      return {
+        ok: false, kickFailed: true, pseudoId: makePseudoId(),
+        status: resp.status, error: json.error ?? `Failed (${resp.status})`,
+      };
     }
     return { ok: true, jobId: json.jobId as string, status: resp.status };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Network error" };
+    return {
+      ok: false, kickFailed: true, pseudoId: makePseudoId(),
+      error: e instanceof Error ? e.message : "Network error",
+    };
   }
 }
