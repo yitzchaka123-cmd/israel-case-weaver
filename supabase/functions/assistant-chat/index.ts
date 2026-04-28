@@ -218,6 +218,14 @@ function truncate(s: unknown, n = 60): string {
   if (!str) return "—";
   return str.length > n ? `${str.slice(0, n - 1)}…` : str;
 }
+function detectPlanningDepthChoice(text: unknown): PlanningDepth | null {
+  const s = String(text ?? "").trim().toLowerCase();
+  if (!s) return null;
+  if (/^(⚡\s*)?express\b/.test(s) || /\bchoose\s+express\b/.test(s) || /you plan it all/.test(s)) return "express";
+  if (/^(🎯\s*)?guided\b/.test(s) || /\bchoose\s+guided\b/.test(s) || /ask me the basics/.test(s)) return "guided";
+  if (/^(🔬\s*)?(deep\s*dive|deep)\b/.test(s) || /\bchoose\s+deep\b/.test(s) || /walk me through every detail/.test(s)) return "deep";
+  return null;
+}
 function formatRoster(rows: RosterRow[], render: (r: RosterRow, i: number) => string, empty: string): string {
   if (!rows || rows.length === 0) return empty;
   return rows.map((r, i) => `  ${i + 1}. ${render(r, i)}`).join("\n");
