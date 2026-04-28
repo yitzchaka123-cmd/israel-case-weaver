@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Wand2, Loader2, Trash2, ExternalLink } from "lucide-react";
+import { Wand2, Loader2, Trash2, ExternalLink, RotateCw } from "lucide-react";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { DownloadButton } from "@/components/DownloadButton";
@@ -94,6 +94,18 @@ export function MediaSection({ projectId }: { projectId: string }) {
     await supabase.from("media_assets").delete().eq("id", asset.id);
   };
 
+  const handleRegenerate = async (asset: MediaAsset) => {
+    if (!asset.prompt) return toast.error("No prompt saved on this asset");
+    const modelOverride = asset.model ?? getStoredImageModel("media", "chatgpt-image-2");
+    const quality = getStoredImageQuality("media", "high");
+    const result = await fireBackgroundImage({
+      projectId, target: "media", category: "generation",
+      prompt: asset.prompt, modelOverride, quality,
+    });
+    if (!result.ok) toast.error(result.error ?? "Could not start regeneration", { duration: 8000 });
+    else toast.success("Regenerating in background…");
+  };
+
   const items = data ?? [];
 
   return (
@@ -142,7 +154,7 @@ export function MediaSection({ projectId }: { projectId: string }) {
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {items.map((a) => (
-            <AssetCard key={a.id} asset={a} onOpen={() => setSelected(a)} onDelete={() => handleDelete(a)} />
+            <AssetCard key={a.id} asset={a} onOpen={() => setSelected(a)} onDelete={() => handleDelete(a)} onRegenerate={() => handleRegenerate(a)} />
           ))}
         </div>
       )}
@@ -152,7 +164,7 @@ export function MediaSection({ projectId }: { projectId: string }) {
   );
 }
 
-function AssetCard({ asset, onOpen, onDelete }: { asset: MediaAsset; onOpen: () => void; onDelete: () => void }) {
+function AssetCard({ asset, onOpen, onDelete, onRegenerate }: { asset: MediaAsset; onOpen: () => void; onDelete: () => void; onRegenerate: () => void }) {
   return (
     <div className="group rounded-2xl border bg-card overflow-hidden shadow-soft hover:shadow-elegant transition-shadow relative">
       <button onClick={onOpen} className="block w-full text-left">
@@ -193,7 +205,18 @@ function AssetCard({ asset, onOpen, onDelete }: { asset: MediaAsset; onOpen: () 
             <ExternalLink className="h-3 w-3" /> Open
           </a>
         )}
-        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive ml-auto" onClick={onDelete}>
+        {asset.prompt && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-muted-foreground hover:text-foreground ml-auto"
+            onClick={onRegenerate}
+            title="Regenerate with the same prompt"
+          >
+            <RotateCw className="h-3.5 w-3.5" />
+          </Button>
+        )}
+        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={onDelete}>
           <Trash2 className="h-3.5 w-3.5" />
         </Button>
       </div>
