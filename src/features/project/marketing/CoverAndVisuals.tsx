@@ -271,7 +271,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
           toast.error(result.error ?? "Could not start cover generation", { duration: 10000 });
           if (coverOutputType === "image") return;
         } else if (result.jobId) {
-          batch?.start([result.jobId], "Front cover");
+          batch?.start([{ id: result.jobId, label: "Front cover" }], "Front cover");
         }
       }
       if (coverOutputType === "document" || coverOutputType === "both") {
@@ -303,7 +303,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
           toast.error(result.error ?? "Could not start image generation", { duration: 10000 });
           if (extraOutputType === "image") return;
         } else if (result.jobId) {
-          batch?.start([result.jobId], newTitle || "Marketing image");
+          batch?.start([{ id: result.jobId, label: newTitle || "Marketing image" }], newTitle || "Marketing image");
         }
       }
       if (extraOutputType === "document" || extraOutputType === "both") {

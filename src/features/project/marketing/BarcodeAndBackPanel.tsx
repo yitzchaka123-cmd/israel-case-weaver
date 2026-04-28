@@ -436,12 +436,22 @@ Square-ish print panel, no on-image text, no logos, no UI overlays. Will be crop
           toast.message(`${4 - sideFails} of 4 box-side images started — ${sideFails} failed to kick off.`);
         }
 
-        // Register every kicked job with the shared batch progress pill.
-        const allIds = [...results, ...sideResults]
-          .map((r) => r.jobId)
-          .filter((id): id is string => Boolean(id));
-        if (allIds.length > 0) {
-          batch?.start(allIds, "Back cover + box sides");
+        // Register every slot — including failures — with the shared progress
+        // pill so the denominator is honest ("8 of 10, 2 failed").
+        const slots = [
+          ...results.map((r, i) => ({
+            id: (r.jobId ?? r.pseudoId) as string,
+            label: `Back option ${i + 1}`,
+            kickFailed: r.kickFailed,
+          })),
+          ...sideResults.map((r, i) => ({
+            id: (r.jobId ?? r.pseudoId) as string,
+            label: `Box side ${i + 1}`,
+            kickFailed: r.kickFailed,
+          })),
+        ].filter((s) => Boolean(s.id));
+        if (slots.length > 0) {
+          batch?.start(slots, "Back cover + box sides");
         }
       }
       if (backOutputType === "document" || backOutputType === "both") {
