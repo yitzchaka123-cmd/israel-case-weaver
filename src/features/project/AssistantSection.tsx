@@ -66,6 +66,28 @@ type ToolCall = {
 };
 
 type QuickOption = { label: string; send: string };
+type PlanningDepth = "express" | "guided" | "deep";
+
+const PLANNING_DEPTH_LABELS: Record<PlanningDepth, string> = {
+  express: "⚡ Express",
+  guided: "🎯 Guided",
+  deep: "🔬 Deep Dive",
+};
+
+const PLANNING_DEPTH_DESCRIPTIONS: Record<PlanningDepth, string> = {
+  express: "I’ll plan everything and ask almost nothing after the title",
+  guided: "I’ll ask only the core setup questions",
+  deep: "I’ll walk through the case in detail",
+};
+
+function detectPlanningDepthChoice(text: string): PlanningDepth | null {
+  const s = text.trim().toLowerCase();
+  if (!s) return null;
+  if (/^(⚡\s*)?express\b/.test(s) || /\bchoose\s+express\b/.test(s) || /you plan it all/.test(s)) return "express";
+  if (/^(🎯\s*)?guided\b/.test(s) || /\bchoose\s+guided\b/.test(s) || /ask me the basics/.test(s)) return "guided";
+  if (/^(🔬\s*)?(deep\s*dive|deep)\b/.test(s) || /\bchoose\s+deep\b/.test(s) || /walk me through every detail/.test(s)) return "deep";
+  return null;
+}
 
 type ReasoningSegment = { type: "thinking" | "summary"; text: string };
 type ReasoningRound = { round: number; segments: ReasoningSegment[] };
