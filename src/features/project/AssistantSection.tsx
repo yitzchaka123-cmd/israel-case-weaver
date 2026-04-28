@@ -217,9 +217,32 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     planning_depth?: "express" | "guided" | "deep";
     ai_reasoning_effort?: "none" | "low" | "medium" | "high" | "xhigh";
   }) => {
-    const { error } = await supabase.from("projects").update(patch).eq("id", projectId);
-    if (error) toast.error(error.message);
-    else qc.invalidateQueries({ queryKey: ["project-ai", projectId] });
+    // .select() forces PostgREST to return the affected row so we can detect
+    // silent no-op writes (RLS allowed=0, network drop) instead of failing
+    // quietly. The Depth selector in particular MUST be reliable — if the
+    // write doesn't land, the assistant can't pick up the new depth on the
+    // next turn.
+    const { data, error } = await supabase
+      .from("projects")
+      .update(patch)
+      .eq("id", projectId)
+      .select("id, planning_depth, ai_reasoning_effort, ai_provider_planning, ai_provider_images")
+      .maybeSingle();
+    if (error) {
+      console.error("[setProjectAi] update failed", { patch, error });
+      toast.error(`Couldn't save: ${error.message}`);
+      return;
+    }
+    if (!data) {
+      console.error("[setProjectAi] update returned no rows (RLS or wrong id)", { projectId, patch });
+      toast.error("Couldn't save — no row was updated. Check your access.");
+      return;
+    }
+    if (patch.planning_depth) {
+      const labels = { express: "⚡ Express", guided: "🎯 Guided", deep: "🔬 Deep Dive" } as const;
+      toast.success(`Depth set to ${labels[patch.planning_depth]} — the assistant will adopt it on its next reply.`);
+    }
+    qc.invalidateQueries({ queryKey: ["project-ai", projectId] });
   };
 
   const { data: messages = [] } = useQuery<Msg[]>({
