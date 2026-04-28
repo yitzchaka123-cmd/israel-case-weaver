@@ -855,7 +855,8 @@ function MessageBubble({
   // Client-side fallback: if the assistant wrote a numbered choice list in
   // prose but the server didn't attach any options (older messages, or model
   // forgot the tool call AND server fallback didn't catch it), synthesize
-  // buttons from the prose so they still appear.
+  // buttons from the prose so they still appear. This intentionally supports
+  // bullets and bold markdown too — setup questions often use those formats.
   const synth = msg.role === "assistant" && isLast && metaOptions.length === 0
     ? synthesizeOptionsFromProse(msg.content)
     : null;
@@ -1307,7 +1308,7 @@ function synthesizeOptionsFromProse(text: string): { options: QuickOption[]; que
   // Scan the WHOLE message line-by-line for a contiguous run of numbered
   // items (1, 2, 3, …) — list may sit anywhere, not just last paragraph.
   const lines = trimmed.split("\n");
-  const itemLineRegex = /^\s*(\d+)[\.\)]\s+(.+?)\s*$/;
+  const itemLineRegex = /^\s*(?:[-*•]\s*)?(\d+)[\.\)]\s+(?:\*\*)?(.+?)(?:\*\*)?\s*$/;
   let bestRun: { startIdx: number; items: Array<{ n: number; text: string }> } | null = null;
   let i = 0;
   while (i < lines.length) {
@@ -1340,7 +1341,7 @@ function synthesizeOptionsFromProse(text: string): { options: QuickOption[]; que
   }
 
   const toLabel = (s: string) => {
-    const cleaned = s.replace(/\s+—\s+.*$/, "").replace(/\s*\(.*\)\s*$/, "").trim();
+    const cleaned = s.replace(/\*\*/g, "").replace(/\s+—\s+.*$/, "").replace(/\s*\(.*\)\s*$/, "").trim();
     const base = cleaned || s;
     return base.length > 60 ? `${base.slice(0, 57)}…` : base;
   };
