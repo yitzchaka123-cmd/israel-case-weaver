@@ -2008,6 +2008,13 @@ async function executeTool(
       const runtime = (globalThis as { EdgeRuntime?: { waitUntil: (p: Promise<unknown>) => void } })
         .EdgeRuntime;
       if (runtime?.waitUntil) runtime.waitUntil(fireAndForget);
+      // Stamp the project as "building" immediately so the UI indicator
+      // lights up before the first node streams in (the planner can take
+      // 30-90s of upfront thinking before the first node lands).
+      await supa
+        .from("projects")
+        .update({ logic_flow_building_at: new Date().toISOString() })
+        .eq("id", projectId);
       return {
         ok: true,
         message:
