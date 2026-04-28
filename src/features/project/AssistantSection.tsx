@@ -564,7 +564,7 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
           </div>
           <div className="flex items-center gap-2" title="Express = ask only the title and auto-fill the rest. Guided = basics only. Deep Dive = walk through every detail.">
             <span className="text-[11px] text-muted-foreground">Depth</span>
-            <Select value={planningDepth} onValueChange={(v) => setProjectAi({ planning_depth: v as "express" | "guided" | "deep" })}>
+            <Select value={planningDepth} onValueChange={(v) => void changePlanningDepth(v as PlanningDepth, "header")}>
               <SelectTrigger className="h-8 text-xs w-[170px]"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="express" className="text-xs">⚡ Express</SelectItem>
