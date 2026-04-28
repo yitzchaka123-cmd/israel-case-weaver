@@ -109,7 +109,7 @@ async function uploadComposed(
 // =====================================================================
 
 export async function bakeFrontCover(input: BakeFrontInput): Promise<string> {
-  const { projectId, baseImageUrl, title, subtitle, logoUrl } = input;
+  const { projectId, baseImageUrl, title, subtitle, logoUrl, companySlogan, frontSubtext } = input;
 
   await ensureFontsLoaded();
   const base = await loadImage(baseImageUrl);
