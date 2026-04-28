@@ -70,6 +70,8 @@ function MarketingSectionInner({ projectId }: { projectId: string }) {
         </div>
       </div>
 
+      {batch && <BatchProgressPill progress={batch.progress} />}
+
       <section id="marketing-cover-visuals" className="scroll-mt-24">
         <CoverAndVisuals projectId={projectId} />
       </section>
