@@ -878,7 +878,7 @@ ${fills}
   }
   if (depth === "deep") {
     const probes = p.planning_depth.deep.extra_probes.map((x) => `  - ${x.replaceAll("_", " ")}`).join("\n");
-    return `PLANNING DEPTH = DEEP DIVE (the user wants to plan thoroughly with lots of detail)
+    return header + `PLANNING DEPTH = DEEP DIVE (the user wants to plan thoroughly with lots of detail)
 - Use the FULL Phase 1 setup ladder (one question per turn, propose_options where applicable). Do not skip any setup field.
 - During Phase 2 / Phase 3 (summary + structure), interrogate the case in depth. For each of these probes, ask a separate question and capture the answer:
 ${probes}
@@ -889,7 +889,7 @@ ${probes}
   }
   // guided (default)
   const ask = p.planning_depth.guided.ask_steps.join(", ");
-  return `PLANNING DEPTH = GUIDED (default — basic questions only)
+  return header + `PLANNING DEPTH = GUIDED (default — basic questions only)
 - During Phase 1, ask only the basics IN THIS ORDER, ONE QUESTION PER TURN: ${ask}.
 - Skip player_role, case_goal, setting, selling_point unless the user volunteers them in their own message. If they're missing when Phase 1 ends, fill them silently with sensible defaults via update_project — do NOT ask.
 - After the year/setting question, propose generating the Logic Flow with propose_options ("Generate Logic Flow now" / "Add a player role first" / "Add a case goal first"). Default to generating immediately.
