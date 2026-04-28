@@ -807,9 +807,27 @@ export function renderLogicGateRefusal(p: Playbook): string {
 }
 
 export function renderCatalogsBlock(p: Playbook): string {
+  const div = p.catalogs.diversity;
+  const families = Object.entries(div.family_groups)
+    .map(([k, v]) => `    • ${k}: ${v.join(", ")}`)
+    .join("\n");
+  const rules = div.rules.map((r) => `  - ${r}`).join("\n");
   return `Available print sizes (pick from this list when proposing print_size): ${p.catalogs.print_sizes.join(", ")}.
 Common document types (pick from this list when proposing doc_type, but invent variants when needed): ${p.catalogs.document_types.join(", ")}.
-Unusual / creative-prop document types (use these when the case calls for tactile, surprising, hand-made props instead of bureaucratic paperwork — they trigger the creative-realism floor, not the photo-realism one): ${p.catalogs.unusual_document_types.join(", ")}.`;
+Unusual / creative-prop document types (use these when the case calls for tactile, surprising, hand-made props instead of bureaucratic paperwork — they trigger the creative-realism floor, not the photo-realism one): ${p.catalogs.unusual_document_types.join(", ")}.
+
+DOCUMENT-SET DIVERSITY (HARD RULES — apply to propose_document_set BEFORE you call the tool):
+  - No single doc_type family may exceed ${div.max_share_per_family_pct}% of the proposal. Specifically: the player must NOT receive a box where most documents are "reports" — that is the #1 failure mode and is forbidden.
+  - At least ${div.min_distinct_doc_types} DISTINCT doc_type values across the proposal.
+  - At least ${div.min_distinct_print_sizes} DISTINCT print_size values across the proposal (mix A4 with A5, photo, ticket-stub, index card, half-letter, square, etc. — drive size from what the prop physically is).
+  - At least ${div.min_unusual_props_pct}% of items must be unusual / creative-prop types (matchbook, napkin, polaroid, hand-drawn map, cassette J-card, tarot card, etc.).
+  - At least ${div.min_handwritten_pct}% of items must feel handwritten or hand-made (margin notes, diary pages, ransom notes, crayon, lipstick, etc.).
+  - PAPER & COLOR variety: pick paper stock per document from this palette so the box visually pops — ${div.paper_palette.join(", ")}. A monochrome white-paper box is a failure; the proposal text MUST mention the paper/color choice for each item (e.g. "(yellow legal pad)", "(pink carbon copy)", "(blueprint cyan)").
+  - Family buckets used for the cap above:
+${families}
+  - Rules summary:
+${rules}
+  - SELF-AUDIT BEFORE CALLING propose_document_set: in your reasoning, list (a) count per family, (b) distinct doc_type count, (c) distinct print_size count, (d) % unusual, (e) % handwritten, (f) the paper colors used. If ANY threshold fails, REBALANCE the proposal first — do not ship a failing set.`;
 }
 
 export function renderLanguagesBlock(p: Playbook): string {
