@@ -19,6 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { nodeTypes as caseNodeTypes, getNodeMeta, NODE_META } from "./canvas/CanvasNodeTypes";
+import { useLogicFlowLive } from "./canvas/useLogicFlowLive";
 
 // Hand the user's Canvas-side approval over to the assistant so the chat
 // continues automatically. Mirrors useAssistantRun.send() in background mode:
@@ -213,6 +214,13 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
     const t = window.setInterval(() => setNowTs(Date.now()), 1_000);
     return () => window.clearInterval(t);
   }, [isLiveBuilding]);
+
+  // Pre-stream "planning" indicator: the project flag is set the moment the
+  // backend kicks off generate-logic-flow, but the model can spend 30-90s
+  // thinking before the first node lands. This bridges that gap so the user
+  // always sees that something is happening.
+  const { isBuilding: logicFlowBuilding } = useLogicFlowLive(projectId);
+  const showPlanningPill = board === "logic" && logicFlowBuilding && !isLiveBuilding;
 
   // Pick up changes made from Settings → AI provider routing → Logic Flow.
   useEffect(() => {
@@ -708,6 +716,15 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
           >
             <Loader2 className="h-3 w-3 animate-spin" />
             Drawing live…
+          </span>
+        )}
+        {showPlanningPill && (
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-700 dark:text-amber-400 animate-pulse"
+            title="The AI is planning the logic flow. Nodes will start landing on the board within ~30–90 seconds."
+          >
+            <Loader2 className="h-3 w-3 animate-spin" />
+            🧠 Planning logic flow…
           </span>
         )}
         {board === "logic" && (

@@ -1,73 +1,49 @@
 ## Problem
 
-You flipped the Depth selector from **Guided → Express** during a live build, but the assistant kept walking down the Guided ladder ("Phase 1, step 2 (Guided): pick the genre lens…").
+Two issues from the last Express turn:
 
-Reading the code, the system prompt is rebuilt on every request and does read the latest `project.planning_depth`, so the new value *was* sent to the model. The failure is in the **prompt itself** — it doesn't push hard enough on three things:
-
-1. The model sees its own prior turn in history (e.g. "Phase 1, step 2 (Guided)…") and naturally continues that trajectory. The current "adopt it immediately" sentence is too soft; the model treats finishing the Guided ladder as "not restarting earlier work".
-2. The Express block is written as if Express was chosen on turn 1 ("Ask the user for ONLY ONE thing: the case TITLE"). Mid-build, the title is already locked, so the instructions don't really apply and the model defaults back to what it was already doing.
-3. There is no explicit "the depth just changed from X to Y" signal. The prompt only describes the *current* depth, so the model has no way to notice the flip happened.
+1. **The assistant lied about starting the flow.** It wrote *"I've started drawing the Logic Flow on the Canvas… open Canvas → Logic Flow to watch it paint itself live"* but never actually called the `generate_logic_flow` tool. The Express playbook *tells* the model to call it (steps 3 and 4 of both Express sub-cases), but the playbook is not enforced — when the model skips the tool, nothing happens server-side, and the user is left staring at an empty Canvas.
+2. **No "building" indicator until the first node lands.** The existing `useLogicFlowLive` only flips on when a `canvas_nodes` INSERT arrives. The planner model takes 30–90s before the first node streams in, so during that window the user sees no signal that anything is happening.
 
 ## Fix
 
-Three small, surgical changes — no schema changes, no UI changes.
+### 1. Server-side auto-trigger (the real fix)
 
-### 1. Track `last_seen_planning_depth` per project (in-memory on the chat row is enough)
+Inside `supabase/functions/assistant-chat/index.ts`, after the model's tool-call loop finishes for a turn, inspect what the model actually did:
 
-Use a tiny new column `projects.last_seen_planning_depth text` (nullable). Each time the assistant edge function builds a system prompt:
+- If `set_solution_summary` was called this turn (without `mark_approved`), AND
+- `generate_logic_flow` was NOT called this turn, AND
+- The current project has `logic_approved_at = null` and 0 logic-board canvas nodes,
 
-```text
-prevDepth = project.last_seen_planning_depth ?? planningDepth
-depthJustChanged = prevDepth !== planningDepth
-// ...build prompt...
-// at end, write back:
-update projects set last_seen_planning_depth = planningDepth where id = projectId
-```
+then **automatically fire the same background `generate-logic-flow` POST** that the tool handler fires (lines 1947–1967), with `useExistingSummary: true`. This guarantees that any time a fresh summary is saved during Express (or any depth), the flow build actually starts even when the LLM forgets the tool call.
 
-This lets us inject a one-shot "DEPTH CHANGE NOTICE" block when (and only when) it actually changed.
+This is the same pattern as the existing "summary-rewrite wipes the board" auto-cleanup — server-side state correction the model can't skip.
 
-### 2. Add a strong DEPTH CHANGE NOTICE to the system prompt
+### 2. Persistent "Building logic flow…" indicator
 
-In `renderPlanningDepthBlock` (or just inline in `buildSystemPrompt`), when `depthJustChanged` is true, prepend:
+Add a project-level flag `logic_flow_building_at` (timestamptz, nullable) on the `projects` table:
 
-```text
-🔁 DEPTH CHANGE NOTICE — the user just flipped the Depth selector from
-"{prev}" to "{new}" mid-conversation. Your previous assistant turn was
-written under the OLD depth and is now stale. On THIS turn:
-  - Do NOT continue the question ladder you were running under "{prev}".
-  - Acknowledge the switch in ONE short sentence ("Got it, switching to
-    {new} mode.") then act per the "{new}" rules below from this point on.
-  - Keep everything that's already been APPROVED and PERSISTED (title,
-    language, target docs, mystery type, suspects, summary, logic flow,
-    documents). Do not re-ask for those.
-  - Treat any unanswered question from your last turn as cancelled.
-```
+- `generate-logic-flow/index.ts` sets it to `now()` at the start of the run and clears it (`null`) in a finally block (success or failure).
+- The Canvas Logic Flow toolbar (`CanvasSection.tsx` around the existing "Drawing live…" pill at line 704) shows a new "🧠 Planning logic flow…" pill whenever `logic_flow_building_at` is set AND no nodes have streamed yet. Once nodes start landing, the existing `Drawing live…` pill takes over.
+- The Case Board tab dot (`useLogicFlowLive` consumer in `ProjectWorkspace.tsx` line 33) also lights up when `logic_flow_building_at` is set, so the green indicator appears immediately, not after the first node.
+- In the Assistant chat header / depth strip, optionally surface a small "Logic flow is being drawn on the Canvas…" inline note while building so the user doesn't need to switch tabs to know it started.
 
-### 3. Rewrite the Express block so it works mid-build, not just turn-1
+### 3. Tighten the playbook (belt-and-suspenders)
 
-The current Express block assumes "title not chosen yet". Replace the body with two clearly labelled sub-cases:
+Update `supabase/functions/_shared/assistant-playbook.ts` and the mirror `src/lib/assistant-playbook.ts` Express SUB-CASE A and SUB-CASE B blocks to add a 🔴 hard rule analogous to the existing "tool call first, prose second" rule, but specifically for `generate_logic_flow`: writing prose like *"I've started drawing the Logic Flow"* or *"the Canvas is being built"* without first emitting the `generate_logic_flow` tool call is a hallucination. The server-side safety net (#1) is the actual guarantee — this rule just reduces how often it has to fire.
 
-**A. Express on a fresh case** (no title yet): same as today — ask only for the title, then auto-fill + summary + logic flow.
+## Technical details
 
-**B. Express mid-build** (title already in `project.title`): immediately, in the SAME turn:
-- Skip every remaining Phase 1 question.
-- Call `update_project` once to fill any still-empty Phase 1 fields with sensible defaults (player_role, case_goal, setting, selling_point, mystery_type, genre, year, difficulty) — only the ones currently null/empty.
-- If `solution_summary` is empty, draft one and call `set_solution_summary`.
-- If `logic_approved_at` is null and a summary now exists, call `generate_logic_flow`.
-- End with one short message: "✨ Switched to Express. I've filled the remaining setup, drafted a summary, and queued the logic flow — review and approve on the Canvas when ready."
-
-The Deep Dive block already works fine mid-build; only add one line: "If switching INTO Deep Dive mid-build, do NOT re-litigate already-approved fields — only open up deeper probes for the phase you're currently on or the next one."
-
-Guided block: add one line: "If switching INTO Guided mid-build, simply resume basics-only questioning for whatever phase is in progress; do not restart Phase 1 if it's already complete."
-
-## Technical details (files touched)
-
-- **DB migration**: `alter table public.projects add column last_seen_planning_depth text;` (nullable, no default — the absence means "first time we've seen this project, don't show notice").
-- `supabase/functions/assistant-chat/index.ts` — read `last_seen_planning_depth` alongside `planning_depth`, compute `depthJustChanged`, pass into `buildSystemPrompt`, write back the new value at the end of the run (in the same `finally` that already exists for status). Wire the change notice into the prompt only when `depthJustChanged && !isFirstTurn`.
-- `supabase/functions/_shared/assistant-playbook.ts` + `src/lib/assistant-playbook.ts` — rewrite `renderPlanningDepthBlock`'s Express branch into the two sub-cases above, and add the one-line resume notes to Guided/Deep.
-- No client UI changes; the selector already does the right thing.
+**Files edited:**
+- `supabase/migrations/<timestamp>_add_logic_flow_building_at.sql` — `ALTER TABLE projects ADD COLUMN logic_flow_building_at timestamptz;`
+- `supabase/functions/generate-logic-flow/index.ts` — set/clear `logic_flow_building_at`.
+- `supabase/functions/assistant-chat/index.ts` — after the tool-loop, run the auto-trigger check and fire the background POST via `EdgeRuntime.waitUntil` (mirror of lines 1947–1967).
+- `supabase/functions/_shared/assistant-playbook.ts` + `src/lib/assistant-playbook.ts` — add the 🔴 hard rule to Express sub-cases.
+- `src/features/project/canvas/useLogicFlowLive.ts` — also subscribe to `projects` UPDATE on `logic_flow_building_at`; return `{isLive, isBuilding}`.
+- `src/features/project/CanvasSection.tsx` — render a pre-stream "🧠 Planning logic flow…" pill when `isBuilding && !isLive`.
+- `src/features/project/ProjectWorkspace.tsx` — pass through the `isBuilding` state so the Case Board tab dot lights up immediately.
 
 ## Out of scope
 
-- Persisting per-message depth history.
-- Adding a "you switched to X" toast in the UI (the assistant's "Got it, switching…" line is enough).
+- Re-architecting the tool-call loop to force tools to be called — too invasive; the auto-trigger fallback is simpler and equally reliable.
+- Showing per-node streaming progress count — the existing live pill already covers that once nodes land.

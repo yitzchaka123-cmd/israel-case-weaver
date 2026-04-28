@@ -30,7 +30,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const [tab, setTab] = useState("overview");
   const [focusMessageId, setFocusMessageId] = useState<string | null>(null);
   const assistantRunning = useAssistantRunStatus(projectId);
-  const canvasLive = useLogicFlowLive(projectId);
+  const canvasLive = useLogicFlowLive(projectId).isActive;
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   useEffect(() => {

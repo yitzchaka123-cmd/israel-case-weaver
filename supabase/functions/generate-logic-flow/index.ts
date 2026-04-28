@@ -234,7 +234,14 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
     const newLogicVersionId = crypto.randomUUID();
     await supa
       .from("projects")
-      .update({ logic_version_id: newLogicVersionId, logic_approved_at: null })
+      .update({
+        logic_version_id: newLogicVersionId,
+        logic_approved_at: null,
+        // Mark the project as actively building the logic flow so the UI can
+        // show a "Planning…" indicator BEFORE the first node streams in
+        // (the model can take 30-90s of upfront thinking).
+        logic_flow_building_at: new Date().toISOString(),
+      })
       .eq("id", projectId);
 
     // Clear the board up-front so the user sees it fill in live (instead of a
@@ -558,6 +565,9 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
       if (driftNotifyErr) console.error("logic_regenerated notification insert", driftNotifyErr);
     }
 
+    // Clear the "building" indicator now that the run has fully landed.
+    await supa.from("projects").update({ logic_flow_building_at: null }).eq("id", projectId);
+
     return new Response(JSON.stringify({
       ok: true,
       summary: useApproved ? approvedSummary : (parsed?.summary ?? ""),
@@ -574,6 +584,16 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
     });
   } catch (e) {
     console.error("generate-logic-flow error", e);
+    // Best-effort: clear the building indicator so the UI doesn't get stuck
+    // showing "Planning…" forever after a crash.
+    try {
+      const body = await req.clone().json().catch(() => ({}));
+      const pid = (body as { projectId?: string }).projectId;
+      if (pid) {
+        const supa = createClient(SUPABASE_URL, SERVICE);
+        await supa.from("projects").update({ logic_flow_building_at: null }).eq("id", pid);
+      }
+    } catch { /* ignore */ }
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

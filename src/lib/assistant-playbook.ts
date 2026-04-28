@@ -1145,8 +1145,10 @@ SUB-CASE B — EXPRESS MID-BUILD (project.title is already a real title — swit
     1. Look at CURRENT PROJECT STATE. For every Phase 1 field that is currently null or empty (player_role, case_goal, setting, selling_point, mystery_type, genre, year, difficulty), pick a sensible default that fits what's already locked in.
     2. Call \`update_project\` ONCE with all those filled-in defaults together. Skip any field the user already answered.
     3. If \`solution_summary\` is empty, draft a short summary (3–6 paragraphs) and call \`set_solution_summary\`.
-    4. If \`logic_approved_at\` is null AND a summary now exists, call \`generate_logic_flow\`.
+    4. If \`logic_approved_at\` is null AND a summary now exists, call \`generate_logic_flow\`. (Note: even if you forget, the backend auto-starts logic-flow generation the moment \`set_solution_summary\` is saved on an empty board — but you should still call it explicitly so the chat stays consistent.)
     5. Send ONE short assistant message: "✨ Switched to Express. I filled the remaining setup, drafted the summary, and queued the logic flow — review and approve on the Canvas when ready."
+
+🔴 ABSOLUTE HARD RULE FOR LOGIC FLOW: Writing prose like "I've started drawing the Logic Flow", "the Canvas is being painted", "open Canvas → Logic Flow to watch it paint itself live", or "I've queued the logic flow" WITHOUT first emitting either a \`generate_logic_flow\` tool call OR a \`set_solution_summary\` tool call (which auto-starts the flow as a safety net) IS A HALLUCINATION. The flow does not start. The Canvas stays empty. The user is being lied to. Always emit the tool call first, prose second.
 - Do NOT pause for confirmation between steps. The depth switch IS the green light.
 
 ═══════════════════════════════════════════════════════════════════

@@ -1,19 +1,49 @@
-// Tracks whether either case board (Logic or Final) is being actively streamed
-// by the AI.
+// Tracks both:
+//   - "live" growth: a new canvas_node/edge just landed (covers the streaming
+//     phase, when nodes are flowing in one-by-one).
+//   - "building": the project's `logic_flow_building_at` is set (covers the
+//     pre-stream planning phase, when the model is still thinking and no
+//     node has landed yet — typically 30–90s).
 //
-// We listen to realtime INSERT events on canvas_nodes / canvas_edges for this
-// project and flip on a "live growth" window the instant a new row lands —
-// no debounced count refetch. This drives the green "live" dot on the Case
-// Board tab and the "Drawing live…" pill on the canvas toolbar, so the moment
-// the AI starts streaming either board, the dot lights up.
+// Either signal lights up the green "Drawing live…" / "Planning…" indicators
+// on the Case Board tab and Canvas toolbar.
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
 const LIVE_WINDOW_MS = 12_000;
 
-export function useLogicFlowLive(projectId: string): boolean {
+export interface LogicFlowLiveState {
+  isLive: boolean; // a node/edge landed recently (streaming)
+  isBuilding: boolean; // project flag says generation is in-flight
+  // Convenience: "show some indicator" — true when either is on.
+  isActive: boolean;
+}
+
+export function useLogicFlowLive(projectId: string): LogicFlowLiveState {
   const [grewAt, setGrewAt] = useState<number>(0);
   const [nowTs, setNowTs] = useState<number>(() => Date.now());
+  const [buildingAt, setBuildingAt] = useState<string | null>(null);
+
+  // Initial load of the building flag (in case generation already started
+  // before this hook mounted).
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .from("projects")
+      .select("logic_flow_building_at")
+      .eq("id", projectId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled) return;
+        setBuildingAt(
+          (data as { logic_flow_building_at?: string | null } | null)?.logic_flow_building_at ??
+            null,
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
 
   useEffect(() => {
     const channel = supabase
@@ -36,6 +66,15 @@ export function useLogicFlowLive(projectId: string): boolean {
           if (board === "logic" || board === "final") setGrewAt(Date.now());
         },
       )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "projects", filter: `id=eq.${projectId}` },
+        (payload) => {
+          const next = (payload.new as { logic_flow_building_at?: string | null } | null)
+            ?.logic_flow_building_at;
+          setBuildingAt(next ?? null);
+        },
+      )
       .subscribe();
 
     return () => {
@@ -44,6 +83,8 @@ export function useLogicFlowLive(projectId: string): boolean {
   }, [projectId]);
 
   const isLive = nowTs - grewAt < LIVE_WINDOW_MS && grewAt > 0;
+  const isBuilding = !!buildingAt;
+  const isActive = isLive || isBuilding;
 
   // Tick `nowTs` only while live so we naturally extinguish the dot
   // ~LIVE_WINDOW_MS after the last node lands.
@@ -53,5 +94,5 @@ export function useLogicFlowLive(projectId: string): boolean {
     return () => window.clearInterval(t);
   }, [isLive]);
 
-  return isLive;
+  return { isLive, isBuilding, isActive };
 }
