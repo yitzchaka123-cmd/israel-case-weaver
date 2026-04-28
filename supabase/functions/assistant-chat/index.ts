@@ -264,6 +264,11 @@ function buildSystemPrompt(
     (project as { planning_depth?: unknown }).planning_depth,
     playbook.planning_depth.default,
   );
+  const prevDepthRaw = (project as { last_seen_planning_depth?: unknown }).last_seen_planning_depth;
+  const prevDepth: PlanningDepth | null =
+    prevDepthRaw === "express" || prevDepthRaw === "guided" || prevDepthRaw === "deep"
+      ? prevDepthRaw
+      : null;
   const firstTurnDepthPrompt = isFirstTurn
     ? `\n\nFIRST-TURN NOTE
 The planning depth has already been chosen by the user via the **Depth selector** in the Assistant header (current value: "${planningDepth}"). DO NOT ask the user to pick a depth — the selector IS the answer. Do NOT call propose_options for depth. Just open the case per the PLANNING DEPTH block above for "${planningDepth}".`
@@ -278,7 +283,7 @@ ${renderPhaseEnumComment(playbook)}
 
 ${renderLanguagesBlock(playbook)}
 
-${renderPlanningDepthBlock(planningDepth, playbook)}${firstTurnDepthPrompt}
+${renderPlanningDepthBlock(planningDepth, playbook, isFirstTurn ? null : prevDepth)}${firstTurnDepthPrompt}
 
 WORKFLOW — proceed ONE STEP AT A TIME, WAIT FOR APPROVAL before advancing phases. The PLANNING DEPTH block above OVERRIDES the default Phase 1 order — follow that block first.
 ${renderPhase1OrderSentence(playbook)}
@@ -2112,6 +2117,17 @@ async function processConversation(
   };
   const isFirstTurn = (messages?.length ?? 0) <= 1;
   const systemPrompt = buildSystemPrompt(project, rosters, tweaks, playbook, claudeChatSkills, isFirstTurn);
+  // Stamp the depth we just rendered so the NEXT turn can detect a flip.
+  // Fire-and-forget; failure here must not block the chat reply.
+  {
+    const currentDepth = normalizePlanningDepth(
+      (project as { planning_depth?: unknown }).planning_depth,
+      playbook.planning_depth.default,
+    );
+    if ((project as { last_seen_planning_depth?: unknown }).last_seen_planning_depth !== currentDepth) {
+      void supa.from("projects").update({ last_seen_planning_depth: currentDepth }).eq("id", projectId);
+    }
+  }
 
   const lastUser = [...messages].reverse().find((m) => (m as { role: string }).role === "user") as { content: string } | undefined;
   if (lastUser) {
@@ -2500,6 +2516,16 @@ Deno.serve(async (req) => {
     const claudeChatSkills = model.startsWith("anthropic/") ? await loadClaudeSkillsForSurface(supa, "chat") : [];
     const isFirstTurn = (messages?.length ?? 0) <= 1;
     const systemPrompt = buildSystemPrompt(project, rosters, tweaks, playbook, claudeChatSkills, isFirstTurn);
+    // Stamp the depth we just rendered so the NEXT turn can detect a flip.
+    {
+      const currentDepth = normalizePlanningDepth(
+        (project as { planning_depth?: unknown }).planning_depth,
+        playbook.planning_depth.default,
+      );
+      if ((project as { last_seen_planning_depth?: unknown }).last_seen_planning_depth !== currentDepth) {
+        void supa.from("projects").update({ last_seen_planning_depth: currentDepth }).eq("id", projectId);
+      }
+    }
 
     // Persist the last user message
     const lastUser = [...messages].reverse().find((m: { role: string }) => m.role === "user");
