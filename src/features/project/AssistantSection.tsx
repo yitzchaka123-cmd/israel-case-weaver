@@ -398,9 +398,34 @@ export function AssistantSection({ projectId, phase, focusMessageId }: { project
     return () => window.removeEventListener("mystudio:assistant-prompt", handler as EventListener);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, messages, sending]);
+  const announceDepthChange = async (nextDepth: PlanningDepth, previousDepth = planningDepth) => {
+    const text = `Got it — switching from ${PLANNING_DEPTH_LABELS[previousDepth]} to ${PLANNING_DEPTH_LABELS[nextDepth]}. From now on ${PLANNING_DEPTH_DESCRIPTIONS[nextDepth]}.`;
+    await supabase.from("chat_messages").insert({
+      project_id: projectId,
+      role: "assistant",
+      content: text,
+      metadata: { options: [], question: null, depth_change_ack: true, in_progress: false },
+    });
+    qc.invalidateQueries({ queryKey: ["chat", projectId] });
+  };
+
+  const changePlanningDepth = async (nextDepth: PlanningDepth, source: "header" | "chat") => {
+    const previousDepth = planningDepth;
+    const saved = await setProjectAi({ planning_depth: nextDepth });
+    if (!saved) return false;
+    qc.setQueryData(["project-ai", projectId], (current: typeof project | undefined) => current ? { ...current, planning_depth: nextDepth } : current);
+    if (source === "header" && nextDepth !== previousDepth) await announceDepthChange(nextDepth, previousDepth);
+    return true;
+  };
+
   const send = async (text: string, baseMessages?: Msg[]) => {
     const content = text.trim();
     if (!content) return;
+    const depthChoice = detectPlanningDepthChoice(content);
+    if (depthChoice) {
+      const changed = await changePlanningDepth(depthChoice, "chat");
+      if (!changed) return;
+    }
     setInput("");
     const source = baseMessages ?? messages;
     // Trim to the last 16 turns. The server prompt re-renders fresh project
