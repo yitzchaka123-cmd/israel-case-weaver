@@ -234,7 +234,14 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
     const newLogicVersionId = crypto.randomUUID();
     await supa
       .from("projects")
-      .update({ logic_version_id: newLogicVersionId, logic_approved_at: null })
+      .update({
+        logic_version_id: newLogicVersionId,
+        logic_approved_at: null,
+        // Mark the project as actively building the logic flow so the UI can
+        // show a "Planning…" indicator BEFORE the first node streams in
+        // (the model can take 30-90s of upfront thinking).
+        logic_flow_building_at: new Date().toISOString(),
+      })
       .eq("id", projectId);
 
     // Clear the board up-front so the user sees it fill in live (instead of a
