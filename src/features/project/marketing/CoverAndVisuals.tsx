@@ -16,6 +16,7 @@ import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/
 import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { DownloadButton } from "@/components/DownloadButton";
 import { fireBackgroundImage } from "@/features/project/fireBackgroundImage";
+import { useBatchProgress } from "./BatchProgressContext";
 import { bakeFrontCover } from "./bakeCover";
 import { Copy, Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2, Sparkles, Wand2, AlertTriangle, Download } from "lucide-react";
 import { downloadAsset, slugify } from "@/lib/utils";
@@ -49,6 +50,7 @@ const MARKETING_CATEGORIES = ["cover", "back", "marketing-back", "marketing-extr
 export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
   const { user } = useAuth();
+  const batch = useBatchProgress();
   const [adding, setAdding] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newHint, setNewHint] = useState("");
@@ -264,6 +266,8 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
         if (!result.ok) {
           toast.error(result.error ?? "Could not start cover generation", { duration: 10000 });
           if (coverOutputType === "image") return;
+        } else if (result.jobId) {
+          batch?.start([result.jobId], "Front cover");
         }
       }
       if (coverOutputType === "document" || coverOutputType === "both") {
@@ -294,6 +298,8 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
         if (!result.ok) {
           toast.error(result.error ?? "Could not start image generation", { duration: 10000 });
           if (extraOutputType === "image") return;
+        } else if (result.jobId) {
+          batch?.start([result.jobId], newTitle || "Marketing image");
         }
       }
       if (extraOutputType === "document" || extraOutputType === "both") {

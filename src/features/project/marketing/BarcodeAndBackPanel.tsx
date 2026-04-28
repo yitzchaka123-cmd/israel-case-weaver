@@ -25,6 +25,7 @@ import { DownloadButton } from "@/components/DownloadButton";
 import { downloadAsset, slugify } from "@/lib/utils";
 import { useProjectNotifications } from "@/features/project/notifications/useProjectNotifications";
 import { fireBackgroundImage } from "@/features/project/fireBackgroundImage";
+import { useBatchProgress } from "./BatchProgressContext";
 
 type OutputType = "image" | "document" | "both";
 
@@ -111,6 +112,7 @@ LAYOUT REQUIREMENTS (these are PRINT-CRITICAL — overlays will be added later):
 export function BarcodeAndBackPanel({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
   const { user } = useAuth();
+  const batch = useBatchProgress();
   const [generatingBarcode, setGeneratingBarcode] = useState(false);
   const [generatingBack, setGeneratingBack] = useState(false);
   const [generateCount, setGenerateCount] = useState<1 | 2 | 4>(4);
@@ -432,6 +434,14 @@ Square-ish print panel, no on-image text, no logos, no UI overlays. Will be crop
         const sideFails = sideResults.filter((r) => !r.ok).length;
         if (sideFails > 0) {
           toast.message(`${4 - sideFails} of 4 box-side images started — ${sideFails} failed to kick off.`);
+        }
+
+        // Register every kicked job with the shared batch progress pill.
+        const allIds = [...results, ...sideResults]
+          .map((r) => r.jobId)
+          .filter((id): id is string => Boolean(id));
+        if (allIds.length > 0) {
+          batch?.start(allIds, "Back cover + box sides");
         }
       }
       if (backOutputType === "document" || backOutputType === "both") {

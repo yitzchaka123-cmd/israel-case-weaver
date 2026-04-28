@@ -7,6 +7,8 @@ import { BoxCopyPanel } from "./marketing/BoxCopyPanel";
 import { BarcodeAndBackPanel } from "./marketing/BarcodeAndBackPanel";
 import { CompanyProfileSummary } from "./marketing/CompanyProfileSummary";
 import { StoryboardStudio } from "./marketing/StoryboardStudio";
+import { BatchProgressProvider, useBatchProgress } from "./marketing/BatchProgressContext";
+import { BatchProgressPill } from "./marketing/BatchProgressPill";
 
 const marketingNav = [
   { id: "marketing-cover-visuals", label: "Cover & Visuals" },
@@ -17,7 +19,16 @@ const marketingNav = [
 ];
 
 export function MarketingSection({ projectId }: { projectId: string }) {
+  return (
+    <BatchProgressProvider projectId={projectId}>
+      <MarketingSectionInner projectId={projectId} />
+    </BatchProgressProvider>
+  );
+}
+
+function MarketingSectionInner({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
+  const batch = useBatchProgress();
 
   useEffect(() => {
     const ch = supabase
@@ -58,6 +69,8 @@ export function MarketingSection({ projectId }: { projectId: string }) {
           ))}
         </div>
       </div>
+
+      {batch && <BatchProgressPill progress={batch.progress} />}
 
       <section id="marketing-cover-visuals" className="scroll-mt-24">
         <CoverAndVisuals projectId={projectId} />
