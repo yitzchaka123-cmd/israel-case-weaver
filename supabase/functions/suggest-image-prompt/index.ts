@@ -107,6 +107,7 @@ Deno.serve(async (req) => {
     const profileOwnerId = userId ?? project.owner_id;
     let globalAssistantInstructions = "";
     let envelopeTemplateBlock = "";
+    let envelopeBrandingBlock = "";
     let profilePromptWriter = "";
     if (profileOwnerId) {
       const { data: profile } = await supa
@@ -116,9 +117,23 @@ Deno.serve(async (req) => {
         .maybeSingle();
       globalAssistantInstructions = ((profile as { image_prompt_assistant_instructions?: string } | null)?.image_prompt_assistant_instructions ?? "").trim();
       profilePromptWriter = ((profile as { ai_provider_prompt_writer?: string } | null)?.ai_provider_prompt_writer ?? "").trim();
-      if (category === "envelope") {
+      if (category === "envelope" || category === STRUCTURED_ENV) {
         const playbook = resolvePlaybook((profile as { assistant_playbook?: unknown } | null)?.assistant_playbook);
         envelopeTemplateBlock = `\n\n${renderEnvelopeDesignTemplate(playbook)}`;
+        // Pull workspace branding so envelope covers carry the logo.
+        const { data: cp } = await supa
+          .from("company_profiles")
+          .select("company_name, tagline, logo_url")
+          .eq("owner_id", profileOwnerId)
+          .maybeSingle();
+        const brand = cp as { company_name?: string | null; tagline?: string | null; logo_url?: string | null } | null;
+        envelopeBrandingBlock = brand?.logo_url
+          ? `\n\nCOMPANY BRANDING (must be reflected in the envelope design):
+- Company: ${brand.company_name ?? "(unspecified)"}
+- Tagline: ${brand.tagline ?? "(none)"}
+- Logo URL: ${brand.logo_url}
+Require the brief to place the logo at the top of the envelope (top-center, top-left, or top-right — pick the spot that frames this envelope best). Logo height ≈ 8–12% of the envelope's longer side, with breathing room from the wax seal and stamps. Treat the logo as if printed onto the envelope (matte ink, period-correct registration), NOT a sticker, NOT a watermark, no drop shadows. Render the company name in small clean type beside or beneath the logo when supplied.`
+          : `\n\nCOMPANY BRANDING: no company logo configured for this workspace — do NOT invent one. Skip the branding lockup entirely.`;
       }
     }
 
@@ -242,6 +257,7 @@ Deno.serve(async (req) => {
         globalAssistantInstructions
           ? `\nWORKSPACE STYLE GUIDE (apply to every brief unless the per-doc user instruction overrides it):\n${globalAssistantInstructions}`
           : "",
+        isEnv && envelopeBrandingBlock ? envelopeBrandingBlock : "",
       ].filter(Boolean).join("\n");
 
       // Put USER STEERING at the TOP of the user message so it's the first thing the model reads.
@@ -504,8 +520,8 @@ Deno.serve(async (req) => {
 
     const baseSystem = `You are an expert art director for boxed murder-mystery games. You write concise, vivid image-generation prompts (3–6 sentences for most categories; for "envelope" produce a long structured brief with sections GOAL / OUTPUT FORMAT / VISUAL STYLE / LAYOUT / TYPOGRAPHY / AUTHENTICITY) that an image model like Gemini Nano Banana or OpenAI gpt-image will turn into a single still image. Focus on subject, composition, lighting, mood, color palette, medium/style, and lens. No camera-shake instructions, no text overlays unless requested. Never output anything except the prompt itself.`;
     const system = globalAssistantInstructions
-      ? `${baseSystem}\n\nUSER GLOBAL STYLE GUIDE (highest priority — apply to every prompt you write):\n${globalAssistantInstructions}${envelopeTemplateBlock}`
-      : `${baseSystem}${envelopeTemplateBlock}`;
+      ? `${baseSystem}\n\nUSER GLOBAL STYLE GUIDE (highest priority — apply to every prompt you write):\n${globalAssistantInstructions}${envelopeTemplateBlock}${envelopeBrandingBlock}`
+      : `${baseSystem}${envelopeTemplateBlock}${envelopeBrandingBlock}`;
 
     const userMsg = `PROJECT CONTEXT:\n${ctx || "(no context yet)"}\n\nIMAGE PURPOSE: ${category.toUpperCase()} — ${guidance}${
       hint ? `\n\nUSER STEERING: ${hint}` : ""

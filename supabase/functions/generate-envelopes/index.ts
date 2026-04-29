@@ -61,13 +61,27 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Owner playbook (envelopes config + design template)
+    // Owner playbook (envelopes config + design template) AND company branding.
     const { data: profile } = await supa
       .from("profiles")
       .select("assistant_playbook")
       .eq("id", project.owner_id)
       .maybeSingle();
     const playbook = resolvePlaybook((profile as { assistant_playbook?: unknown } | null)?.assistant_playbook);
+
+    const { data: companyProfile } = await supa
+      .from("company_profiles")
+      .select("company_name, tagline, logo_url")
+      .eq("owner_id", project.owner_id)
+      .maybeSingle();
+    const brand = companyProfile as { company_name?: string | null; tagline?: string | null; logo_url?: string | null } | null;
+    const brandingBlock = brand?.logo_url
+      ? `COMPANY BRANDING (apply to every envelope cover):
+- Company name: ${brand.company_name ?? "(unspecified)"}
+- Tagline: ${brand.tagline ?? "(none)"}
+- Logo URL: ${brand.logo_url}
+The image generator will receive the logo file separately. In the design_instructions, REQUIRE the logo to appear at the top of the envelope (top-center, top-left, or top-right — pick the spot that frames this envelope best, and use the SAME spot for every envelope in the set so the box looks like one branded series). Logo height ≈ 8–12% of envelope's longer side, with breathing room from the wax seal and diagonal stamp. Treat it as if printed onto the envelope (matte ink, period-correct registration), not a sticker, not a watermark, no drop shadows. If a company name is supplied, render it in small clean type beside or beneath the logo.`
+      : `COMPANY BRANDING: no company logo configured for this workspace — do NOT invent one. Skip the branding lockup entirely.`;
 
     const { data: existing } = await supa
       .from("envelopes")
@@ -106,23 +120,26 @@ Deno.serve(async (req) => {
 
 GAME-FLOW MODEL (read carefully):
 - All evidence documents in this case are in the box from the very start. The player has access to every document immediately.
-- Envelopes are NOT document containers. Each envelope is a SEALED TASK GATE — the player only opens it when they reach a specific beat in the case.
+- Envelopes are NOT document containers. Each envelope is a SEALED TASK GATE — the player only opens envelope #N after they finish the task printed inside envelope #N − 1.
 - Inside each envelope is a short task, a reveal, or an instruction — NEVER the next batch of evidence to read.
 
 ENVELOPE FLOW RULES (workspace defaults — follow):
 - There are exactly ${count} envelopes in this case, in order: ${labels.map((l, i) => `#${i} "${l}"`).join(", ")}.
-- Envelope #0 ("${labels[0]}") is the MISSION BRIEFING — opened first, before anything else. It introduces the case, the player's role, and points the player at Doc 0 (the master inventory of all documents in the box). Its opening trigger is simply "Open first, before reading anything else."
-- The FINAL envelope (#${count - 1}) contains the ACCUSATION FORM / SOLUTION REVEAL — opened only when the player is ready to commit to their answer. Its opening trigger is "Open only when you are ready to name the culprit."
-- Each middle envelope (#1..#${count - 2}) is tied to a specific BEAT in the Logic Flow: a moment where the player has narrowed something down, decoded a specific clue, identified the murder weapon, ruled out a suspect, etc. Reason from the actual logic of THIS case — never from a fixed template.
+- Envelope #0 ("${labels[0]}") is the MISSION BRIEFING — opened first, before anything else. It introduces the case, the player's role, and points the player at Doc 0 (the master inventory of all documents in the box). Its opening trigger is simply the equivalent of "Open first, before reading anything else."
+- The FINAL envelope (#${count - 1}) contains the ACCUSATION FORM / SOLUTION REVEAL. Its opening trigger is the equivalent of "Open only after you have completed the task in envelope #${count - 2} and you are ready to name the culprit."
+- Every other envelope (#1..#${count - 2}) is unlocked by ONE thing only: the player completing the task printed inside the previous envelope. The "task" you write for envelope #N is what gates envelope #N + 1 — design the chain so the tasks form a coherent investigative arc that walks the player through the Logic Flow beat by beat.
+- DO NOT write opening triggers like "open after you narrow it down to two suspects" or "open after you decode the cipher." The trigger is ALWAYS "open after you complete the task in the previous envelope" (env #0 excepted). The actual narrowing / decoding / ruling-out work IS the task printed inside the previous envelope.
 - Tasks are SHORT, BOLD, in ${gameLanguage}, ${isRtl ? "RTL" : "LTR"}. Never spoiler-heavy. The closing line "${playbook.envelopes.closing_line_he}" is appended automatically by the UI when the language matches — do NOT include it in the task field.
 
 ${renderEnvelopeDesignTemplate(playbook)}
 
+${brandingBlock}
+
 For each envelope you generate:
 - "label": short ${gameLanguage} name shown on the envelope front. ${isRtl ? "RTL" : "LTR"}, grammatical.
-- "task": short, bold ${gameLanguage} task / instruction / reveal the player reads when they open it at the right moment. 1–2 short sentences. Never reveal the solution. Never tell the player to "go open the next envelope to get more evidence" — the documents are already in the box.
-- "opening_trigger": 1 short sentence in ${gameLanguage} describing the case beat that unlocks this envelope (e.g. "פתחו לאחר שצמצמתם את החשודים לשניים." / "Open after you have narrowed it down to two suspects."). For envelope #0 use "פתחו ראשונה." (or the equivalent in ${gameLanguage}). For the final envelope use a phrase meaning "Open only when ready to name the culprit."
-- "design_instructions": a long structured visual brief for the image generator, customised from the workspace template above. Include the envelope's number, the ${gameLanguage} label verbatim, and at least one detail tied to this case (era, genre, setting). 8–20 lines.`;
+- "task": short, bold ${gameLanguage} task / instruction / reveal the player reads when they open it at the right moment. 1–2 short sentences. Never reveal the solution. Never tell the player to "go open the next envelope to get more evidence" — the documents are already in the box. The task itself should be the gate that, once completed, justifies opening the next envelope.
+- "opening_trigger": 1 short sentence in ${gameLanguage}. For envelope #0, the equivalent of "Open first." For envelope #${count - 1}, the equivalent of "Open only after completing the task in envelope #${count - 2}, when you are ready to name the culprit." For every other envelope #N, the equivalent of "Open only after you have completed the task in envelope #N − 1." Do NOT reference specific case beats here — that belongs in the previous envelope's task.
+- "design_instructions": a long structured visual brief for the image generator, customised from the workspace template above. Include the envelope's number, the ${gameLanguage} label verbatim, and at least one detail tied to this case (era, genre, setting). When a company logo is configured (see COMPANY BRANDING block above), the brief MUST include explicit instructions to print the logo at the chosen top position — keep that position consistent across every envelope you write in this batch. 10–22 lines.`;
 
     const userPrompt = `CASE CONTEXT
 Title: ${project.title}
