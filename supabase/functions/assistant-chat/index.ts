@@ -1259,6 +1259,11 @@ const BASE_TOOLS = [
             items: { type: "string" },
             description: "Required when scope='ids'. Document ids to generate.",
           },
+          wait_for_job_id: {
+            type: "string",
+            description:
+              "Optional job id from a previous bulk_generate_documents call. When set, the worker waits for that prior job to finish before starting this one — used to chain a 'draft pass → generate pass' so drafts land before image/file generation begins.",
+          },
         },
         required: ["scope", "mode"],
         additionalProperties: false,
