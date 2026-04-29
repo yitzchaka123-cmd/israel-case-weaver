@@ -228,6 +228,7 @@ async function streamOpenAIResponses(input: StreamReasoningInput, cb: StreamCall
   const toolCalls = new Map<string, { id: string; name: string; args: string }>();
   const eventTypeCounts = new Map<string, number>();
   let terminalDiagnostic = "";
+  let streamError: { status: number; message: string } | null = null;
 
   for await (const ev of iterateSSELines(resp.body)) {
     if (!ev.data || ev.data === "[DONE]") continue;
@@ -268,6 +269,16 @@ async function streamOpenAIResponses(input: StreamReasoningInput, cb: StreamCall
       const id = String(parsed.item_id ?? "");
       const tc = toolCalls.get(id);
       if (tc) cb.onToolCall?.({ id: tc.id, type: "function", function: { name: tc.name, arguments: tc.args || "{}" } });
+    } else if (type === "error") {
+      // Top-level error event from the Responses API stream.
+      const err = (parsed.error ?? parsed) as { message?: string; code?: string; type?: string };
+      const msg = err.message ?? "OpenAI stream error";
+      const code = String(err.code ?? err.type ?? "");
+      const status = /quota|insufficient|billing/i.test(msg) || code === "insufficient_quota" ? 402
+        : /rate.?limit/i.test(msg) ? 429
+        : /auth|key/i.test(msg) ? 401
+        : 500;
+      streamError = { status, message: msg };
     } else if (type === "response.completed" || type === "response.incomplete" || type === "response.failed") {
       // Capture terminal status — sometimes the only place we learn that text
       // came back as an output_item we never split into deltas, or that the
@@ -277,6 +288,15 @@ async function streamOpenAIResponses(input: StreamReasoningInput, cb: StreamCall
       const incomplete = response.incomplete_details as { reason?: string } | undefined;
       const error = response.error as { message?: string; code?: string } | undefined;
       terminalDiagnostic = `type=${type} status=${status ?? "?"} incomplete=${incomplete?.reason ?? "-"} error=${error?.message ?? "-"}`;
+      if (type === "response.failed" && error?.message && !streamError) {
+        const msg = error.message;
+        const code = String(error.code ?? "");
+        const httpStatus = /quota|insufficient|billing/i.test(msg) || code === "insufficient_quota" ? 402
+          : /rate.?limit/i.test(msg) ? 429
+          : /auth|key/i.test(msg) ? 401
+          : 500;
+        streamError = { status: httpStatus, message: msg };
+      }
       // Last-resort recovery: if we never got text deltas, try to reconstruct
       // text from response.output (Responses API sometimes batches it).
       if (!textOut && Array.isArray(response.output)) {
@@ -291,6 +311,10 @@ async function streamOpenAIResponses(input: StreamReasoningInput, cb: StreamCall
         }
       }
     }
+  }
+  if (streamError && !textOut && !toolCalls.size) {
+    console.error(`[stream-reasoning] openai-responses stream failed: ${streamError.status} ${streamError.message}`);
+    return errorResult(streamError.status, streamError.message);
   }
   if (!textOut && !toolCalls.size && !reasoningBuckets.size) {
     const counts = [...eventTypeCounts.entries()].map(([k, v]) => `${k}:${v}`).join(",");
