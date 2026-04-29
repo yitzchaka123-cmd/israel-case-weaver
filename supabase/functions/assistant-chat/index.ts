@@ -2462,6 +2462,123 @@ async function executeTool(
         image_fallback: imageOrigins[0]?.fallback || "none",
       };
     }
+    if (name === "bulk_generate_documents") {
+      // Kick off the bulk-generate-documents edge function as a background
+      // job. Returns immediately so the assistant only spends ONE round
+      // regardless of how many docs are queued. Progress is written to
+      // bulk_generation_jobs and surfaced live in the Documents tab.
+      const a = args as Record<string, unknown>;
+      const scope = String(a.scope ?? "").trim();
+      const mode = String(a.mode ?? "").trim();
+      if (!["all_remaining", "from_doc_number", "ids"].includes(scope)) {
+        return { ok: false, message: "scope must be 'all_remaining', 'from_doc_number', or 'ids'" };
+      }
+      if (!["draft", "image", "document", "both", "image_to_pdf"].includes(mode)) {
+        return { ok: false, message: "mode must be 'draft', 'image', 'document', 'both', or 'image_to_pdf'" };
+      }
+      const documentFormat = String(a.document_format ?? "pdf").trim();
+      // Logic-Flow gate (same as the per-doc tool).
+      const { data: proj } = await supa
+        .from("projects")
+        .select("solution_summary, logic_approved_at")
+        .eq("id", projectId)
+        .single();
+      if (!proj?.solution_summary || !proj?.logic_approved_at) {
+        return { ok: false, message: "Cannot generate — Logic Flow not approved yet." };
+      }
+      // Resolve the target document set so we can pre-populate the job row
+      // (total + document_ids) and the assistant can report a real count back.
+      let targetIds: string[] = [];
+      if (scope === "ids") {
+        const ids = Array.isArray(a.document_ids)
+          ? (a.document_ids as unknown[]).filter((x): x is string => typeof x === "string")
+          : [];
+        if (ids.length === 0) return { ok: false, message: "scope='ids' requires document_ids[]" };
+        const { data: rows } = await supa
+          .from("documents")
+          .select("id")
+          .eq("project_id", projectId)
+          .in("id", ids);
+        targetIds = (rows ?? []).map((r: any) => r.id);
+      } else if (scope === "from_doc_number") {
+        const fromN = Number(a.from_doc_number);
+        if (!Number.isFinite(fromN)) {
+          return { ok: false, message: "scope='from_doc_number' requires from_doc_number (number)" };
+        }
+        let q = supa
+          .from("documents")
+          .select("id, doc_number")
+          .eq("project_id", projectId)
+          .gte("doc_number", fromN);
+        const untilN = Number(a.until_doc_number);
+        if (Number.isFinite(untilN)) q = q.lte("doc_number", untilN);
+        const { data: rows } = await q.order("doc_number", { ascending: true });
+        targetIds = (rows ?? []).map((r: any) => r.id);
+      } else {
+        // all_remaining: every non-final doc, skip Doc 0.
+        const { data: rows } = await supa
+          .from("documents")
+          .select("id, doc_number, status")
+          .eq("project_id", projectId)
+          .neq("status", "final")
+          .order("doc_number", { ascending: true });
+        targetIds = (rows ?? [])
+          .filter((r: any) => Number(r.doc_number) !== 0)
+          .map((r: any) => r.id);
+      }
+      if (targetIds.length === 0) {
+        return { ok: false, message: "No documents matched the requested scope." };
+      }
+      const { data: job, error: jobErr } = await supa
+        .from("bulk_generation_jobs")
+        .insert({
+          project_id: projectId,
+          scope,
+          mode,
+          document_format: mode === "image" || mode === "draft" ? null : documentFormat,
+          document_ids: targetIds,
+          total: targetIds.length,
+          completed: 0,
+          failed: 0,
+          status: "running",
+        })
+        .select("id")
+        .single();
+      if (jobErr || !job) {
+        return { ok: false, message: `Failed to enqueue bulk job: ${jobErr?.message ?? "unknown"}` };
+      }
+      // Fire-and-forget invoke. Keep the worker alive long enough to send.
+      const fireAndForget = fetch(`${SUPABASE_URL}/functions/v1/bulk-generate-documents`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        },
+        body: JSON.stringify({
+          projectId,
+          scope,
+          mode,
+          documentFormat,
+          documentIds: scope === "ids" ? targetIds : undefined,
+          fromDocNumber: scope === "from_doc_number" ? Number(a.from_doc_number) : undefined,
+          untilDocNumber: scope === "from_doc_number" && Number.isFinite(Number(a.until_doc_number))
+            ? Number(a.until_doc_number)
+            : undefined,
+          jobId: job.id,
+        }),
+      }).catch((err) => {
+        console.error("[assistant-chat] bulk-generate-documents background fetch failed", err);
+      });
+      const runtime = (globalThis as { EdgeRuntime?: { waitUntil: (p: Promise<unknown>) => void } })
+        .EdgeRuntime;
+      if (runtime?.waitUntil) runtime.waitUntil(fireAndForget);
+      return {
+        ok: true,
+        message: `Queued ${targetIds.length} document${targetIds.length === 1 ? "" : "s"} for ${mode} generation. Tell the user to watch the Documents tab — progress updates live. Do NOT claim docs are finished, only that generation is QUEUED/STARTED.`,
+        job_id: job.id,
+        total: targetIds.length,
+      };
+    }
     if (name === "explain_claude_skill_install") {
       const requested =
         String((args as { requested_skill?: string }).requested_skill ?? "Claude Skill").trim() ||
