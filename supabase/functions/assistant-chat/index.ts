@@ -4088,6 +4088,34 @@ Deno.serve(async (req) => {
       }
 
       const finalText = msg.content ?? "";
+
+      // Anti-loop nudge (mirror of background branch).
+      if (
+        isBatchRequest &&
+        !nudgedForBatch &&
+        !isFinalRound &&
+        !executedTools.some(
+          (t) => t.name === "add_documents" || t.name === "bulk_generate_documents",
+        )
+      ) {
+        nudgedForBatch = true;
+        console.warn("[assistant-chat] no batch tool called for batch request — nudging", {
+          model,
+          round,
+        });
+        convo.push({
+          role: "assistant",
+          content: finalText || "(thinking)",
+        });
+        convo.push({
+          role: "system",
+          content:
+            "🔴 You are stalling. The user asked for a BATCH action ('draft all', 'generate everything', or similar). On your NEXT turn you MUST emit a tool call — either `add_document` for Doc 0 followed by `add_documents` (plural) with every remaining doc in the SAME turn, or `bulk_generate_documents` for the full scope. Do NOT write more prose, do NOT ask follow-up questions about envelopes (envelopes use a separate workflow), do NOT pause for confirmation. Ship the tool call now with the proposed/approved doc set.",
+        });
+        flushProgress("nudging batch tool…");
+        continue;
+      }
+
       const lastOptionsTool = [...executedTools]
         .reverse()
         .find((t) => t.name === "propose_options" && (t.result as { ok?: boolean })?.ok);
