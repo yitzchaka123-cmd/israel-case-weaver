@@ -275,9 +275,22 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
           {activeJob.current_doc_title && jobRunning && (
             <p className="text-xs text-muted-foreground mt-2 truncate">Working on: {activeJob.current_doc_title}</p>
           )}
-          {activeJob.error && !jobRunning && (
-            <p className="text-xs text-destructive mt-2 line-clamp-2">{activeJob.error}</p>
-          )}
+          {activeJob.error && !jobRunning && (() => {
+            const err = activeJob.error.toLowerCase();
+            const billing = err.includes("billing hard limit") || err.includes("quota") || err.includes("insufficient_quota");
+            const rate = err.includes("rate limit") || err.includes("429");
+            return (
+              <div className="mt-2 space-y-1">
+                {billing && (
+                  <p className="text-xs font-medium text-destructive">⚠ OpenAI billing limit reached — top up your image-provider account, then retry. No credits were charged for the failed docs.</p>
+                )}
+                {rate && !billing && (
+                  <p className="text-xs font-medium text-warning">⚠ Image provider rate-limited the run. Wait a minute and retry — the worker already auto-retried 3×.</p>
+                )}
+                <p className="text-xs text-destructive line-clamp-2">{activeJob.error}</p>
+              </div>
+            );
+          })()}
         </div>
       )}
 
