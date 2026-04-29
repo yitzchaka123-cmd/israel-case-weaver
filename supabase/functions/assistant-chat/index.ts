@@ -2529,25 +2529,9 @@ async function executeTool(
       if (targetIds.length === 0) {
         return { ok: false, message: "No documents matched the requested scope." };
       }
-      const { data: job, error: jobErr } = await supa
-        .from("bulk_generation_jobs")
-        .insert({
-          project_id: projectId,
-          scope,
-          mode,
-          document_format: mode === "image" || mode === "draft" ? null : documentFormat,
-          document_ids: targetIds,
-          total: targetIds.length,
-          completed: 0,
-          failed: 0,
-          status: "running",
-        })
-        .select("id")
-        .single();
-      if (jobErr || !job) {
-        return { ok: false, message: `Failed to enqueue bulk job: ${jobErr?.message ?? "unknown"}` };
-      }
-      // Fire-and-forget invoke. Keep the worker alive long enough to send.
+      // Fire-and-forget invoke. The edge function creates its own job row
+      // (single source of truth) and returns the jobId — but we don't await
+      // it here so the assistant turn finishes immediately.
       const fireAndForget = fetch(`${SUPABASE_URL}/functions/v1/bulk-generate-documents`, {
         method: "POST",
         headers: {
@@ -2561,10 +2545,10 @@ async function executeTool(
           documentFormat,
           documentIds: scope === "ids" ? targetIds : undefined,
           fromDocNumber: scope === "from_doc_number" ? Number(a.from_doc_number) : undefined,
-          untilDocNumber: scope === "from_doc_number" && Number.isFinite(Number(a.until_doc_number))
-            ? Number(a.until_doc_number)
-            : undefined,
-          jobId: job.id,
+          untilDocNumber:
+            scope === "from_doc_number" && Number.isFinite(Number(a.until_doc_number))
+              ? Number(a.until_doc_number)
+              : undefined,
         }),
       }).catch((err) => {
         console.error("[assistant-chat] bulk-generate-documents background fetch failed", err);
@@ -2575,7 +2559,6 @@ async function executeTool(
       return {
         ok: true,
         message: `Queued ${targetIds.length} document${targetIds.length === 1 ? "" : "s"} for ${mode} generation. Tell the user to watch the Documents tab — progress updates live. Do NOT claim docs are finished, only that generation is QUEUED/STARTED.`,
-        job_id: job.id,
         total: targetIds.length,
       };
     }
