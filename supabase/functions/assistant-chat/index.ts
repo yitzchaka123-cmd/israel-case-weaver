@@ -241,7 +241,7 @@ const PROVIDER_MODEL: Record<string, string> = {
   "gemini-flash-lite": "google/gemini-2.5-flash-lite",
   // OpenAI direct (uses OpenAi secret)
   openai: "openai/gpt-5",
-  "openai-5.4": "openai/gpt-5.4",
+  "openai-5.4": "openai/gpt-5.2",
   "openai-5.2": "openai/gpt-5.2",
   "openai-mini": "openai/gpt-5-mini",
   // Anthropic direct (uses ANTHROPIC_API_KEY)
@@ -1762,10 +1762,43 @@ async function executeTool(
           .eq("project_id", projectId)
           .eq("board", "logic");
         if ((existingLogicNodes ?? 0) === 0) {
+          // SAFETY NET: the user clearly meant to "approve & draw the flow"
+          // (e.g. typed "Approved" after the assistant offered the choice).
+          // Auto-start the flow build in the background so the spinner the
+          // user is staring at actually corresponds to real work — instead
+          // of returning an error and letting the model lie about progress.
+          const { data: cur2 } = await supa
+            .from("projects")
+            .select("logic_flow_building_at")
+            .eq("id", projectId)
+            .maybeSingle();
+          const buildingAt2 = (cur2 as { logic_flow_building_at?: string | null } | null)
+            ?.logic_flow_building_at;
+          const alreadyBuilding =
+            buildingAt2 && Date.now() - new Date(buildingAt2).getTime() < 5 * 60 * 1000;
+          if (!alreadyBuilding) {
+            const fireAndForget = fetch(`${SUPABASE_URL}/functions/v1/generate-logic-flow`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+              },
+              body: JSON.stringify({ projectId, replace: true, useExistingSummary: true }),
+            }).catch((err) => {
+              console.error("[assistant-chat] approve-empty-board safety-net failed", err);
+            });
+            const runtime = (globalThis as { EdgeRuntime?: { waitUntil: (p: Promise<unknown>) => void } })
+              .EdgeRuntime;
+            if (runtime?.waitUntil) runtime.waitUntil(fireAndForget);
+            await supa
+              .from("projects")
+              .update({ logic_flow_building_at: new Date().toISOString() })
+              .eq("id", projectId);
+          }
           return {
             ok: false,
             message:
-              "Cannot approve: the Logic Flow board is empty. Call generate_logic_flow first to draw the flow, wait for it to settle, then re-issue set_solution_summary with mark_approved=true.",
+              "Cannot approve YET: the Logic Flow board is empty. 🛠️ Logic Flow generation has been STARTED automatically in the background — tell the user to open Canvas → Logic Flow to watch it paint itself live (settles in 2-3 min). Do NOT call generate_logic_flow again this turn. The user should re-issue 'approve' once the board has settled.",
           };
         }
         patch.logic_approved_at = new Date().toISOString();
@@ -2190,6 +2223,30 @@ async function executeTool(
       };
     }
     if (name === "generate_logic_flow") {
+      // Single-flight guard: if a build is already in progress (started in
+      // the last 5 minutes), do not kick off a second one. This prevents
+      // parallel runs that race on logic_version_id and wipe each other's
+      // writes (which is exactly how the user got a stuck "Planning…"
+      // spinner with zero nodes).
+      const { data: curProj } = await supa
+        .from("projects")
+        .select("logic_flow_building_at")
+        .eq("id", projectId)
+        .maybeSingle();
+      const buildingAt = (curProj as { logic_flow_building_at?: string | null } | null)
+        ?.logic_flow_building_at;
+      if (buildingAt) {
+        const ageMs = Date.now() - new Date(buildingAt).getTime();
+        if (ageMs < 5 * 60 * 1000) {
+          return {
+            ok: true,
+            message:
+              "Logic Flow generation is ALREADY in progress (started " +
+              Math.round(ageMs / 1000) +
+              "s ago). Tell the user to open Canvas → Logic Flow to watch the live build settle. Do NOT call generate_logic_flow again this turn.",
+          };
+        }
+      }
       // generate-logic-flow can take 2-3 minutes (heavy planning model call),
       // which exceeds the subrequest timeout when awaited synchronously from
       // here. Kick it off as a background task and tell the assistant to

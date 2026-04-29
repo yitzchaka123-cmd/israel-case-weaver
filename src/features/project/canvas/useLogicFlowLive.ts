@@ -9,6 +9,7 @@
 // on the Case Board tab and Canvas toolbar.
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 const LIVE_WINDOW_MS = 12_000;
 
@@ -44,6 +45,49 @@ export function useLogicFlowLive(projectId: string): LogicFlowLiveState {
       cancelled = true;
     };
   }, [projectId]);
+
+  // Watchdog: if logic_flow_building_at has been stamped for >3 minutes AND
+  // there are still zero logic nodes, treat the run as dead and self-heal.
+  // This is the same pattern as the assistant_runs zombie recovery in
+  // useAssistantRun. Without this, a silent provider failure (quota, bogus
+  // model name, dropped stream) leaves the user staring at a "Planning…"
+  // spinner forever — which is exactly the bug we're patching.
+  useEffect(() => {
+    if (!buildingAt) return;
+    const ageMs = Date.now() - new Date(buildingAt).getTime();
+    const STALE_AFTER_MS = 3 * 60 * 1000;
+    const remaining = STALE_AFTER_MS - ageMs;
+    const tick = () => {
+      void (async () => {
+        const { count } = await supabase
+          .from("canvas_nodes")
+          .select("id", { count: "exact", head: true })
+          .eq("project_id", projectId)
+          .eq("board", "logic");
+        if ((count ?? 0) === 0) {
+          await supabase
+            .from("projects")
+            .update({ logic_flow_building_at: null })
+            .eq("id", projectId);
+          setBuildingAt(null);
+          toast.error(
+            "Logic Flow generation didn't produce any nodes — click Generate Logic Flow to retry.",
+            { duration: 12000 },
+          );
+        } else {
+          // Nodes did land; just clear our local flag — the server's own
+          // success path will have unset it on disk.
+          setBuildingAt(null);
+        }
+      })();
+    };
+    if (remaining <= 0) {
+      tick();
+      return;
+    }
+    const timer = window.setTimeout(tick, remaining);
+    return () => window.clearTimeout(timer);
+  }, [projectId, buildingAt]);
 
   useEffect(() => {
     // Unique per-mount suffix prevents StrictMode double-mount (and rapid

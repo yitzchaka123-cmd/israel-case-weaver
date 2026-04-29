@@ -1,73 +1,60 @@
-## Goal
+## What's wrong
 
-Make batch operations feel like one coherent assistant-driven flow:
+You approved the summary, the assistant said "I've started drawing the Logic Flow", and the Case Board lit up green with a "Planning…" spinner — but the generator never inserted any nodes. Only when you clicked **Generate Logic Flow** from the board did it actually start.
 
-1. User asks "generate all" (or any range) → assistant says "I'll draft them all first, then generate them one shot each."
-2. Drafts are written in one batch (same as today via `add_documents` / a new draft-only bulk path).
-3. Generation runs serially (1-by-1, "one shot" each) with live progress.
-4. Documents tab shows a green live indicator while a job is running.
-5. Notifications panel shows one entry per doc as it finishes, **with a small image thumbnail**.
-6. For batch DRAFTING (no generation), same per-doc notifications appear but **without** a thumbnail.
-7. When the full bulk-generate run finishes, the assistant posts a chat message acknowledging completion and prompting the next step.
-8. Add a "Draft all" button on the Documents tab that triggers the same flow as the assistant.
+Looking at this specific case (project `a2e4f0…1c0f7`):
 
-## Changes
+- The assistant **did** call `generate_logic_flow` correctly.
+- The `generate-logic-flow` edge function booted **twice in parallel** at 11:33:01–02 (both via `openai/gpt-5`), then a third time at 11:34:27 via `openai/gpt-5.4` (which is a non-existent model and would error out).
+- After both background runs, `logic_flow_building_at` was still set, **0 nodes** had been inserted, and no error reached the UI.
 
-### 1. Edge function `bulk-generate-documents`
-- Emit a `project_notifications` row **per document** as each one finishes (currently only a single summary notification is emitted at the very end).
-  - `kind: "bulk_doc_done"` (success) / `"bulk_doc_failed"` (failure).
-  - Title: `"✓ Doc N — <title>"` / `"⚠ Doc N — <title> failed"`.
-  - Body: short status (`"Generated image + PDF"`, error message, etc.).
-  - Store thumbnail URL inline in `body` as a data hint OR add a small `metadata` jsonb-style approach. Since `project_notifications` has no metadata column, encode the preview URL on a new nullable column `preview_image_url text` (migration).
-  - For `mode === "draft"` runs, leave `preview_image_url` null (no thumbnail rendered).
-- When the run finishes successfully (non-draft mode), insert a final `kind: "bulk_generation_done"` notification with a `starter_prompt` that asks the assistant to acknowledge progress and propose the next step (e.g. "Bulk generation finished — please review with me and tell me what to do next.").
-- Force serial-by-default for the assistant's "one shot each" promise: keep `concurrency` param but default to 1 when called from the assistant. Concurrency selector in the UI dialog stays.
+So three problems compound:
 
-### 2. Migration
-- `ALTER TABLE public.project_notifications ADD COLUMN preview_image_url text;`
+1. **Parallel double-fire.** The tool fires `generate-logic-flow` from `assistant-chat` as a fire-and-forget. Nothing prevents two concurrent runs racing on the same project — both rotate `logic_version_id` and wipe each other's writes.
+2. **Bogus model (`openai-5.4` → `openai/gpt-5.4`).** Project-level default routing maps to a model name that doesn't exist, so the call fails and the building flag never clears for that path. The manual button works only because it passes `modelOverride` from the canvas dropdown.
+3. **No client-side watchdog.** When a background run dies before inserting a node, the `logic_flow_building_at` flag stays stamped indefinitely. The UI keeps showing "Planning…" with no errored state and no auto-recovery, so the user has no choice but to click the manual button.
 
-### 3. Notifications UI (`NotificationPanel.tsx` + `useProjectNotifications.ts`)
-- Extend `ProjectNotification` type with `preview_image_url: string | null`.
-- In `NotificationCard`, when `preview_image_url` is set, render a 40×40 rounded thumbnail to the left of the title.
-- Group consecutive `bulk_doc_done` items visually (small `+N more` collapse) — optional polish, only if simple.
+## The fix
 
-### 4. Documents tab live indicator (`DocumentsSection.tsx`)
-- When `jobRunning` is true, show a small green pulsing dot + "Live" label next to the "Documents" h2 (and surface in the section tab if there's a tab strip — check `ProjectWorkspace`). Already have the progress bar; add the dot near the title for at-a-glance signal.
-- Add a **"Draft all"** button beside "Generate all":
-  - Opens a confirm toast / small dialog: "Draft all remaining documents?"
-  - Calls the same `bulk-generate-documents` edge function with `mode: "draft"`, `scope: "all_remaining"`.
-  - Reuses the existing job-progress UI.
+### 1. Single-flight guard in `assistant-chat` `generate_logic_flow` tool
 
-### 5. Assistant playbook (`supabase/functions/assistant-chat/index.ts` BATCH RULES + `bulk_generate_documents` tool)
-- Update the assistant's prose contract: when the user asks to "generate all/any range", the assistant must:
-  1. Reply with a one-line plan: "I'll first draft all of them, then generate them one shot each. Watch the Documents tab and the bell."
-  2. Call `bulk_generate_documents` with `mode: "draft"` first **only if** any target docs lack `hebrew_content`. (Detect inside the tool handler — if all targets already have drafts, skip straight to generation.)
-  3. Then call `bulk_generate_documents` with `mode: "both"` (image + document) for the same scope.
-  - Both calls are fire-and-forget; the second is queued but the worker will pick up drafts as they're written. To keep ordering simple, chain them: pass an optional `chain_after_job_id` so the second job waits for the first to finish (worker polls until the prior job's status is `completed`/`failed` before starting). Lightweight: add a `wait_for_job_id` field on `bulk_generation_jobs` and have the worker sleep-poll up to N minutes.
-- Add a new tool `acknowledge_bulk_completion` (or reuse `send_message`-style) — actually simpler: the bulk function inserts the `bulk_generation_done` notification with a `starter_prompt`; when the user clicks "Open in Assistant" the assistant naturally responds. To make it automatic without a click, add a tiny client-side effect in `ProjectWorkspace` that, when a new `bulk_generation_done` notification arrives for the active project, posts a system-style assistant message ("Bulk generation finished — N/M succeeded. Ready to move to the next step?") into the chat. Keep this in one place to avoid double-fires.
+Before kicking off the background fetch, check if `logic_flow_building_at` is already set within the last 5 minutes. If yes, return a tool result saying "already in progress, do not retry" instead of starting a second run. This blocks the parallel double-fire even if the model retries.
 
-### 6. Draft-all button → assistant integration
-- The "Draft all" button calls the edge function directly (no assistant turn needed) — but ALSO posts a user chat message ("Drafting all remaining documents…") so the assistant is aware in context for the next turn. Use existing `chat_messages` insert pattern.
+### 2. Map `openai-5.4` to a real model
 
-## Technical notes
+In `supabase/functions/generate-logic-flow/index.ts` (and any sibling map in `_shared/ai-router.ts`), drop the dead `openai/gpt-5.4` mapping and route `openai-5.4` → `openai/gpt-5.2` (the latest existing model). Keep `openai-5.2` as is. Same change in the model picker if it exposes 5.4 as an option.
 
-- `bulk_generation_jobs.mode` already supports `"draft"`. We need realistic per-doc notification emission inside the worker loop in `bulk-generate-documents/index.ts` (right after the success/failure branch in `runOne`).
-- For thumbnail in draft mode notifications: explicitly set `preview_image_url: null`. For image/both modes: read `documents.generated_asset_url` post-success and pass it through.
-- `MAX_ROUNDS` in assistant-chat is already 6 — sufficient for the "draft → then generate" two-tool sequence.
-- No changes needed to `useBatchImageProgress` (that's for marketing image batches, separate flow).
-- Live indicator: simple `<span className="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />` next to the Documents heading when `jobRunning`.
+### 3. Always clear `logic_flow_building_at` on failure (server-side)
+
+In `generate-logic-flow/index.ts`, wrap the streaming + batch paths so that if the run ends with `insertedNodeCount === 0`, we:
+
+- Log the diagnostic (model, status, error text).
+- Set `logic_flow_building_at = null`.
+- Insert a `chat_messages` row from `assistant` with the `⚠️` error text so it's visible in chat (matches the same pattern recently added for empty model responses).
+
+Right now this only happens in the outer `catch`, not when streaming "succeeds" but produces zero nodes.
+
+### 4. Client-side watchdog on `logic_flow_building_at`
+
+In `src/features/project/canvas/useLogicFlowLive.ts`:
+
+- If `logic_flow_building_at` has been set for more than **3 minutes** AND zero logic nodes exist, treat it as a stuck run: clear the flag (`UPDATE projects SET logic_flow_building_at = null`) and surface a toast "Logic Flow generation didn't start — click Generate Logic Flow to retry."
+- Same pattern as the existing `STALE_AFTER_MS` watchdog in `useAssistantRun.ts`.
+
+### 5. Auto-trigger on the "approve" path too
+
+Today the safety-net auto-trigger in `assistant-chat` only runs when `set_solution_summary` is called **without** `mark_approved`. If the model later calls it again with `mark_approved: true` against an empty board, we refuse — but we don't auto-start the flow. Add a parallel safety-net there: when the empty-board approval is refused, kick off `generate-logic-flow` in the background (subject to the new single-flight guard) and return a message telling the model to wait and re-issue approval after the flow lands.
 
 ## Files to edit
 
-- `supabase/migrations/<new>.sql` — add `preview_image_url` column
-- `supabase/functions/bulk-generate-documents/index.ts` — per-doc notifications, optional `wait_for_job_id` chaining, default concurrency=1
-- `supabase/functions/assistant-chat/index.ts` — update BATCH RULES prose; teach `bulk_generate_documents` tool to optionally chain a draft pass before a generate pass
-- `src/features/project/notifications/useProjectNotifications.ts` — add `preview_image_url` to type
-- `src/features/project/notifications/NotificationPanel.tsx` — render thumbnail
-- `src/features/project/DocumentsSection.tsx` — green live dot + "Draft all" button
-- `src/features/project/ProjectWorkspace.tsx` — auto-post assistant follow-up when `bulk_generation_done` notification arrives
+- `supabase/functions/assistant-chat/index.ts` — single-flight guard, post-refusal auto-trigger.
+- `supabase/functions/generate-logic-flow/index.ts` — clear building flag + chat error on zero-node runs; remove `openai/gpt-5.4` mapping.
+- `supabase/functions/_shared/ai-router.ts` — sanity-check no other dead model strings.
+- `src/features/project/canvas/useLogicFlowLive.ts` — 3-minute client watchdog.
+- (If present) any UI model picker still exposing `openai-5.4`.
 
-## Out of scope
+## What you'll see after the fix
 
-- Reworking the per-doc generation pipeline itself (`generate-document`).
-- Marketing batch progress (`BatchProgressContext`) — already separate.
+- When you say "Approved", the Logic Flow starts within seconds and nodes begin streaming onto Canvas → Logic Flow.
+- If the generator silently fails, the spinner clears within 3 minutes, a toast tells you to retry, and a `⚠️` message appears in chat.
+- The model can no longer accidentally start two parallel runs.

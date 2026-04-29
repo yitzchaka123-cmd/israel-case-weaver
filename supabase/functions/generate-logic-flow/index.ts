@@ -32,7 +32,8 @@ const PROVIDER_MODEL: Record<string, string> = {
   "gemini-flash": "google/gemini-2.5-flash",
   "gemini-flash-lite": "google/gemini-2.5-flash-lite",
   openai: "openai/gpt-5",
-  "openai-5.4": "openai/gpt-5.4",
+  // openai-5.4 was a bogus key (no such model exists yet); route to gpt-5.2.
+  "openai-5.4": "openai/gpt-5.2",
   "openai-5.2": "openai/gpt-5.2",
   "openai-mini": "openai/gpt-5-mini",
   "openai-nano": "openai/gpt-5-nano",
@@ -567,6 +568,27 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
 
     // Clear the "building" indicator now that the run has fully landed.
     await supa.from("projects").update({ logic_flow_building_at: null }).eq("id", projectId);
+
+    // Zero-node guard: the run "completed" but the model produced nothing
+    // usable (empty stream, partial JSON, or silent provider failure). Surface
+    // a visible ⚠️ in chat so the user isn't left staring at an empty board
+    // wondering what happened — they'd otherwise only see the spinner go away
+    // with no nodes drawn.
+    if (insertedNodeCount === 0) {
+      const diag = streamingErr
+        ? `stream status=${streamingErr.status} ${streamingErr.text.slice(0, 200)}`
+        : "model returned no nodes";
+      console.error(`[generate-logic-flow] ZERO nodes inserted (model=${model}): ${diag}`);
+      await supa.from("chat_messages").insert({
+        project_id: projectId,
+        role: "assistant",
+        content:
+          "⚠️ The Logic Flow generation finished without producing any nodes (model: " +
+          model +
+          "). This usually means the planning model hit a billing/quota issue or returned an empty response. Open Canvas → Logic Flow and click **Generate Logic Flow** to retry, or switch the planning model in Settings → AI provider routing.",
+        metadata: { error: "logic_flow_zero_nodes", model, diagnostic: diag },
+      });
+    }
 
     return new Response(JSON.stringify({
       ok: true,
