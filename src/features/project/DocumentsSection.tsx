@@ -176,6 +176,7 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
         mode: overrides?.mode ?? bulkMode,
         documentFormat: overrides?.format ?? bulkFormat,
         concurrency: overrides?.concurrency ?? bulkConcurrency,
+        skipExisting: bulkSkipExisting,
       };
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/bulk-generate-documents`, {
         method: "POST",
