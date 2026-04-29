@@ -3969,7 +3969,46 @@ Deno.serve(async (req) => {
       /\b(all (the )?docs?|all documents|all the documents|כל המסמכים|תכין הכל|הכל)\b/.test(
         lastUserText,
       );
-    let nudgedForBatch = false;
+    let nudgeCount = 0;
+    const MAX_NUDGES = 2;
+    // PRE-FLIGHT (mirror of background branch): refresh Final Flow before the
+    // model's first round when batch is requested + proposal approved + zero
+    // final-board nodes. Saves ~1 round of "should I call this?" reasoning.
+    if (isBatchRequest) {
+      try {
+        const proposalStatus = String(
+          (project as { proposed_document_set_status?: string }).proposed_document_set_status ?? "none",
+        );
+        const proposalApproved = proposalStatus === "approved" || proposalStatus === "bypassed";
+        if (proposalApproved) {
+          const { count: finalNodeCount } = await supa
+            .from("canvas_nodes")
+            .select("id", { count: "exact", head: true })
+            .eq("project_id", projectId)
+            .eq("board", "final");
+          if ((finalNodeCount ?? 0) === 0) {
+            flushProgress("refreshing Final Flow before batch…");
+            const preflight = await executeTool(
+              supa,
+              projectId,
+              "create_final_documents_map",
+              { replace: true },
+              toolMessageId,
+              playbook,
+            );
+            if ((preflight as { ok?: boolean })?.ok) {
+              convo.push({
+                role: "system",
+                content:
+                  "🟢 Pre-flight: I just refreshed the Final Flow for you. Skip any 'should I create the Final Flow?' reasoning — it's done. Go DIRECTLY to the batch tool the user asked for (`add_documents` for drafts, `bulk_generate_documents` for assets). Do not call `create_final_documents_map` again this turn.",
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("batch pre-flight failed (non-fatal)", e);
+      }
+    }
     flushProgress("preparing prompt…");
     flushProgress("contacting model…");
     for (let round = 0; round < MAX_ROUNDS; round++) {
