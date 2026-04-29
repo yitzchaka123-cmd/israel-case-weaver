@@ -959,7 +959,7 @@ After writing a stage, drop a matching \`hint\` node on the canvas via \`add_can
 }
 
 export function renderEnvelopesLine(p: Playbook): string {
-  return `Envelopes (fixed ${p.envelopes.count}): ${p.envelopes.labels.join(" / ")}. Envelopes are SEALED TASK GATES, not document containers. All evidence documents live loose in the box from the start; envelopes only hold a short task / reveal / instruction the player reads when they reach the matching beat in the case. Each envelope has an opening trigger (the case beat that unlocks it). Envelope #0 is the mission briefing (opened first, points the player at Doc 0). The final envelope is the accusation/solution reveal. Tasks short, bold, never reveal the solution. Closing line when language matches: "${p.envelopes.closing_line_he}"`;
+  return `Envelopes (workspace default ≈ ${p.envelopes.count}; the project's APPROVED envelopes roster in CURRENT PROJECT STATE is the source of truth — match that count exactly, typically 5–6, do NOT force the default if the roster differs): ${p.envelopes.labels.join(" / ")}. Envelopes are SEALED TASK GATES, not document containers. All evidence documents live loose in the box from the start; envelopes only hold a short task / reveal / instruction the player reads when they reach the matching beat in the case. Each envelope has an opening trigger (the case beat that unlocks it). Envelope #0 is the mission briefing (opened first, points the player at Doc 0). The final envelope is the accusation/solution reveal. Tasks short, bold, never reveal the solution. Closing line when language matches: "${p.envelopes.closing_line_he}"`;
 }
 
 export function renderEnvelopeDesignTemplate(p: Playbook): string {

@@ -483,8 +483,12 @@ B. **Generating more than one doc** — when the user asks to generate more than
   1. If ANY target docs are missing \`hebrew_content\`, call \`bulk_generate_documents\` ONCE with \`mode: "draft"\` for the full target scope. Capture the returned \`job_id\`.
   2. Then call \`bulk_generate_documents\` AGAIN with \`mode: "both"\` for the same scope, passing \`wait_for_job_id\` = the draft job id from step 1 so the worker chains automatically. If step 1 was skipped (everything already drafted), call \`mode: "both"\` directly without \`wait_for_job_id\`.
   Both calls return immediately — they only QUEUE work. Tell the user explicitly "QUEUED" / "STARTED", never "DONE" / "FINISHED" in that turn. Do NOT loop \`generate_document_assets\` for batch requests. Single-doc generation still uses \`generate_document_assets\`.
-C. **Doc 0 stays per-doc** — Doc 0 (contents inventory) requires special handling and MUST go through \`add_document\`, never \`add_documents\`.
-D. **Post-completion follow-up** — when a bulk run finishes, the system will auto-open the Assistant with a starter prompt asking you to acknowledge results and propose the next step. Reply with a short, concrete acknowledgement (X/Y succeeded, name any failed docs) and one clear next-step recommendation appropriate to the project phase (review, retry failures, move to envelopes/hints/marketing).`;
+C. **Doc 0 + the rest in the SAME turn (CRITICAL — applies to "draft all docs" / "draft everything" / "draft all the documents" / any phrasing that asks for the full document set in one go)** — Doc 0 (contents inventory) requires special handling and MUST go through \`add_document\`. BUT when the user asks you to draft EVERYTHING at once, you MUST chain BOTH calls in the SAME assistant turn, in this exact order, with NO intervening prose round:
+   1. Round 1, call 1: \`add_document\` for Doc 0 (doc_number=0, doc_type="contents checklist").
+   2. Round 1, call 2 (same turn, same tool_calls array if the model supports it; otherwise round 2 immediately after): \`add_documents\` (PLURAL) with EVERY remaining proposed document (Docs 1..N) in a single array.
+   Stopping after Doc 0 to "discuss the rest" or "ask the user about envelopes" or "think about it more" is a CRITICAL FAILURE — the user already approved the proposal, the round budget is small, and stalling causes the per-turn timeout to fire and look like the assistant got stuck. Do NOT pause for confirmation between Doc 0 and the batch. Do NOT ask follow-up questions about envelopes mid-batch — envelopes are a separate workflow (\`update_envelope\` / \`generate_envelopes\`), they are NEVER drafted by \`add_document\` or \`add_documents\`, and confusion about envelopes must NOT block the document batch.
+D. **Post-completion follow-up** — when a bulk run finishes, the system will auto-open the Assistant with a starter prompt asking you to acknowledge results and propose the next step. Reply with a short, concrete acknowledgement (X/Y succeeded, name any failed docs) and one clear next-step recommendation appropriate to the project phase (review, retry failures, move to envelopes/hints/marketing).
+E. **NO ANALYSIS PARALYSIS** — if the user just asked for a batch action ("draft all", "generate all", "do everything") and you have already spent ≥1 reasoning round without emitting any tool call, STOP THINKING and emit the batch tool call (\`add_documents\` or \`bulk_generate_documents\`) immediately on the next round with whatever sensible defaults you have. Looping in reasoning while the round budget burns down is the #1 cause of the "stuck assistant" watchdog firing — the user sees a recovery message and assumes the system is broken. The system prompt and the proposal already give you everything you need; ship the call.`;
 })()}
 
 ${
@@ -3235,6 +3239,18 @@ async function processConversation(
     effectiveModel: model,
     fallback: "none",
   };
+  // One-shot nudge: if the user asked for a batch action but the model
+  // returns prose without calling a batch tool, inject a corrective system
+  // message and retry ONCE before letting it finalize.
+  const lastUserText = String(lastUser?.content ?? "").toLowerCase();
+  const isBatchRequest =
+    /\b(draft|write|create|generate|make|do|build|produce|finish)\b.*\b(all|every|everything|the rest|remaining|whole|complete|full set|next \d+|docs? \d+\s*[-–]\s*\d+)\b/.test(
+      lastUserText,
+    ) ||
+    /\b(all (the )?docs?|all documents|all the documents|כל המסמכים|תכין הכל|הכל)\b/.test(
+      lastUserText,
+    );
+  let nudgedForBatch = false;
   flushProgress("preparing prompt…");
   flushProgress("contacting model…");
   for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -3426,6 +3442,37 @@ async function processConversation(
     }
 
     const finalText = msg.content ?? "";
+
+    // Anti-loop nudge: user asked for a batch action ("draft all docs") but
+    // the model is about to hand back prose without ever calling a batch
+    // tool. Inject ONE corrective system message and let the loop retry
+    // before exhausting rounds and tripping the "stuck assistant" watchdog.
+    if (
+      isBatchRequest &&
+      !nudgedForBatch &&
+      !isFinalRound &&
+      !executedTools.some(
+        (t) => t.name === "add_documents" || t.name === "bulk_generate_documents",
+      )
+    ) {
+      nudgedForBatch = true;
+      console.warn("[assistant-chat] no batch tool called for batch request — nudging", {
+        model,
+        round,
+      });
+      convo.push({
+        role: "assistant",
+        content: finalText || "(thinking)",
+      });
+      convo.push({
+        role: "system",
+        content:
+          "🔴 You are stalling. The user asked for a BATCH action ('draft all', 'generate everything', or similar). On your NEXT turn you MUST emit a tool call — either `add_document` for Doc 0 followed by `add_documents` (plural) with every remaining doc in the SAME turn, or `bulk_generate_documents` for the full scope. Do NOT write more prose, do NOT ask follow-up questions about envelopes (envelopes use a separate workflow), do NOT pause for confirmation. Ship the tool call now with the proposed/approved doc set.",
+      });
+      flushProgress("nudging batch tool…");
+      continue;
+    }
+
     // Defensive: if the model returned no text, no tools, AND no reasoning,
     // something silently failed (e.g. provider quota exhausted but stream
     // returned 200). Surface a clear error instead of an empty bubble.
@@ -3492,7 +3539,36 @@ async function processConversation(
       .eq("id", assistantMessageId);
     return;
   }
-  throw new Error("Too many tool-call rounds");
+  // Round budget exhausted with no final reply. Don't let the placeholder
+  // hang in `in_progress: true` forever (that's what trips the 8-minute
+  // "stuck assistant" watchdog and surfaces a confusing recovery banner).
+  // Write a clean explanatory message immediately.
+  const okCount = executedTools.filter((t) => (t.result as { ok?: boolean })?.ok).length;
+  const errMsg =
+    `⚠️ I ran out of tool-call rounds before finishing this turn (executed ${okCount}/${executedTools.length} actions — those ARE saved). ` +
+    `This usually means the model got stuck in reasoning instead of calling a batch tool. ` +
+    `Reply "continue" to pick up where I left off — for batch work, ask explicitly: "draft all remaining docs in one batch" or "generate everything".`;
+  console.error("[assistant-chat] round budget exhausted", {
+    model,
+    executed: executedTools.length,
+  });
+  await supa
+    .from("chat_messages")
+    .update({
+      content: errMsg,
+      metadata: {
+        model,
+        effective_model: lastFb.effectiveModel,
+        fallback: lastFb.fallback,
+        tools: executedTools,
+        ...(reasoningRounds.length ? { reasoning: reasoningRounds } : {}),
+        partial: true,
+        error: "round_budget_exhausted",
+        in_progress: false,
+      },
+    })
+    .eq("id", assistantMessageId);
+  return;
 }
 
 // ---------- Main handler ----------
@@ -3819,6 +3895,15 @@ Deno.serve(async (req) => {
       effectiveModel: model,
       fallback: "none",
     };
+    const lastUserText = String(lastUser?.content ?? "").toLowerCase();
+    const isBatchRequest =
+      /\b(draft|write|create|generate|make|do|build|produce|finish)\b.*\b(all|every|everything|the rest|remaining|whole|complete|full set|next \d+|docs? \d+\s*[-–]\s*\d+)\b/.test(
+        lastUserText,
+      ) ||
+      /\b(all (the )?docs?|all documents|all the documents|כל המסמכים|תכין הכל|הכל)\b/.test(
+        lastUserText,
+      );
+    let nudgedForBatch = false;
     flushProgress("preparing prompt…");
     flushProgress("contacting model…");
     for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -4032,6 +4117,34 @@ Deno.serve(async (req) => {
       }
 
       const finalText = msg.content ?? "";
+
+      // Anti-loop nudge (mirror of background branch).
+      if (
+        isBatchRequest &&
+        !nudgedForBatch &&
+        !isFinalRound &&
+        !executedTools.some(
+          (t) => t.name === "add_documents" || t.name === "bulk_generate_documents",
+        )
+      ) {
+        nudgedForBatch = true;
+        console.warn("[assistant-chat] no batch tool called for batch request — nudging", {
+          model,
+          round,
+        });
+        convo.push({
+          role: "assistant",
+          content: finalText || "(thinking)",
+        });
+        convo.push({
+          role: "system",
+          content:
+            "🔴 You are stalling. The user asked for a BATCH action ('draft all', 'generate everything', or similar). On your NEXT turn you MUST emit a tool call — either `add_document` for Doc 0 followed by `add_documents` (plural) with every remaining doc in the SAME turn, or `bulk_generate_documents` for the full scope. Do NOT write more prose, do NOT ask follow-up questions about envelopes (envelopes use a separate workflow), do NOT pause for confirmation. Ship the tool call now with the proposed/approved doc set.",
+        });
+        flushProgress("nudging batch tool…");
+        continue;
+      }
+
       const lastOptionsTool = [...executedTools]
         .reverse()
         .find((t) => t.name === "propose_options" && (t.result as { ok?: boolean })?.ok);
@@ -4093,10 +4206,45 @@ Deno.serve(async (req) => {
       );
     }
 
-    return new Response(JSON.stringify({ error: "Too many tool-call rounds" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    // Round budget exhausted with no final reply. Surface a clean message
+    // immediately rather than a generic 500 (which the client renders as a
+    // hard error and the watchdog would later misattribute as "stuck").
+    const okCount = executedTools.filter((t) => (t.result as { ok?: boolean })?.ok).length;
+    const errMsg =
+      `⚠️ I ran out of tool-call rounds before finishing this turn (executed ${okCount}/${executedTools.length} actions — those ARE saved). ` +
+      `This usually means the model got stuck in reasoning instead of calling a batch tool. ` +
+      `Reply "continue" to pick up where I left off — for batch work, ask explicitly: "draft all remaining docs in one batch" or "generate everything".`;
+    console.error("[assistant-chat] round budget exhausted (sync)", {
+      model,
+      executed: executedTools.length,
     });
+    await supa
+      .from("chat_messages")
+      .update({
+        content: errMsg,
+        metadata: {
+          model,
+          effective_model: lastFb.effectiveModel,
+          fallback: lastFb.fallback,
+          tools: executedTools,
+          ...(reasoningRounds.length ? { reasoning: reasoningRounds } : {}),
+          partial: true,
+          error: "round_budget_exhausted",
+          in_progress: false,
+        },
+      })
+      .eq("id", assistantMessageId);
+    return new Response(
+      JSON.stringify({
+        content: errMsg,
+        tools: executedTools,
+        model,
+        messageId: assistantMessageId,
+        partial: true,
+        error: "round_budget_exhausted",
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   } catch (e) {
     console.error("assistant-chat error", e);
     return new Response(
