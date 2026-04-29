@@ -4223,30 +4223,35 @@ Deno.serve(async (req) => {
 
       const finalText = msg.content ?? "";
 
-      // Anti-loop nudge (mirror of background branch).
+      // Anti-loop nudge (mirror of background branch). Up to MAX_NUDGES with
+      // escalating wording — fires even at round 0 to catch reasoning-mode
+      // models that burn rounds on analysis before emitting any tool.
       if (
         isBatchRequest &&
-        !nudgedForBatch &&
+        nudgeCount < MAX_NUDGES &&
         !isFinalRound &&
         !executedTools.some(
           (t) => t.name === "add_documents" || t.name === "bulk_generate_documents",
         )
       ) {
-        nudgedForBatch = true;
+        nudgeCount += 1;
         console.warn("[assistant-chat] no batch tool called for batch request — nudging", {
           model,
           round,
+          nudgeCount,
         });
         convo.push({
           role: "assistant",
           content: finalText || "(thinking)",
         });
+        const escalated = nudgeCount >= 2;
         convo.push({
           role: "system",
-          content:
-            "🔴 You are stalling. The user asked for a BATCH action ('draft all', 'generate everything', or similar). On your NEXT turn you MUST emit a tool call — either `add_document` for Doc 0 followed by `add_documents` (plural) with every remaining doc in the SAME turn, or `bulk_generate_documents` for the full scope. Do NOT write more prose, do NOT ask follow-up questions about envelopes (envelopes use a separate workflow), do NOT pause for confirmation. Ship the tool call now with the proposed/approved doc set.",
+          content: escalated
+            ? "🛑 STOP REASONING. This is your final correction. EMIT THE TOOL CALL NOW. No more prose. No more analysis. No envelope questions (envelopes are a SEPARATE workflow — `update_envelope` / `generate_envelopes` only — and have NOTHING to do with this batch). Call `add_documents` (plural) with every remaining doc in one array, or `bulk_generate_documents` for the full scope. If you find yourself thinking 'should I ask about envelopes?' or 'should I batch in chunks of 10?' — STOP. Ship the call with sensible defaults. The user already approved the proposal."
+            : "🔴 You are stalling. The user asked for a BATCH action ('draft all', 'generate everything', or similar). On your NEXT turn you MUST emit a tool call — either `add_document` for Doc 0 followed by `add_documents` (plural) with every remaining doc in the SAME turn, or `bulk_generate_documents` for the full scope. Do NOT write more prose, do NOT ask follow-up questions about envelopes (envelopes use a separate workflow), do NOT pause for confirmation. Ship the tool call now with the proposed/approved doc set.",
         });
-        flushProgress("nudging batch tool…");
+        flushProgress(`nudging batch tool (${nudgeCount}/${MAX_NUDGES})…`);
         continue;
       }
 
