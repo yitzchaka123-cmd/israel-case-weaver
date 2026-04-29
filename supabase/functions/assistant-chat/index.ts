@@ -3361,6 +3361,28 @@ async function processConversation(
     }
 
     const finalText = msg.content ?? "";
+    // Defensive: if the model returned no text, no tools, AND no reasoning,
+    // something silently failed (e.g. provider quota exhausted but stream
+    // returned 200). Surface a clear error instead of an empty bubble.
+    if (!finalText && executedTools.length === 0 && reasoningRounds.length === 0) {
+      const errMsg =
+        "⚠️ The AI model returned an empty response. This usually means the provider's quota was exceeded, the request was filtered, or hit a token limit. Check your OpenAI/Gemini billing or switch models in Settings.";
+      console.error("[assistant-chat] empty model response", { model, effectiveModel: lastFb.effectiveModel });
+      await supa
+        .from("chat_messages")
+        .update({
+          content: errMsg,
+          metadata: {
+            model,
+            effective_model: lastFb.effectiveModel,
+            fallback: lastFb.fallback,
+            error: "empty_model_response",
+            in_progress: false,
+          },
+        })
+        .eq("id", assistantMessageId);
+      return;
+    }
     const lastOptionsTool = [...executedTools]
       .reverse()
       .find((t) => t.name === "propose_options" && (t.result as { ok?: boolean })?.ok);
