@@ -569,6 +569,27 @@ For envelope nodes specifically, set the node "id" to "env_<number>" matching it
     // Clear the "building" indicator now that the run has fully landed.
     await supa.from("projects").update({ logic_flow_building_at: null }).eq("id", projectId);
 
+    // Zero-node guard: the run "completed" but the model produced nothing
+    // usable (empty stream, partial JSON, or silent provider failure). Surface
+    // a visible ⚠️ in chat so the user isn't left staring at an empty board
+    // wondering what happened — they'd otherwise only see the spinner go away
+    // with no nodes drawn.
+    if (insertedNodeCount === 0) {
+      const diag = streamingErr
+        ? `stream status=${streamingErr.status} ${streamingErr.text.slice(0, 200)}`
+        : "model returned no nodes";
+      console.error(`[generate-logic-flow] ZERO nodes inserted (model=${model}): ${diag}`);
+      await supa.from("chat_messages").insert({
+        project_id: projectId,
+        role: "assistant",
+        content:
+          "⚠️ The Logic Flow generation finished without producing any nodes (model: " +
+          model +
+          "). This usually means the planning model hit a billing/quota issue or returned an empty response. Open Canvas → Logic Flow and click **Generate Logic Flow** to retry, or switch the planning model in Settings → AI provider routing.",
+        metadata: { error: "logic_flow_zero_nodes", model, diagnostic: diag },
+      });
+    }
+
     return new Response(JSON.stringify({
       ok: true,
       summary: useApproved ? approvedSummary : (parsed?.summary ?? ""),
