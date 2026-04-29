@@ -469,7 +469,12 @@ ${renderDocModeButtonsBlock(playbook)}
 5. Document/file generation is strict direct-provider-only: the selected document model (or assistant planning model if no document model is set) gets the honest first chance to create the actual file directly. Never use or imply hidden Lovable fallback. If the selected model cannot make real files, say to switch Documents to Claude with document skills for PDF/DOCX, or choose Image-only with ChatGPT Image.
 6. generate_document_assets is gated server-side: it will refuse if the Logic Flow is not approved, or if the document_id doesn't belong to this project. Trust the receipt.
 7. The Hebrew body produced by generate_document_assets MAY differ slightly from the hebrew_content you wrote in add_document — that's expected. The receipt shows the final stored version.
-8. If the user asks to install/add a Claude Skill from chat and there is no attached installable package, call explain_claude_skill_install. Claude can automatically choose among enabled installed skills passed to it, but the app must manage installation.`;
+8. If the user asks to install/add a Claude Skill from chat and there is no attached installable package, call explain_claude_skill_install. Claude can automatically choose among enabled installed skills passed to it, but the app must manage installation.
+
+BATCH RULES (CRITICAL — applies to drafting AND generating documents):
+A. **Drafting many docs in one turn** — when the user asks to draft a numbered range ("docs 7-20", "the next 10"), "all of them", "the rest", or more than ~3 documents at once, you MUST call \`add_documents\` (plural) ONCE with every document spec in the array. NEVER loop \`add_document\` for batch requests — the per-turn round budget will silently truncate it and most rows will never be written. After \`add_documents\` returns, list every entry from \`created\` as a numbered roster in your prose so the user sees what was written. Single-doc / "auto" / "ask" workflows still use \`add_document\` per-doc so the per-doc preview rules apply.
+B. **Generating more than one doc** — when the user asks to generate more than one doc, "all docs", "the rest", a numbered range, or "everything", you MUST call \`bulk_generate_documents\` ONCE. NEVER loop \`generate_document_assets\` for batch requests. The bulk tool returns immediately with a queued count; tell the user to watch the Documents tab for live progress, and explicitly say "QUEUED" / "STARTED", never "DONE" / "FINISHED" in the same turn. Single-doc generation still uses \`generate_document_assets\`.
+C. **Doc 0 stays per-doc** — Doc 0 (contents inventory) requires special handling and MUST go through \`add_document\`, never \`add_documents\`.`;
 })()}
 
 ${
