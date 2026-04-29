@@ -1976,7 +1976,107 @@ async function executeTool(
       }
       return { ok: true, message: `Document created: ${data.title} (#${docNumber})`, id: data.id };
     }
-    if (name === "propose_document_set") {
+    if (name === "add_documents") {
+      // Batch insert. Reuses the same gates as add_document, then loops the
+      // insert path server-side so the assistant only spends ONE round
+      // regardless of how many documents are being drafted.
+      const rawDocs = Array.isArray((args as { documents?: unknown[] }).documents)
+        ? (args as { documents: unknown[] })
+        .documents
+        : [];
+      if (rawDocs.length === 0) return { ok: false, message: "add_documents needs at least one document" };
+      const { data: proj } = await supa
+        .from("projects")
+        .select("solution_summary, logic_approved_at")
+        .eq("id", projectId)
+        .single();
+      if (!proj?.solution_summary || !proj?.logic_approved_at) {
+        return {
+          ok: false,
+          message:
+            "Cannot create documents yet — the Logic Flow has not been approved. Tell the user to open Canvas → Logic Flow, generate it, review, then click 'Approve logic'.",
+        };
+      }
+      const { count: finalDocCount } = await supa
+        .from("canvas_nodes")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", projectId)
+        .eq("board", "final")
+        .eq("node_type", "document");
+      if (!finalDocCount) {
+        return {
+          ok: false,
+          message:
+            "Cannot create final documents yet — the Final Flow is not mapped. Call create_final_documents_map first, then retry add_documents.",
+        };
+      }
+      // Pre-fetch existing doc_numbers to auto-assign without collision.
+      const { data: existingDocs } = await supa
+        .from("documents")
+        .select("doc_number")
+        .eq("project_id", projectId);
+      const usedNumbers = new Set<number>(
+        (existingDocs ?? []).map((d: any) => Number(d.doc_number)).filter((n: number) => Number.isFinite(n)),
+      );
+      let nextAuto = 1;
+      const pickNumber = (requested: unknown): number => {
+        const n = Number(requested);
+        if (Number.isFinite(n) && n >= 0 && !usedNumbers.has(n)) {
+          usedNumbers.add(n);
+          return n;
+        }
+        while (usedNumbers.has(nextAuto)) nextAuto += 1;
+        usedNumbers.add(nextAuto);
+        return nextAuto;
+      };
+      const created: Array<{ id: string; title: string; doc_number: number }> = [];
+      const failed: Array<{ title: string; reason: string }> = [];
+      for (const raw of rawDocs) {
+        const d = (raw ?? {}) as Record<string, unknown>;
+        const title = String(d.title ?? "").trim();
+        if (!title) {
+          failed.push({ title: "(missing)", reason: "title is required" });
+          continue;
+        }
+        const docNumber = pickNumber(d.doc_number);
+        const finalNodeId = typeof d.final_node_id === "string" ? d.final_node_id : null;
+        const linkedNodeIds = finalNodeId ? [finalNodeId] : undefined;
+        const insertPayload: Record<string, unknown> = withMessage({
+          project_id: projectId,
+          title,
+          doc_number: docNumber,
+          doc_type: typeof d.doc_type === "string" ? d.doc_type : null,
+          print_size: typeof d.print_size === "string" ? d.print_size : null,
+          design_instructions: typeof d.design_instructions === "string" ? d.design_instructions : null,
+          hebrew_content: typeof d.hebrew_content === "string" ? d.hebrew_content : null,
+          envelope_number: typeof d.envelope_number === "number" ? d.envelope_number : null,
+          ...(linkedNodeIds ? { linked_node_ids: linkedNodeIds } : {}),
+        });
+        const { data: row, error } = await supa
+          .from("documents")
+          .insert(insertPayload)
+          .select("id, title, doc_number")
+          .single();
+        if (error || !row) {
+          failed.push({ title, reason: error?.message ?? "insert failed" });
+          continue;
+        }
+        created.push({ id: row.id, title: row.title, doc_number: row.doc_number ?? docNumber });
+        if (finalNodeId) {
+          await supa
+            .from("canvas_nodes")
+            .update({ data: { documentId: row.id, generationStatus: "draft row created" } })
+            .eq("id", finalNodeId)
+            .eq("project_id", projectId);
+        }
+      }
+      return {
+        ok: created.length > 0,
+        message: `Created ${created.length} document${created.length === 1 ? "" : "s"}${failed.length ? `; ${failed.length} failed` : ""}.`,
+        created,
+        failed,
+      };
+    }
       const proposalDocs = Array.isArray((args as { documents?: unknown[] }).documents)
         ? (args as { documents: unknown[] }).documents
         : [];
