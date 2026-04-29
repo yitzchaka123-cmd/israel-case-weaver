@@ -1172,7 +1172,91 @@ const BASE_TOOLS = [
   {
     type: "function",
     function: {
-      name: "explain_claude_skill_install",
+      name: "add_documents",
+      description:
+        "BATCH version of add_document — create MANY document rows in a single tool call. USE THIS (not a loop of add_document) whenever the user asks to draft a range ('docs 7-20'), 'all of them', 'the rest', or more than ~3 documents at once. Same per-item shape as add_document. Server-side gated identically: refuses unless the Logic Flow is approved AND the Final Flow exists. Returns { ok, created: [{id,title,doc_number}], failed: [{title,reason}] }. After it returns, list every created doc as a numbered roster in your prose.",
+      parameters: {
+        type: "object",
+        properties: {
+          documents: {
+            type: "array",
+            minItems: 1,
+            maxItems: 60,
+            items: {
+              type: "object",
+              properties: {
+                title: { type: "string" },
+                doc_type: { type: "string" },
+                doc_number: { type: "number" },
+                print_size: { type: "string" },
+                design_instructions: { type: "string" },
+                hebrew_content: { type: "string" },
+                envelope_number: {
+                  type: "number",
+                  description:
+                    "DEPRECATED for distribution. Leave null in nearly all cases. Set ONLY if the user explicitly wants this doc physically inside a sealed task envelope.",
+                },
+                final_node_id: {
+                  type: "string",
+                  description: "Optional Final board document-node id this row is created from.",
+                },
+              },
+              required: ["title"],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["documents"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "bulk_generate_documents",
+      description:
+        "BATCH version of generate_document_assets — kick off generation for MANY existing document rows as a single background job. USE THIS (not a loop of generate_document_assets) whenever the user asks to generate more than 1 doc, 'all docs', 'the rest', a numbered range, or 'everything'. Returns immediately with a job receipt; the Documents tab shows live progress. Tell the user to watch the Documents tab — do NOT claim docs are finished, only that generation is QUEUED/STARTED.",
+      parameters: {
+        type: "object",
+        properties: {
+          scope: {
+            type: "string",
+            enum: ["all_remaining", "from_doc_number", "ids"],
+            description:
+              "'all_remaining' = every non-final doc (skips Doc 0). 'from_doc_number' = doc_number >= from_doc_number, optionally <= until_doc_number. 'ids' = exact list in document_ids.",
+          },
+          mode: {
+            type: "string",
+            enum: ["draft", "image", "document", "both", "image_to_pdf"],
+            description:
+              "'draft' = body text only. 'image' = visual prop only. 'document' = PDF/DOCX/etc only. 'both' = image + document. 'image_to_pdf' = wrap each existing image into a 1-page PDF.",
+          },
+          document_format: {
+            type: "string",
+            enum: ["pdf", "docx", "pptx", "xlsx"],
+            description: "File format when mode is document/both. Default pdf.",
+          },
+          from_doc_number: {
+            type: "number",
+            description: "Required when scope='from_doc_number'. Inclusive lower bound.",
+          },
+          until_doc_number: {
+            type: "number",
+            description: "Optional upper bound when scope='from_doc_number'.",
+          },
+          document_ids: {
+            type: "array",
+            items: { type: "string" },
+            description: "Required when scope='ids'. Document ids to generate.",
+          },
+        },
+        required: ["scope", "mode"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
       description:
         "Use when the user asks to install/add/use a new Claude Skill from chat but no installable skill package/file is available in the current message. This records a clear assistant receipt explaining that a Claude Skill package must be uploaded/installed from Settings or attached for installation.",
       parameters: {
