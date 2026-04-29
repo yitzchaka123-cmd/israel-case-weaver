@@ -2085,6 +2085,7 @@ async function executeTool(
         failed,
       };
     }
+    if (name === "propose_document_set") {
       const proposalDocs = Array.isArray((args as { documents?: unknown[] }).documents)
         ? (args as { documents: unknown[] }).documents
         : [];
