@@ -308,7 +308,7 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="ghost" onClick={() => setBulkOpen(false)}>Cancel</Button>
-              <Button onClick={launchBulk} className="gap-2"><Wand2 className="h-4 w-4" /> Start bulk run</Button>
+              <Button onClick={() => launchBulk()} className="gap-2"><Wand2 className="h-4 w-4" /> Start bulk run</Button>
             </div>
           </div>
         </DialogContent>
