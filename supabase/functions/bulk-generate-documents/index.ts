@@ -53,6 +53,16 @@ interface BulkRequest {
   concurrency?: number;
   waitForJobId?: string | null;
   /**
+   * When true (default), docs that already have content for the chosen mode
+   * are skipped:
+   *   - draft     → skip if hebrew_content is non-empty
+   *   - image     → skip if generated_asset_url is set
+   *   - document  → skip if generated_document_url or generated_pdf_url is set
+   *   - both      → skip if BOTH image and file exist
+   * When false, every doc in scope is regenerated (overwrite).
+   */
+  skipExisting?: boolean;
+  /**
    * When true, after the run finishes the worker inserts a
    * "bulk_generation_done" notification with a starter_prompt so the
    * assistant follow-up flow kicks in. Default true.
