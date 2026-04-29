@@ -145,9 +145,9 @@ export const PLAYBOOK_DEFAULTS: Playbook = {
     count: 5,
     labels: ["Open First", "1", "2", "3", "4"],
     closing_line_he:
-      "פתחו את המעטפה הבאה רק אם הגעתם לרגע המתאים בחקירה. כל המסמכים כבר בקופסה — המשיכו לחקור איתם.",
+      "פתחו את המעטפה הבאה רק לאחר שסיימתם את המשימה במעטפה זו. כל המסמכים כבר בקופסה — המשיכו לחקור איתם.",
     design_brief_template: `GOAL
-A single sealed kraft-paper envelope, photographed flat on a neutral background. This is an in-world TASK envelope — sealed shut so the player only opens it when they reach a specific beat in the case. The envelope must look heavy and important; what's inside is an instruction, a reveal, or a task — never the next batch of evidence (all evidence documents live loose in the box from the start).
+A single sealed kraft-paper envelope, photographed flat on a neutral background. This is an in-world TASK envelope — sealed shut so the player only opens it when they finish the previous envelope's task. The envelope must look heavy and important; what's inside is an instruction, a reveal, or a task — never the next batch of evidence (all evidence documents live loose in the box from the start).
 
 OUTPUT FORMAT
 Single image, portrait orientation, ~2480×3508 px (A4 at 300 DPI). Flat archival-style scan: no hands, no desk, no shadows from a photographer. The envelope fills ~70% of the frame, centered, with a small gutter of clean off-white margin around it.
@@ -160,15 +160,24 @@ VISUAL STYLE
 - Optional smaller marks: routing initials in pencil, a small punched hole, a string-and-button closure, an ink fingerprint smudge.
 
 LAYOUT
-1. Center: large Hebrew label (RTL) — the envelope's name.
-2. Below or beside it: envelope number, framed.
-3. Diagonal classification stamp across the upper-third.
-4. Bottom-right: small reference code (case id + envelope #).
-5. Wax seal centered over the flap line.
+1. Top zone: company logo lockup (see BRANDING section). Choose top-center, top-left, or top-right — whichever balances the composition best for this envelope's stamps and label. Use the same lockup position consistently across all envelopes in the box.
+2. Center: large Hebrew label (RTL) — the envelope's name.
+3. Below or beside it: envelope number, framed.
+4. Diagonal classification stamp across the upper-third (positioned so it does NOT collide with the logo).
+5. Bottom-right: small reference code (case id + envelope #).
+6. Wax seal centered over the flap line.
+7. Bottom-center / bottom-edge: short opening-trigger line printed in small caps stating "Open only after you have completed the task inside envelope #N − 1." (Use the game language; for envelope #0 use the equivalent of "Open first.")
 
 TYPOGRAPHY
 - Bold formal Hebrew label, era-correct (typewriter, rubber-stamp, or hand-lettered depending on the case).
 - All Hebrew text grammatically correct, RTL, no gibberish, no Latin filler.
+
+BRANDING (mandatory when a company logo is supplied)
+- Place the company logo cleanly at the top of the envelope (top-center, top-left, or top-right — pick the spot that best frames this envelope and keep it consistent across the set).
+- Logo height ≈ 8–12% of the envelope's longer side. Add small whitespace padding around it so it never touches the wax seal or the diagonal stamp.
+- The logo must look printed onto the envelope as part of its design (matte ink, slight period-appropriate registration drift) — NOT pasted on as a sticker, NOT floating, NOT a watermark. No drop shadows.
+- Render the company name in small clean type beneath or beside the logo if a name is supplied. Do NOT invent a different brand mark.
+- If no logo is supplied, omit the lockup entirely — never substitute a placeholder.
 
 AUTHENTICITY
 Looks like an actual archival envelope from the case era — NOT a modern Canva mock-up. Period-correct paper, ink, and stamp shapes. Never invent real institutional emblems or signatures.`,
