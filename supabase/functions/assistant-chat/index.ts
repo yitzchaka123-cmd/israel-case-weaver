@@ -3249,11 +3249,13 @@ async function processConversation(
             : "Lovable AI";
       console.error(`${provider} error`, live.status, live.errorText);
       let errMsg: string;
+      const detail = (live.errorText ?? "").slice(0, 220);
       if (live.status === 429) errMsg = `${provider} rate limit — try again in a moment.`;
-      else if (live.status === 402) errMsg = `${provider} credits/key issue (status 402).`;
+      else if (live.status === 402)
+        errMsg = `${provider} quota exceeded — top up your account or switch to a different model in Settings.${detail ? `\n\nDetails: ${detail}` : ""}`;
       else if (live.status === 401)
         errMsg = `${provider} authentication failed — check the API key in Settings → API keys.`;
-      else errMsg = `${provider} error (status ${live.status})`;
+      else errMsg = `${provider} error (status ${live.status})${detail ? `: ${detail}` : ""}`;
 
       if (executedTools.length > 0) {
         const okCount = executedTools.filter((t) => (t.result as { ok?: boolean })?.ok).length;
