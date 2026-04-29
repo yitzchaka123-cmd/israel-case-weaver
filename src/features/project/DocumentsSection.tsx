@@ -107,8 +107,25 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
   const [bulkMode, setBulkMode] = useState<"draft" | "image" | "document" | "both">("both");
   const [bulkScope, setBulkScope] = useState<"all_remaining" | "ids">("all_remaining");
   const [bulkFormat, setBulkFormat] = useState<"pdf" | "docx" | "pptx" | "xlsx">("pdf");
-  const [bulkConcurrency, setBulkConcurrency] = useState<number>(2);
+  const [bulkConcurrency, setBulkConcurrency] = useState<number>(3);
+  const [bulkSkipExisting, setBulkSkipExisting] = useState<boolean>(true);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
+
+  // Pre-flight count: how many docs in scope already have generated content
+  // for the chosen mode. Used to warn the user before they accidentally redo
+  // (and re-spend credits on) work that's already done.
+  const alreadyGeneratedCount = (() => {
+    if (!data) return 0;
+    const docs = data.filter((d) => (d.doc_number ?? 0) > 0); // skip Doc 0
+    return docs.filter((d) => {
+      if (bulkMode === "draft") return !!(d.hebrew_content && d.hebrew_content.trim().length > 0);
+      if (bulkMode === "image") return !!d.generated_asset_url;
+      if (bulkMode === "document") return !!(d.generated_document_url || d.generated_pdf_url);
+      // both
+      return !!d.generated_asset_url && !!(d.generated_document_url || d.generated_pdf_url);
+    }).length;
+  })();
+  const totalEligible = (data?.filter((d) => (d.doc_number ?? 0) > 0 && d.status !== "final").length) ?? 0;
 
   const { data: activeJob, refetch: refetchJob } = useQuery({
     queryKey: ["bulk-job", projectId, activeJobId],
