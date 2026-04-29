@@ -2190,6 +2190,30 @@ async function executeTool(
       };
     }
     if (name === "generate_logic_flow") {
+      // Single-flight guard: if a build is already in progress (started in
+      // the last 5 minutes), do not kick off a second one. This prevents
+      // parallel runs that race on logic_version_id and wipe each other's
+      // writes (which is exactly how the user got a stuck "Planning…"
+      // spinner with zero nodes).
+      const { data: curProj } = await supa
+        .from("projects")
+        .select("logic_flow_building_at")
+        .eq("id", projectId)
+        .maybeSingle();
+      const buildingAt = (curProj as { logic_flow_building_at?: string | null } | null)
+        ?.logic_flow_building_at;
+      if (buildingAt) {
+        const ageMs = Date.now() - new Date(buildingAt).getTime();
+        if (ageMs < 5 * 60 * 1000) {
+          return {
+            ok: true,
+            message:
+              "Logic Flow generation is ALREADY in progress (started " +
+              Math.round(ageMs / 1000) +
+              "s ago). Tell the user to open Canvas → Logic Flow to watch the live build settle. Do NOT call generate_logic_flow again this turn.",
+          };
+        }
+      }
       // generate-logic-flow can take 2-3 minutes (heavy planning model call),
       // which exceeds the subrequest timeout when awaited synchronously from
       // here. Kick it off as a background task and tell the assistant to
