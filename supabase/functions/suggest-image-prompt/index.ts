@@ -257,6 +257,7 @@ Require the brief to place the logo at the top of the envelope (top-center, top-
         globalAssistantInstructions
           ? `\nWORKSPACE STYLE GUIDE (apply to every brief unless the per-doc user instruction overrides it):\n${globalAssistantInstructions}`
           : "",
+        isEnv && envelopeBrandingBlock ? envelopeBrandingBlock : "",
       ].filter(Boolean).join("\n");
 
       // Put USER STEERING at the TOP of the user message so it's the first thing the model reads.
