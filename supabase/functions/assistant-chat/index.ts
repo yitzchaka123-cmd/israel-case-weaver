@@ -3539,7 +3539,36 @@ async function processConversation(
       .eq("id", assistantMessageId);
     return;
   }
-  throw new Error("Too many tool-call rounds");
+  // Round budget exhausted with no final reply. Don't let the placeholder
+  // hang in `in_progress: true` forever (that's what trips the 8-minute
+  // "stuck assistant" watchdog and surfaces a confusing recovery banner).
+  // Write a clean explanatory message immediately.
+  const okCount = executedTools.filter((t) => (t.result as { ok?: boolean })?.ok).length;
+  const errMsg =
+    `⚠️ I ran out of tool-call rounds before finishing this turn (executed ${okCount}/${executedTools.length} actions — those ARE saved). ` +
+    `This usually means the model got stuck in reasoning instead of calling a batch tool. ` +
+    `Reply "continue" to pick up where I left off — for batch work, ask explicitly: "draft all remaining docs in one batch" or "generate everything".`;
+  console.error("[assistant-chat] round budget exhausted", {
+    model,
+    executed: executedTools.length,
+  });
+  await supa
+    .from("chat_messages")
+    .update({
+      content: errMsg,
+      metadata: {
+        model,
+        effective_model: lastFb.effectiveModel,
+        fallback: lastFb.fallback,
+        tools: executedTools,
+        ...(reasoningRounds.length ? { reasoning: reasoningRounds } : {}),
+        partial: true,
+        error: "round_budget_exhausted",
+        in_progress: false,
+      },
+    })
+    .eq("id", assistantMessageId);
+  return;
 }
 
 // ---------- Main handler ----------
