@@ -3250,7 +3250,49 @@ async function processConversation(
     /\b(all (the )?docs?|all documents|all the documents|כל המסמכים|תכין הכל|הכל)\b/.test(
       lastUserText,
     );
-  let nudgedForBatch = false;
+  let nudgeCount = 0;
+  const MAX_NUDGES = 2;
+  // PRE-FLIGHT: when the user asks for a batch document action and the proposal
+  // is approved but the Final Flow has zero nodes, refresh it server-side BEFORE
+  // the model gets its first round. The model used to burn an entire reasoning
+  // round just deciding "should I call create_final_documents_map?" — pre-flighting
+  // collapses that decision tree and frees the budget for the actual add_documents
+  // batch the user asked for.
+  if (isBatchRequest) {
+    try {
+      const proposalStatus = String(
+        (project as { proposed_document_set_status?: string }).proposed_document_set_status ?? "none",
+      );
+      const proposalApproved = proposalStatus === "approved" || proposalStatus === "bypassed";
+      if (proposalApproved) {
+        const { count: finalNodeCount } = await supa
+          .from("canvas_nodes")
+          .select("id", { count: "exact", head: true })
+          .eq("project_id", projectId)
+          .eq("board", "final");
+        if ((finalNodeCount ?? 0) === 0) {
+          flushProgress("refreshing Final Flow before batch…");
+          const preflight = await executeTool(
+            supa,
+            projectId,
+            "create_final_documents_map",
+            { replace: true },
+            toolMessageId,
+            playbook,
+          );
+          if ((preflight as { ok?: boolean })?.ok) {
+            convo.push({
+              role: "system",
+              content:
+                "🟢 Pre-flight: I just refreshed the Final Flow for you. Skip any 'should I create the Final Flow?' reasoning — it's done. Go DIRECTLY to the batch tool the user asked for (`add_documents` for drafts, `bulk_generate_documents` for assets). Do not call `create_final_documents_map` again this turn.",
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("batch pre-flight failed (non-fatal)", e);
+    }
+  }
   flushProgress("preparing prompt…");
   flushProgress("contacting model…");
   for (let round = 0; round < MAX_ROUNDS; round++) {
