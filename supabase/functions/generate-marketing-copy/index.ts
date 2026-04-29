@@ -23,7 +23,7 @@ const PLANNING_MODEL: Record<string, string> = {
   "gemini-flash": "google/gemini-2.5-flash",
   "gemini-flash-lite": "google/gemini-2.5-flash-lite",
   openai: "openai/gpt-5",
-  "openai-5.4": "openai/gpt-5.4",
+  "openai-5.4": "openai/gpt-5.2",
   "openai-5.2": "openai/gpt-5.2",
   "openai-mini": "openai/gpt-5-mini",
   claude: "anthropic/claude-sonnet-4-5",
