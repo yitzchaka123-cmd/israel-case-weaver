@@ -3250,7 +3250,49 @@ async function processConversation(
     /\b(all (the )?docs?|all documents|all the documents|כל המסמכים|תכין הכל|הכל)\b/.test(
       lastUserText,
     );
-  let nudgedForBatch = false;
+  let nudgeCount = 0;
+  const MAX_NUDGES = 2;
+  // PRE-FLIGHT: when the user asks for a batch document action and the proposal
+  // is approved but the Final Flow has zero nodes, refresh it server-side BEFORE
+  // the model gets its first round. The model used to burn an entire reasoning
+  // round just deciding "should I call create_final_documents_map?" — pre-flighting
+  // collapses that decision tree and frees the budget for the actual add_documents
+  // batch the user asked for.
+  if (isBatchRequest) {
+    try {
+      const proposalStatus = String(
+        (project as { proposed_document_set_status?: string }).proposed_document_set_status ?? "none",
+      );
+      const proposalApproved = proposalStatus === "approved" || proposalStatus === "bypassed";
+      if (proposalApproved) {
+        const { count: finalNodeCount } = await supa
+          .from("canvas_nodes")
+          .select("id", { count: "exact", head: true })
+          .eq("project_id", projectId)
+          .eq("board", "final");
+        if ((finalNodeCount ?? 0) === 0) {
+          flushProgress("refreshing Final Flow before batch…");
+          const preflight = await executeTool(
+            supa,
+            projectId,
+            "create_final_documents_map",
+            { replace: true },
+            toolMessageId,
+            playbook,
+          );
+          if ((preflight as { ok?: boolean })?.ok) {
+            convo.push({
+              role: "system",
+              content:
+                "🟢 Pre-flight: I just refreshed the Final Flow for you. Skip any 'should I create the Final Flow?' reasoning — it's done. Go DIRECTLY to the batch tool the user asked for (`add_documents` for drafts, `bulk_generate_documents` for assets). Do not call `create_final_documents_map` again this turn.",
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("batch pre-flight failed (non-fatal)", e);
+    }
+  }
   flushProgress("preparing prompt…");
   flushProgress("contacting model…");
   for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -3445,31 +3487,37 @@ async function processConversation(
 
     // Anti-loop nudge: user asked for a batch action ("draft all docs") but
     // the model is about to hand back prose without ever calling a batch
-    // tool. Inject ONE corrective system message and let the loop retry
-    // before exhausting rounds and tripping the "stuck assistant" watchdog.
+    // tool. We allow up to MAX_NUDGES corrections with escalating wording.
+    // Critically, we trigger this even on round 0 — the trace evidence shows
+    // models like Gemini and GPT-5 (thinking mode) burn rounds 0–1 on pure
+    // reasoning ("should I call X? what about Y?") before ever emitting a
+    // tool. Catching it at round 0 saves the entire turn.
     if (
       isBatchRequest &&
-      !nudgedForBatch &&
+      nudgeCount < MAX_NUDGES &&
       !isFinalRound &&
       !executedTools.some(
         (t) => t.name === "add_documents" || t.name === "bulk_generate_documents",
       )
     ) {
-      nudgedForBatch = true;
+      nudgeCount += 1;
       console.warn("[assistant-chat] no batch tool called for batch request — nudging", {
         model,
         round,
+        nudgeCount,
       });
       convo.push({
         role: "assistant",
         content: finalText || "(thinking)",
       });
+      const escalated = nudgeCount >= 2;
       convo.push({
         role: "system",
-        content:
-          "🔴 You are stalling. The user asked for a BATCH action ('draft all', 'generate everything', or similar). On your NEXT turn you MUST emit a tool call — either `add_document` for Doc 0 followed by `add_documents` (plural) with every remaining doc in the SAME turn, or `bulk_generate_documents` for the full scope. Do NOT write more prose, do NOT ask follow-up questions about envelopes (envelopes use a separate workflow), do NOT pause for confirmation. Ship the tool call now with the proposed/approved doc set.",
+        content: escalated
+          ? "🛑 STOP REASONING. This is your final correction. EMIT THE TOOL CALL NOW. No more prose. No more analysis. No envelope questions (envelopes are a SEPARATE workflow — `update_envelope` / `generate_envelopes` only — and have NOTHING to do with this batch). Call `add_documents` (plural) with every remaining doc in one array, or `bulk_generate_documents` for the full scope. If you find yourself thinking 'should I ask about envelopes?' or 'should I batch in chunks of 10?' — STOP. Ship the call with sensible defaults. The user already approved the proposal."
+          : "🔴 You are stalling. The user asked for a BATCH action ('draft all', 'generate everything', or similar). On your NEXT turn you MUST emit a tool call — either `add_document` for Doc 0 followed by `add_documents` (plural) with every remaining doc in the SAME turn, or `bulk_generate_documents` for the full scope. Do NOT write more prose, do NOT ask follow-up questions about envelopes (envelopes use a separate workflow), do NOT pause for confirmation. Ship the tool call now with the proposed/approved doc set.",
       });
-      flushProgress("nudging batch tool…");
+      flushProgress(`nudging batch tool (${nudgeCount}/${MAX_NUDGES})…`);
       continue;
     }
 
@@ -3597,6 +3645,24 @@ Deno.serve(async (req) => {
     // BACKGROUND MODE — record a run row, kick off the work, return runId.
     if (mode === "background") {
       const callerUserId = await getUserIdFromAuth(req);
+      // Defensive sweep: close any stale runs from prior crashes/Worker kills
+      // before starting a new one. Without this, the frontend "stuck assistant"
+      // watchdog can latch onto an old ghost run and show a recovery banner
+      // even when the current turn finishes cleanly.
+      try {
+        const cutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+        await supa
+          .from("assistant_runs")
+          .update({
+            status: "error",
+            error: "auto-closed: stale run (>15 min in running state)",
+            finished_at: new Date().toISOString(),
+          })
+          .eq("status", "running")
+          .lt("started_at", cutoff);
+      } catch (e) {
+        console.warn("stale assistant_runs sweep failed (non-fatal)", e);
+      }
       const { data: runRow, error: runErr } = await supa
         .from("assistant_runs")
         .insert({ project_id: projectId, user_id: callerUserId, status: "running" })
@@ -3903,7 +3969,46 @@ Deno.serve(async (req) => {
       /\b(all (the )?docs?|all documents|all the documents|כל המסמכים|תכין הכל|הכל)\b/.test(
         lastUserText,
       );
-    let nudgedForBatch = false;
+    let nudgeCount = 0;
+    const MAX_NUDGES = 2;
+    // PRE-FLIGHT (mirror of background branch): refresh Final Flow before the
+    // model's first round when batch is requested + proposal approved + zero
+    // final-board nodes. Saves ~1 round of "should I call this?" reasoning.
+    if (isBatchRequest) {
+      try {
+        const proposalStatus = String(
+          (project as { proposed_document_set_status?: string }).proposed_document_set_status ?? "none",
+        );
+        const proposalApproved = proposalStatus === "approved" || proposalStatus === "bypassed";
+        if (proposalApproved) {
+          const { count: finalNodeCount } = await supa
+            .from("canvas_nodes")
+            .select("id", { count: "exact", head: true })
+            .eq("project_id", projectId)
+            .eq("board", "final");
+          if ((finalNodeCount ?? 0) === 0) {
+            flushProgress("refreshing Final Flow before batch…");
+            const preflight = await executeTool(
+              supa,
+              projectId,
+              "create_final_documents_map",
+              { replace: true },
+              toolMessageId,
+              playbook,
+            );
+            if ((preflight as { ok?: boolean })?.ok) {
+              convo.push({
+                role: "system",
+                content:
+                  "🟢 Pre-flight: I just refreshed the Final Flow for you. Skip any 'should I create the Final Flow?' reasoning — it's done. Go DIRECTLY to the batch tool the user asked for (`add_documents` for drafts, `bulk_generate_documents` for assets). Do not call `create_final_documents_map` again this turn.",
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("batch pre-flight failed (non-fatal)", e);
+      }
+    }
     flushProgress("preparing prompt…");
     flushProgress("contacting model…");
     for (let round = 0; round < MAX_ROUNDS; round++) {
@@ -4118,30 +4223,35 @@ Deno.serve(async (req) => {
 
       const finalText = msg.content ?? "";
 
-      // Anti-loop nudge (mirror of background branch).
+      // Anti-loop nudge (mirror of background branch). Up to MAX_NUDGES with
+      // escalating wording — fires even at round 0 to catch reasoning-mode
+      // models that burn rounds on analysis before emitting any tool.
       if (
         isBatchRequest &&
-        !nudgedForBatch &&
+        nudgeCount < MAX_NUDGES &&
         !isFinalRound &&
         !executedTools.some(
           (t) => t.name === "add_documents" || t.name === "bulk_generate_documents",
         )
       ) {
-        nudgedForBatch = true;
+        nudgeCount += 1;
         console.warn("[assistant-chat] no batch tool called for batch request — nudging", {
           model,
           round,
+          nudgeCount,
         });
         convo.push({
           role: "assistant",
           content: finalText || "(thinking)",
         });
+        const escalated = nudgeCount >= 2;
         convo.push({
           role: "system",
-          content:
-            "🔴 You are stalling. The user asked for a BATCH action ('draft all', 'generate everything', or similar). On your NEXT turn you MUST emit a tool call — either `add_document` for Doc 0 followed by `add_documents` (plural) with every remaining doc in the SAME turn, or `bulk_generate_documents` for the full scope. Do NOT write more prose, do NOT ask follow-up questions about envelopes (envelopes use a separate workflow), do NOT pause for confirmation. Ship the tool call now with the proposed/approved doc set.",
+          content: escalated
+            ? "🛑 STOP REASONING. This is your final correction. EMIT THE TOOL CALL NOW. No more prose. No more analysis. No envelope questions (envelopes are a SEPARATE workflow — `update_envelope` / `generate_envelopes` only — and have NOTHING to do with this batch). Call `add_documents` (plural) with every remaining doc in one array, or `bulk_generate_documents` for the full scope. If you find yourself thinking 'should I ask about envelopes?' or 'should I batch in chunks of 10?' — STOP. Ship the call with sensible defaults. The user already approved the proposal."
+            : "🔴 You are stalling. The user asked for a BATCH action ('draft all', 'generate everything', or similar). On your NEXT turn you MUST emit a tool call — either `add_document` for Doc 0 followed by `add_documents` (plural) with every remaining doc in the SAME turn, or `bulk_generate_documents` for the full scope. Do NOT write more prose, do NOT ask follow-up questions about envelopes (envelopes use a separate workflow), do NOT pause for confirmation. Ship the tool call now with the proposed/approved doc set.",
         });
-        flushProgress("nudging batch tool…");
+        flushProgress(`nudging batch tool (${nudgeCount}/${MAX_NUDGES})…`);
         continue;
       }
 

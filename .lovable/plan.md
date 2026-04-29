@@ -1,60 +1,60 @@
-## What's wrong
+## What the trace actually tells us
 
-You approved the summary, the assistant said "I've started drawing the Logic Flow", and the Case Board lit up green with a "Planning…" spinner — but the generator never inserted any nodes. Only when you clicked **Generate Logic Flow** from the board did it actually start.
+Reading the round-by-round summaries from your run (this is the model's own reasoning, not ours):
 
-Looking at this specific case (project `a2e4f0…1c0f7`):
+**Round 0** — model spent the entire round just *thinking*: "Final Flow not mapped… should I call create_final_documents_map?… 21 docs exist… post-approval edit rule… need long Hebrew content for 20 docs…". **Zero tool calls emitted.**
 
-- The assistant **did** call `generate_logic_flow` correctly.
-- The `generate-logic-flow` edge function booted **twice in parallel** at 11:33:01–02 (both via `openai/gpt-5`), then a third time at 11:34:27 via `openai/gpt-5.4` (which is a non-existent model and would error out).
-- After both background runs, `logic_flow_building_at` was still set, **0 nodes** had been inserted, and no error reached the UI.
+**Round 1** — more thinking: "should I batch in 10s or 20?… design instructions are heavy… maybe two passes… transparency rule… let's get started!". **Zero tool calls emitted.**
 
-So three problems compound:
+**Round 2** — model believes it already called `create_final_documents_map` and `add_documents` for 21–40 (it didn't — that was hallucinated reasoning), and starts planning the roster reply.
 
-1. **Parallel double-fire.** The tool fires `generate-logic-flow` from `assistant-chat` as a fire-and-forget. Nothing prevents two concurrent runs racing on the same project — both rotate `logic_version_id` and wipe each other's writes.
-2. **Bogus model (`openai-5.4` → `openai/gpt-5.4`).** Project-level default routing maps to a model name that doesn't exist, so the call fails and the building flag never clears for that path. The manual button works only because it passes `modelOverride` from the canvas dropdown.
-3. **No client-side watchdog.** When a background run dies before inserting a node, the `logic_flow_building_at` flag stays stamped indefinitely. The UI keeps showing "Planning…" with no errored state and no auto-recovery, so the user has no choice but to click the manual button.
+So the actual failure is:
+1. The model burns 2–3 reasoning rounds psyching itself up for the heavy `add_documents` call instead of emitting it.
+2. Our anti-loop nudge from last round only fires **after** a round finishes with `tool_calls.length === 0`. Gemini and GPT-5 in "thinking" mode often produce a round of pure reasoning + a fake "I'll do this now" prose tail — which doesn't trip the nudge cleanly because the round ends with text, not with a tool. By the time the nudge fires, only 1–2 rounds remain.
+3. **The "stuck assistant" message comes from a separate bug**: `assistant_runs` rows are left at `status='running'` forever. I just queried and there are runs from this morning still open at 4,049s, 19,957s, 27,313s. The frontend watchdog ("recovered a stuck assistant") triggers on these stale rows even when the actual chat completed fine. So you're seeing the recovery banner on *unrelated* old runs, not on the run that just completed.
+4. The envelope confusion is real but secondary — the model wandered into "should I ask about envelopes?" inside its reasoning. The Rule C copy added last round is good but the model isn't reading it because it never gets to the tool-call stage.
 
-## The fix
+## Plan
 
-### 1. Single-flight guard in `assistant-chat` `generate_logic_flow` tool
+### A. Force tool emission earlier (assistant-chat/index.ts)
 
-Before kicking off the background fetch, check if `logic_flow_building_at` is already set within the last 5 minutes. If yes, return a tool result saying "already in progress, do not retry" instead of starting a second run. This blocks the parallel double-fire even if the model retries.
+For batch requests, inject the anti-loop nudge **after round 0 with no tool call**, not after round 1. Currently:
+```
+if (isBatchRequest && !nudgedForBatch && executedTools.length === 0) { nudge }
+```
+Add: also nudge if `round === 0`, no tools called, AND the model produced >800 chars of prose (a clear "thinking out loud" signal). Track this as `stalledRounds` and escalate the nudge wording on round 1 to "EMIT THE TOOL CALL NOW. No more prose. No more analysis."
 
-### 2. Map `openai-5.4` to a real model
+### B. Pre-flight the Final Flow before the model has to think about it
 
-In `supabase/functions/generate-logic-flow/index.ts` (and any sibling map in `_shared/ai-router.ts`), drop the dead `openai/gpt-5.4` mapping and route `openai-5.4` → `openai/gpt-5.2` (the latest existing model). Keep `openai-5.2` as is. Same change in the model picker if it exposes 5.4 as an option.
+The trace shows ~40% of the model's first-round reasoning was "is the Final Flow mapped? should I call create_final_documents_map?". This is wasted budget — we already know from project state. Add a pre-flight in `assistant-chat`:
 
-### 3. Always clear `logic_flow_building_at` on failure (server-side)
+- If `isBatchRequest` AND user is in Phase 4 AND `proposed_document_set_status === 'approved'` AND Final Flow node count is 0 → server-side calls `create_final_documents_map` BEFORE the model's first round, then injects a system note: "Final Flow refreshed for you (N nodes). Proceed directly to add_documents."
 
-In `generate-logic-flow/index.ts`, wrap the streaming + batch paths so that if the run ends with `insertedNodeCount === 0`, we:
+This removes the entire decision tree the model was looping on.
 
-- Log the diagnostic (model, status, error text).
-- Set `logic_flow_building_at = null`.
-- Insert a `chat_messages` row from `assistant` with the `⚠️` error text so it's visible in chat (matches the same pattern recently added for empty model responses).
+### C. Close stale assistant_runs (the real "stuck" bug)
 
-Right now this only happens in the outer `catch`, not when streaming "succeeds" but produces zero nodes.
+The 8-minute watchdog isn't the problem — runs stay `running` *forever*. Two fixes:
 
-### 4. Client-side watchdog on `logic_flow_building_at`
+1. **Server-side**: every exit path in `assistant-chat` (success, error, round-exhaustion, early return, thrown exception) must update `assistant_runs` to `done`/`error`. Audit every `return new Response(...)` in the function and ensure it goes through a single `finally`-style cleanup that sets `finished_at = now()`.
 
-In `src/features/project/canvas/useLogicFlowLive.ts`:
+2. **One-time backfill migration**: mark all `assistant_runs` where `status='running'` AND `started_at < now() - interval '15 minutes'` as `status='error', error='auto-closed: stale run'`. This clears the existing 3+ ghost runs that are fooling the frontend watchdog.
 
-- If `logic_flow_building_at` has been set for more than **3 minutes** AND zero logic nodes exist, treat it as a stuck run: clear the flag (`UPDATE projects SET logic_flow_building_at = null`) and surface a toast "Logic Flow generation didn't start — click Generate Logic Flow to retry."
-- Same pattern as the existing `STALE_AFTER_MS` watchdog in `useAssistantRun.ts`.
+### D. Tighten envelope confusion in Rule C
 
-### 5. Auto-trigger on the "approve" path too
+Add one line to the existing batch rule: *"If you find yourself thinking 'should I ask about envelopes?' during a document batch — STOP. Envelopes are a separate workflow. Emit add_documents now."* The model literally wrote that thought out loud in round 0; quoting it back at the model is the most reliable jailbreak from the loop.
 
-Today the safety-net auto-trigger in `assistant-chat` only runs when `set_solution_summary` is called **without** `mark_approved`. If the model later calls it again with `mark_approved: true` against an empty board, we refuse — but we don't auto-start the flow. Add a parallel safety-net there: when the empty-board approval is refused, kick off `generate-logic-flow` in the background (subject to the new single-flight guard) and return a message telling the model to wait and re-issue approval after the flow lands.
+### Files to touch
+- `supabase/functions/assistant-chat/index.ts` — earlier nudge (round 0), pre-flight Final Flow refresh, audit run-close paths, tighten envelope line in Rule C. Apply to BOTH chat loops (around lines 3237 and 3892).
+- New SQL migration — backfill stale `assistant_runs` to `error`.
 
-## Files to edit
+### What this does NOT change
+- The `add_documents` batch tool itself works (you have 21 rows from previous runs).
+- The Logic Flow / Case Board green indicator (fixed last round).
+- The envelope count (fixed last round).
+- The playbook copy (fixed last round).
 
-- `supabase/functions/assistant-chat/index.ts` — single-flight guard, post-refusal auto-trigger.
-- `supabase/functions/generate-logic-flow/index.ts` — clear building flag + chat error on zero-node runs; remove `openai/gpt-5.4` mapping.
-- `supabase/functions/_shared/ai-router.ts` — sanity-check no other dead model strings.
-- `src/features/project/canvas/useLogicFlowLive.ts` — 3-minute client watchdog.
-- (If present) any UI model picker still exposing `openai-5.4`.
+### Why I'm confident this is the fix
+The trace is unambiguous: the model never emits a tool call in rounds 0–1, then hallucinates that it did in round 2. That's a *budget* problem, not a *prompt* problem. Fixing it requires (a) shorter decision tree at round 0 (pre-flight), (b) earlier nudge, and (c) cleaning up the ghost runs that make every interaction look "stuck" even when it isn't.
 
-## What you'll see after the fix
-
-- When you say "Approved", the Logic Flow starts within seconds and nodes begin streaming onto Canvas → Logic Flow.
-- If the generator silently fails, the spinner clears within 3 minutes, a toast tells you to retry, and a `⚠️` message appears in chat.
-- The model can no longer accidentally start two parallel runs.
+**Approve and I'll implement.**
