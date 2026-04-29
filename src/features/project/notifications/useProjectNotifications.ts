@@ -15,6 +15,7 @@ export interface ProjectNotification {
   created_by: NotificationCreator;
   created_at: string;
   read_at: string | null;
+  preview_image_url: string | null;
 }
 
 export interface NotificationDraft {

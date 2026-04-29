@@ -139,7 +139,16 @@ function NotificationCard({
       }
     >
       <div className="flex items-start gap-2.5">
-        <Icon className={`h-4 w-4 mt-0.5 shrink-0 ${iconClass}`} />
+        {n.preview_image_url ? (
+          <img
+            src={n.preview_image_url}
+            alt=""
+            className="h-10 w-10 rounded-md object-cover border border-border shrink-0 bg-muted"
+            loading="lazy"
+          />
+        ) : (
+          <Icon className={`h-4 w-4 mt-0.5 shrink-0 ${iconClass}`} />
+        )}
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2">
             <h4 className="text-sm font-medium leading-snug flex-1">{n.title}</h4>
