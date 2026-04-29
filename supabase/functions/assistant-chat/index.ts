@@ -83,6 +83,10 @@ async function runRoundWithLiveReasoning(args: {
   | { ok: false; status: number; errorText: string }
 > {
   const { supa, messageId, model, body, priorReasoningRounds, roundIndex, baseMetadata } = args;
+  const gatewayRerouteModel = model.startsWith("gemini-direct/")
+    ? `google/${model.slice("gemini-direct/".length)}`
+    : model;
+  const roundBody = gatewayRerouteModel === model ? body : { ...body, model: gatewayRerouteModel };
 
   // Helper: write current state to chat_messages with debounce.
   let liveReasoning = "";
@@ -130,34 +134,34 @@ async function runRoundWithLiveReasoning(args: {
     ) as unknown as number;
   };
 
-  const supportsStreaming = modelSupportsStreamingReasoning(model);
-  const wantsThinking = (body.reasoningEffort as string | undefined) !== "none";
+  const supportsStreaming = modelSupportsStreamingReasoning(gatewayRerouteModel);
+  const wantsThinking = (roundBody.reasoningEffort as string | undefined) !== "none";
 
   if (supportsStreaming) {
     const effort =
-      (body.reasoningEffort as "none" | "low" | "medium" | "high" | "xhigh" | undefined) ??
+      (roundBody.reasoningEffort as "none" | "low" | "medium" | "high" | "xhigh" | undefined) ??
       "medium";
     const result = await streamReasoningChat(
       {
-        model,
-        messages: body.messages as Array<{
+        model: gatewayRerouteModel,
+        messages: roundBody.messages as Array<{
           role: string;
           content?: unknown;
           tool_calls?: unknown;
           tool_call_id?: string;
           thinking?: unknown;
         }>,
-        tools: body.tools as
+        tools: roundBody.tools as
           | Array<{
               type: string;
               function: { name: string; description?: string; parameters: unknown };
             }>
           | undefined,
         effort,
-        max_tokens: body.max_tokens as number | undefined,
-        anthropicTools: body.anthropicTools as Array<Record<string, unknown>> | undefined,
-        anthropicContainer: body.anthropicContainer,
-        anthropicBeta: body.anthropicBeta as string | undefined,
+        max_tokens: roundBody.max_tokens as number | undefined,
+        anthropicTools: roundBody.anthropicTools as Array<Record<string, unknown>> | undefined,
+        anthropicContainer: roundBody.anthropicContainer,
+        anthropicBeta: roundBody.anthropicBeta as string | undefined,
       },
       {
         onReasoningDelta: (delta) => {
@@ -177,19 +181,21 @@ async function runRoundWithLiveReasoning(args: {
     // Final flush so the last chunk lands in the DB before the round returns.
     await writeNow();
     if (result.ok) {
-      const fallback = "none" as const;
-      return { ok: true, message: result.message, effectiveModel: model, fallback };
+      const fallback = gatewayRerouteModel === model ? "none" as const : "lovable-ai" as const;
+      return { ok: true, message: result.message, effectiveModel: gatewayRerouteModel, fallback };
     }
     // Streaming failed — log and fall through to non-streaming path.
     console.warn(
-      `[stream-fallback] streaming failed for ${model} (status ${result.status}); falling back to non-streaming chatCompletions`,
+      `[stream-fallback] streaming failed for ${gatewayRerouteModel} (status ${result.status}); falling back to non-streaming chatCompletions`,
     );
   }
 
   // Non-streaming path (used for models that don't stream OR after a stream error).
-  const nonStreamBody = { ...body, stream: false };
+  const nonStreamBody = { ...roundBody, stream: false };
   const resp = await chatCompletions(nonStreamBody);
-  const fb = extractFallback(resp, model);
+  const fb = gatewayRerouteModel === model
+    ? extractFallback(resp, model)
+    : { fallback: "lovable-ai" as const, effectiveModel: gatewayRerouteModel };
   if (!resp.ok) {
     const text = await resp.text();
     return { ok: false, status: resp.status, errorText: text };
