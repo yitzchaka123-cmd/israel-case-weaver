@@ -3239,6 +3239,18 @@ async function processConversation(
     effectiveModel: model,
     fallback: "none",
   };
+  // One-shot nudge: if the user asked for a batch action but the model
+  // returns prose without calling a batch tool, inject a corrective system
+  // message and retry ONCE before letting it finalize.
+  const lastUserText = String(lastUser?.content ?? "").toLowerCase();
+  const isBatchRequest =
+    /\b(draft|write|create|generate|make|do|build|produce|finish)\b.*\b(all|every|everything|the rest|remaining|whole|complete|full set|next \d+|docs? \d+\s*[-–]\s*\d+)\b/.test(
+      lastUserText,
+    ) ||
+    /\b(all (the )?docs?|all documents|all the documents|כל המסמכים|תכין הכל|הכל)\b/.test(
+      lastUserText,
+    );
+  let nudgedForBatch = false;
   flushProgress("preparing prompt…");
   flushProgress("contacting model…");
   for (let round = 0; round < MAX_ROUNDS; round++) {
