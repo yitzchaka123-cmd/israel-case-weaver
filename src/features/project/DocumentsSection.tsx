@@ -107,8 +107,25 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
   const [bulkMode, setBulkMode] = useState<"draft" | "image" | "document" | "both">("both");
   const [bulkScope, setBulkScope] = useState<"all_remaining" | "ids">("all_remaining");
   const [bulkFormat, setBulkFormat] = useState<"pdf" | "docx" | "pptx" | "xlsx">("pdf");
-  const [bulkConcurrency, setBulkConcurrency] = useState<number>(2);
+  const [bulkConcurrency, setBulkConcurrency] = useState<number>(3);
+  const [bulkSkipExisting, setBulkSkipExisting] = useState<boolean>(true);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
+
+  // Pre-flight count: how many docs in scope already have generated content
+  // for the chosen mode. Used to warn the user before they accidentally redo
+  // (and re-spend credits on) work that's already done.
+  const alreadyGeneratedCount = (() => {
+    if (!data) return 0;
+    const docs = data.filter((d) => (d.doc_number ?? 0) > 0); // skip Doc 0
+    return docs.filter((d) => {
+      if (bulkMode === "draft") return !!(d.hebrew_content && d.hebrew_content.trim().length > 0);
+      if (bulkMode === "image") return !!d.generated_asset_url;
+      if (bulkMode === "document") return !!(d.generated_document_url || d.generated_pdf_url);
+      // both
+      return !!d.generated_asset_url && !!(d.generated_document_url || d.generated_pdf_url);
+    }).length;
+  })();
+  const totalEligible = (data?.filter((d) => (d.doc_number ?? 0) > 0 && d.status !== "final").length) ?? 0;
 
   const { data: activeJob, refetch: refetchJob } = useQuery({
     queryKey: ["bulk-job", projectId, activeJobId],
@@ -159,6 +176,7 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
         mode: overrides?.mode ?? bulkMode,
         documentFormat: overrides?.format ?? bulkFormat,
         concurrency: overrides?.concurrency ?? bulkConcurrency,
+        skipExisting: bulkSkipExisting,
       };
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/bulk-generate-documents`, {
         method: "POST",
@@ -333,12 +351,31 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
                 <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="1">1 — slowest, gentlest on rate limits</SelectItem>
-                  <SelectItem value="2">2 — recommended</SelectItem>
-                  <SelectItem value="3">3</SelectItem>
+                  <SelectItem value="2">2</SelectItem>
+                  <SelectItem value="3">3 — recommended</SelectItem>
                   <SelectItem value="5">5 — fastest, may hit credits/rate limits</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            {alreadyGeneratedCount > 0 && (
+              <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5 space-y-2">
+                <p className="text-xs font-medium text-warning-foreground">
+                  ⚠ {alreadyGeneratedCount} of {totalEligible} document{totalEligible === 1 ? "" : "s"} already have {bulkMode === "draft" ? "drafted text" : bulkMode === "image" ? "a generated image" : bulkMode === "document" ? "a generated file" : "image + file"}.
+                </p>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={bulkSkipExisting}
+                    onChange={(e) => setBulkSkipExisting(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span className="text-xs">
+                    <strong>Skip docs that already have content</strong> (recommended — saves credits).
+                    {!bulkSkipExisting && <span className="block text-destructive mt-0.5">All {alreadyGeneratedCount} existing items will be overwritten.</span>}
+                  </span>
+                </label>
+              </div>
+            )}
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="ghost" onClick={() => setBulkOpen(false)}>Cancel</Button>
               <Button onClick={() => launchBulk()} className="gap-2"><Wand2 className="h-4 w-4" /> Start bulk run</Button>

@@ -53,6 +53,16 @@ interface BulkRequest {
   concurrency?: number;
   waitForJobId?: string | null;
   /**
+   * When true (default), docs that already have content for the chosen mode
+   * are skipped:
+   *   - draft     → skip if hebrew_content is non-empty
+   *   - image     → skip if generated_asset_url is set
+   *   - document  → skip if generated_document_url or generated_pdf_url is set
+   *   - both      → skip if BOTH image and file exist
+   * When false, every doc in scope is regenerated (overwrite).
+   */
+  skipExisting?: boolean;
+  /**
    * When true, after the run finishes the worker inserts a
    * "bulk_generation_done" notification with a starter_prompt so the
    * assistant follow-up flow kicks in. Default true.
@@ -202,8 +212,9 @@ Deno.serve(async (req) => {
     const supa = createClient(SUPABASE_URL, SERVICE);
 
     // Resolve doc list.
-    let q = supa.from("documents").select("id, title, doc_number, status, doc_type").eq("project_id", projectId).order("doc_number", { ascending: true });
-    let docs: { id: string; title: string; doc_number: number | null; status: string; doc_type: string | null }[] = [];
+    let q = supa.from("documents").select("id, title, doc_number, status, doc_type, hebrew_content, generated_asset_url, generated_document_url, generated_pdf_url").eq("project_id", projectId).order("doc_number", { ascending: true });
+    let docs: { id: string; title: string; doc_number: number | null; status: string; doc_type: string | null; hebrew_content: string | null; generated_asset_url: string | null; generated_document_url: string | null; generated_pdf_url: string | null }[] = [];
+    const skipExisting = input.skipExisting !== false; // default true
     if (scope === "ids") {
       const ids = (input.documentIds ?? []).filter(Boolean);
       if (ids.length === 0) return new Response(JSON.stringify({ error: "documentIds required for scope=ids" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -217,10 +228,22 @@ Deno.serve(async (req) => {
         const until = input.untilDocNumber ? Number(input.untilDocNumber) : Infinity;
         docs = docs.filter((d) => (d.doc_number ?? 0) >= from && (d.doc_number ?? 0) <= until);
       }
-      // Skip already-final docs for "all_remaining" / "from_doc_number" + draft mode
+      // Skip already-final docs for non-draft modes
       if (mode !== "draft") {
         docs = docs.filter((d) => d.status !== "final");
       }
+    }
+
+    // Honor skipExisting: drop docs that already have content for this mode.
+    if (skipExisting) {
+      docs = docs.filter((d) => {
+        if (mode === "draft") return !(d.hebrew_content && d.hebrew_content.trim().length > 0);
+        if (mode === "image") return !d.generated_asset_url;
+        if (mode === "document") return !(d.generated_document_url || d.generated_pdf_url);
+        if (mode === "image_to_pdf") return !!d.generated_asset_url; // needs an image
+        // both
+        return !(d.generated_asset_url && (d.generated_document_url || d.generated_pdf_url));
+      });
     }
 
     if (docs.length === 0) {
