@@ -9,6 +9,7 @@
 // on the Case Board tab and Canvas toolbar.
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 const LIVE_WINDOW_MS = 12_000;
 
