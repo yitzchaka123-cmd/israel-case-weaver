@@ -509,7 +509,7 @@ Looks like an actual archival envelope from the case era — NOT a modern Canva 
         enabled: true,
         title_template: "Doc 0 — Contents / Case File Inventory",
         purpose:
-          "Player-facing master inventory of the game box. List EVERY document in the box (the player has access to all of them from the start, organized however helps them — by topic, document type, or investigative area — NOT by envelope). Then list the sealed task envelopes separately, each shown as a sealed item with its trigger condition (when to open it). No solution spoilers.",
+          "Bare contents list for the box. ONE line per item — no descriptions, no purposes, no commentary. Two sections only: (1) Documents — each line is exactly \"#N — Short Name\" (every loose-pile document, including one Police Briefing per suspect). (2) Envelopes — each line is exactly \"Envelope N — Short Label\". No tasks, no opening triggers, no spoilers, no solution.",
         doc_type: "contents checklist",
         print_size: "A4",
         list_scope: "planned",
