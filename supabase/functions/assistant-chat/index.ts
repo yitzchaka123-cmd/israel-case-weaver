@@ -2852,7 +2852,7 @@ async function processConversation(
     (project as { ai_reasoning_effort?: string }).ai_reasoning_effort ?? "high",
   );
   const TOOLS = buildTools(playbook);
-  const MAX_ROUNDS = 4;
+  const MAX_ROUNDS = 6;
   let lastFb: { effectiveModel: string; fallback: string } = {
     effectiveModel: model,
     fallback: "none",
@@ -3035,11 +3035,11 @@ async function processConversation(
         convo.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
         flushProgress(`finished ${call.function.name}`);
       }
-      if (round === MAX_ROUNDS - 3) {
+      if (round === MAX_ROUNDS - 2) {
         convo.push({
           role: "system",
           content:
-            "You have one tool round left. Make any remaining tool calls in a single batch this turn, then write your reply.",
+            "You have one tool round left. Make any remaining tool calls in a single batch this turn, then write your reply. If you need to create or generate many documents, prefer the batch tools (add_documents, bulk_generate_documents) over looping the per-doc tools.",
         });
       }
       continue;
@@ -3411,7 +3411,7 @@ Deno.serve(async (req) => {
     );
     const TOOLS = buildTools(playbook);
 
-    const MAX_ROUNDS = 4;
+    const MAX_ROUNDS = 6;
     const callerUserId = await getUserIdFromAuth(req);
     let lastFb: { effectiveModel: string; fallback: string } = {
       effectiveModel: model,
