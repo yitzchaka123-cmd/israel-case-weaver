@@ -226,12 +226,15 @@ async function streamOpenAIResponses(input: StreamReasoningInput, cb: StreamCall
   const reasoningBuckets = new Map<string, string>(); // item_id → accumulated summary text
   const reasoningOrder: string[] = [];
   const toolCalls = new Map<string, { id: string; name: string; args: string }>();
+  const eventTypeCounts = new Map<string, number>();
+  let terminalDiagnostic = "";
 
   for await (const ev of iterateSSELines(resp.body)) {
     if (!ev.data || ev.data === "[DONE]") continue;
     let parsed: Record<string, unknown>;
     try { parsed = JSON.parse(ev.data); } catch { continue; }
     const type = String(parsed.type ?? ev.event ?? "");
+    eventTypeCounts.set(type, (eventTypeCounts.get(type) ?? 0) + 1);
 
     if (type === "response.output_text.delta") {
       const delta = String(parsed.delta ?? "");
@@ -265,9 +268,33 @@ async function streamOpenAIResponses(input: StreamReasoningInput, cb: StreamCall
       const id = String(parsed.item_id ?? "");
       const tc = toolCalls.get(id);
       if (tc) cb.onToolCall?.({ id: tc.id, type: "function", function: { name: tc.name, arguments: tc.args || "{}" } });
-    } else if (type === "response.completed" || type === "response.failed") {
-      // terminal
+    } else if (type === "response.completed" || type === "response.incomplete" || type === "response.failed") {
+      // Capture terminal status — sometimes the only place we learn that text
+      // came back as an output_item we never split into deltas, or that the
+      // request was rejected (e.g. unknown model, content filter).
+      const response = (parsed.response ?? {}) as Record<string, unknown>;
+      const status = response.status;
+      const incomplete = response.incomplete_details as { reason?: string } | undefined;
+      const error = response.error as { message?: string; code?: string } | undefined;
+      terminalDiagnostic = `type=${type} status=${status ?? "?"} incomplete=${incomplete?.reason ?? "-"} error=${error?.message ?? "-"}`;
+      // Last-resort recovery: if we never got text deltas, try to reconstruct
+      // text from response.output (Responses API sometimes batches it).
+      if (!textOut && Array.isArray(response.output)) {
+        for (const item of response.output as Array<Record<string, unknown>>) {
+          if (item.type === "message" && Array.isArray(item.content)) {
+            for (const part of item.content as Array<Record<string, unknown>>) {
+              if (part.type === "output_text" && typeof part.text === "string") {
+                textOut += part.text;
+              }
+            }
+          }
+        }
+      }
     }
+  }
+  if (!textOut && !toolCalls.size && !reasoningBuckets.size) {
+    const counts = [...eventTypeCounts.entries()].map(([k, v]) => `${k}:${v}`).join(",");
+    console.error(`[stream-reasoning] openai-responses EMPTY response. ${terminalDiagnostic} events=[${counts}]`);
   }
 
   const reasoningOut: ReasoningSegment[] = reasoningOrder
