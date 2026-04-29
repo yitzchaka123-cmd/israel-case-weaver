@@ -2547,36 +2547,49 @@ async function executeTool(
       if (targetIds.length === 0) {
         return { ok: false, message: "No documents matched the requested scope." };
       }
-      // Fire-and-forget invoke. The edge function creates its own job row
-      // (single source of truth) and returns the jobId — but we don't await
-      // it here so the assistant turn finishes immediately.
-      const fireAndForget = fetch(`${SUPABASE_URL}/functions/v1/bulk-generate-documents`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-        },
-        body: JSON.stringify({
-          projectId,
-          scope,
-          mode,
-          documentFormat,
-          documentIds: scope === "ids" ? targetIds : undefined,
-          fromDocNumber: scope === "from_doc_number" ? Number(a.from_doc_number) : undefined,
-          untilDocNumber:
-            scope === "from_doc_number" && Number.isFinite(Number(a.until_doc_number))
-              ? Number(a.until_doc_number)
-              : undefined,
-        }),
-      }).catch((err) => {
-        console.error("[assistant-chat] bulk-generate-documents background fetch failed", err);
-      });
-      const runtime = (globalThis as { EdgeRuntime?: { waitUntil: (p: Promise<unknown>) => void } })
-        .EdgeRuntime;
-      if (runtime?.waitUntil) runtime.waitUntil(fireAndForget);
+      // Invoke the bulk function and AWAIT only its kicker response — the
+      // edge function itself returns immediately (job runs in background via
+      // waitUntil) so we can hand the assistant a real job_id back. That id
+      // is what the assistant passes as wait_for_job_id on a chained call
+      // (e.g. draft pass → generate pass).
+      const waitForJobId =
+        typeof a.wait_for_job_id === "string" && a.wait_for_job_id.trim().length > 0
+          ? a.wait_for_job_id.trim()
+          : null;
+      let jobId: string | null = null;
+      try {
+        const kickResp = await fetch(`${SUPABASE_URL}/functions/v1/bulk-generate-documents`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          },
+          body: JSON.stringify({
+            projectId,
+            scope,
+            mode,
+            documentFormat,
+            documentIds: scope === "ids" ? targetIds : undefined,
+            fromDocNumber: scope === "from_doc_number" ? Number(a.from_doc_number) : undefined,
+            untilDocNumber:
+              scope === "from_doc_number" && Number.isFinite(Number(a.until_doc_number))
+                ? Number(a.until_doc_number)
+                : undefined,
+            waitForJobId,
+          }),
+        });
+        const kickJson = await kickResp.json().catch(() => ({} as { jobId?: string }));
+        jobId = (kickJson as { jobId?: string }).jobId ?? null;
+      } catch (err) {
+        console.error("[assistant-chat] bulk-generate-documents kick failed", err);
+      }
+      const chainHint = waitForJobId
+        ? ` (will start after job ${waitForJobId.slice(0, 8)}… finishes)`
+        : "";
       return {
         ok: true,
-        message: `Queued ${targetIds.length} document${targetIds.length === 1 ? "" : "s"} for ${mode} generation. Tell the user to watch the Documents tab — progress updates live. Do NOT claim docs are finished, only that generation is QUEUED/STARTED.`,
+        job_id: jobId,
+        message: `Queued ${targetIds.length} document${targetIds.length === 1 ? "" : "s"} for ${mode} generation${chainHint}. Tell the user to watch the Documents tab (live indicator) and the bell for per-doc previews. Do NOT claim docs are finished, only that generation is QUEUED/STARTED. If you need to chain another bulk call, pass wait_for_job_id="${jobId ?? ""}".`,
         total: targetIds.length,
       };
     }
