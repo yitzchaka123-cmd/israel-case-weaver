@@ -519,8 +519,8 @@ Require the brief to place the logo at the top of the envelope (top-center, top-
 
     const baseSystem = `You are an expert art director for boxed murder-mystery games. You write concise, vivid image-generation prompts (3–6 sentences for most categories; for "envelope" produce a long structured brief with sections GOAL / OUTPUT FORMAT / VISUAL STYLE / LAYOUT / TYPOGRAPHY / AUTHENTICITY) that an image model like Gemini Nano Banana or OpenAI gpt-image will turn into a single still image. Focus on subject, composition, lighting, mood, color palette, medium/style, and lens. No camera-shake instructions, no text overlays unless requested. Never output anything except the prompt itself.`;
     const system = globalAssistantInstructions
-      ? `${baseSystem}\n\nUSER GLOBAL STYLE GUIDE (highest priority — apply to every prompt you write):\n${globalAssistantInstructions}${envelopeTemplateBlock}`
-      : `${baseSystem}${envelopeTemplateBlock}`;
+      ? `${baseSystem}\n\nUSER GLOBAL STYLE GUIDE (highest priority — apply to every prompt you write):\n${globalAssistantInstructions}${envelopeTemplateBlock}${envelopeBrandingBlock}`
+      : `${baseSystem}${envelopeTemplateBlock}${envelopeBrandingBlock}`;
 
     const userMsg = `PROJECT CONTEXT:\n${ctx || "(no context yet)"}\n\nIMAGE PURPOSE: ${category.toUpperCase()} — ${guidance}${
       hint ? `\n\nUSER STEERING: ${hint}` : ""
