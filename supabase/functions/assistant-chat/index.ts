@@ -1262,6 +1262,9 @@ const BASE_TOOLS = [
     },
   },
   {
+    type: "function",
+    function: {
+      name: "explain_claude_skill_install",
       description:
         "Use when the user asks to install/add/use a new Claude Skill from chat but no installable skill package/file is available in the current message. This records a clear assistant receipt explaining that a Claude Skill package must be uploaded/installed from Settings or attached for installation.",
       parameters: {
