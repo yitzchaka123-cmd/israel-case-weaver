@@ -469,7 +469,12 @@ ${renderDocModeButtonsBlock(playbook)}
 5. Document/file generation is strict direct-provider-only: the selected document model (or assistant planning model if no document model is set) gets the honest first chance to create the actual file directly. Never use or imply hidden Lovable fallback. If the selected model cannot make real files, say to switch Documents to Claude with document skills for PDF/DOCX, or choose Image-only with ChatGPT Image.
 6. generate_document_assets is gated server-side: it will refuse if the Logic Flow is not approved, or if the document_id doesn't belong to this project. Trust the receipt.
 7. The Hebrew body produced by generate_document_assets MAY differ slightly from the hebrew_content you wrote in add_document — that's expected. The receipt shows the final stored version.
-8. If the user asks to install/add a Claude Skill from chat and there is no attached installable package, call explain_claude_skill_install. Claude can automatically choose among enabled installed skills passed to it, but the app must manage installation.`;
+8. If the user asks to install/add a Claude Skill from chat and there is no attached installable package, call explain_claude_skill_install. Claude can automatically choose among enabled installed skills passed to it, but the app must manage installation.
+
+BATCH RULES (CRITICAL — applies to drafting AND generating documents):
+A. **Drafting many docs in one turn** — when the user asks to draft a numbered range ("docs 7-20", "the next 10"), "all of them", "the rest", or more than ~3 documents at once, you MUST call \`add_documents\` (plural) ONCE with every document spec in the array. NEVER loop \`add_document\` for batch requests — the per-turn round budget will silently truncate it and most rows will never be written. After \`add_documents\` returns, list every entry from \`created\` as a numbered roster in your prose so the user sees what was written. Single-doc / "auto" / "ask" workflows still use \`add_document\` per-doc so the per-doc preview rules apply.
+B. **Generating more than one doc** — when the user asks to generate more than one doc, "all docs", "the rest", a numbered range, or "everything", you MUST call \`bulk_generate_documents\` ONCE. NEVER loop \`generate_document_assets\` for batch requests. The bulk tool returns immediately with a queued count; tell the user to watch the Documents tab for live progress, and explicitly say "QUEUED" / "STARTED", never "DONE" / "FINISHED" in the same turn. Single-doc generation still uses \`generate_document_assets\`.
+C. **Doc 0 stays per-doc** — Doc 0 (contents inventory) requires special handling and MUST go through \`add_document\`, never \`add_documents\`.`;
 })()}
 
 ${
@@ -1172,7 +1177,91 @@ const BASE_TOOLS = [
   {
     type: "function",
     function: {
-      name: "explain_claude_skill_install",
+      name: "add_documents",
+      description:
+        "BATCH version of add_document — create MANY document rows in a single tool call. USE THIS (not a loop of add_document) whenever the user asks to draft a range ('docs 7-20'), 'all of them', 'the rest', or more than ~3 documents at once. Same per-item shape as add_document. Server-side gated identically: refuses unless the Logic Flow is approved AND the Final Flow exists. Returns { ok, created: [{id,title,doc_number}], failed: [{title,reason}] }. After it returns, list every created doc as a numbered roster in your prose.",
+      parameters: {
+        type: "object",
+        properties: {
+          documents: {
+            type: "array",
+            minItems: 1,
+            maxItems: 60,
+            items: {
+              type: "object",
+              properties: {
+                title: { type: "string" },
+                doc_type: { type: "string" },
+                doc_number: { type: "number" },
+                print_size: { type: "string" },
+                design_instructions: { type: "string" },
+                hebrew_content: { type: "string" },
+                envelope_number: {
+                  type: "number",
+                  description:
+                    "DEPRECATED for distribution. Leave null in nearly all cases. Set ONLY if the user explicitly wants this doc physically inside a sealed task envelope.",
+                },
+                final_node_id: {
+                  type: "string",
+                  description: "Optional Final board document-node id this row is created from.",
+                },
+              },
+              required: ["title"],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["documents"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "bulk_generate_documents",
+      description:
+        "BATCH version of generate_document_assets — kick off generation for MANY existing document rows as a single background job. USE THIS (not a loop of generate_document_assets) whenever the user asks to generate more than 1 doc, 'all docs', 'the rest', a numbered range, or 'everything'. Returns immediately with a job receipt; the Documents tab shows live progress. Tell the user to watch the Documents tab — do NOT claim docs are finished, only that generation is QUEUED/STARTED.",
+      parameters: {
+        type: "object",
+        properties: {
+          scope: {
+            type: "string",
+            enum: ["all_remaining", "from_doc_number", "ids"],
+            description:
+              "'all_remaining' = every non-final doc (skips Doc 0). 'from_doc_number' = doc_number >= from_doc_number, optionally <= until_doc_number. 'ids' = exact list in document_ids.",
+          },
+          mode: {
+            type: "string",
+            enum: ["draft", "image", "document", "both", "image_to_pdf"],
+            description:
+              "'draft' = body text only. 'image' = visual prop only. 'document' = PDF/DOCX/etc only. 'both' = image + document. 'image_to_pdf' = wrap each existing image into a 1-page PDF.",
+          },
+          document_format: {
+            type: "string",
+            enum: ["pdf", "docx", "pptx", "xlsx"],
+            description: "File format when mode is document/both. Default pdf.",
+          },
+          from_doc_number: {
+            type: "number",
+            description: "Required when scope='from_doc_number'. Inclusive lower bound.",
+          },
+          until_doc_number: {
+            type: "number",
+            description: "Optional upper bound when scope='from_doc_number'.",
+          },
+          document_ids: {
+            type: "array",
+            items: { type: "string" },
+            description: "Required when scope='ids'. Document ids to generate.",
+          },
+        },
+        required: ["scope", "mode"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
       description:
         "Use when the user asks to install/add/use a new Claude Skill from chat but no installable skill package/file is available in the current message. This records a clear assistant receipt explaining that a Claude Skill package must be uploaded/installed from Settings or attached for installation.",
       parameters: {
@@ -1892,7 +1981,107 @@ async function executeTool(
       }
       return { ok: true, message: `Document created: ${data.title} (#${docNumber})`, id: data.id };
     }
-    if (name === "propose_document_set") {
+    if (name === "add_documents") {
+      // Batch insert. Reuses the same gates as add_document, then loops the
+      // insert path server-side so the assistant only spends ONE round
+      // regardless of how many documents are being drafted.
+      const rawDocs = Array.isArray((args as { documents?: unknown[] }).documents)
+        ? (args as { documents: unknown[] })
+        .documents
+        : [];
+      if (rawDocs.length === 0) return { ok: false, message: "add_documents needs at least one document" };
+      const { data: proj } = await supa
+        .from("projects")
+        .select("solution_summary, logic_approved_at")
+        .eq("id", projectId)
+        .single();
+      if (!proj?.solution_summary || !proj?.logic_approved_at) {
+        return {
+          ok: false,
+          message:
+            "Cannot create documents yet — the Logic Flow has not been approved. Tell the user to open Canvas → Logic Flow, generate it, review, then click 'Approve logic'.",
+        };
+      }
+      const { count: finalDocCount } = await supa
+        .from("canvas_nodes")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", projectId)
+        .eq("board", "final")
+        .eq("node_type", "document");
+      if (!finalDocCount) {
+        return {
+          ok: false,
+          message:
+            "Cannot create final documents yet — the Final Flow is not mapped. Call create_final_documents_map first, then retry add_documents.",
+        };
+      }
+      // Pre-fetch existing doc_numbers to auto-assign without collision.
+      const { data: existingDocs } = await supa
+        .from("documents")
+        .select("doc_number")
+        .eq("project_id", projectId);
+      const usedNumbers = new Set<number>(
+        (existingDocs ?? []).map((d: any) => Number(d.doc_number)).filter((n: number) => Number.isFinite(n)),
+      );
+      let nextAuto = 1;
+      const pickNumber = (requested: unknown): number => {
+        const n = Number(requested);
+        if (Number.isFinite(n) && n >= 0 && !usedNumbers.has(n)) {
+          usedNumbers.add(n);
+          return n;
+        }
+        while (usedNumbers.has(nextAuto)) nextAuto += 1;
+        usedNumbers.add(nextAuto);
+        return nextAuto;
+      };
+      const created: Array<{ id: string; title: string; doc_number: number }> = [];
+      const failed: Array<{ title: string; reason: string }> = [];
+      for (const raw of rawDocs) {
+        const d = (raw ?? {}) as Record<string, unknown>;
+        const title = String(d.title ?? "").trim();
+        if (!title) {
+          failed.push({ title: "(missing)", reason: "title is required" });
+          continue;
+        }
+        const docNumber = pickNumber(d.doc_number);
+        const finalNodeId = typeof d.final_node_id === "string" ? d.final_node_id : null;
+        const linkedNodeIds = finalNodeId ? [finalNodeId] : undefined;
+        const insertPayload: Record<string, unknown> = withMessage({
+          project_id: projectId,
+          title,
+          doc_number: docNumber,
+          doc_type: typeof d.doc_type === "string" ? d.doc_type : null,
+          print_size: typeof d.print_size === "string" ? d.print_size : null,
+          design_instructions: typeof d.design_instructions === "string" ? d.design_instructions : null,
+          hebrew_content: typeof d.hebrew_content === "string" ? d.hebrew_content : null,
+          envelope_number: typeof d.envelope_number === "number" ? d.envelope_number : null,
+          ...(linkedNodeIds ? { linked_node_ids: linkedNodeIds } : {}),
+        });
+        const { data: row, error } = await supa
+          .from("documents")
+          .insert(insertPayload)
+          .select("id, title, doc_number")
+          .single();
+        if (error || !row) {
+          failed.push({ title, reason: error?.message ?? "insert failed" });
+          continue;
+        }
+        created.push({ id: row.id, title: row.title, doc_number: row.doc_number ?? docNumber });
+        if (finalNodeId) {
+          await supa
+            .from("canvas_nodes")
+            .update({ data: { documentId: row.id, generationStatus: "draft row created" } })
+            .eq("id", finalNodeId)
+            .eq("project_id", projectId);
+        }
+      }
+      return {
+        ok: created.length > 0,
+        message: `Created ${created.length} document${created.length === 1 ? "" : "s"}${failed.length ? `; ${failed.length} failed` : ""}.`,
+        created,
+        failed,
+      };
+    }
       const proposalDocs = Array.isArray((args as { documents?: unknown[] }).documents)
         ? (args as { documents: unknown[] }).documents
         : [];
@@ -2276,6 +2465,106 @@ async function executeTool(
         image_effective_model: imageOrigins[0]?.effective || finalDoc?.document_model || undefined,
         image_provider: imageOrigins[0]?.provider || finalDoc?.document_provider || undefined,
         image_fallback: imageOrigins[0]?.fallback || "none",
+      };
+    }
+    if (name === "bulk_generate_documents") {
+      // Kick off the bulk-generate-documents edge function as a background
+      // job. Returns immediately so the assistant only spends ONE round
+      // regardless of how many docs are queued. Progress is written to
+      // bulk_generation_jobs and surfaced live in the Documents tab.
+      const a = args as Record<string, unknown>;
+      const scope = String(a.scope ?? "").trim();
+      const mode = String(a.mode ?? "").trim();
+      if (!["all_remaining", "from_doc_number", "ids"].includes(scope)) {
+        return { ok: false, message: "scope must be 'all_remaining', 'from_doc_number', or 'ids'" };
+      }
+      if (!["draft", "image", "document", "both", "image_to_pdf"].includes(mode)) {
+        return { ok: false, message: "mode must be 'draft', 'image', 'document', 'both', or 'image_to_pdf'" };
+      }
+      const documentFormat = String(a.document_format ?? "pdf").trim();
+      // Logic-Flow gate (same as the per-doc tool).
+      const { data: proj } = await supa
+        .from("projects")
+        .select("solution_summary, logic_approved_at")
+        .eq("id", projectId)
+        .single();
+      if (!proj?.solution_summary || !proj?.logic_approved_at) {
+        return { ok: false, message: "Cannot generate — Logic Flow not approved yet." };
+      }
+      // Resolve the target document set so we can pre-populate the job row
+      // (total + document_ids) and the assistant can report a real count back.
+      let targetIds: string[] = [];
+      if (scope === "ids") {
+        const ids = Array.isArray(a.document_ids)
+          ? (a.document_ids as unknown[]).filter((x): x is string => typeof x === "string")
+          : [];
+        if (ids.length === 0) return { ok: false, message: "scope='ids' requires document_ids[]" };
+        const { data: rows } = await supa
+          .from("documents")
+          .select("id")
+          .eq("project_id", projectId)
+          .in("id", ids);
+        targetIds = (rows ?? []).map((r: any) => r.id);
+      } else if (scope === "from_doc_number") {
+        const fromN = Number(a.from_doc_number);
+        if (!Number.isFinite(fromN)) {
+          return { ok: false, message: "scope='from_doc_number' requires from_doc_number (number)" };
+        }
+        let q = supa
+          .from("documents")
+          .select("id, doc_number")
+          .eq("project_id", projectId)
+          .gte("doc_number", fromN);
+        const untilN = Number(a.until_doc_number);
+        if (Number.isFinite(untilN)) q = q.lte("doc_number", untilN);
+        const { data: rows } = await q.order("doc_number", { ascending: true });
+        targetIds = (rows ?? []).map((r: any) => r.id);
+      } else {
+        // all_remaining: every non-final doc, skip Doc 0.
+        const { data: rows } = await supa
+          .from("documents")
+          .select("id, doc_number, status")
+          .eq("project_id", projectId)
+          .neq("status", "final")
+          .order("doc_number", { ascending: true });
+        targetIds = (rows ?? [])
+          .filter((r: any) => Number(r.doc_number) !== 0)
+          .map((r: any) => r.id);
+      }
+      if (targetIds.length === 0) {
+        return { ok: false, message: "No documents matched the requested scope." };
+      }
+      // Fire-and-forget invoke. The edge function creates its own job row
+      // (single source of truth) and returns the jobId — but we don't await
+      // it here so the assistant turn finishes immediately.
+      const fireAndForget = fetch(`${SUPABASE_URL}/functions/v1/bulk-generate-documents`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        },
+        body: JSON.stringify({
+          projectId,
+          scope,
+          mode,
+          documentFormat,
+          documentIds: scope === "ids" ? targetIds : undefined,
+          fromDocNumber: scope === "from_doc_number" ? Number(a.from_doc_number) : undefined,
+          untilDocNumber:
+            scope === "from_doc_number" && Number.isFinite(Number(a.until_doc_number))
+              ? Number(a.until_doc_number)
+              : undefined,
+        }),
+      }).catch((err) => {
+        console.error("[assistant-chat] bulk-generate-documents background fetch failed", err);
+      });
+      const runtime = (globalThis as { EdgeRuntime?: { waitUntil: (p: Promise<unknown>) => void } })
+        .EdgeRuntime;
+      if (runtime?.waitUntil) runtime.waitUntil(fireAndForget);
+      return {
+        ok: true,
+        message: `Queued ${targetIds.length} document${targetIds.length === 1 ? "" : "s"} for ${mode} generation. Tell the user to watch the Documents tab — progress updates live. Do NOT claim docs are finished, only that generation is QUEUED/STARTED.`,
+        total: targetIds.length,
       };
     }
     if (name === "explain_claude_skill_install") {
@@ -2852,7 +3141,7 @@ async function processConversation(
     (project as { ai_reasoning_effort?: string }).ai_reasoning_effort ?? "high",
   );
   const TOOLS = buildTools(playbook);
-  const MAX_ROUNDS = 4;
+  const MAX_ROUNDS = 6;
   let lastFb: { effectiveModel: string; fallback: string } = {
     effectiveModel: model,
     fallback: "none",
@@ -3035,11 +3324,11 @@ async function processConversation(
         convo.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result) });
         flushProgress(`finished ${call.function.name}`);
       }
-      if (round === MAX_ROUNDS - 3) {
+      if (round === MAX_ROUNDS - 2) {
         convo.push({
           role: "system",
           content:
-            "You have one tool round left. Make any remaining tool calls in a single batch this turn, then write your reply.",
+            "You have one tool round left. Make any remaining tool calls in a single batch this turn, then write your reply. If you need to create or generate many documents, prefer the batch tools (add_documents, bulk_generate_documents) over looping the per-doc tools.",
         });
       }
       continue;
@@ -3411,7 +3700,7 @@ Deno.serve(async (req) => {
     );
     const TOOLS = buildTools(playbook);
 
-    const MAX_ROUNDS = 4;
+    const MAX_ROUNDS = 6;
     const callerUserId = await getUserIdFromAuth(req);
     let lastFb: { effectiveModel: string; fallback: string } = {
       effectiveModel: model,
