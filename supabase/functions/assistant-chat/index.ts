@@ -3597,6 +3597,24 @@ Deno.serve(async (req) => {
     // BACKGROUND MODE — record a run row, kick off the work, return runId.
     if (mode === "background") {
       const callerUserId = await getUserIdFromAuth(req);
+      // Defensive sweep: close any stale runs from prior crashes/Worker kills
+      // before starting a new one. Without this, the frontend "stuck assistant"
+      // watchdog can latch onto an old ghost run and show a recovery banner
+      // even when the current turn finishes cleanly.
+      try {
+        const cutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+        await supa
+          .from("assistant_runs")
+          .update({
+            status: "error",
+            error: "auto-closed: stale run (>15 min in running state)",
+            finished_at: new Date().toISOString(),
+          })
+          .eq("status", "running")
+          .lt("started_at", cutoff);
+      } catch (e) {
+        console.warn("stale assistant_runs sweep failed (non-fatal)", e);
+      }
       const { data: runRow, error: runErr } = await supa
         .from("assistant_runs")
         .insert({ project_id: projectId, user_id: callerUserId, status: "running" })
