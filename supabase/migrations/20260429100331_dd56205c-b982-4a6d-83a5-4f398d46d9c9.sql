@@ -1,0 +1,1 @@
+ALTER TABLE public.project_notifications ADD COLUMN IF NOT EXISTS preview_image_url text;

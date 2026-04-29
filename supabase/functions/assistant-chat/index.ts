@@ -473,8 +473,12 @@ ${renderDocModeButtonsBlock(playbook)}
 
 BATCH RULES (CRITICAL — applies to drafting AND generating documents):
 A. **Drafting many docs in one turn** — when the user asks to draft a numbered range ("docs 7-20", "the next 10"), "all of them", "the rest", or more than ~3 documents at once, you MUST call \`add_documents\` (plural) ONCE with every document spec in the array. NEVER loop \`add_document\` for batch requests — the per-turn round budget will silently truncate it and most rows will never be written. After \`add_documents\` returns, list every entry from \`created\` as a numbered roster in your prose so the user sees what was written. Single-doc / "auto" / "ask" workflows still use \`add_document\` per-doc so the per-doc preview rules apply.
-B. **Generating more than one doc** — when the user asks to generate more than one doc, "all docs", "the rest", a numbered range, or "everything", you MUST call \`bulk_generate_documents\` ONCE. NEVER loop \`generate_document_assets\` for batch requests. The bulk tool returns immediately with a queued count; tell the user to watch the Documents tab for live progress, and explicitly say "QUEUED" / "STARTED", never "DONE" / "FINISHED" in the same turn. Single-doc generation still uses \`generate_document_assets\`.
-C. **Doc 0 stays per-doc** — Doc 0 (contents inventory) requires special handling and MUST go through \`add_document\`, never \`add_documents\`.`;
+B. **Generating more than one doc** — when the user asks to generate more than one doc, "all docs", "the rest", a numbered range, or "everything", FIRST say in one short sentence: "I'll first draft them all, then generate them one shot each — watch the Documents tab (live indicator) and the bell for per-doc previews." Then in the SAME turn:
+  1. If ANY target docs are missing \`hebrew_content\`, call \`bulk_generate_documents\` ONCE with \`mode: "draft"\` for the full target scope. Capture the returned \`job_id\`.
+  2. Then call \`bulk_generate_documents\` AGAIN with \`mode: "both"\` for the same scope, passing \`wait_for_job_id\` = the draft job id from step 1 so the worker chains automatically. If step 1 was skipped (everything already drafted), call \`mode: "both"\` directly without \`wait_for_job_id\`.
+  Both calls return immediately — they only QUEUE work. Tell the user explicitly "QUEUED" / "STARTED", never "DONE" / "FINISHED" in that turn. Do NOT loop \`generate_document_assets\` for batch requests. Single-doc generation still uses \`generate_document_assets\`.
+C. **Doc 0 stays per-doc** — Doc 0 (contents inventory) requires special handling and MUST go through \`add_document\`, never \`add_documents\`.
+D. **Post-completion follow-up** — when a bulk run finishes, the system will auto-open the Assistant with a starter prompt asking you to acknowledge results and propose the next step. Reply with a short, concrete acknowledgement (X/Y succeeded, name any failed docs) and one clear next-step recommendation appropriate to the project phase (review, retry failures, move to envelopes/hints/marketing).`;
 })()}
 
 ${
@@ -1254,6 +1258,11 @@ const BASE_TOOLS = [
             type: "array",
             items: { type: "string" },
             description: "Required when scope='ids'. Document ids to generate.",
+          },
+          wait_for_job_id: {
+            type: "string",
+            description:
+              "Optional job id from a previous bulk_generate_documents call. When set, the worker waits for that prior job to finish before starting this one — used to chain a 'draft pass → generate pass' so drafts land before image/file generation begins.",
           },
         },
         required: ["scope", "mode"],
@@ -2538,36 +2547,49 @@ async function executeTool(
       if (targetIds.length === 0) {
         return { ok: false, message: "No documents matched the requested scope." };
       }
-      // Fire-and-forget invoke. The edge function creates its own job row
-      // (single source of truth) and returns the jobId — but we don't await
-      // it here so the assistant turn finishes immediately.
-      const fireAndForget = fetch(`${SUPABASE_URL}/functions/v1/bulk-generate-documents`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-        },
-        body: JSON.stringify({
-          projectId,
-          scope,
-          mode,
-          documentFormat,
-          documentIds: scope === "ids" ? targetIds : undefined,
-          fromDocNumber: scope === "from_doc_number" ? Number(a.from_doc_number) : undefined,
-          untilDocNumber:
-            scope === "from_doc_number" && Number.isFinite(Number(a.until_doc_number))
-              ? Number(a.until_doc_number)
-              : undefined,
-        }),
-      }).catch((err) => {
-        console.error("[assistant-chat] bulk-generate-documents background fetch failed", err);
-      });
-      const runtime = (globalThis as { EdgeRuntime?: { waitUntil: (p: Promise<unknown>) => void } })
-        .EdgeRuntime;
-      if (runtime?.waitUntil) runtime.waitUntil(fireAndForget);
+      // Invoke the bulk function and AWAIT only its kicker response — the
+      // edge function itself returns immediately (job runs in background via
+      // waitUntil) so we can hand the assistant a real job_id back. That id
+      // is what the assistant passes as wait_for_job_id on a chained call
+      // (e.g. draft pass → generate pass).
+      const waitForJobId =
+        typeof a.wait_for_job_id === "string" && a.wait_for_job_id.trim().length > 0
+          ? a.wait_for_job_id.trim()
+          : null;
+      let jobId: string | null = null;
+      try {
+        const kickResp = await fetch(`${SUPABASE_URL}/functions/v1/bulk-generate-documents`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          },
+          body: JSON.stringify({
+            projectId,
+            scope,
+            mode,
+            documentFormat,
+            documentIds: scope === "ids" ? targetIds : undefined,
+            fromDocNumber: scope === "from_doc_number" ? Number(a.from_doc_number) : undefined,
+            untilDocNumber:
+              scope === "from_doc_number" && Number.isFinite(Number(a.until_doc_number))
+                ? Number(a.until_doc_number)
+                : undefined,
+            waitForJobId,
+          }),
+        });
+        const kickJson = await kickResp.json().catch(() => ({} as { jobId?: string }));
+        jobId = (kickJson as { jobId?: string }).jobId ?? null;
+      } catch (err) {
+        console.error("[assistant-chat] bulk-generate-documents kick failed", err);
+      }
+      const chainHint = waitForJobId
+        ? ` (will start after job ${waitForJobId.slice(0, 8)}… finishes)`
+        : "";
       return {
         ok: true,
-        message: `Queued ${targetIds.length} document${targetIds.length === 1 ? "" : "s"} for ${mode} generation. Tell the user to watch the Documents tab — progress updates live. Do NOT claim docs are finished, only that generation is QUEUED/STARTED.`,
+        job_id: jobId,
+        message: `Queued ${targetIds.length} document${targetIds.length === 1 ? "" : "s"} for ${mode} generation${chainHint}. Tell the user to watch the Documents tab (live indicator) and the bell for per-doc previews. Do NOT claim docs are finished, only that generation is QUEUED/STARTED. If you need to chain another bulk call, pass wait_for_job_id="${jobId ?? ""}".`,
         total: targetIds.length,
       };
     }

@@ -59,6 +59,40 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     return () => window.removeEventListener("mystudio:navigate", handler as EventListener);
   }, []);
 
+  // When a bulk-generation run finishes, the edge worker inserts a
+  // `bulk_generation_done` notification with a `starter_prompt`. Auto-dispatch
+  // it into the Assistant so the user gets the acknowledgement + next-step
+  // message without having to click "Open in Assistant". Guard with
+  // localStorage so we only fire once per notification per browser.
+  useEffect(() => {
+    const seenKey = `bulk-done-seen:${projectId}`;
+    const channel = supabase
+      .channel(`bulk-done-${projectId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "project_notifications", filter: `project_id=eq.${projectId}` },
+        (payload) => {
+          const row = payload.new as { id: string; kind: string; starter_prompt: string | null };
+          if (row.kind !== "bulk_generation_done" || !row.starter_prompt) return;
+          let seen: string[] = [];
+          try { seen = JSON.parse(localStorage.getItem(seenKey) ?? "[]"); } catch { /* ignore */ }
+          if (seen.includes(row.id)) return;
+          seen.push(row.id);
+          try { localStorage.setItem(seenKey, JSON.stringify(seen.slice(-50))); } catch { /* ignore */ }
+          setTab("assistant");
+          window.setTimeout(() => {
+            window.dispatchEvent(
+              new CustomEvent("mystudio:assistant-prompt", {
+                detail: { projectId, prompt: row.starter_prompt! },
+              }),
+            );
+          }, 80);
+        },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [projectId]);
+
   const { data: project, isLoading } = useQuery({
     queryKey: ["project", projectId],
     queryFn: async () => {

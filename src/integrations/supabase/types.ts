@@ -1182,6 +1182,7 @@ export type Database = {
           created_by: string
           id: string
           kind: string
+          preview_image_url: string | null
           project_id: string
           read_at: string | null
           starter_prompt: string | null
@@ -1194,6 +1195,7 @@ export type Database = {
           created_by?: string
           id?: string
           kind?: string
+          preview_image_url?: string | null
           project_id: string
           read_at?: string | null
           starter_prompt?: string | null
@@ -1206,6 +1208,7 @@ export type Database = {
           created_by?: string
           id?: string
           kind?: string
+          preview_image_url?: string | null
           project_id?: string
           read_at?: string | null
           starter_prompt?: string | null

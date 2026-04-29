@@ -134,22 +134,50 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
     return () => { supabase.removeChannel(ch); };
   }, [projectId, refetchJob, refetch]);
 
-  const launchBulk = async () => {
+  const launchBulk = async (overrides?: { mode?: typeof bulkMode; scope?: typeof bulkScope; format?: typeof bulkFormat; concurrency?: number; logChat?: string }) => {
     const { data: { session } } = await supabase.auth.getSession();
+    const payload = {
+      projectId,
+      scope: overrides?.scope ?? bulkScope,
+      mode: overrides?.mode ?? bulkMode,
+      documentFormat: overrides?.format ?? bulkFormat,
+      concurrency: overrides?.concurrency ?? bulkConcurrency,
+    };
     const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/bulk-generate-documents`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
       },
-      body: JSON.stringify({ projectId, scope: bulkScope, mode: bulkMode, documentFormat: bulkFormat, concurrency: bulkConcurrency }),
+      body: JSON.stringify(payload),
     });
     const json = await resp.json().catch(() => ({} as { jobId?: string; total?: number; error?: string; message?: string }));
     if (!resp.ok) { toast.error(json.error ?? `Bulk start failed (${resp.status})`); return; }
     if (!json.jobId) { toast.info(json.message ?? "No matching documents."); return; }
     setActiveJobId(json.jobId);
     setBulkOpen(false);
-    toast.success(`Bulk run started — ${json.total} document${json.total === 1 ? "" : "s"} in queue.`);
+    // Optionally drop a user message into the chat so the assistant has
+    // context for its post-completion follow-up.
+    if (overrides?.logChat) {
+      try {
+        await supabase.from("chat_messages").insert({
+          project_id: projectId,
+          role: "user",
+          content: overrides.logChat,
+        });
+      } catch (e) { /* non-fatal */ }
+    }
+    toast.success(`${overrides?.mode === "draft" ? "Drafting" : "Bulk run"} started — ${json.total} document${json.total === 1 ? "" : "s"} in queue.`);
+  };
+
+  const startDraftAll = async () => {
+    if (!confirm("Draft text content for all remaining documents? Existing drafts will be regenerated.")) return;
+    await launchBulk({
+      mode: "draft",
+      scope: "all_remaining",
+      concurrency: 2,
+      logChat: "I just hit Draft all on the Documents tab. You'll see per-doc updates in the bell as each draft lands; once it's done, please acknowledge and tell me whether to review or jump to generating images + PDFs for the whole set.",
+    });
   };
 
   const sel = data?.find((d) => d.id === selected) ?? null;
@@ -159,8 +187,32 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
   return (
     <div className="max-w-7xl mx-auto px-6 md:px-10 py-8">
       <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
-        <h2 className="font-display text-3xl">Documents</h2>
+        <h2 className="font-display text-3xl flex items-center gap-3">
+          Documents
+          {jobRunning && (
+            <span
+              className="inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-success"
+              title={`Live — ${activeJob?.mode === "draft" ? "drafting" : "generating"} in progress`}
+            >
+              <span className="relative inline-flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-80" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-success ring-2 ring-success/40 shadow-[0_0_8px_rgba(34,197,94,0.7)]" />
+              </span>
+              Live
+            </span>
+          )}
+        </h2>
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={startDraftAll}
+            disabled={jobRunning || !data?.length}
+            className="gap-2"
+            title="Draft Hebrew text content for every remaining document"
+          >
+            {jobRunning && activeJob?.mode === "draft" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+            Draft all
+          </Button>
           <Button
             variant="outline"
             onClick={() => setBulkOpen(true)}
@@ -168,7 +220,7 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
             className="gap-2"
             title="Generate text + image + file for many documents in one run"
           >
-            {jobRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+            {jobRunning && activeJob?.mode !== "draft" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
             Generate all
           </Button>
           <Button onClick={addDoc} className="gap-2"><Plus className="h-4 w-4" /> New document</Button>
@@ -256,7 +308,7 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="ghost" onClick={() => setBulkOpen(false)}>Cancel</Button>
-              <Button onClick={launchBulk} className="gap-2"><Wand2 className="h-4 w-4" /> Start bulk run</Button>
+              <Button onClick={() => launchBulk()} className="gap-2"><Wand2 className="h-4 w-4" /> Start bulk run</Button>
             </div>
           </div>
         </DialogContent>
