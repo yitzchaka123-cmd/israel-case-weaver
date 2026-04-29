@@ -21,6 +21,7 @@ import { PhaseStatusBar } from "./PhaseStatusBar";
 import { NotificationBell } from "./notifications/NotificationBell";
 import { useAssistantRunStatus } from "./assistant/useAssistantRun";
 import { useLogicFlowLive } from "./canvas/useLogicFlowLive";
+import { useActiveBulkJob } from "./useActiveBulkJob";
 import { ProjectHistoryPanel } from "./ProjectHistoryPanel";
 import { trashProject } from "@/lib/project-versions";
 
@@ -31,6 +32,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const [focusMessageId, setFocusMessageId] = useState<string | null>(null);
   const assistantRunning = useAssistantRunStatus(projectId);
   const canvasLive = useLogicFlowLive(projectId).isActive;
+  const bulkJobLive = useActiveBulkJob(projectId);
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
   useEffect(() => {
@@ -283,7 +285,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
               ].map((t) => {
                 const Icon = t.icon;
                 const showPulse = t.v === "assistant" && assistantRunning;
-                const showLiveDot = t.v === "canvas" && canvasLive;
+                const showLiveDot = (t.v === "canvas" && canvasLive) || (t.v === "documents" && bulkJobLive);
                 const showAttention =
                   t.v === "canvas" && !canvasLive && !!caseBoardAttention?.needsAttention;
                 return (
