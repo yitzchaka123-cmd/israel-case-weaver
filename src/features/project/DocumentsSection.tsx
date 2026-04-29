@@ -351,12 +351,31 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
                 <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="1">1 — slowest, gentlest on rate limits</SelectItem>
-                  <SelectItem value="2">2 — recommended</SelectItem>
-                  <SelectItem value="3">3</SelectItem>
+                  <SelectItem value="2">2</SelectItem>
+                  <SelectItem value="3">3 — recommended</SelectItem>
                   <SelectItem value="5">5 — fastest, may hit credits/rate limits</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+            {alreadyGeneratedCount > 0 && (
+              <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5 space-y-2">
+                <p className="text-xs font-medium text-warning-foreground">
+                  ⚠ {alreadyGeneratedCount} of {totalEligible} document{totalEligible === 1 ? "" : "s"} already have {bulkMode === "draft" ? "drafted text" : bulkMode === "image" ? "a generated image" : bulkMode === "document" ? "a generated file" : "image + file"}.
+                </p>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={bulkSkipExisting}
+                    onChange={(e) => setBulkSkipExisting(e.target.checked)}
+                    className="mt-0.5"
+                  />
+                  <span className="text-xs">
+                    <strong>Skip docs that already have content</strong> (recommended — saves credits).
+                    {!bulkSkipExisting && <span className="block text-destructive mt-0.5">All {alreadyGeneratedCount} existing items will be overwritten.</span>}
+                  </span>
+                </label>
+              </div>
+            )}
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="ghost" onClick={() => setBulkOpen(false)}>Cancel</Button>
               <Button onClick={() => launchBulk()} className="gap-2"><Wand2 className="h-4 w-4" /> Start bulk run</Button>
