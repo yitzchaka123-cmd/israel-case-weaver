@@ -134,40 +134,60 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
     return () => { supabase.removeChannel(ch); };
   }, [projectId, refetchJob, refetch]);
 
+  const launchingRef = useRef(false);
   const launchBulk = async (overrides?: { mode?: typeof bulkMode; scope?: typeof bulkScope; format?: typeof bulkFormat; concurrency?: number; logChat?: string }) => {
-    const { data: { session } } = await supabase.auth.getSession();
-    const payload = {
-      projectId,
-      scope: overrides?.scope ?? bulkScope,
-      mode: overrides?.mode ?? bulkMode,
-      documentFormat: overrides?.format ?? bulkFormat,
-      concurrency: overrides?.concurrency ?? bulkConcurrency,
-    };
-    const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/bulk-generate-documents`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-      },
-      body: JSON.stringify(payload),
-    });
-    const json = await resp.json().catch(() => ({} as { jobId?: string; total?: number; error?: string; message?: string }));
-    if (!resp.ok) { toast.error(json.error ?? `Bulk start failed (${resp.status})`); return; }
-    if (!json.jobId) { toast.info(json.message ?? "No matching documents."); return; }
-    setActiveJobId(json.jobId);
-    setBulkOpen(false);
-    // Optionally drop a user message into the chat so the assistant has
-    // context for its post-completion follow-up.
-    if (overrides?.logChat) {
-      try {
-        await supabase.from("chat_messages").insert({
-          project_id: projectId,
-          role: "user",
-          content: overrides.logChat,
-        });
-      } catch (e) { /* non-fatal */ }
+    // Guard against double-clicks creating multiple parallel jobs that fight
+    // over the same docs and burn through provider quota.
+    if (launchingRef.current) { toast.info("A bulk run is already starting…"); return; }
+    // Also block if a job is already running for this project.
+    const { data: existing } = await supabase
+      .from("bulk_generation_jobs")
+      .select("id")
+      .eq("project_id", projectId)
+      .eq("status", "running")
+      .limit(1);
+    if ((existing?.length ?? 0) > 0) {
+      toast.error("A bulk run is already in progress for this project. Wait for it to finish before starting another.");
+      return;
     }
-    toast.success(`${overrides?.mode === "draft" ? "Drafting" : "Bulk run"} started — ${json.total} document${json.total === 1 ? "" : "s"} in queue.`);
+    launchingRef.current = true;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const payload = {
+        projectId,
+        scope: overrides?.scope ?? bulkScope,
+        mode: overrides?.mode ?? bulkMode,
+        documentFormat: overrides?.format ?? bulkFormat,
+        concurrency: overrides?.concurrency ?? bulkConcurrency,
+      };
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/bulk-generate-documents`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      const json = await resp.json().catch(() => ({} as { jobId?: string; total?: number; error?: string; message?: string }));
+      if (!resp.ok) { toast.error(json.error ?? `Bulk start failed (${resp.status})`); return; }
+      if (!json.jobId) { toast.info(json.message ?? "No matching documents."); return; }
+      setActiveJobId(json.jobId);
+      setBulkOpen(false);
+      if (overrides?.logChat) {
+        try {
+          await supabase.from("chat_messages").insert({
+            project_id: projectId,
+            role: "user",
+            content: overrides.logChat,
+          });
+        } catch (_e) { /* non-fatal */ }
+      }
+      toast.success(`${overrides?.mode === "draft" ? "Drafting" : "Bulk run"} started — ${json.total} document${json.total === 1 ? "" : "s"} in queue.`);
+    } finally {
+      // Release the lock after a short delay so a second click during the
+      // network round-trip is still blocked, but the user can retry later.
+      setTimeout(() => { launchingRef.current = false; }, 3000);
+    }
   };
 
   const startDraftAll = async () => {
@@ -255,9 +275,22 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
           {activeJob.current_doc_title && jobRunning && (
             <p className="text-xs text-muted-foreground mt-2 truncate">Working on: {activeJob.current_doc_title}</p>
           )}
-          {activeJob.error && !jobRunning && (
-            <p className="text-xs text-destructive mt-2 line-clamp-2">{activeJob.error}</p>
-          )}
+          {activeJob.error && !jobRunning && (() => {
+            const err = activeJob.error.toLowerCase();
+            const billing = err.includes("billing hard limit") || err.includes("quota") || err.includes("insufficient_quota");
+            const rate = err.includes("rate limit") || err.includes("429");
+            return (
+              <div className="mt-2 space-y-1">
+                {billing && (
+                  <p className="text-xs font-medium text-destructive">⚠ OpenAI billing limit reached — top up your image-provider account, then retry. No credits were charged for the failed docs.</p>
+                )}
+                {rate && !billing && (
+                  <p className="text-xs font-medium text-warning">⚠ Image provider rate-limited the run. Wait a minute and retry — the worker already auto-retried 3×.</p>
+                )}
+                <p className="text-xs text-destructive line-clamp-2">{activeJob.error}</p>
+              </div>
+            );
+          })()}
         </div>
       )}
 
