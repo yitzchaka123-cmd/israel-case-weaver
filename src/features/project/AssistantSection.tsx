@@ -1245,9 +1245,9 @@ function ThinkingDisclosure({
   live?: boolean;
   defaultOpen?: boolean;
 }) {
-  // Default-open while the run is live so users actually see thinking stream
-  // in. Once the run finishes the next render keeps whatever state they had.
-  const [open, setOpen] = useState(live || defaultOpen);
+  // Hidden by default — users can click "Show thinking" to expand. Applies
+  // to both live and finished runs to keep the chat clean.
+  const [open, setOpen] = useState(defaultOpen);
   const totalSegments = reasoning.reduce((acc, r) => acc + r.segments.length, 0);
   const totalChars = reasoning.reduce(
     (acc, r) => acc + r.segments.reduce((a, s) => a + s.text.length, 0),
