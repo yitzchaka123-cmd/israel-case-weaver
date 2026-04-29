@@ -61,13 +61,27 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Owner playbook (envelopes config + design template)
+    // Owner playbook (envelopes config + design template) AND company branding.
     const { data: profile } = await supa
       .from("profiles")
       .select("assistant_playbook")
       .eq("id", project.owner_id)
       .maybeSingle();
     const playbook = resolvePlaybook((profile as { assistant_playbook?: unknown } | null)?.assistant_playbook);
+
+    const { data: companyProfile } = await supa
+      .from("company_profiles")
+      .select("company_name, tagline, logo_url")
+      .eq("owner_id", project.owner_id)
+      .maybeSingle();
+    const brand = companyProfile as { company_name?: string | null; tagline?: string | null; logo_url?: string | null } | null;
+    const brandingBlock = brand?.logo_url
+      ? `COMPANY BRANDING (apply to every envelope cover):
+- Company name: ${brand.company_name ?? "(unspecified)"}
+- Tagline: ${brand.tagline ?? "(none)"}
+- Logo URL: ${brand.logo_url}
+The image generator will receive the logo file separately. In the design_instructions, REQUIRE the logo to appear at the top of the envelope (top-center, top-left, or top-right — pick the spot that frames this envelope best, and use the SAME spot for every envelope in the set so the box looks like one branded series). Logo height ≈ 8–12% of envelope's longer side, with breathing room from the wax seal and diagonal stamp. Treat it as if printed onto the envelope (matte ink, period-correct registration), not a sticker, not a watermark, no drop shadows. If a company name is supplied, render it in small clean type beside or beneath the logo.`
+      : `COMPANY BRANDING: no company logo configured for this workspace — do NOT invent one. Skip the branding lockup entirely.`;
 
     const { data: existing } = await supa
       .from("envelopes")
