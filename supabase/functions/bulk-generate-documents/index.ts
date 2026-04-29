@@ -2,15 +2,18 @@
 //
 // Walks a list of documents and calls the existing `generate-document` edge
 // function once per (doc, requested-output) tuple, with a small concurrency
-// window. Writes live progress to `bulk_generation_jobs` so the UI can show
-// "12 / 40 · current: …" with realtime updates. Reuses ALL logic in
-// `generate-document` — no duplication.
+// window (defaults to SERIAL = 1 so the user sees one shot at a time).
+// Writes live progress to `bulk_generation_jobs` so the UI can show
+// "12 / 40 · current: …" with realtime updates, AND emits one
+// `project_notifications` row per doc as it finishes (with a thumbnail when
+// an image was produced) so the bell shows live per-doc updates.
 //
 // Modes:
 //   "draft"        → mode=text only (writes hebrew_content, no image/file)
+//                    → notifications are emitted WITHOUT thumbnails.
 //   "image"        → mode=image only
 //   "document"     → mode=document only (PDF/DOCX/etc)
-//   "both"         → image + document
+//   "both"         → image + document (notifications get the image thumbnail)
 //   "image_to_pdf" → wraps each doc's existing generated_asset_url image
 //                    into a one-page PDF via the same Claude pipeline.
 //
@@ -18,6 +21,10 @@
 //   "all_remaining"  → every doc whose status != 'final' (and not Doc 0)
 //   "from_doc_number"→ filter by doc_number >= fromDocNumber (and optional cap)
 //   "ids"            → exact list of document_ids
+//
+// Optional `waitForJobId`: if set, the worker waits (poll up to 20 min) for
+// that prior job to finish before starting. This lets the assistant chain a
+// "draft pass → generate pass" without blocking its own turn.
 //
 // On 429 / 402 errors the worker pauses 30s and retries up to 2 times before
 // marking that doc as failed and moving on.
@@ -44,6 +51,13 @@ interface BulkRequest {
   untilDocNumber?: number;
   documentIds?: string[];
   concurrency?: number;
+  waitForJobId?: string | null;
+  /**
+   * When true, after the run finishes the worker inserts a
+   * "bulk_generation_done" notification with a starter_prompt so the
+   * assistant follow-up flow kicks in. Default true.
+   */
+  notifyOnComplete?: boolean;
 }
 
 const MAX_CONCURRENCY = 5;
@@ -106,6 +120,70 @@ async function generateOneDoc(supa: any, jobId: string, doc: { id: string; title
   return { ok: true };
 }
 
+/** Insert a per-doc notification (success or failure). */
+async function notifyPerDoc(
+  supa: any,
+  projectId: string,
+  doc: { id: string; title: string; doc_number: number | null },
+  mode: Mode,
+  outcome: { ok: boolean; error?: string },
+) {
+  try {
+    const numLabel = doc.doc_number !== null && doc.doc_number !== undefined ? `Doc ${doc.doc_number}` : "Doc";
+    let previewUrl: string | null = null;
+    if (outcome.ok && mode !== "draft") {
+      // Pull the freshly generated thumbnail.
+      const { data } = await supa
+        .from("documents")
+        .select("generated_asset_url, document_preview_url")
+        .eq("id", doc.id)
+        .single();
+      previewUrl = (data?.document_preview_url as string | null) ?? (data?.generated_asset_url as string | null) ?? null;
+    }
+    const verb =
+      mode === "draft" ? "Drafted"
+      : mode === "image" ? "Image generated for"
+      : mode === "document" ? "File generated for"
+      : mode === "image_to_pdf" ? "PDF wrapped for"
+      : "Generated";
+    const title = outcome.ok
+      ? `✓ ${numLabel} — ${doc.title}`
+      : `⚠ ${numLabel} — ${doc.title} failed`;
+    const body = outcome.ok
+      ? `${verb} "${doc.title}".`
+      : (outcome.error ?? "Generation failed").slice(0, 280);
+    await supa.from("project_notifications").insert({
+      project_id: projectId,
+      kind: outcome.ok ? "bulk_doc_done" : "bulk_doc_failed",
+      title,
+      body,
+      preview_image_url: previewUrl,
+      created_by: "assistant",
+      status: "unread",
+    } as never);
+  } catch (e) {
+    console.warn("[bulk] per-doc notification failed", e);
+  }
+}
+
+/** Wait for a prior job to reach a terminal state. Polls every 5s, max 20 min. */
+async function waitForPriorJob(supa: any, priorJobId: string) {
+  const start = Date.now();
+  const deadline = start + 20 * 60_000;
+  while (Date.now() < deadline) {
+    const { data } = await supa
+      .from("bulk_generation_jobs")
+      .select("status")
+      .eq("id", priorJobId)
+      .maybeSingle();
+    const s = (data as { status?: string } | null)?.status;
+    if (!s) return; // gone — proceed
+    if (s === "completed" || s === "failed") return;
+    await new Promise((res) => setTimeout(res, 5_000));
+  }
+  console.warn(`[bulk] waitForJobId ${priorJobId} timed out — proceeding anyway`);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -116,7 +194,10 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "projectId, scope, mode required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     const documentFormat = input.documentFormat ?? "pdf";
-    const concurrency = Math.max(1, Math.min(MAX_CONCURRENCY, input.concurrency ?? 3));
+    // Default to SERIAL (1) so the user sees one-shot-at-a-time progress that
+    // matches the assistant's "I'll generate them one shot each" promise.
+    const concurrency = Math.max(1, Math.min(MAX_CONCURRENCY, input.concurrency ?? 1));
+    const notifyOnComplete = input.notifyOnComplete !== false;
 
     const supa = createClient(SUPABASE_URL, SERVICE);
 
@@ -170,6 +251,11 @@ Deno.serve(async (req) => {
     // Kick off the worker as a background task — return jobId immediately so
     // the UI can subscribe to realtime progress.
     const work = (async () => {
+      // Optionally chain after a prior job (e.g. draft pass → generate pass).
+      if (input.waitForJobId) {
+        await waitForPriorJob(supa, input.waitForJobId);
+      }
+
       const errors: { id: string; title: string; error: string }[] = [];
       // Simple concurrency window
       let cursor = 0;
@@ -179,6 +265,8 @@ Deno.serve(async (req) => {
           if (i >= docs.length) return;
           const d = docs[i];
           const res = await generateOneDoc(supa, jobId, d, mode, documentFormat);
+          // Per-doc notification (with thumbnail when applicable)
+          await notifyPerDoc(supa, projectId, d, mode, res);
           if (res.ok) {
             await supa.rpc("increment_bulk_completed", { p_job_id: jobId }).then(
               () => {},
@@ -204,16 +292,33 @@ Deno.serve(async (req) => {
         current_doc_title: null,
       }).eq("id", jobId);
 
-      // Notification for the user when done.
-      try {
-        await supa.from("project_notifications").insert({
-          project_id: projectId,
-          kind: "bulk_generation",
-          title: errors.length === 0 ? `Bulk generation complete (${docs.length} docs)` : `Bulk generation finished with ${errors.length} failure${errors.length === 1 ? "" : "s"}`,
-          body: `${docs.length - errors.length} / ${docs.length} documents generated successfully.${errors.length > 0 ? ` Failed: ${errors.slice(0, 5).map((e) => e.title).join(", ")}` : ""}`,
-          created_by: "assistant",
-        } as never);
-      } catch (_e) { /* notifications optional */ }
+      // Final summary notification — used by the client to nudge the
+      // assistant into acknowledging progress and proposing the next step.
+      if (notifyOnComplete) {
+        try {
+          const succeeded = docs.length - errors.length;
+          const modeLabel =
+            mode === "draft" ? "drafting"
+            : mode === "image" ? "image generation"
+            : mode === "document" ? "file generation"
+            : mode === "image_to_pdf" ? "PDF wrapping"
+            : "generation";
+          const starter = mode === "draft"
+            ? `I just finished drafting ${succeeded}/${docs.length} documents in bulk. Briefly acknowledge what was drafted and tell me whether you recommend reviewing the drafts or moving straight to generating images + PDFs for all of them.`
+            : `I just finished bulk ${modeLabel} on ${succeeded}/${docs.length} documents. Briefly acknowledge the result and propose the next step (review, fix any failures, move on to envelopes/hints/marketing — whatever fits the current phase).`;
+          await supa.from("project_notifications").insert({
+            project_id: projectId,
+            kind: "bulk_generation_done",
+            title: errors.length === 0
+              ? `Bulk ${modeLabel} complete — ${docs.length} doc${docs.length === 1 ? "" : "s"}`
+              : `Bulk ${modeLabel} finished with ${errors.length} failure${errors.length === 1 ? "" : "s"}`,
+            body: `${succeeded} / ${docs.length} documents ${mode === "draft" ? "drafted" : "generated"} successfully.${errors.length > 0 ? ` Failed: ${errors.slice(0, 5).map((e) => e.title).join(", ")}` : ""}`,
+            starter_prompt: starter,
+            created_by: "assistant",
+            status: "unread",
+          } as never);
+        } catch (_e) { /* notifications optional */ }
+      }
     })();
     // Don't await — let it run as a background task.
     // @ts-ignore Deno worker waitUntil
