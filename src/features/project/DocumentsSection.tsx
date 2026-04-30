@@ -137,8 +137,40 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
       const { data } = await supabase.from("bulk_generation_jobs").select("*").eq("project_id", projectId).order("started_at", { ascending: false }).limit(1).maybeSingle();
       return data as never;
     },
-    refetchInterval: activeJobId ? 2500 : false,
-  }) as { data: { id: string; status: string; total: number; completed: number; failed: number; current_doc_title: string | null; mode: string; error: string | null; started_at: string; finished_at: string | null } | null; refetch: () => void };
+    refetchInterval: activeJobId ? 2500 : 5000,
+  }) as { data: { id: string; status: string; total: number; completed: number; failed: number; current_doc_title: string | null; mode: string; document_format: string | null; scope: string; document_ids: string[]; error: string | null; started_at: string; finished_at: string | null; last_heartbeat_at: string | null; cancel_requested: boolean | null } | null; refetch: () => void };
+
+  // A "running" job whose heartbeat is older than 4 min is a ghost — the
+  // worker died. We surface this in the UI so the user can force-stop it
+  // and resume the remaining docs instead of staring at an infinite spinner.
+  const STALE_MS = 4 * 60_000;
+  const heartbeatAgeMs = activeJob?.last_heartbeat_at ? Date.now() - new Date(activeJob.last_heartbeat_at).getTime() : 0;
+  const isStale = !!activeJob && activeJob.status === "running" && heartbeatAgeMs > STALE_MS;
+
+  const forceStopJob = async () => {
+    if (!activeJob) return;
+    if (!confirm("Force-stop this bulk run? Documents already generated will keep their content.")) return;
+    await supabase.from("bulk_generation_jobs").update({
+      status: "failed",
+      cancel_requested: true,
+      finished_at: new Date().toISOString(),
+      error: "force-stopped from UI (stale worker)",
+      current_doc_id: null,
+      current_doc_title: null,
+    }).eq("id", activeJob.id);
+    refetchJob();
+    toast.success("Bulk run stopped. You can now start a new run or resume the remaining documents.");
+  };
+
+  const resumeRemaining = async () => {
+    if (!activeJob) return;
+    await launchBulk({
+      mode: (activeJob.mode === "draft" || activeJob.mode === "image" || activeJob.mode === "document" || activeJob.mode === "both") ? activeJob.mode : "both",
+      scope: "all_remaining",
+      format: (activeJob.document_format as typeof bulkFormat) ?? bulkFormat,
+      logChat: `Resume the remaining ${activeJob.mode === "draft" ? "drafts" : "documents"} from the previous bulk run that stopped at ${activeJob.completed}/${activeJob.total}. Skip docs that already finished.`,
+    });
+  };
 
   useEffect(() => {
     const ch = supabase
