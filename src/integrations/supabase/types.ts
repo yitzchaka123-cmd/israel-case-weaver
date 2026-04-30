@@ -100,6 +100,7 @@ export type Database = {
       }
       bulk_generation_jobs: {
         Row: {
+          cancel_requested: boolean
           completed: number
           created_by: string | null
           current_doc_id: string | null
@@ -110,6 +111,7 @@ export type Database = {
           failed: number
           finished_at: string | null
           id: string
+          last_heartbeat_at: string
           mode: string
           project_id: string
           scope: string
@@ -118,6 +120,7 @@ export type Database = {
           total: number
         }
         Insert: {
+          cancel_requested?: boolean
           completed?: number
           created_by?: string | null
           current_doc_id?: string | null
@@ -128,6 +131,7 @@ export type Database = {
           failed?: number
           finished_at?: string | null
           id?: string
+          last_heartbeat_at?: string
           mode: string
           project_id: string
           scope: string
@@ -136,6 +140,7 @@ export type Database = {
           total?: number
         }
         Update: {
+          cancel_requested?: boolean
           completed?: number
           created_by?: string | null
           current_doc_id?: string | null
@@ -146,6 +151,7 @@ export type Database = {
           failed?: number
           finished_at?: string | null
           id?: string
+          last_heartbeat_at?: string
           mode?: string
           project_id?: string
           scope?: string
@@ -569,6 +575,7 @@ export type Database = {
           id: string
           inline_images_caption: string | null
           inline_images_layout: string | null
+          last_generation_error: string | null
           linked_node_ids: string[] | null
           linked_suspect_ids: string[] | null
           logic_version_id: string | null
@@ -599,6 +606,7 @@ export type Database = {
           id?: string
           inline_images_caption?: string | null
           inline_images_layout?: string | null
+          last_generation_error?: string | null
           linked_node_ids?: string[] | null
           linked_suspect_ids?: string[] | null
           logic_version_id?: string | null
@@ -629,6 +637,7 @@ export type Database = {
           id?: string
           inline_images_caption?: string | null
           inline_images_layout?: string | null
+          last_generation_error?: string | null
           linked_node_ids?: string[] | null
           linked_suspect_ids?: string[] | null
           logic_version_id?: string | null
@@ -1766,7 +1775,16 @@ export type Database = {
         }
         Returns: boolean
       }
+      increment_bulk_completed: {
+        Args: { p_job_id: string }
+        Returns: undefined
+      }
+      increment_bulk_failed: { Args: { p_job_id: string }; Returns: undefined }
       redeem_invite_code: { Args: { p_code: string }; Returns: Json }
+      sweep_stale_bulk_jobs: {
+        Args: { p_project_id?: string; p_stale_minutes?: number }
+        Returns: number
+      }
     }
     Enums: {
       app_role: "admin" | "member"
