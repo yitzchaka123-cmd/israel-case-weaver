@@ -2653,6 +2653,9 @@ async function executeTool(
                 ? Number(a.until_doc_number)
                 : undefined,
             waitForJobId,
+            // Default true server-side; the assistant must explicitly pass false
+            // (after asking the user) to overwrite existing content.
+            skipExisting: typeof a.skip_existing === "boolean" ? a.skip_existing : true,
           }),
         });
         const kickJson = await kickResp.json().catch(() => ({} as { jobId?: string }));
