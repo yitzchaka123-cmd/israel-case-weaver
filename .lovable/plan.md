@@ -1,60 +1,86 @@
-## What the trace actually tells us
+## What's actually happening
 
-Reading the round-by-round summaries from your run (this is the model's own reasoning, not ours):
+The bulk job from last night is a ghost. Docs 0–3 generated successfully (~22:38–22:41 UTC). After Doc 3, the background worker died (Worker eviction or unhandled crash) but the `bulk_generation_jobs` row was never closed. The UI keeps showing "Working on: Building Keycard Access Log Extract" because that was the last `current_doc_title` written before death — nothing is actually generating. The frontend then blocks all new bulk runs because it sees `status='running'`.
 
-**Round 0** — model spent the entire round just *thinking*: "Final Flow not mapped… should I call create_final_documents_map?… 21 docs exist… post-approval edit rule… need long Hebrew content for 20 docs…". **Zero tool calls emitted.**
+Root causes:
+1. The worker uses `req.waitUntil(...)` — that API does not exist on Deno's `Request`. The fallback is "fire and forget", so when the HTTP response returns the runtime can evict the worker mid-batch. (`generate-image` already uses the correct `globalThis.EdgeRuntime.waitUntil` — `bulk-generate-documents` doesn't.)
+2. There is no `finally` / hard-timeout / heartbeat that guarantees the job row gets closed. A killed worker = permanent ghost.
+3. There is no per-doc job state, so we can't tell what's pending vs done vs failed without scanning `documents`.
+4. `increment_bulk_completed` RPC doesn't exist — every successful doc does a SELECT-then-UPDATE round-trip (works, but slow and not atomic).
+5. The assistant's `bulk_generate_documents` tool is fine, but nothing **forces** the assistant to use it for small batches (2, 3, 5 docs). It tends to call `add_documents` / `generate_document` in a loop instead, which is what kept blowing out reasoning rounds.
+6. Bulk run UI never asks "skip already-generated or overwrite?" up front in the assistant flow — only in the manual modal.
 
-**Round 1** — more thinking: "should I batch in 10s or 20?… design instructions are heavy… maybe two passes… transparency rule… let's get started!". **Zero tool calls emitted.**
+---
 
-**Round 2** — model believes it already called `create_final_documents_map` and `add_documents` for 21–40 (it didn't — that was hallucinated reasoning), and starts planning the roster reply.
+## Fix plan
 
-So the actual failure is:
-1. The model burns 2–3 reasoning rounds psyching itself up for the heavy `add_documents` call instead of emitting it.
-2. Our anti-loop nudge from last round only fires **after** a round finishes with `tool_calls.length === 0`. Gemini and GPT-5 in "thinking" mode often produce a round of pure reasoning + a fake "I'll do this now" prose tail — which doesn't trip the nudge cleanly because the round ends with text, not with a tool. By the time the nudge fires, only 1–2 rounds remain.
-3. **The "stuck assistant" message comes from a separate bug**: `assistant_runs` rows are left at `status='running'` forever. I just queried and there are runs from this morning still open at 4,049s, 19,957s, 27,313s. The frontend watchdog ("recovered a stuck assistant") triggers on these stale rows even when the actual chat completed fine. So you're seeing the recovery banner on *unrelated* old runs, not on the run that just completed.
-4. The envelope confusion is real but secondary — the model wandered into "should I ask about envelopes?" inside its reasoning. The Rule C copy added last round is good but the model isn't reading it because it never gets to the tool-call stage.
+### 1. Kill the ghost job (data fix, not migration)
+Mark the stuck row from 22:37 UTC as `failed` with an explanatory error, so the Documents tab unlocks. Docs 0–3 keep their generated images.
 
-## Plan
+### 2. Make the bulk worker un-killable in the obvious ways
+Edit `supabase/functions/bulk-generate-documents/index.ts`:
+- Replace `req.waitUntil(...)` with `globalThis.EdgeRuntime.waitUntil(work)` (matches `generate-image` and `assistant-chat`).
+- Wrap the entire background `work` body in `try / catch / finally`. The `finally` always closes the job (`completed` / `failed` / `cancelled_stale`) so a crash can never leave `status='running'`.
+- Add a hard ceiling (e.g. 25 min). If exceeded, mark the job `failed` with reason "exceeded hard timeout".
+- Add a stale-job sweep at the **start** of every bulk kickoff: any row with `status='running'` AND no heartbeat for 4 min → close it as `failed` with reason "auto-closed: stale (no heartbeat)". This unblocks future runs even without the data fix above.
 
-### A. Force tool emission earlier (assistant-chat/index.ts)
+### 3. Add a heartbeat (small migration)
+Add two columns to `bulk_generation_jobs`:
+- `last_heartbeat_at timestamptz` (default `now()`)
+- `cancel_requested boolean` (default `false`)
 
-For batch requests, inject the anti-loop nudge **after round 0 with no tool call**, not after round 1. Currently:
-```
-if (isBatchRequest && !nudgedForBatch && executedTools.length === 0) { nudge }
-```
-Add: also nudge if `round === 0`, no tools called, AND the model produced >800 chars of prose (a clear "thinking out loud" signal). Track this as `stalledRounds` and escalate the nudge wording on round 1 to "EMIT THE TOOL CALL NOW. No more prose. No more analysis."
+The worker writes `last_heartbeat_at = now()` before each doc, after each doc, and during the 30s rate-limit sleeps. The worker checks `cancel_requested` between docs and exits cleanly if true.
 
-### B. Pre-flight the Final Flow before the model has to think about it
+### 4. Add a "Stop / Resume" UI
+In `DocumentsSection.tsx`:
+- Show heartbeat age. If stale (>4 min) and not finished → red banner "Looks stuck — last update Xm ago" with a **Force-stop** button that sets `cancel_requested=true` and `status='failed'`.
+- After any failed/stale job, show a **Resume remaining** button → kicks a new bulk run with `skipExisting=true`, same scope/mode.
+- The "running" guard that blocks new runs softens: if heartbeat is stale, the guard auto-clears the ghost instead of blocking.
 
-The trace shows ~40% of the model's first-round reasoning was "is the Final Flow mapped? should I call create_final_documents_map?". This is wasted budget — we already know from project state. Add a pre-flight in `assistant-chat`:
+### 5. Make the assistant use bulk for any 2+ docs (the part you asked for)
+Two changes in `supabase/functions/assistant-chat/index.ts` and the playbook:
 
-- If `isBatchRequest` AND user is in Phase 4 AND `proposed_document_set_status === 'approved'` AND Final Flow node count is 0 → server-side calls `create_final_documents_map` BEFORE the model's first round, then injects a system note: "Final Flow refreshed for you (N nodes). Proceed directly to add_documents."
+**a. Hard rule in the system prompt / playbook (`assistant-playbook.ts`):**
+> When generating, drafting, or regenerating **2 or more documents**, you MUST call `bulk_generate_documents`. Calling `generate_document` more than once per turn is forbidden — use the bulk tool with `scope='ids'` and the explicit document_ids. This is non-negotiable; one-shot per-doc calls are only for a single document the user pointed at by name.
 
-This removes the entire decision tree the model was looping on.
+**b. Server-side guard (defense in depth):**
+After the assistant emits its tool calls in a round, count `generate_document` calls. If ≥2 in the same round (or ≥2 cumulative this turn), reject them with a synthetic tool-result that says: "🛑 You called generate_document N times. Use bulk_generate_documents with scope='ids' and these document_ids: [...]. Re-emit now." The assistant then re-emits a single bulk call.
 
-### C. Close stale assistant_runs (the real "stuck" bug)
+**c. Mandatory clarifying question for any "all"/multi-doc request:**
+Before the assistant calls `bulk_generate_documents`, it must check whether **any** of the target docs already have output for the requested mode (`hebrew_content` for draft, `generated_asset_url` for image, `generated_document_url`/`generated_pdf_url` for document). If yes, it must ask the user **one** question with two buttons:
+- **Skip already-done** (`skipExisting: true`) — keep what's there, only fill the gaps.
+- **Regenerate everything** (`skipExisting: false`) — overwrite all of them.
 
-The 8-minute watchdog isn't the problem — runs stay `running` *forever*. Two fixes:
+This is enforced by:
+- Adding an `ask_bulk_overwrite_choice` helper tool the assistant calls when any conflict exists. It writes a `project_notifications` row with `kind='bulk_overwrite_choice'` and two starter prompts, OR posts an interactive question via the existing question system. The assistant then waits for the user's pick before launching the bulk run.
+- Updating the playbook so this is the literal flow: detect conflicts → ask → launch bulk.
 
-1. **Server-side**: every exit path in `assistant-chat` (success, error, round-exhaustion, early return, thrown exception) must update `assistant_runs` to `done`/`error`. Audit every `return new Response(...)` in the function and ensure it goes through a single `finally`-style cleanup that sets `finished_at = now()`.
+### 6. Pass the user's image quality through bulk
+Right now bulk runs always use the project default. Add `imageModelOverride` and `quality` pass-through in both `bulk-generate-documents` (request body) and `callGenerateDocument`. The Documents bulk modal already has the picker; just wire it through. (Keeps the existing per-doc HIGH-quality background path working — gpt-image-2 high mode goes async, the bulk worker will see `status: 202` and poll `image_generations` instead of treating it as a failure.)
 
-2. **One-time backfill migration**: mark all `assistant_runs` where `status='running'` AND `started_at < now() - interval '15 minutes'` as `status='error', error='auto-closed: stale run'`. This clears the existing 3+ ghost runs that are fooling the frontend watchdog.
+### 7. Per-doc retry visibility
+When a doc fails inside a bulk run, write a row to `project_notifications` (already done) **plus** save the error onto the doc itself in a new `last_generation_error` column (small migration) so the user sees a red dot inline next to the doc in the Documents table without opening the bell.
 
-### D. Tighten envelope confusion in Rule C
+---
 
-Add one line to the existing batch rule: *"If you find yourself thinking 'should I ask about envelopes?' during a document batch — STOP. Envelopes are a separate workflow. Emit add_documents now."* The model literally wrote that thought out loud in round 0; quoting it back at the model is the most reliable jailbreak from the loop.
+## Files I'll change
 
-### Files to touch
-- `supabase/functions/assistant-chat/index.ts` — earlier nudge (round 0), pre-flight Final Flow refresh, audit run-close paths, tighten envelope line in Rule C. Apply to BOTH chat loops (around lines 3237 and 3892).
-- New SQL migration — backfill stale `assistant_runs` to `error`.
+- `supabase/functions/bulk-generate-documents/index.ts` — `EdgeRuntime.waitUntil`, `try/finally`, heartbeat writes, cancel check, stale sweep, image quality pass-through
+- `supabase/functions/assistant-chat/index.ts` — server-side ≥2-call guard + overwrite-question gating
+- `supabase/functions/_shared/assistant-playbook.ts` and `src/lib/assistant-playbook.ts` — the "2+ → bulk" rule and the overwrite-question rule
+- `src/features/project/DocumentsSection.tsx` — stale banner, Force-stop button, Resume remaining button, soften the running guard
+- `src/features/project/useActiveBulkJob.ts` — treat stale heartbeat as not-active
+- New migration: add `last_heartbeat_at`, `cancel_requested` to `bulk_generation_jobs`; add `last_generation_error` to `documents`
+- One-time data update: close the ghost row from 22:37 UTC
 
-### What this does NOT change
-- The `add_documents` batch tool itself works (you have 21 rows from previous runs).
-- The Logic Flow / Case Board green indicator (fixed last round).
-- The envelope count (fixed last round).
-- The playbook copy (fixed last round).
+---
 
-### Why I'm confident this is the fix
-The trace is unambiguous: the model never emits a tool call in rounds 0–1, then hallucinates that it did in round 2. That's a *budget* problem, not a *prompt* problem. Fixing it requires (a) shorter decision tree at round 0 (pre-flight), (b) earlier nudge, and (c) cleaning up the ghost runs that make every interaction look "stuck" even when it isn't.
+## What you'll see after
 
-**Approve and I'll implement.**
+- The stuck "Bulk generation in progress · 0/41" banner clears.
+- "Draft all" / "Generate all" works again immediately.
+- If the worker ever crashes again, within ~4 min the UI shows "Looks stuck — Force stop / Resume remaining" instead of locking up overnight.
+- When you tell the assistant "draft these 5", "generate images for docs 4–10", "regenerate docs 6 and 7" — it calls `bulk_generate_documents` once, never a per-doc loop.
+- Before any multi-doc generation that would overwrite work, the assistant asks: **Skip already-generated** or **Regenerate everything**, with the two buttons. Single-doc generations don't ask.
+
+Approve and I'll implement.
