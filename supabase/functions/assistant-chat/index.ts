@@ -1279,6 +1279,11 @@ const BASE_TOOLS = [
             description:
               "Optional job id from a previous bulk_generate_documents call. When set, the worker waits for that prior job to finish before starting this one — used to chain a 'draft pass → generate pass' so drafts land before image/file generation begins.",
           },
+          skip_existing: {
+            type: "boolean",
+            description:
+              "When true (default), docs that already have output for this mode are SKIPPED (only fills the gaps). When false, every doc in scope is REGENERATED (overwrites). REQUIRED to ask the user via propose_options before passing false on a multi-doc bulk run.",
+          },
         },
         required: ["scope", "mode"],
         additionalProperties: false,
