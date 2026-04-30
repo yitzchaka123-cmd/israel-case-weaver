@@ -137,8 +137,40 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
       const { data } = await supabase.from("bulk_generation_jobs").select("*").eq("project_id", projectId).order("started_at", { ascending: false }).limit(1).maybeSingle();
       return data as never;
     },
-    refetchInterval: activeJobId ? 2500 : false,
-  }) as { data: { id: string; status: string; total: number; completed: number; failed: number; current_doc_title: string | null; mode: string; error: string | null; started_at: string; finished_at: string | null } | null; refetch: () => void };
+    refetchInterval: activeJobId ? 2500 : 5000,
+  }) as { data: { id: string; status: string; total: number; completed: number; failed: number; current_doc_title: string | null; mode: string; document_format: string | null; scope: string; document_ids: string[]; error: string | null; started_at: string; finished_at: string | null; last_heartbeat_at: string | null; cancel_requested: boolean | null } | null; refetch: () => void };
+
+  // A "running" job whose heartbeat is older than 4 min is a ghost — the
+  // worker died. We surface this in the UI so the user can force-stop it
+  // and resume the remaining docs instead of staring at an infinite spinner.
+  const STALE_MS = 4 * 60_000;
+  const heartbeatAgeMs = activeJob?.last_heartbeat_at ? Date.now() - new Date(activeJob.last_heartbeat_at).getTime() : 0;
+  const isStale = !!activeJob && activeJob.status === "running" && heartbeatAgeMs > STALE_MS;
+
+  const forceStopJob = async () => {
+    if (!activeJob) return;
+    if (!confirm("Force-stop this bulk run? Documents already generated will keep their content.")) return;
+    await supabase.from("bulk_generation_jobs").update({
+      status: "failed",
+      cancel_requested: true,
+      finished_at: new Date().toISOString(),
+      error: "force-stopped from UI (stale worker)",
+      current_doc_id: null,
+      current_doc_title: null,
+    }).eq("id", activeJob.id);
+    refetchJob();
+    toast.success("Bulk run stopped. You can now start a new run or resume the remaining documents.");
+  };
+
+  const resumeRemaining = async () => {
+    if (!activeJob) return;
+    await launchBulk({
+      mode: (activeJob.mode === "draft" || activeJob.mode === "image" || activeJob.mode === "document" || activeJob.mode === "both") ? activeJob.mode : "both",
+      scope: "all_remaining",
+      format: (activeJob.document_format as typeof bulkFormat) ?? bulkFormat,
+      logChat: `Resume the remaining ${activeJob.mode === "draft" ? "drafts" : "documents"} from the previous bulk run that stopped at ${activeJob.completed}/${activeJob.total}. Skip docs that already finished.`,
+    });
+  };
 
   useEffect(() => {
     const ch = supabase
@@ -156,15 +188,28 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
     // Guard against double-clicks creating multiple parallel jobs that fight
     // over the same docs and burn through provider quota.
     if (launchingRef.current) { toast.info("A bulk run is already starting…"); return; }
-    // Also block if a job is already running for this project.
+    // Also block if a fresh job is already running for this project. If a
+    // "running" row exists but the worker hasn't beat in 4 min, it's a ghost
+    // — auto-close it so the user is never blocked by a crashed run.
     const { data: existing } = await supabase
       .from("bulk_generation_jobs")
-      .select("id")
+      .select("id, last_heartbeat_at")
       .eq("project_id", projectId)
-      .eq("status", "running")
-      .limit(1);
-    if ((existing?.length ?? 0) > 0) {
+      .eq("status", "running");
+    const STALE_MS_GUARD = 4 * 60_000;
+    const stale = (existing ?? []).filter((j: { last_heartbeat_at: string | null }) => Date.now() - new Date(j.last_heartbeat_at ?? 0).getTime() > STALE_MS_GUARD);
+    const fresh = (existing ?? []).filter((j: { last_heartbeat_at: string | null }) => Date.now() - new Date(j.last_heartbeat_at ?? 0).getTime() <= STALE_MS_GUARD);
+    if (stale.length > 0) {
+      await supabase.from("bulk_generation_jobs").update({
+        status: "failed",
+        cancel_requested: true,
+        finished_at: new Date().toISOString(),
+        error: "auto-closed: stale (no heartbeat) on next-run kickoff",
+      }).in("id", stale.map((j: { id: string }) => j.id));
+    }
+    if (fresh.length > 0) {
       toast.error("A bulk run is already in progress for this project. Wait for it to finish before starting another.");
+      launchingRef.current = false;
       return;
     }
     launchingRef.current = true;
@@ -219,8 +264,12 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
   };
 
   const sel = data?.find((d) => d.id === selected) ?? null;
-  const jobRunning = activeJob?.status === "running";
+  // A stale "running" job means the worker died — don't disable the action
+  // buttons because of it (the next launch will auto-sweep it).
+  const jobRunning = activeJob?.status === "running" && !isStale;
   const jobPct = activeJob ? Math.round((((activeJob.completed ?? 0) + (activeJob.failed ?? 0)) / Math.max(1, activeJob.total)) * 100) : 0;
+  const showFinishedBanner = !!activeJob?.finished_at && Date.now() - new Date(activeJob.finished_at).getTime() < 30_000;
+  const stoppedEarly = !!activeJob && activeJob.status !== "running" && activeJob.completed + activeJob.failed < activeJob.total;
 
   return (
     <div className="max-w-7xl mx-auto px-6 md:px-10 py-8">
@@ -265,7 +314,25 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
         </div>
       </div>
 
-      {activeJob && (jobRunning || (activeJob.finished_at && Date.now() - new Date(activeJob.finished_at).getTime() < 30_000)) && (
+      {isStale && activeJob && (
+        <div className="mb-6 rounded-xl border border-destructive bg-destructive/10 px-4 py-3 shadow-soft">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <div className="flex items-center gap-2 text-sm">
+              <span className="font-medium text-destructive">Bulk run looks stuck</span>
+              <span className="text-muted-foreground">
+                · last update {Math.round(heartbeatAgeMs / 60_000)}m ago · {(activeJob.completed ?? 0) + (activeJob.failed ?? 0)} / {activeJob.total} done
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={forceStopJob}>Force stop</Button>
+              <Button size="sm" onClick={async () => { await forceStopJob(); await resumeRemaining(); }}>Resume remaining</Button>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">The background worker stopped sending updates. Force-stop to unlock, then resume to pick up where it left off (already-generated docs will be skipped).</p>
+        </div>
+      )}
+
+      {activeJob && (jobRunning || showFinishedBanner) && (
         <div className="mb-6 rounded-xl border bg-card px-4 py-3 shadow-soft">
           <div className="flex items-center justify-between gap-3 mb-2">
             <div className="flex items-center gap-2 text-sm">
@@ -278,11 +345,16 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
               </span>
               {activeJob.failed > 0 && <span className="text-destructive">· {activeJob.failed} failed</span>}
             </div>
-            {!jobRunning && (
-              <button onClick={() => setActiveJobId(null)} className="p-1 rounded hover:bg-muted" aria-label="Dismiss">
-                <X className="h-4 w-4" />
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {!jobRunning && stoppedEarly && (
+                <Button size="sm" variant="outline" onClick={resumeRemaining}>Resume remaining</Button>
+              )}
+              {!jobRunning && (
+                <button onClick={() => setActiveJobId(null)} className="p-1 rounded hover:bg-muted" aria-label="Dismiss">
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
           </div>
           <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
             <div

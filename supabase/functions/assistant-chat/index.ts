@@ -488,7 +488,12 @@ C. **Doc 0 + the rest in the SAME turn (CRITICAL — applies to "draft all docs"
    2. Round 1, call 2 (same turn, same tool_calls array if the model supports it; otherwise round 2 immediately after): \`add_documents\` (PLURAL) with EVERY remaining proposed document (Docs 1..N) in a single array.
    Stopping after Doc 0 to "discuss the rest" or "ask the user about envelopes" or "think about it more" is a CRITICAL FAILURE — the user already approved the proposal, the round budget is small, and stalling causes the per-turn timeout to fire and look like the assistant got stuck. Do NOT pause for confirmation between Doc 0 and the batch. Do NOT ask follow-up questions about envelopes mid-batch — envelopes are a separate workflow (\`update_envelope\` / \`generate_envelopes\`), they are NEVER drafted by \`add_document\` or \`add_documents\`, and confusion about envelopes must NOT block the document batch.
 D. **Post-completion follow-up** — when a bulk run finishes, the system will auto-open the Assistant with a starter prompt asking you to acknowledge results and propose the next step. Reply with a short, concrete acknowledgement (X/Y succeeded, name any failed docs) and one clear next-step recommendation appropriate to the project phase (review, retry failures, move to envelopes/hints/marketing).
-E. **NO ANALYSIS PARALYSIS** — if the user just asked for a batch action ("draft all", "generate all", "do everything") and you have already spent ≥1 reasoning round without emitting any tool call, STOP THINKING and emit the batch tool call (\`add_documents\` or \`bulk_generate_documents\`) immediately on the next round with whatever sensible defaults you have. Looping in reasoning while the round budget burns down is the #1 cause of the "stuck assistant" watchdog firing — the user sees a recovery message and assumes the system is broken. The system prompt and the proposal already give you everything you need; ship the call.`;
+E. **HARD RULE — 2+ DOCS ⇒ BULK (NON-NEGOTIABLE)**: If the user's request involves generating, drafting, regenerating, or producing assets for **two (2) or more documents** — even just two — you MUST call \`bulk_generate_documents\` ONCE with \`scope: "ids"\` and an explicit \`document_ids\` array. Calling \`generate_document_assets\` more than once per turn is FORBIDDEN; the server will refuse all such calls and force you to re-emit a single \`bulk_generate_documents\` call. Per-doc \`generate_document_assets\` is ONLY for a single document the user named explicitly ("regenerate Doc 5", "redo the bus ticket"). When in doubt: bulk.
+F. **OVERWRITE QUESTION (REQUIRED before any multi-doc bulk run)**: Before you call \`bulk_generate_documents\` for 2+ docs, check whether ANY of the target docs already have output for the requested mode (\`hebrew_content\` for draft, \`generated_asset_url\` for image, \`generated_document_url\`/\`generated_pdf_url\` for document). If yes, you MUST first ask the user with \`propose_options\` exactly ONE question: "Some of those documents already have <mode> content. How should I handle them?" with two options:
+  • "Skip already-generated" → on the user's pick, call \`bulk_generate_documents\` with \`skip_existing: true\` (only fills the gaps).
+  • "Regenerate everything" → on the user's pick, call \`bulk_generate_documents\` with \`skip_existing: false\` (overwrites everything).
+  Do NOT add a third option. Do NOT default silently. If NONE of the target docs have prior content, skip the question entirely and launch the bulk run with \`skip_existing: true\`.
+G. **NO ANALYSIS PARALYSIS** — if the user just asked for a batch action ("draft all", "generate all", "do everything") and you have already spent ≥1 reasoning round without emitting any tool call, STOP THINKING and emit the batch tool call (\`add_documents\` or \`bulk_generate_documents\`) immediately on the next round with whatever sensible defaults you have. Looping in reasoning while the round budget burns down is the #1 cause of the "stuck assistant" watchdog firing — the user sees a recovery message and assumes the system is broken. The system prompt and the proposal already give you everything you need; ship the call.`;
 })()}
 
 ${
@@ -1273,6 +1278,11 @@ const BASE_TOOLS = [
             type: "string",
             description:
               "Optional job id from a previous bulk_generate_documents call. When set, the worker waits for that prior job to finish before starting this one — used to chain a 'draft pass → generate pass' so drafts land before image/file generation begins.",
+          },
+          skip_existing: {
+            type: "boolean",
+            description:
+              "When true (default), docs that already have output for this mode are SKIPPED (only fills the gaps). When false, every doc in scope is REGENERATED (overwrites). REQUIRED to ask the user via propose_options before passing false on a multi-doc bulk run.",
           },
         },
         required: ["scope", "mode"],
@@ -2643,6 +2653,9 @@ async function executeTool(
                 ? Number(a.until_doc_number)
                 : undefined,
             waitForJobId,
+            // Default true server-side; the assistant must explicitly pass false
+            // (after asking the user) to overwrite existing content.
+            skipExisting: typeof a.skip_existing === "boolean" ? a.skip_existing : true,
           }),
         });
         const kickJson = await kickResp.json().catch(() => ({} as { jobId?: string }));
@@ -3452,6 +3465,14 @@ async function processConversation(
         tool_calls: toolCalls,
         ...(thinkingBlocks?.length ? { thinking: thinkingBlocks } : {}),
       });
+      // Server-side guard: if the model emitted ≥2 per-doc generation calls
+      // in a single round, refuse them all and force it to use the bulk tool.
+      // This is the defense-in-depth backstop for the playbook rule
+      // "2+ docs => bulk_generate_documents". Without this, models routinely
+      // burn the round budget looping generate_document_assets one-by-one.
+      const perDocGenCalls = toolCalls.filter((c) => c.function.name === "generate_document_assets");
+      const forceBulkInsteadOfPerDocLoop = perDocGenCalls.length >= 2;
+
       for (const call of toolCalls) {
         let args: Record<string, unknown> = {};
         try {
@@ -3459,6 +3480,28 @@ async function processConversation(
         } catch {
           /* ignore */
         }
+
+        if (forceBulkInsteadOfPerDocLoop && call.function.name === "generate_document_assets") {
+          const targetIds = perDocGenCalls
+            .map((c) => {
+              try { return (JSON.parse(c.function.arguments || "{}") as { document_id?: string }).document_id; }
+              catch { return undefined; }
+            })
+            .filter((x): x is string => typeof x === "string");
+          const refusal = {
+            ok: false,
+            message:
+              `🛑 You called generate_document_assets ${perDocGenCalls.length} times in one round. ` +
+              `That is forbidden — for ANY 2+ docs you MUST call bulk_generate_documents ONCE with ` +
+              `scope: "ids" and document_ids: ${JSON.stringify(targetIds)}. ` +
+              `Re-emit that single bulk call on your next turn. Do not loop the per-doc tool.`,
+          };
+          executedTools.push({ name: call.function.name, args, result: refusal });
+          convo.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(refusal) });
+          flushProgress(`refused ${call.function.name} (use bulk)`);
+          continue;
+        }
+
         flushProgress(`running ${call.function.name}…`);
         const result = await executeTool(
           supa,
@@ -4193,6 +4236,10 @@ Deno.serve(async (req) => {
           tool_calls: toolCalls,
           ...(thinkingBlocks?.length ? { thinking: thinkingBlocks } : {}),
         });
+        // Server-side guard: ≥2 per-doc generation calls in one round = use bulk.
+        const perDocGenCalls = toolCalls.filter((c) => c.function.name === "generate_document_assets");
+        const forceBulkInsteadOfPerDocLoop = perDocGenCalls.length >= 2;
+
         for (const call of toolCalls) {
           let args: Record<string, unknown> = {};
           try {
@@ -4200,6 +4247,28 @@ Deno.serve(async (req) => {
           } catch {
             /* ignore */
           }
+
+          if (forceBulkInsteadOfPerDocLoop && call.function.name === "generate_document_assets") {
+            const targetIds = perDocGenCalls
+              .map((c) => {
+                try { return (JSON.parse(c.function.arguments || "{}") as { document_id?: string }).document_id; }
+                catch { return undefined; }
+              })
+              .filter((x): x is string => typeof x === "string");
+            const refusal = {
+              ok: false,
+              message:
+                `🛑 You called generate_document_assets ${perDocGenCalls.length} times in one round. ` +
+                `That is forbidden — for ANY 2+ docs you MUST call bulk_generate_documents ONCE with ` +
+                `scope: "ids" and document_ids: ${JSON.stringify(targetIds)}. ` +
+                `Re-emit that single bulk call on your next turn. Do not loop the per-doc tool.`,
+            };
+            executedTools.push({ name: call.function.name, args, result: refusal });
+            convo.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(refusal) });
+            flushProgress(`refused ${call.function.name} (use bulk)`);
+            continue;
+          }
+
           flushProgress(`running ${call.function.name}…`);
           const result = await executeTool(
             supa,
