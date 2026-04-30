@@ -314,7 +314,25 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
         </div>
       </div>
 
-      {activeJob && (jobRunning || (activeJob.finished_at && Date.now() - new Date(activeJob.finished_at).getTime() < 30_000)) && (
+      {isStale && activeJob && (
+        <div className="mb-6 rounded-xl border border-destructive bg-destructive/10 px-4 py-3 shadow-soft">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <div className="flex items-center gap-2 text-sm">
+              <span className="font-medium text-destructive">Bulk run looks stuck</span>
+              <span className="text-muted-foreground">
+                · last update {Math.round(heartbeatAgeMs / 60_000)}m ago · {(activeJob.completed ?? 0) + (activeJob.failed ?? 0)} / {activeJob.total} done
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={forceStopJob}>Force stop</Button>
+              <Button size="sm" onClick={async () => { await forceStopJob(); await resumeRemaining(); }}>Resume remaining</Button>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">The background worker stopped sending updates. Force-stop to unlock, then resume to pick up where it left off (already-generated docs will be skipped).</p>
+        </div>
+      )}
+
+      {activeJob && (jobRunning || showFinishedBanner) && (
         <div className="mb-6 rounded-xl border bg-card px-4 py-3 shadow-soft">
           <div className="flex items-center justify-between gap-3 mb-2">
             <div className="flex items-center gap-2 text-sm">
@@ -327,11 +345,16 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
               </span>
               {activeJob.failed > 0 && <span className="text-destructive">· {activeJob.failed} failed</span>}
             </div>
-            {!jobRunning && (
-              <button onClick={() => setActiveJobId(null)} className="p-1 rounded hover:bg-muted" aria-label="Dismiss">
-                <X className="h-4 w-4" />
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {!jobRunning && stoppedEarly && (
+                <Button size="sm" variant="outline" onClick={resumeRemaining}>Resume remaining</Button>
+              )}
+              {!jobRunning && (
+                <button onClick={() => setActiveJobId(null)} className="p-1 rounded hover:bg-muted" aria-label="Dismiss">
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
           </div>
           <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
             <div
