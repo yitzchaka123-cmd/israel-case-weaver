@@ -3,31 +3,24 @@
 // Walks a list of documents and calls the existing `generate-document` edge
 // function once per (doc, requested-output) tuple, with a small concurrency
 // window (defaults to SERIAL = 1 so the user sees one shot at a time).
-// Writes live progress to `bulk_generation_jobs` so the UI can show
-// "12 / 40 · current: …" with realtime updates, AND emits one
-// `project_notifications` row per doc as it finishes (with a thumbnail when
-// an image was produced) so the bell shows live per-doc updates.
+// Writes live progress + a heartbeat to `bulk_generation_jobs` so the UI can
+// show "12 / 40 · current: …" with realtime updates and detect a crashed
+// worker, AND emits one `project_notifications` row per doc as it finishes
+// (with a thumbnail when an image was produced) so the bell shows live
+// per-doc updates.
 //
-// Modes:
-//   "draft"        → mode=text only (writes hebrew_content, no image/file)
-//                    → notifications are emitted WITHOUT thumbnails.
-//   "image"        → mode=image only
-//   "document"     → mode=document only (PDF/DOCX/etc)
-//   "both"         → image + document (notifications get the image thumbnail)
-//   "image_to_pdf" → wraps each doc's existing generated_asset_url image
-//                    into a one-page PDF via the same Claude pipeline.
+// Reliability:
+//   - Background work runs via `globalThis.EdgeRuntime.waitUntil(...)` so the
+//     platform keeps the worker alive after the HTTP response returns.
+//   - The whole worker body is wrapped in try/catch/finally — the job row
+//     ALWAYS transitions out of `running` even on a crash.
+//   - Every doc tick (and every long sleep) writes `last_heartbeat_at = now()`.
+//   - Between docs the worker checks `cancel_requested` and exits cleanly.
+//   - At kickoff, any other `running` jobs for the same project that haven't
+//     beat in 4 minutes are auto-closed (sweep), so a previous ghost can
+//     never block the next run.
 //
-// Scopes:
-//   "all_remaining"  → every doc whose status != 'final' (and not Doc 0)
-//   "from_doc_number"→ filter by doc_number >= fromDocNumber (and optional cap)
-//   "ids"            → exact list of document_ids
-//
-// Optional `waitForJobId`: if set, the worker waits (poll up to 20 min) for
-// that prior job to finish before starting. This lets the assistant chain a
-// "draft pass → generate pass" without blocking its own turn.
-//
-// On 429 / 402 errors the worker pauses 30s and retries up to 2 times before
-// marking that doc as failed and moving on.
+// Modes / Scopes / `waitForJobId` / 429-402 retry: unchanged from before.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
 const corsHeaders = {
@@ -68,18 +61,39 @@ interface BulkRequest {
    * assistant follow-up flow kicks in. Default true.
    */
   notifyOnComplete?: boolean;
+  /** Optional image quality override forwarded to generate-document. */
+  imageQuality?: "low" | "medium" | "high" | "auto";
+  /** Optional image model override forwarded to generate-document. */
+  imageModel?: string;
 }
 
 const MAX_CONCURRENCY = 5;
+/** Hard ceiling for a single bulk run, to bound runaway loops. */
+const HARD_TIMEOUT_MS = 25 * 60_000;
+/** A job is considered stale (worker dead) after this long without a heartbeat. */
+const STALE_MINUTES = 4;
 
-async function callGenerateDocument(documentId: string, mode: "text" | "image" | "document" | "image_to_pdf", documentFormat: string, signal: AbortSignal) {
+async function callGenerateDocument(
+  documentId: string,
+  mode: "text" | "image" | "document" | "image_to_pdf",
+  documentFormat: string,
+  signal: AbortSignal,
+  imageQuality?: string,
+  imageModel?: string,
+) {
   const r = await fetch(`${SUPABASE_URL}/functions/v1/generate-document`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${SERVICE}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ documentId, mode, documentFormat }),
+    body: JSON.stringify({
+      documentId,
+      mode,
+      documentFormat,
+      ...(imageQuality ? { imageQuality } : {}),
+      ...(imageModel ? { imageModel } : {}),
+    }),
     signal,
   });
   let body: any = {};
@@ -87,12 +101,34 @@ async function callGenerateDocument(documentId: string, mode: "text" | "image" |
   return { ok: r.ok, status: r.status, body };
 }
 
-async function generateOneDoc(supa: any, jobId: string, doc: { id: string; title: string }, mode: Mode, documentFormat: string): Promise<{ ok: boolean; error?: string }> {
-  // Set current pointer
-  await supa.from("bulk_generation_jobs").update({
-    current_doc_id: doc.id,
-    current_doc_title: doc.title,
-  }).eq("id", jobId);
+async function beat(supa: any, jobId: string, patch: Record<string, unknown> = {}) {
+  try {
+    await supa.from("bulk_generation_jobs").update({
+      last_heartbeat_at: new Date().toISOString(),
+      ...patch,
+    }).eq("id", jobId);
+  } catch (e) {
+    console.warn("[bulk] heartbeat failed", e);
+  }
+}
+
+async function isCancelled(supa: any, jobId: string): Promise<boolean> {
+  try {
+    const { data } = await supa.from("bulk_generation_jobs").select("cancel_requested").eq("id", jobId).maybeSingle();
+    return !!(data as { cancel_requested?: boolean } | null)?.cancel_requested;
+  } catch { return false; }
+}
+
+async function generateOneDoc(
+  supa: any,
+  jobId: string,
+  doc: { id: string; title: string },
+  mode: Mode,
+  documentFormat: string,
+  imageQuality?: string,
+  imageModel?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  await beat(supa, jobId, { current_doc_id: doc.id, current_doc_title: doc.title });
 
   const steps: ("text" | "image" | "document" | "image_to_pdf")[] =
     mode === "draft" ? ["text"] :
@@ -108,13 +144,16 @@ async function generateOneDoc(supa: any, jobId: string, doc: { id: string; title
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 180_000);
       try {
-        const r = await callGenerateDocument(doc.id, step, documentFormat, ctrl.signal);
+        const r = await callGenerateDocument(doc.id, step, documentFormat, ctrl.signal, imageQuality, imageModel);
         clearTimeout(timer);
         if (r.ok) break;
-        // Retry on rate limit / credits
+        // Retry on rate limit / credits — beat during the long sleep too.
         if ((r.status === 429 || r.status === 402) && attempt <= 3) {
           console.warn(`[bulk] ${step} for ${doc.id} hit ${r.status}, sleeping 30s (attempt ${attempt}/3)`);
-          await new Promise((res) => setTimeout(res, 30_000));
+          for (let i = 0; i < 6; i++) {
+            await new Promise((res) => setTimeout(res, 5_000));
+            await beat(supa, jobId);
+          }
           continue;
         }
         const err = (r.body?.error as string) ?? `HTTP ${r.status}`;
@@ -130,7 +169,7 @@ async function generateOneDoc(supa: any, jobId: string, doc: { id: string; title
   return { ok: true };
 }
 
-/** Insert a per-doc notification (success or failure). */
+/** Insert a per-doc notification (success or failure) AND record the error on the doc itself. */
 async function notifyPerDoc(
   supa: any,
   projectId: string,
@@ -139,10 +178,16 @@ async function notifyPerDoc(
   outcome: { ok: boolean; error?: string },
 ) {
   try {
+    // Persist last error on the doc so the Documents table can show a red dot.
+    try {
+      await supa.from("documents").update({
+        last_generation_error: outcome.ok ? null : (outcome.error ?? "Generation failed").slice(0, 500),
+      }).eq("id", doc.id);
+    } catch (_e) { /* non-fatal */ }
+
     const numLabel = doc.doc_number !== null && doc.doc_number !== undefined ? `Doc ${doc.doc_number}` : "Doc";
     let previewUrl: string | null = null;
     if (outcome.ok && mode !== "draft") {
-      // Pull the freshly generated thumbnail.
       const { data } = await supa
         .from("documents")
         .select("generated_asset_url, document_preview_url")
@@ -187,7 +232,7 @@ async function waitForPriorJob(supa: any, priorJobId: string) {
       .eq("id", priorJobId)
       .maybeSingle();
     const s = (data as { status?: string } | null)?.status;
-    if (!s) return; // gone — proceed
+    if (!s) return;
     if (s === "completed" || s === "failed") return;
     await new Promise((res) => setTimeout(res, 5_000));
   }
@@ -204,17 +249,24 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "projectId, scope, mode required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     const documentFormat = input.documentFormat ?? "pdf";
-    // Default to SERIAL (1) so the user sees one-shot-at-a-time progress that
-    // matches the assistant's "I'll generate them one shot each" promise.
     const concurrency = Math.max(1, Math.min(MAX_CONCURRENCY, input.concurrency ?? 1));
     const notifyOnComplete = input.notifyOnComplete !== false;
 
     const supa = createClient(SUPABASE_URL, SERVICE);
 
+    // Pre-flight: sweep stale ghost jobs across the project so we never get
+    // blocked by a previous crashed worker.
+    try {
+      const { data: swept } = await supa.rpc("sweep_stale_bulk_jobs", { p_project_id: projectId, p_stale_minutes: STALE_MINUTES });
+      if (swept && (swept as number) > 0) console.log(`[bulk] swept ${swept} stale job(s)`);
+    } catch (e) {
+      console.warn("[bulk] sweep_stale_bulk_jobs failed", e);
+    }
+
     // Resolve doc list.
-    let q = supa.from("documents").select("id, title, doc_number, status, doc_type, hebrew_content, generated_asset_url, generated_document_url, generated_pdf_url").eq("project_id", projectId).order("doc_number", { ascending: true });
+    const q = supa.from("documents").select("id, title, doc_number, status, doc_type, hebrew_content, generated_asset_url, generated_document_url, generated_pdf_url").eq("project_id", projectId).order("doc_number", { ascending: true });
     let docs: { id: string; title: string; doc_number: number | null; status: string; doc_type: string | null; hebrew_content: string | null; generated_asset_url: string | null; generated_document_url: string | null; generated_pdf_url: string | null }[] = [];
-    const skipExisting = input.skipExisting !== false; // default true
+    const skipExisting = input.skipExisting !== false;
     if (scope === "ids") {
       const ids = (input.documentIds ?? []).filter(Boolean);
       if (ids.length === 0) return new Response(JSON.stringify({ error: "documentIds required for scope=ids" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -228,20 +280,17 @@ Deno.serve(async (req) => {
         const until = input.untilDocNumber ? Number(input.untilDocNumber) : Infinity;
         docs = docs.filter((d) => (d.doc_number ?? 0) >= from && (d.doc_number ?? 0) <= until);
       }
-      // Skip already-final docs for non-draft modes
       if (mode !== "draft") {
         docs = docs.filter((d) => d.status !== "final");
       }
     }
 
-    // Honor skipExisting: drop docs that already have content for this mode.
     if (skipExisting) {
       docs = docs.filter((d) => {
         if (mode === "draft") return !(d.hebrew_content && d.hebrew_content.trim().length > 0);
         if (mode === "image") return !d.generated_asset_url;
         if (mode === "document") return !(d.generated_document_url || d.generated_pdf_url);
-        if (mode === "image_to_pdf") return !!d.generated_asset_url; // needs an image
-        // both
+        if (mode === "image_to_pdf") return !!d.generated_asset_url;
         return !(d.generated_asset_url && (d.generated_document_url || d.generated_pdf_url));
       });
     }
@@ -250,7 +299,6 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ok: true, message: "No documents matched the scope.", jobId: null, total: 0 }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Create job row.
     const { data: job, error: jobErr } = await supa
       .from("bulk_generation_jobs")
       .insert({
@@ -271,86 +319,129 @@ Deno.serve(async (req) => {
     }
     const jobId = (job as { id: string }).id;
 
-    // Kick off the worker as a background task — return jobId immediately so
-    // the UI can subscribe to realtime progress.
+    // Background worker — wrapped so a crash CANNOT leave the job hanging.
     const work = (async () => {
-      // Optionally chain after a prior job (e.g. draft pass → generate pass).
-      if (input.waitForJobId) {
-        await waitForPriorJob(supa, input.waitForJobId);
-      }
-
+      const startedAt = Date.now();
       const errors: { id: string; title: string; error: string }[] = [];
-      // Simple concurrency window
-      let cursor = 0;
-      const runOne = async () => {
-        while (true) {
-          const i = cursor++;
-          if (i >= docs.length) return;
-          const d = docs[i];
-          const res = await generateOneDoc(supa, jobId, d, mode, documentFormat);
-          // Per-doc notification (with thumbnail when applicable)
-          await notifyPerDoc(supa, projectId, d, mode, res);
-          if (res.ok) {
-            await supa.rpc("increment_bulk_completed", { p_job_id: jobId }).then(
-              () => {},
-              async () => {
-                // Fallback to direct UPDATE if RPC doesn't exist.
-                const { data: row } = await supa.from("bulk_generation_jobs").select("completed").eq("id", jobId).single();
-                await supa.from("bulk_generation_jobs").update({ completed: ((row as any)?.completed ?? 0) + 1 }).eq("id", jobId);
-              },
-            );
-          } else {
-            errors.push({ id: d.id, title: d.title, error: res.error ?? "unknown" });
-            const { data: row } = await supa.from("bulk_generation_jobs").select("failed").eq("id", jobId).single();
-            await supa.from("bulk_generation_jobs").update({ failed: ((row as any)?.failed ?? 0) + 1 }).eq("id", jobId);
-          }
-        }
-      };
-      await Promise.all(Array.from({ length: concurrency }, () => runOne()));
-      await supa.from("bulk_generation_jobs").update({
-        status: errors.length === docs.length ? "failed" : "completed",
-        finished_at: new Date().toISOString(),
-        error: errors.length > 0 ? errors.slice(0, 10).map((e) => `${e.title}: ${e.error}`).join(" | ") : null,
-        current_doc_id: null,
-        current_doc_title: null,
-      }).eq("id", jobId);
+      let cancelled = false;
+      let timedOut = false;
+      let crashed: Error | null = null;
 
-      // Final summary notification — used by the client to nudge the
-      // assistant into acknowledging progress and proposing the next step.
-      if (notifyOnComplete) {
+      try {
+        if (input.waitForJobId) {
+          await waitForPriorJob(supa, input.waitForJobId);
+          await beat(supa, jobId);
+        }
+
+        let cursor = 0;
+        const runOne = async () => {
+          while (true) {
+            if (Date.now() - startedAt > HARD_TIMEOUT_MS) { timedOut = true; return; }
+            if (await isCancelled(supa, jobId)) { cancelled = true; return; }
+            const i = cursor++;
+            if (i >= docs.length) return;
+            const d = docs[i];
+            const res = await generateOneDoc(supa, jobId, d, mode, documentFormat, input.imageQuality, input.imageModel);
+            await notifyPerDoc(supa, projectId, d, mode, res);
+            if (res.ok) {
+              await supa.rpc("increment_bulk_completed", { p_job_id: jobId }).then(
+                () => {},
+                async () => {
+                  const { data: row } = await supa.from("bulk_generation_jobs").select("completed").eq("id", jobId).single();
+                  await supa.from("bulk_generation_jobs").update({
+                    completed: ((row as any)?.completed ?? 0) + 1,
+                    last_heartbeat_at: new Date().toISOString(),
+                  }).eq("id", jobId);
+                },
+              );
+            } else {
+              errors.push({ id: d.id, title: d.title, error: res.error ?? "unknown" });
+              await supa.rpc("increment_bulk_failed", { p_job_id: jobId }).then(
+                () => {},
+                async () => {
+                  const { data: row } = await supa.from("bulk_generation_jobs").select("failed").eq("id", jobId).single();
+                  await supa.from("bulk_generation_jobs").update({
+                    failed: ((row as any)?.failed ?? 0) + 1,
+                    last_heartbeat_at: new Date().toISOString(),
+                  }).eq("id", jobId);
+                },
+              );
+            }
+          }
+        };
+        await Promise.all(Array.from({ length: concurrency }, () => runOne()));
+      } catch (e) {
+        crashed = e instanceof Error ? e : new Error(String(e));
+        console.error("[bulk] worker crashed", crashed);
+      } finally {
+        // ALWAYS close the job row.
         try {
-          const succeeded = docs.length - errors.length;
-          const modeLabel =
-            mode === "draft" ? "drafting"
-            : mode === "image" ? "image generation"
-            : mode === "document" ? "file generation"
-            : mode === "image_to_pdf" ? "PDF wrapping"
-            : "generation";
-          const starter = mode === "draft"
-            ? `I just finished drafting ${succeeded}/${docs.length} documents in bulk. Briefly acknowledge what was drafted and tell me whether you recommend reviewing the drafts or moving straight to generating images + PDFs for all of them.`
-            : `I just finished bulk ${modeLabel} on ${succeeded}/${docs.length} documents. Briefly acknowledge the result and propose the next step (review, fix any failures, move on to envelopes/hints/marketing — whatever fits the current phase).`;
-          await supa.from("project_notifications").insert({
-            project_id: projectId,
-            kind: "bulk_generation_done",
-            title: errors.length === 0
-              ? `Bulk ${modeLabel} complete — ${docs.length} doc${docs.length === 1 ? "" : "s"}`
-              : `Bulk ${modeLabel} finished with ${errors.length} failure${errors.length === 1 ? "" : "s"}`,
-            body: `${succeeded} / ${docs.length} documents ${mode === "draft" ? "drafted" : "generated"} successfully.${errors.length > 0 ? ` Failed: ${errors.slice(0, 5).map((e) => e.title).join(", ")}` : ""}`,
-            starter_prompt: starter,
-            created_by: "assistant",
-            status: "unread",
-          } as never);
-        } catch (_e) { /* notifications optional */ }
+          const finalStatus =
+            cancelled ? "failed" :
+            timedOut ? "failed" :
+            crashed ? "failed" :
+            errors.length === docs.length ? "failed" : "completed";
+          const reason =
+            cancelled ? "cancelled by user" :
+            timedOut ? `exceeded hard timeout (${Math.round(HARD_TIMEOUT_MS / 60000)} min)` :
+            crashed ? `worker crashed: ${crashed.message}` : null;
+          const errSummary = errors.length > 0
+            ? errors.slice(0, 10).map((e) => `${e.title}: ${e.error}`).join(" | ")
+            : null;
+          await supa.from("bulk_generation_jobs").update({
+            status: finalStatus,
+            finished_at: new Date().toISOString(),
+            last_heartbeat_at: new Date().toISOString(),
+            error: [reason, errSummary].filter(Boolean).join(" || ") || null,
+            current_doc_id: null,
+            current_doc_title: null,
+          }).eq("id", jobId);
+        } catch (closeErr) {
+          console.error("[bulk] failed to close job row", closeErr);
+        }
+
+        if (notifyOnComplete) {
+          try {
+            const succeeded = docs.length - errors.length - (cancelled || timedOut || crashed ? Math.max(0, docs.length - errors.length - 0) : 0);
+            const realSucceeded = docs.length - errors.length;
+            const modeLabel =
+              mode === "draft" ? "drafting"
+              : mode === "image" ? "image generation"
+              : mode === "document" ? "file generation"
+              : mode === "image_to_pdf" ? "PDF wrapping"
+              : "generation";
+            const headline =
+              cancelled ? `Bulk ${modeLabel} stopped — ${realSucceeded}/${docs.length} done`
+              : timedOut ? `Bulk ${modeLabel} hit time limit — ${realSucceeded}/${docs.length} done`
+              : crashed ? `Bulk ${modeLabel} crashed — ${realSucceeded}/${docs.length} done`
+              : errors.length === 0 ? `Bulk ${modeLabel} complete — ${docs.length} doc${docs.length === 1 ? "" : "s"}`
+              : `Bulk ${modeLabel} finished with ${errors.length} failure${errors.length === 1 ? "" : "s"}`;
+            const starter = (cancelled || timedOut || crashed)
+              ? `The bulk ${modeLabel} run stopped early (${realSucceeded}/${docs.length} done). Please acknowledge briefly and ask me whether to resume the remaining documents (skipping the ones that already finished).`
+              : mode === "draft"
+              ? `I just finished drafting ${realSucceeded}/${docs.length} documents in bulk. Briefly acknowledge what was drafted and tell me whether you recommend reviewing the drafts or moving straight to generating images + PDFs for all of them.`
+              : `I just finished bulk ${modeLabel} on ${realSucceeded}/${docs.length} documents. Briefly acknowledge the result and propose the next step (review, fix any failures, move on to envelopes/hints/marketing — whatever fits the current phase).`;
+            await supa.from("project_notifications").insert({
+              project_id: projectId,
+              kind: "bulk_generation_done",
+              title: headline,
+              body: `${realSucceeded} / ${docs.length} documents ${mode === "draft" ? "drafted" : "generated"} successfully.${errors.length > 0 ? ` Failed: ${errors.slice(0, 5).map((e) => e.title).join(", ")}` : ""}`,
+              starter_prompt: starter,
+              created_by: "assistant",
+              status: "unread",
+            } as never);
+          } catch (_e) { /* notifications optional */ }
+        }
       }
     })();
-    // Don't await — let it run as a background task.
-    // @ts-ignore Deno worker waitUntil
-    if (typeof (req as unknown as { waitUntil?: (p: Promise<unknown>) => void }).waitUntil === "function") {
-      (req as unknown as { waitUntil: (p: Promise<unknown>) => void }).waitUntil(work);
+
+    // Use Edge Runtime's keepalive so the platform doesn't kill the worker
+    // when this HTTP response returns. Fall back to a logged catch otherwise.
+    const ER = (globalThis as { EdgeRuntime?: { waitUntil: (p: Promise<unknown>) => void } }).EdgeRuntime;
+    if (ER?.waitUntil) {
+      ER.waitUntil(work);
     } else {
-      // Fire and forget; Deno keeps the function alive briefly. For long jobs
-      // we don't await on purpose so the HTTP call returns immediately.
-      work.catch((e) => console.error("[bulk] worker fatal", e));
+      work.catch((e) => console.error("[bulk] worker fatal (no EdgeRuntime)", e));
     }
 
     return new Response(
