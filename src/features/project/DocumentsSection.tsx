@@ -188,15 +188,28 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
     // Guard against double-clicks creating multiple parallel jobs that fight
     // over the same docs and burn through provider quota.
     if (launchingRef.current) { toast.info("A bulk run is already starting…"); return; }
-    // Also block if a job is already running for this project.
+    // Also block if a fresh job is already running for this project. If a
+    // "running" row exists but the worker hasn't beat in 4 min, it's a ghost
+    // — auto-close it so the user is never blocked by a crashed run.
     const { data: existing } = await supabase
       .from("bulk_generation_jobs")
-      .select("id")
+      .select("id, last_heartbeat_at")
       .eq("project_id", projectId)
-      .eq("status", "running")
-      .limit(1);
-    if ((existing?.length ?? 0) > 0) {
+      .eq("status", "running");
+    const STALE_MS_GUARD = 4 * 60_000;
+    const stale = (existing ?? []).filter((j: { last_heartbeat_at: string | null }) => Date.now() - new Date(j.last_heartbeat_at ?? 0).getTime() > STALE_MS_GUARD);
+    const fresh = (existing ?? []).filter((j: { last_heartbeat_at: string | null }) => Date.now() - new Date(j.last_heartbeat_at ?? 0).getTime() <= STALE_MS_GUARD);
+    if (stale.length > 0) {
+      await supabase.from("bulk_generation_jobs").update({
+        status: "failed",
+        cancel_requested: true,
+        finished_at: new Date().toISOString(),
+        error: "auto-closed: stale (no heartbeat) on next-run kickoff",
+      }).in("id", stale.map((j: { id: string }) => j.id));
+    }
+    if (fresh.length > 0) {
       toast.error("A bulk run is already in progress for this project. Wait for it to finish before starting another.");
+      launchingRef.current = false;
       return;
     }
     launchingRef.current = true;
