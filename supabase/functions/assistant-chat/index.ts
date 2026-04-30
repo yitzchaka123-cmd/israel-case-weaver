@@ -4223,6 +4223,10 @@ Deno.serve(async (req) => {
           tool_calls: toolCalls,
           ...(thinkingBlocks?.length ? { thinking: thinkingBlocks } : {}),
         });
+        // Server-side guard: ≥2 per-doc generation calls in one round = use bulk.
+        const perDocGenCalls = toolCalls.filter((c) => c.function.name === "generate_document_assets");
+        const forceBulkInsteadOfPerDocLoop = perDocGenCalls.length >= 2;
+
         for (const call of toolCalls) {
           let args: Record<string, unknown> = {};
           try {
@@ -4230,6 +4234,28 @@ Deno.serve(async (req) => {
           } catch {
             /* ignore */
           }
+
+          if (forceBulkInsteadOfPerDocLoop && call.function.name === "generate_document_assets") {
+            const targetIds = perDocGenCalls
+              .map((c) => {
+                try { return (JSON.parse(c.function.arguments || "{}") as { document_id?: string }).document_id; }
+                catch { return undefined; }
+              })
+              .filter((x): x is string => typeof x === "string");
+            const refusal = {
+              ok: false,
+              message:
+                `🛑 You called generate_document_assets ${perDocGenCalls.length} times in one round. ` +
+                `That is forbidden — for ANY 2+ docs you MUST call bulk_generate_documents ONCE with ` +
+                `scope: "ids" and document_ids: ${JSON.stringify(targetIds)}. ` +
+                `Re-emit that single bulk call on your next turn. Do not loop the per-doc tool.`,
+            };
+            executedTools.push({ name: call.function.name, args, result: refusal });
+            convo.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(refusal) });
+            flushProgress(`refused ${call.function.name} (use bulk)`);
+            continue;
+          }
+
           flushProgress(`running ${call.function.name}…`);
           const result = await executeTool(
             supa,
