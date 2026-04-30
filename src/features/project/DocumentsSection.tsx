@@ -264,8 +264,12 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
   };
 
   const sel = data?.find((d) => d.id === selected) ?? null;
-  const jobRunning = activeJob?.status === "running";
+  // A stale "running" job means the worker died — don't disable the action
+  // buttons because of it (the next launch will auto-sweep it).
+  const jobRunning = activeJob?.status === "running" && !isStale;
   const jobPct = activeJob ? Math.round((((activeJob.completed ?? 0) + (activeJob.failed ?? 0)) / Math.max(1, activeJob.total)) * 100) : 0;
+  const showFinishedBanner = !!activeJob?.finished_at && Date.now() - new Date(activeJob.finished_at).getTime() < 30_000;
+  const stoppedEarly = !!activeJob && activeJob.status !== "running" && activeJob.completed + activeJob.failed < activeJob.total;
 
   return (
     <div className="max-w-7xl mx-auto px-6 md:px-10 py-8">
