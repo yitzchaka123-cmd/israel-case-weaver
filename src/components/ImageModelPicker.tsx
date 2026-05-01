@@ -20,6 +20,7 @@ const QUALITY_PREFIX = "imgQuality:";
 export function getStoredImageModel(surface: string, fallback: ImageModelKey): ImageModelKey {
   if (typeof window === "undefined") return fallback;
   const v = window.localStorage.getItem(STORAGE_PREFIX + surface);
+  if (surface === "envelope" && (v === "chatgpt-image" || v === "chatgpt-image-2")) return fallback;
   if (v && IMAGE_MODELS.some((m) => m.value === v)) return v as ImageModelKey;
   return fallback;
 }
