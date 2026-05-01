@@ -373,7 +373,7 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
               ) : (
                 <ImagePlus className="h-4 w-4" />
               )}
-              Generate all covers
+              Generate all page mock-ups
             </Button>
           </div>
         </div>
@@ -556,7 +556,7 @@ function EnvelopeCard({
                 <button
                   type="button"
                   onClick={async () => {
-                    if (!confirm(`Reset envelope ${displayLabel(slot.n)}? This clears its label, task, design, cover image, and links. The slot itself stays.`)) return;
+                    if (!confirm(`Reset envelope ${displayLabel(slot.n)}? This clears its label, task, design, page mock-up, and links. The slot itself stays.`)) return;
                     const { error } = await supabase.from("envelopes").delete().eq("id", env.id);
                     if (error) { toast.error(error.message); return; }
                     // Unlink any documents that pointed to this envelope number.
