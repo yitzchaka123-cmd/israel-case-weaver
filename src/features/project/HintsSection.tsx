@@ -254,7 +254,6 @@ export function HintsSection({ projectId }: { projectId: string }) {
       {batch.progress.total > 0 && (
         <InlineBatchStrip progress={batch.progress} onDismiss={batch.dismiss} />
       )}
-      </div>
 
       {stages.length === 0 || !data?.length ? (
         <div className="border-2 border-dashed rounded-2xl p-12 text-center">
