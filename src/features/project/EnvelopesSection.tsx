@@ -394,7 +394,6 @@ function EnvelopeCard({
   projectId,
   playbookCount,
   gameLanguage,
-  projectTitle,
 }: {
   slot: { n: number; label: string };
   env: Envelope | undefined;
@@ -404,7 +403,6 @@ function EnvelopeCard({
   projectId: string;
   playbookCount: number;
   gameLanguage: string;
-  projectTitle: string;
 }) {
   
   const coverJob = useBackgroundImageJob({
