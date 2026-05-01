@@ -433,7 +433,7 @@ function EnvelopeCard({
     targetId: env?.id,
     onDone: async (url) => {
       await onUpdate({ status: "review", cover_image_url: url });
-      toast.success("Envelope mock-up ready");
+      toast.success("A4 page mock-up ready");
     },
     onError: (msg) => toast.error(msg, { duration: 15000 }),
   });
@@ -472,16 +472,16 @@ function EnvelopeCard({
       toast.error("Save the envelope first");
       return;
     }
-    const modelOverride = getStoredImageModel("envelope", "chatgpt-image");
-    const quality = getStoredImageQuality("envelope", "high");
+    const modelOverride = envelopeImageModel();
+    const quality = envelopeImageQuality();
     try {
       await coverJob.start({
-        prompt,
+        prompt: pageInsertPrompt(prompt, displayLabel(slot.n)),
         modelOverride,
         quality,
         aspect: "portrait",
         category: "envelope",
-        title: `Envelope ${displayLabel(slot.n)} — ${slot.label}`,
+        title: `Envelope ${displayLabel(slot.n)} page insert — ${slot.label}`,
       });
       toast.message("Generating in the background — you can close the tab.");
     } catch {
@@ -699,7 +699,7 @@ function EnvelopeCard({
         {/* RIGHT — design & generation */}
         <div className="space-y-4">
           <div className="flex items-center justify-end gap-2">
-            <ImageModelPicker surface="envelope" defaultModel="chatgpt-image" />
+            <ImageModelPicker surface="envelope" defaultModel="nano-banana-2" />
           </div>
 
           <DocumentPromptAssistant
@@ -719,7 +719,7 @@ function EnvelopeCard({
               ) : (
                 <ImagePlus className="h-4 w-4" />
               )}
-              Generate envelope mock-up
+              Generate A4 page mock-up
             </Button>
             <Button variant="ghost" className="gap-2" onClick={openInAssistant}>
               <ExternalLink className="h-4 w-4" /> Open in Assistant
@@ -735,7 +735,7 @@ function EnvelopeCard({
             >
               <img
                 src={cover}
-                alt={`Envelope ${displayLabel(slot.n)} cover`}
+                alt={`Envelope ${displayLabel(slot.n)} A4 page mock-up`}
                 className="w-full h-auto max-h-72 object-contain"
               />
               <AiOriginBadge
@@ -750,12 +750,12 @@ function EnvelopeCard({
                 <DownloadButton url={cover} title={`envelope-${displayLabel(slot.n)}-${slot.label ?? ''}`} />
               </span>
               {coverJob.isPending && (
-                <GenerationTimer elapsedSec={coverJob.state.elapsedSec} label="Generating mock-up" />
+                <GenerationTimer elapsedSec={coverJob.state.elapsedSec} label="Generating page mock-up" />
               )}
             </a>
           ) : (
             <div className="rounded-lg border border-dashed bg-muted/20 px-3 py-6 text-center text-xs text-muted-foreground">
-              No mock-up yet. Generate one to preview the printed envelope.
+              No mock-up yet. Generate one to preview the printed A4 page insert.
             </div>
           )}
         </div>
