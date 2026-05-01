@@ -168,6 +168,9 @@ FINAL ENVELOPE (#${count - 1}) — additional rules:
 - Points to the accusation form / solution card folded inside this same envelope.
 - Does NOT contain the answer. Does NOT contain the next task list.
 
+WORKSPACE TASK-VOICE TEMPLATE (the workspace owner's source-of-truth rules for what goes inside every envelope — follow this in addition to the rules above; if anything conflicts, the stricter rule wins):
+${renderEnvelopeTaskVoiceTemplate(playbook)}
+
 ${renderEnvelopeDesignTemplate(playbook)}
 
 ${brandingBlock}
