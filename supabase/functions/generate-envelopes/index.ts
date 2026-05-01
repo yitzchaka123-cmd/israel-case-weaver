@@ -7,6 +7,7 @@ import {
   PLAYBOOK_DEFAULTS,
   resolvePlaybook,
   renderEnvelopeDesignTemplate,
+  renderEnvelopeTaskVoiceTemplate,
 } from "../_shared/assistant-playbook.ts";
 
 const corsHeaders = {
