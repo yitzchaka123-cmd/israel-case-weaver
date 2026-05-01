@@ -60,6 +60,9 @@ import { resolvePlaybook } from "@/lib/assistant-playbook";
 import { DocumentPromptAssistant } from "@/components/DocumentPromptAssistant";
 import { useBackgroundImageJob } from "@/features/project/useBackgroundImageJob";
 import { GenerationTimer } from "@/features/project/GenerationTimer";
+import { useImageBatchProgress } from "@/features/project/useImageBatchProgress";
+import { InlineBatchStrip } from "@/features/project/InlineBatchStrip";
+import { runWithConcurrency } from "@/lib/run-with-concurrency";
 
 interface Envelope {
   id: string;
@@ -100,6 +103,8 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
   const [draft, setDraft] = useState<Record<number, Partial<Envelope>>>({});
   const [generatingAll, setGeneratingAll] = useState(false);
+  const [generatingAllCovers, setGeneratingAllCovers] = useState(false);
+  const coverBatch = useImageBatchProgress(projectId);
   const { create: createNotification } = useProjectNotifications(projectId);
 
   // Owner playbook → drives envelope count + briefing prompt (count, labels,
@@ -261,6 +266,47 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
       qc.invalidateQueries({ queryKey: ["envelopes", projectId] });
     } finally {
       setGeneratingAll(false);
+    }
+  };
+
+  const generateAllCovers = async () => {
+    if (generatingAllCovers) return;
+    const targets = (data ?? []).filter((e) => !e.cover_image_url && (e.design_instructions ?? "").trim());
+    if (targets.length === 0) {
+      toast.info("Every envelope already has a cover (or no design instructions yet — open one to draft).");
+      return;
+    }
+    if (!confirm(`Generate ${targets.length} envelope cover${targets.length === 1 ? "" : "s"}?`)) return;
+    setGeneratingAllCovers(true);
+    try {
+      const modelOverride = getStoredImageModel("envelope", "chatgpt-image");
+      const quality = getStoredImageQuality("envelope", "high");
+      const { data: { session } } = await supabase.auth.getSession();
+      const auth = `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`;
+      const settled = await runWithConcurrency(targets, 3, async (env) => {
+        const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-image`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: auth },
+          body: JSON.stringify({
+            projectId, target: "envelope", targetId: env.id,
+            mode: "background", prompt: (env.design_instructions ?? "").trim(),
+            modelOverride, quality, aspect: "portrait", category: "envelope",
+            title: `Envelope #${env.number} — ${env.label ?? ""}`,
+          }),
+        });
+        const json = await resp.json().catch(() => ({}));
+        if (!resp.ok || !json.jobId) throw new Error(json.error ?? `Failed (${resp.status})`);
+        return { jobId: json.jobId as string, label: `#${env.number} ${env.label ?? ""}`.trim() };
+      });
+      const slots = settled.map((r, i) => {
+        if (r.status === "fulfilled") return { id: r.value.jobId, label: r.value.label };
+        return { id: `kick-failed-${targets[i].id}`, label: `#${targets[i].number}`, kickFailed: true as const };
+      });
+      coverBatch.start(slots, "Generating envelope covers");
+      const failures = settled.filter((r) => r.status === "rejected").length;
+      toast.success(`Started ${settled.length - failures} of ${targets.length} cover${targets.length === 1 ? "" : "s"}${failures ? ` · ${failures} kickoff failed` : ""}`);
+    } finally {
+      setGeneratingAllCovers(false);
     }
   };
 

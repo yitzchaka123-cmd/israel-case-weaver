@@ -1,117 +1,66 @@
-# Envelopes: A4-length, in-character detective briefings (revised)
-
 ## Goal
-1. Each envelope's printed insert fills an **A4 page** of player-facing copy.
-2. The whole set reads like a real case hand-off — the briefing opens like a precinct dispatch ("Detective — you've caught a case…"), and every later envelope keeps that voice.
-3. **Tasks stay vague-but-clear and never spoil.** No "pull Doc 3 and Doc 7", no pointing at specific pieces of evidence, no naming the floor plan or the timeline grid. The task names a *goal* ("work out which suspect is lying about the 7:42 phone call") and lets the player figure out which documents in the box prove it.
-4. Approved Phase-1 mystery facts (47-min window, Lab 3B, suspect roster, finale) are preserved — only voice, length and presentation change.
 
-## Anti-spoiler rule (locked in for prompt + playbook)
-The task body MUST:
-- State a **goal** in the world ("identify who could not have been in Lab 3B during the window", "decide whose alibi doesn't hold", "narrow the field to two suspects").
-- Use **investigative verbs**, not document verbs: *work out, decide, narrow down, place, account for, rule out, choose*.
-- Reference categories at most ("the materials in your case file", "what you've gathered so far"), never specific Doc numbers, doc titles, or specific clue mechanics (no "compare alibis on the timeline grid", no "decode the cipher on page 2").
-- Never reveal the culprit, motive, method, or which clue is the smoking gun.
-- The player decides which documents to consult — that *is* the gameplay.
+Today only **Documents** (text/image/file) and **Marketing** (single-asset batches) have real "Generate all" buttons. Suspects, Hints (image sheets), Envelope covers, and "draft text" passes are still one-by-one. This plan adds batch generators across every surface, reusing the proven progress-pill + realtime pattern so users can kick off a whole pass and walk away.
 
-## What changes
+## What exists today (so we reuse, not duplicate)
 
-### 1. Generation prompt — `supabase/functions/generate-envelopes/index.ts`
-Rewrite the system-prompt rules for the `task` field:
+- `bulk-generate-documents` edge function + `bulk_generation_jobs` table → already supports `mode: "draft" | "image" | "document" | "both"` for documents (so "draft all documents" is already covered, just needs surfacing).
+- `useBatchImageProgress` + `BatchProgressPill` + `BatchProgressContext` → realtime tracker over `media_assets.status`. Used in Marketing.
+- `generate-envelopes` edge function → already regenerates label/task/design for every envelope in one call (text drafts). Cover **images** are still per-envelope.
+- `generate-image` edge function → used per suspect / per envelope cover / per hint sheet. Inserts a tracked row.
 
-- **Length:** ~350–500 words per envelope (fills one A4 page at ~12 pt with margins). The final envelope (accusation) may be shorter — it carries the form/reveal card.
-- **Voice:** second-person, addressing "Detective", written by an in-world Case Officer / dispatcher. A short signature line at the end (e.g. "— Dispatch, Central Precinct").
-- **Required structure per envelope:**
-  1. **Hand-off line** ("Detective — …") that sets the emotional beat.
-  2. **Where you stand right now** — 1 short paragraph of in-world context tied to the Logic Flow node this envelope gates. No meta instructions.
-  3. **Your task** — explicit, bolded objective. Vague-but-clear per the anti-spoiler rule.
-  4. **How to approach it** — 3–5 *general* investigative prompts, e.g. "Re-read everything tied to the 47-minute window.", "Compare what each suspect said they were doing against where they could physically have been.", "Mark anyone whose story has a hole." — never naming specific docs or clue mechanics.
-  5. **What to do when you have your answer** — tells the player they may then break the seal on the next envelope (no spoiler about what's inside it).
-  6. **Sign-off** — one closing pressure line + signature.
-- **Envelope #0 special rules:** opens with "Detective — you've caught a case." Establishes role, jurisdiction, victim, the 47-minute window, the location (Lab 3B), and that the case file in front of them is everything they get. Points the player at Doc 0 only as the *index* of the case file (allowed, since it's just a table of contents — not a clue). Ends with the first task: reconstruct the window and place who could and couldn't have reached Lab 3B unseen.
-- **Final envelope:** ceremonial accusation letter — "you've reached the end, name your culprit", points to the accusation form/solution card folded inside.
-- **Invariants kept:** never spoil; opening_trigger stays a single sentence (UI-facing); `closing_line_he` is appended by UI — don't include it in the body; logo/branding rules unchanged.
+## What we'll add
 
-Also update the JSON schema description for `task` to: *"In-character A4 letter from the Case Officer to the Detective, ~350–500 words. Vague-but-clear task. Never references specific document numbers, document titles, or clue mechanics."*
+### 1. Suspects — "Generate all portraits" + "Draft all suspects"
+In `SuspectsSection.tsx` toolbar (next to "Add suspect"):
+- **Generate all portraits** → for every suspect missing an active portrait (or all, with a confirm-overwrite checkbox), call `generate-image` with each suspect's stored `thumbnail_prompt` (auto-draft one via `suggest-image-prompt` if empty). Track via a new generic `useBatchImageProgress`-style hook keyed on `image_generations.id` (or reuse media_assets pattern by inserting tracked rows). Show the existing `BatchProgressPill`.
+- **Draft all suspect text** → new edge function `bulk-draft-suspects` that, given `projectId`, fills `summary / role_in_case / motives / secrets / contradictions` for any suspect with empty fields, using the planning model and the project context. Concurrency 3, writes to `suspects` table, emits realtime updates. Surface a small inline progress strip (count done/total).
 
-### 2. Playbook — keep prompt and playbook in sync
-Update both:
-- `src/lib/assistant-playbook.ts`
-- `supabase/functions/_shared/assistant-playbook.ts`
+### 2. Hints — "Generate all hint sheets"
+In `HintsSection.tsx` toolbar:
+- **Generate all hint sheets** → for every stage that has a `hint_sheets` row but no `image_url` (and optionally any with a stale prompt), kick `generate-image` per stage in parallel (max 3). Reuse the existing `BatchProgressPill` keyed on `image_generations` rows.
+- **Draft all stage hints** → new edge function `bulk-draft-hints` that fills missing `hints.text` for every (stage, level) slot per the playbook, using the planning model. Inline progress strip.
 
-Add a new field on the envelopes config (so it shows up in the assistant playbook everywhere envelopes are discussed) — `task_voice_template`, containing the structure + anti-spoiler rule above. Wire it into `renderEnvelopesSummary()` so the assistant chat, the envelope-generation prompt, and the settings playbook panel all see the same rules. Bump `count`/`labels` defaults are unchanged.
+### 3. Envelopes — "Generate all covers"
+In `EnvelopesSection.tsx` (right next to the existing "Generate all envelopes with AI" button which only does text):
+- Split the current single button into a small dropdown: **Generate all → Texts only / Cover images only / Both**.
+- "Cover images only" iterates every envelope, drafts a cover prompt if missing (uses the same prompt-writer the inline panel uses), then calls `generate-image` per cover with concurrency 3. Tracked via `BatchProgressPill`.
 
-### 3. Envelope insert preview/print — `src/features/project/EnvelopesSection.tsx`
-Add a per-envelope **A4 insert preview** beside the task editor:
-- Renders the `task` text inside a fixed `210 × 297 mm` page frame (scaled to fit), serif body, generous margins, light case-file letterhead with project title + envelope #.
-- RTL-aware via existing `isRtl`.
-- **Print** button → print dialog scoped to that page (`@page { size: A4; margin: 20mm }` + print stylesheet hiding the rest of the UI).
-- Small word-count + "fits A4 / overflows A4" indicator.
+### 4. Unified "Drafting" batch (cross-surface)
+At the project workspace top bar (or inside `ProductionDashboard.tsx`), add a **Draft everything missing** action that fans out:
+1. `bulk-generate-documents` with `mode: "draft"` (drafts all doc text)
+2. `bulk-draft-suspects`
+3. `bulk-draft-hints`
+4. `generate-envelopes` (text fields)
 
-No DB changes needed — `envelopes.task` already holds free-form text.
+This runs them in sequence (each is itself parallelised) and surfaces a single progress pill summarising "Drafting: X / Y items". Cancel button stops all 4 phases.
 
-### 4. Regenerate the 6 approved envelopes
-After the prompt + playbook ship, run "Generate envelopes" once so all 6 rows are rewritten in the new A4 voice while preserving the approved beats from your finalized copy. You can then hand-edit any envelope and Print each insert as a real A4 page.
+### 5. Shared infrastructure
+- Generalise `BatchProgressContext` from marketing-only to a project-wide provider so Suspects/Hints/Envelopes can read the same pill (one provider mounted in `ProjectWorkspace.tsx`).
+- Add a tiny shared helper `runWithConcurrency(items, n, fn)` in `src/lib/` so client-side fan-outs share one limiter.
 
-## Examples for your approval
+## Technical Details
 
-> These are samples of the *style and length* the new prompt will produce. They use the approved Phase-1 facts (47-minute window, Lab 3B, six suspects). They name no specific documents and reveal no answers.
+**New edge functions** (both follow the same shape as `generate-envelopes`):
+- `supabase/functions/bulk-draft-suspects/index.ts` — input `{ projectId, overwrite? }`, loops suspects, one chatCompletions call per suspect with the playbook + case context, writes back partial fields. Heartbeats are unnecessary because the function returns synchronously after Promise.all-with-limit, but we'll log via `ai_run_logs`.
+- `supabase/functions/bulk-draft-hints/index.ts` — same pattern over `hints` rows (3 levels × N stages).
 
-### Envelope #0 — Mission Briefing (sample)
+**No DB schema changes required.** All new state fits existing tables (`image_generations`, `media_assets`, `suspects`, `hints`, `bulk_generation_jobs` is reserved for the documents pipeline).
 
-> **CENTRAL PRECINCT — HOMICIDE DIVISION**
-> **Case File 24-0317 · Cold open · For the attention of the duty detective**
->
-> Detective — you've caught a case.
->
-> At 02:14 this morning a body was found inside Lab 3B at the Halden Research Institute. The victim was alone in a secured wing. Six people had legitimate reason to be on that floor between 01:27 and 02:14 — a forty-seven-minute window during which the camera feed went dark and the keycard log shows nothing useful. One of those six killed our victim. The other five are lying about something, but lying isn't the same as killing, and your job is to tell the difference.
->
-> Everything we've recovered from the scene, the institute, and the prelim interviews is in the case file in front of you. Treat it as your only source of truth — there is nothing else coming. Start by getting the file open and your workspace laid out. The cover sheet at the front of the box is your index; use it to find your way around. Don't try to read everything at once.
->
-> **Your task:** reconstruct the forty-seven-minute window. Place every one of the six suspects somewhere — physically — for as much of that window as you can. By the time you are done you should be able to say, in plain language, who *could* have reached Lab 3B unseen and who could not.
->
-> A few habits that will save you time:
->
-> - Build a single timeline you can keep adding to. Keep it visible.
-> - Don't trust anyone's word for where they were until something else backs it up.
-> - When two accounts of the same minute disagree, mark it. Those are the moments that crack a case.
-> - It is fine to leave gaps. Note them. We come back to them.
->
-> When you can speak to that window with confidence — when you've placed the people you can place and flagged the ones you can't — break the seal on the next envelope. Not before.
->
-> Move carefully, Detective. Six people are watching to see how good you are.
->
-> — Dispatch, Central Precinct
-
-### Envelope #1 — first gated beat (sample)
-
-> **CENTRAL PRECINCT — HOMICIDE DIVISION**
-> **Case File 24-0317 · Update 01 · For the attention of the duty detective**
->
-> Detective — good. You've got the window mapped.
->
-> That means you already know something the suspects do not: at least one of their stories does not survive contact with the timeline. People lie to police for a thousand reasons — embarrassment, an affair, a bad debt, a small theft they don't want surfaced. Most of those lies are not your problem tonight. One of them is.
->
-> **Your task:** identify which of the six is lying in a way that matters. Not every inconsistency is a confession. We are looking for the suspect whose account of that forty-seven-minute window cannot be true — the one whose story actively *requires* something the rest of the file says didn't happen.
->
-> Work it like this:
->
-> - Take each suspect's account of the window in turn and ask, *if this is true, what else has to be true?*
-> - Anywhere a suspect's story needs a fact that the rest of your case file contradicts, that's a hard lie. Mark it.
-> - Soft lies — vague timing, a forgotten name, an embarrassed pause — set aside. They are noise tonight.
-> - You should end with one suspect, possibly two, whose accounts cannot both stand.
->
-> Be honest with yourself about the strength of what you have. A hard lie about the window is a lead. It is not yet a culprit. Don't get ahead of the evidence.
->
-> When you've named the suspect (or the pair) whose story breaks against the timeline, break the seal on the next envelope.
->
-> — Dispatch, Central Precinct
-
-## Files touched
-- `supabase/functions/generate-envelopes/index.ts` — prompt + schema description.
-- `src/lib/assistant-playbook.ts` and `supabase/functions/_shared/assistant-playbook.ts` — new `task_voice_template` + anti-spoiler rule, surfaced via `renderEnvelopesSummary()`.
-- `src/features/project/EnvelopesSection.tsx` — A4 preview panel + print button + print CSS.
+**Files to edit / add:**
+- add `supabase/functions/bulk-draft-suspects/index.ts`
+- add `supabase/functions/bulk-draft-hints/index.ts`
+- add `src/lib/run-with-concurrency.ts`
+- edit `src/features/project/SuspectsSection.tsx` (toolbar + 2 batch buttons)
+- edit `src/features/project/HintsSection.tsx` (toolbar + 2 batch buttons)
+- edit `src/features/project/EnvelopesSection.tsx` (split button: text/covers/both)
+- edit `src/features/project/marketing/BatchProgressContext.tsx` → move/rename to `src/features/project/BatchProgressContext.tsx` and mount in `ProjectWorkspace.tsx`; update marketing imports.
+- edit `src/features/project/ProjectWorkspace.tsx` (mount provider + optional global "Draft everything" button)
+- edit `src/features/project/ProductionDashboard.tsx` (surface "Draft everything missing")
 
 ## Out of scope
-- Hints (stages 1–5) and packaging/print checklist — handled in a follow-up.
-- Envelope cover artwork — unchanged.
+- No new tables, no migrations, no playbook schema changes.
+- Marketing batch tools stay as-is; they already work.
+- Document bulk pipeline is reused, not changed.
+
+After approval I'll implement and deploy the two new edge functions, then wire the UI.

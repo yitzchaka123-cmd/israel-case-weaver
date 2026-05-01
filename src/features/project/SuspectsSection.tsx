@@ -5,7 +5,7 @@ import { AutoSaveInput, AutoSaveTextarea } from "@/components/AutoSave";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, Upload, Trash2, UserCircle2, Loader2 } from "lucide-react";
+import { Plus, Upload, Trash2, UserCircle2, Loader2, Wand2, Sparkles } from "lucide-react";
 import { useRef, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
@@ -18,6 +18,9 @@ import { DownloadButton } from "@/components/DownloadButton";
 import { useBackgroundImageJob } from "@/features/project/useBackgroundImageJob";
 import { GenerationTimer } from "@/features/project/GenerationTimer";
 import { syncSuspectThumbnailToIntakeDocs } from "@/features/project/syncSuspectIntake";
+import { useImageBatchProgress } from "@/features/project/useImageBatchProgress";
+import { InlineBatchStrip } from "@/features/project/InlineBatchStrip";
+import { runWithConcurrency } from "@/lib/run-with-concurrency";
 
 interface Suspect {
   id: string;
@@ -62,16 +65,107 @@ export function SuspectsSection({ projectId }: { projectId: string }) {
     else refetch();
   };
 
+  // ── Batch tools ─────────────────────────────────────────────
+  const batch = useImageBatchProgress(projectId);
+  const [draftingAll, setDraftingAll] = useState(false);
+  const [generatingAllPortraits, setGeneratingAllPortraits] = useState(false);
+
+  const draftAllSuspects = async () => {
+    if (draftingAll) return;
+    setDraftingAll(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/bulk-draft-suspects`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({ projectId }),
+      });
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok) { toast.error(json.error ?? "Couldn't draft suspects"); return; }
+      const drafted = json.drafted ?? 0;
+      const failed = json.failed ?? 0;
+      const skipped = json.skipped ?? 0;
+      if (drafted === 0 && failed === 0 && skipped === 0) toast.info(json.message ?? "Nothing to draft");
+      else toast.success(`Drafted ${drafted} suspect${drafted === 1 ? "" : "s"}${skipped ? ` · ${skipped} already complete` : ""}${failed ? ` · ${failed} failed` : ""}`);
+      refetch();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't draft suspects");
+    } finally {
+      setDraftingAll(false);
+    }
+  };
+
+  const generateAllPortraits = async () => {
+    if (generatingAllPortraits) return;
+    if (!data?.length) { toast.info("Add suspects first"); return; }
+    const targets = data.filter((s) => !s.thumbnail_url && !s.uploaded_thumbnail_url && (s.thumbnail_prompt ?? "").trim());
+    const skipped = data.length - targets.length;
+    if (targets.length === 0) {
+      toast.info("Every suspect already has a portrait (or no portrait prompt yet — open each suspect to draft one).");
+      return;
+    }
+    if (!confirm(`Generate ${targets.length} portrait${targets.length === 1 ? "" : "s"}? ${skipped ? `${skipped} already have a portrait or no prompt yet — they'll be skipped.` : ""}`)) return;
+    setGeneratingAllPortraits(true);
+    try {
+      const modelOverride = getStoredImageModel("suspect", "nano-banana-2");
+      const quality = getStoredImageQuality("suspect", "high");
+      const { data: { session } } = await supabase.auth.getSession();
+      const auth = `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`;
+      // Kick all jobs with concurrency 3.
+      const settled = await runWithConcurrency(targets, 3, async (s) => {
+        const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-image`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: auth },
+          body: JSON.stringify({
+            projectId, target: "suspect-thumbnail", targetId: s.id,
+            mode: "background", prompt: (s.thumbnail_prompt ?? "").trim(),
+            modelOverride, quality, aspect: "portrait",
+          }),
+        });
+        const json = await resp.json().catch(() => ({}));
+        if (!resp.ok || !json.jobId) throw new Error(json.error ?? `Failed (${resp.status})`);
+        return { jobId: json.jobId as string, label: s.name || "Suspect" };
+      });
+      const slots = settled.map((r, i) => {
+        if (r.status === "fulfilled") return { id: r.value.jobId, label: r.value.label };
+        return { id: `kick-failed-${targets[i].id}`, label: targets[i].name || "Suspect", kickFailed: true as const };
+      });
+      batch.start(slots, "Generating portraits");
+      const failures = settled.filter((r) => r.status === "rejected").length;
+      toast.success(`Started ${settled.length - failures} of ${targets.length} portrait${targets.length === 1 ? "" : "s"}${failures ? ` · ${failures} kickoff failed` : ""}`);
+    } finally {
+      setGeneratingAllPortraits(false);
+    }
+  };
+
   const selectedSuspect = data?.find((s) => s.id === selected) ?? null;
 
   return (
     <div className="max-w-7xl mx-auto px-6 md:px-10 py-8">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
         <h2 className="font-display text-3xl">Suspects</h2>
-        <Button onClick={addSuspect} className="gap-2">
-          <Plus className="h-4 w-4" /> Add suspect
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" className="gap-2" onClick={draftAllSuspects} disabled={draftingAll}>
+            {draftingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            Draft all suspect text
+          </Button>
+          <Button variant="outline" className="gap-2" onClick={generateAllPortraits} disabled={generatingAllPortraits}>
+            {generatingAllPortraits ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+            Generate all portraits
+          </Button>
+          <Button onClick={addSuspect} className="gap-2">
+            <Plus className="h-4 w-4" /> Add suspect
+          </Button>
+        </div>
       </div>
+      {batch.progress.total > 0 && (
+        <div className="mb-4">
+          <InlineBatchStrip progress={batch.progress} onDismiss={batch.dismiss} />
+        </div>
+      )}
       {!data?.length ? (
         <div className="border-2 border-dashed rounded-2xl p-12 text-center">
           <UserCircle2 className="h-10 w-10 mx-auto text-muted-foreground/40 mb-3" />
