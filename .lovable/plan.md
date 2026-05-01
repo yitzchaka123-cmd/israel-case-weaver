@@ -1,72 +1,70 @@
 ## Goal
 
-Make every envelope's printed letter feel like a substantial, immersive briefing — easily a full A4 page (sometimes two). Restructure the "task" body into the explicit three-part shape you described, and tighten the prompt so the model writes more case-specific narrative instead of a thin generic note.
+Trim the Envelopes section to the minimum the user wants, fix labeling (Open First / 1 / 2 / 3 / 4 — no "#0"), and make sure the AI-drafted task body is a real full-page A4 briefing (already half-built in the previous plan; carry it through).
 
-## The new envelope letter shape (three labeled parts)
+## File: `src/features/project/EnvelopesSection.tsx`
 
-Every middle envelope (#1..#N-2) — and #0 with the "briefing" variant — uses the same three-part layout:
+### Header toolbar
+- **Shrink "Brief me on envelopes"** to a small icon-only button: `<Button variant="ghost" size="icon">` with the `Sparkles` icon and a tooltip "Brief me on envelopes". Same `briefMe()` handler.
+- **Add a new "Draft all envelopes" button** next to it, before the existing "Generate all envelopes with AI" button. This calls the same `generate-envelopes` edge function as `generateAll` but with a flag `mode: "text-only"` so it only writes label + task + design notes (it already does — there is no separate cover step in that function). Concretely we keep one button doing the text drafting and rename the existing one — see next bullet.
+- The current single `generateAll` already does text drafting. We will:
+  - Rename the existing primary button from **"Generate all envelopes with AI"** → **"Draft all envelopes"** (Wand2 icon). Same handler.
+  - Keep **"Generate all covers"** as-is (image batch).
+  - Net result on the toolbar: `[✨ icon] [Draft all envelopes] [Generate all covers]`.
 
-1. **Part A — Briefing or Recap (rich, narrative, 2 paragraphs, ~180–280 words)**
-   - **Envelope #0 (Mission Briefing):** "Hi, Detective — you've been assigned to this case…" Sets the victim, the location, the time window, the detective's jurisdiction, the mood/era, and what landed on the desk. Two real paragraphs, written in-world by the Case Officer. Specific to *this* case (uses approved Phase-1 facts: victim name, setting, year, case goal). Vivid but never spoils the solution.
-   - **Envelopes #1..#N-2 (Stage Recap):** "By now you've probably worked out that…" — a 2-paragraph in-world summary of what the detective should have figured out by this beat (anchored to the Logic Flow node this envelope gates), written *as if* the player succeeded. Refers to suspects by name when the beat is about them. Acknowledges open questions still ahead. **Anti-spoiler rule still locked:** never names a specific document, never names the final culprit/method/motive, never reveals which clue was decisive — just summarises the in-world state of the investigation.
+### Envelope numbering / labels everywhere
+Replace every `#${slot.n}` / `Envelope ${slot.n + 1} of ${playbookCount}` with a small helper:
+- `displayLabel(n)` → `n === 0 ? "Open First" : String(n)`
+- Card header: `{displayLabel(slot.n)} — {slot.label}` (when slot.n>0, slot.label is already "1", "2"… so we just show e.g. `1 — 1`; instead show `Envelope 1` for n>0 and `Open First` for n=0).
+  - Final form: title is `Envelope {displayLabel(slot.n)}` (so "Envelope Open First", "Envelope 1", "Envelope 2"…). Drop the duplicate `slot.label` chip.
+- Subline: `Envelope {n+1} of {playbookCount}` stays.
+- Reset confirm dialog, image title, toasts, "Open in Assistant" prompt, A4 print header — all use `displayLabel(slot.n)`.
 
-2. **Part B — Your Task (the middle section, ~80–140 words)**
-   - Set off visually with a clear "**Your task:**" line in the game language.
-   - One vague-but-clear investigative goal in the world (e.g. "Identify which of the suspects is lying in their statement", "Place each suspect on the map between 21:00 and 22:30", "Decide who had a real reason to want him dead"). The assistant invents the task to fit *this* case's beat — no template phrasing.
-   - Followed by 3–5 GENERAL investigative prompts (no specific doc/clue references).
+### Remove the "Opening trigger" field
+Delete the entire `Opening trigger` Label + Textarea + helper paragraph block (lines ~587–600). The opening trigger is fully implied by the task content + envelope order; the AI prompt already encodes it. Keep the underlying `notes` column untouched in the DB — just stop editing it from the UI.
 
-3. **Part C — Seal Instruction (short, 2–3 lines)**
-   - The equivalent of "Only open the next envelope once you are sure you have completed this task correctly." Always references "the next envelope" generically — never hints what's inside it.
-   - One-line in-character sign-off + signature.
+### "Documents physically sealed inside (rare)" — multi-select + reset
+The dropdown is already a multi-select (`DropdownMenuCheckboxItem`). Add a "Clear selection" reset row at the top of the menu:
+- Above the existing items, render a `<DropdownMenuItem>` "Clear selection (default — none)" that calls `onUpdate({ linked_document_ids: [] })` and also clears `documents.envelope_number` for every doc currently linked to this envelope.
+- Keep the helper text but tighten it: "Default: none. Pick one or more documents to seal physically inside this envelope (rare)."
 
-**Final envelope (#N-1 — Accusation/Solution Reveal)** keeps its current shorter ceremonial shape (~150–250 words), but gets the same Part A "recap of the whole case so far" treatment in 1 short paragraph, then the accusation prompt, then the seal/closing line.
+### Prompt assistant button rename
+In `src/components/DocumentPromptAssistant.tsx`, change the button label `Create prompt` → `Draft` (line 135). Also update the placeholder line 157 to "…or leave empty and click Draft." No behavior change.
 
-## Length targets (raised, with a floor)
+### Remove the A4 insert preview
+- Delete the `<A4InsertPreview …/>` render call (line 733–739).
+- Delete the entire `A4InsertPreview` and `escapeHtml` function definitions (lines 771–899).
+- Drop the now-unused imports: `Printer` from lucide-react, `useRef` if no longer used elsewhere in the file (it is used by `allDraftedPrev` — keep).
+- The card right column is now: model picker → DocumentPromptAssistant → action buttons → cover image (or empty state). Cleaner and shorter.
 
-- Envelope #0 and middle envelopes: **~450–700 words** (was 350–500). Floor of 400 words enforced in prompt rules so the model can't ship a thin note.
-- Final envelope: ~150–250 words (unchanged).
-- The "Briefing/Recap" Part A alone must be **at least 2 real paragraphs**.
+### Task helper text
+Update the helper line under the task textarea from "This text fills one A4 page printed inside the envelope. Use the preview on the right to print it." → "This is the full A4 page the player reads when they open this envelope. Aim for a real briefing — at least 400 words." Keep the word counter; raise its target band to `400–700`.
 
-## Anti-spoiler rules (kept, restated for the new recap section)
+## Content quality (carry the previous plan through)
 
-The Part A recap is the riskiest new surface. The prompt explicitly forbids:
-- Naming a specific document by number/title.
-- Naming the final culprit, motive, method, red herring, or decisive clue.
-- Revealing future-stage answers (only summarise what should be solved *up to and including the previous envelope's task*).
-Allowed: naming suspects (they're public), naming the victim, summarising in-world events, naming what the detective is *still* unsure about.
+The previous plan already updated the prompt in `supabase/functions/generate-envelopes/index.ts` and the playbook templates to enforce the three-part A/B/C structure with a 400-word floor. Verify and tighten:
 
-## Where this gets implemented
+- In `generate-envelopes/index.ts`:
+  - Replace remaining mentions of "Envelope #0" displayed to the player with the language-appropriate "Open First" framing (internal numbering in the prompt stays as `#0..#N-1`; only player-facing strings change).
+  - Re-confirm the JSON tool's `task` field description says "Full A4 page, 450–700 words, three labeled parts (Briefing/Recap → Your task → Seal instruction). Floor: 400 words. Reject anything shorter."
+  - Drop any instruction that tells the model to write the "opening trigger" field — we are no longer surfacing it; have the function set `notes` to empty string (or skip the field entirely on the upsert).
 
-This is a prompt + playbook change only. No DB schema changes, no UI changes (the existing single "task" textarea + word counter already handles longer copy).
+- In both `supabase/functions/_shared/assistant-playbook.ts` and `src/lib/assistant-playbook.ts` (kept in sync):
+  - `task_voice_template` keeps the three-part structure already added.
+  - Update the workspace default labels comment to clarify "Open First, 1, 2, 3, 4 — never '#0'".
 
-### Files to edit
+## Acceptance check
 
-1. **`supabase/functions/generate-envelopes/index.ts`** (the system prompt)
-   - Replace the current `REQUIRED STRUCTURE` block with the new three-part A/B/C structure.
-   - Raise the word-count target to 450–700 (with explicit "≥400 words floor — do not ship short").
-   - Add the "By now you've probably worked out that…" recap rule for envelopes #1..#N-2, keyed off the previous envelope's task and the Logic Flow node it gated.
-   - Strengthen the "make it specific to THIS case" instruction by feeding the model the project's `solution_summary` and Phase-1 facts as recap-source-of-truth (it already has them; the prompt just needs to require their use in the briefing/recap paragraphs without leaking the solution).
-   - Update the JSON tool's `task` description to match the new shape and length.
-
-2. **`supabase/functions/_shared/assistant-playbook.ts`** — `task_voice_template`
-   - Rewrite the workspace-default `task_voice_template` (the source-of-truth users see in Settings → Playbook) to describe the new three-part A/B/C structure, the new word counts, the briefing-vs-recap rule, and the anti-spoiler floor. This is what gets concatenated into the prompt and shown in the playbook UI.
-
-3. **`src/lib/assistant-playbook.ts`** — mirror the exact same `task_voice_template` text (the two files must stay in sync per the file's own header comment).
-
-4. **`.lovable/plan.md`** — append this plan section so the change is tracked alongside the other envelope/batch work already in there.
-
-### Files NOT changed
-- `EnvelopesSection.tsx` — the textarea, word counter, RTL handling, and "Generate all envelopes" wiring all already accommodate longer text.
-- DB schema, edge function deployment config, no migrations.
-
-## Acceptance check (what I'll verify after the edit)
-
-- Re-running "Generate all envelopes with AI" on a project produces envelope #0 with a real 2-paragraph briefing that names the victim/setting/year, then a clear "Your task:" middle, then a "Only open the next envelope once you're sure" closer.
-- Envelopes #1..#N-2 open with a "By now you've probably worked out…" recap of the previous beat (no spoilers, no doc numbers), then the new task, then the seal line.
-- The total task body for non-final envelopes lands ≥ 400 words in the playbook word-counter, comfortably filling A4.
-- The settings → Playbook → Envelope task voice panel reflects the new structure.
+- Header: small ✨ icon button (tooltip "Brief me"), then "Draft all envelopes", then "Generate all covers".
+- Each envelope card title reads "Envelope Open First", "Envelope 1", "Envelope 2"… — never "#0".
+- Opening-trigger textarea is gone.
+- Documents-sealed-inside dropdown supports multi-select (already did) and has a "Clear selection" row that resets to none.
+- Prompt assistant button reads "Draft".
+- A4 insert preview block is gone from the right column.
+- Running "Draft all envelopes" produces a real ≥400-word briefing per envelope, three labeled parts, no doc-name spoilers (Open-First envelope may name Doc 0 once as the index).
 
 ## Out of scope
-- No changes to the design/visual brief for envelope covers.
-- No changes to envelope count, labels, closing line, or the bulk-text vs bulk-cover split.
-- No retroactive edit to envelopes already approved in existing projects — re-generating is the user's call.
+
+- No DB schema changes (the `notes` column stays; we just stop editing it).
+- No changes to envelope count, closing line, cover generation flow, or cover image prompts.
+- No retroactive rewrite of envelopes already approved — re-running "Draft all envelopes" is the user's call.
