@@ -92,6 +92,9 @@ const STATUSES = ["draft", "in_progress", "review", "final"] as const;
 const FOOTNOTE_HE =
   "פתחו את המעטפה הבאה רק אם אתם בטוחים שביצעתם את המשימה הקודמת כראוי.";
 
+/** Player-facing envelope label: 0 → "Open First", N → "N". */
+const displayLabel = (n: number): string => (n === 0 ? "Open First" : String(n));
+
 const STATUS_TIP =
   "Production status — used by the Production Dashboard to count progress, NOT by the player.\n" +
   "• Draft = not started\n" +
