@@ -883,15 +883,40 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
         )}
 
         {board === "final" && approved && (
-          <Button
-            variant={nodes.length === 0 ? "default" : "outline"}
-            className="gap-2 h-9"
-            onClick={createFinalDocumentsMap}
-            disabled={creatingFinalMap}
-          >
-            {creatingFinalMap ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-            {nodes.length === 0 ? "Create Final Documents Map" : "Rebuild Final Map"}
-          </Button>
+          showBothBuildOptions ? (
+            <>
+              <Button
+                variant={nodes.length === 0 ? "default" : "outline"}
+                className="gap-2 h-9"
+                onClick={() => createFinalDocumentsMap("from-logic")}
+                disabled={creatingFinalMap}
+                title="Build planned document nodes from the assistant's approved doc set (derived from the approved logic flow). Existing document rows are not used."
+              >
+                {creatingFinalMap ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                {nodes.length === 0 ? "Create new map with new documents from approved logic" : "Rebuild from approved logic"}
+              </Button>
+              <Button
+                variant="outline"
+                className="gap-2 h-9"
+                onClick={() => createFinalDocumentsMap("from-existing")}
+                disabled={creatingFinalMap}
+                title={`Build planned document nodes from the ${existingDocCount} document row${existingDocCount === 1 ? "" : "s"} already created for this case.`}
+              >
+                {creatingFinalMap ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                {nodes.length === 0 ? "Create map from existing documents" : "Rebuild from existing documents"}
+              </Button>
+            </>
+          ) : (
+            <Button
+              variant={nodes.length === 0 ? "default" : "outline"}
+              className="gap-2 h-9"
+              onClick={() => createFinalDocumentsMap(null)}
+              disabled={creatingFinalMap}
+            >
+              {creatingFinalMap ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+              {nodes.length === 0 ? "Create Final Documents Map" : "Rebuild Final Map"}
+            </Button>
+          )
         )}
       </div>
 
