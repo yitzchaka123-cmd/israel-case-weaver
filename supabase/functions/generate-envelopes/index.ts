@@ -43,7 +43,12 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { projectId, modelOverride } = await req.json();
+    const { projectId, modelOverride, envelopeNumber } = await req.json() as {
+      projectId?: string;
+      modelOverride?: string;
+      envelopeNumber?: number; // when provided, generate ONLY this envelope (faster, avoids gateway timeouts)
+    };
+    const onlyNumber = typeof envelopeNumber === "number" ? Math.round(envelopeNumber) : null;
     if (!projectId) {
       return new Response(JSON.stringify({ error: "projectId required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
