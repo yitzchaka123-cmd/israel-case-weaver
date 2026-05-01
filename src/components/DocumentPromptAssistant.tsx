@@ -132,7 +132,7 @@ export function DocumentPromptAssistant({
             title="Create Design + Content in the Final prompt tab using the instructions."
           >
             {drafting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-            Create prompt
+            Draft
           </Button>
         </div>
       </div>
@@ -154,7 +154,7 @@ export function DocumentPromptAssistant({
           <Textarea
             value={instructions}
             onChange={(e) => setInstructions(e.target.value)}
-            placeholder="Type any specific guidance for this document, or leave empty and click Create prompt."
+            placeholder="Type any specific guidance for this document, or leave empty and click Draft."
             rows={5}
             className="text-xs leading-relaxed"
           />

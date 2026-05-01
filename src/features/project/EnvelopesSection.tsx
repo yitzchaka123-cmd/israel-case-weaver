@@ -27,6 +27,7 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -42,7 +43,6 @@ import {
   FileText,
   ChevronDown,
   Trash2,
-  Printer,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
@@ -91,6 +91,9 @@ interface DocOption {
 const STATUSES = ["draft", "in_progress", "review", "final"] as const;
 const FOOTNOTE_HE =
   "פתחו את המעטפה הבאה רק אם אתם בטוחים שביצעתם את המשימה הקודמת כראוי.";
+
+/** Player-facing envelope label: 0 → "Open First", N → "N". */
+const displayLabel = (n: number): string => (n === 0 ? "Open First" : String(n));
 
 const STATUS_TIP =
   "Production status — used by the Production Dashboard to count progress, NOT by the player.\n" +
@@ -153,7 +156,6 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
     },
   });
   const gameLanguage = project?.game_language ?? "Hebrew";
-  const projectTitle = project?.title ?? "";
 
   const { data: docs = [] } = useQuery({
     queryKey: ["envelope-doc-options", projectId],
@@ -322,16 +324,21 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" className="gap-2" onClick={briefMe}>
-              <Sparkles className="h-4 w-4" /> Brief me on envelopes
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-9 w-9" onClick={briefMe} aria-label="Brief me on envelopes">
+                  <Sparkles className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Brief me on envelopes</TooltipContent>
+            </Tooltip>
             <Button className="gap-2" onClick={generateAll} disabled={generatingAll}>
               {generatingAll ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <Wand2 className="h-4 w-4" />
               )}
-              Generate all envelopes with AI
+              Draft all envelopes
             </Button>
             <Button
               variant="outline"
@@ -369,7 +376,6 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
                 projectId={projectId}
                 playbookCount={playbook.envelopes.count}
                 gameLanguage={gameLanguage}
-                projectTitle={projectTitle}
               />
             );
           })}
@@ -388,7 +394,6 @@ function EnvelopeCard({
   projectId,
   playbookCount,
   gameLanguage,
-  projectTitle,
 }: {
   slot: { n: number; label: string };
   env: Envelope | undefined;
@@ -398,7 +403,6 @@ function EnvelopeCard({
   projectId: string;
   playbookCount: number;
   gameLanguage: string;
-  projectTitle: string;
 }) {
   
   const coverJob = useBackgroundImageJob({
@@ -455,7 +459,7 @@ function EnvelopeCard({
         quality,
         aspect: "portrait",
         category: "envelope",
-        title: `Envelope #${slot.n} — ${slot.label}`,
+        title: `Envelope ${displayLabel(slot.n)} — ${slot.label}`,
       });
       toast.message("Generating in the background — you can close the tab.");
     } catch {
@@ -465,7 +469,7 @@ function EnvelopeCard({
 
   const openInAssistant = () => {
     const prompt =
-      `Help me write envelope #${slot.n} (${slot.label}). ` +
+      `Help me write envelope ${displayLabel(slot.n)} (${slot.label}). ` +
       `Current Hebrew label: "${(value("label") as string) || "(empty)"}". ` +
       `Current Hebrew task: "${(value("task") as string) || "(empty)"}". ` +
       `Brief me on the playbook rules for THIS envelope, then propose a Hebrew label, ` +
@@ -490,11 +494,11 @@ function EnvelopeCard({
         </div>
         <div className="flex-1 min-w-0">
           <div className="font-display text-lg leading-tight flex items-center gap-2">
-            #{slot.n} — {slot.label}
+            Envelope {displayLabel(slot.n)}
             {createdByMsg && <AssistantOriginBadge messageId={createdByMsg} />}
           </div>
           <div className="text-xs text-muted-foreground">
-            Envelope {slot.n + 1} of {playbookCount}
+            {slot.n + 1} of {playbookCount}
           </div>
         </div>
         <div className="flex items-center gap-1.5">
@@ -530,12 +534,12 @@ function EnvelopeCard({
                 <button
                   type="button"
                   onClick={async () => {
-                    if (!confirm(`Reset envelope #${slot.n} (${slot.label})? This clears its label, task, design, cover image, and links. The slot itself stays.`)) return;
+                    if (!confirm(`Reset envelope ${displayLabel(slot.n)}? This clears its label, task, design, cover image, and links. The slot itself stays.`)) return;
                     const { error } = await supabase.from("envelopes").delete().eq("id", env.id);
                     if (error) { toast.error(error.message); return; }
                     // Unlink any documents that pointed to this envelope number.
                     await supabase.from("documents").update({ envelope_number: null }).eq("envelope_number", slot.n).eq("project_id", projectId);
-                    toast.success(`Envelope #${slot.n} reset`);
+                    toast.success(`Envelope ${displayLabel(slot.n)} reset`);
                   }}
                   className="p-2 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
                   aria-label="Reset envelope"
@@ -580,22 +584,7 @@ function EnvelopeCard({
               placeholder="Detective — you've caught a case…&#10;&#10;Full A4 letter from the Case Officer to the Detective. Vague-but-clear task. Never name specific docs or clues."
             />
             <p className="text-[11px] text-muted-foreground">
-              This text fills one A4 page printed inside the envelope. Use the preview on the right to print it.
-            </p>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-              Opening trigger
-            </Label>
-            <Textarea
-              rows={2}
-              value={value("notes") as string}
-              onChange={(e) => onUpdate({ notes: e.target.value })}
-              placeholder="When does the player open this envelope? e.g. 'Open after you've narrowed it to two suspects.' All documents are already in the box — this envelope holds a task or reveal, not evidence."
-            />
-            <p className="text-[11px] text-muted-foreground">
-              Sealed task gate. Players only open this when they reach the matching beat in the case.
+              This is the full A4 page the player reads when they open this envelope. Aim for a real briefing — at least 400 words.
             </p>
           </div>
 
@@ -608,7 +597,7 @@ function EnvelopeCard({
                 <Button variant="outline" className="w-full justify-between font-normal">
                   <span className="truncate text-sm">
                     {linkedDocs.length === 0
-                      ? "Empty (default — all documents live loose in the box from the start)"
+                      ? "None (default — all documents live loose in the box from the start)"
                       : linkedDocs
                           .map((d) => `#${d.doc_number ?? "?"} ${d.title}`)
                           .join(", ")}
@@ -618,8 +607,26 @@ function EnvelopeCard({
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-[320px] max-h-72 overflow-y-auto" align="start">
                 <DropdownMenuLabel className="text-xs">
-                  Rare — only set this if you are physically sealing a document inside this envelope (e.g. a late interrogation reveal)
+                  Rare — only set this if you are physically sealing one or more documents inside this envelope (e.g. a late interrogation reveal). Pick multiple if needed.
                 </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-xs"
+                  disabled={linkedDocs.length === 0}
+                  onSelect={async (e) => {
+                    e.preventDefault();
+                    const idsToClear = linkedDocs.map((d) => d.id);
+                    await onUpdate({ linked_document_ids: [] });
+                    if (idsToClear.length > 0) {
+                      await supabase
+                        .from("documents")
+                        .update({ envelope_number: null })
+                        .in("id", idsToClear);
+                    }
+                  }}
+                >
+                  Clear selection (default — none)
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 {docs.length === 0 && (
                   <div className="px-2 py-3 text-xs text-muted-foreground">
@@ -647,7 +654,7 @@ function EnvelopeCard({
                         {d.title}
                       </span>
                       {otherEnv != null && (
-                        <span className="text-[10px] text-warning ml-1">→ env #{otherEnv}</span>
+                        <span className="text-[10px] text-warning ml-1">→ env {displayLabel(otherEnv)}</span>
                       )}
                     </DropdownMenuCheckboxItem>
                   );
@@ -655,7 +662,7 @@ function EnvelopeCard({
               </DropdownMenuContent>
             </DropdownMenu>
             <p className="text-[11px] text-muted-foreground">
-              Default: empty. All documents live loose in the box from the start — envelopes are sealed task gates, not document containers. Use this only for the rare creative drop (≈1 per game) where you are physically sealing a document inside this envelope.
+              Default: none. Pick one or more documents to seal physically inside this envelope (rare).
             </p>
           </div>
 
@@ -706,7 +713,7 @@ function EnvelopeCard({
             >
               <img
                 src={cover}
-                alt={`Envelope ${slot.n} cover`}
+                alt={`Envelope ${displayLabel(slot.n)} cover`}
                 className="w-full h-auto max-h-72 object-contain"
               />
               <AiOriginBadge
@@ -718,7 +725,7 @@ function EnvelopeCard({
                 hoverOnly
               />
               <span className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10" onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}>
-                <DownloadButton url={cover} title={`envelope-${slot.n}-${slot.label ?? ''}`} />
+                <DownloadButton url={cover} title={`envelope-${displayLabel(slot.n)}-${slot.label ?? ''}`} />
               </span>
               {coverJob.isPending && (
                 <GenerationTimer elapsedSec={coverJob.state.elapsedSec} label="Generating mock-up" />
@@ -729,14 +736,6 @@ function EnvelopeCard({
               No mock-up yet. Generate one to preview the printed envelope.
             </div>
           )}
-
-          <A4InsertPreview
-            text={(value("task") as string) ?? ""}
-            envelopeNumber={slot.n}
-            envelopeLabel={slot.label}
-            projectTitle={projectTitle}
-            gameLanguage={gameLanguage}
-          />
         </div>
       </div>
     </div>
@@ -745,8 +744,8 @@ function EnvelopeCard({
 
 function TaskWordCount({ text }: { text: string }) {
   const words = (text.trim().match(/\S+/g) ?? []).length;
-  const target = 350;
-  const max = 500;
+  const target = 400;
+  const max = 700;
   const status =
     words === 0
       ? "empty"
@@ -768,132 +767,3 @@ function TaskWordCount({ text }: { text: string }) {
   );
 }
 
-function A4InsertPreview({
-  text,
-  envelopeNumber,
-  envelopeLabel,
-  projectTitle,
-  gameLanguage,
-}: {
-  text: string;
-  envelopeNumber: number;
-  envelopeLabel: string;
-  projectTitle: string;
-  gameLanguage: string;
-}) {
-  const isRtl = ["Hebrew", "Arabic", "Persian", "Urdu", "Yiddish"].includes(gameLanguage);
-  const printRef = useRef<HTMLDivElement>(null);
-
-  const handlePrint = () => {
-    const node = printRef.current;
-    if (!node) return;
-    const w = window.open("", "_blank", "width=900,height=1200");
-    if (!w) {
-      toast.error("Pop-up blocked — allow pop-ups to print this envelope insert.");
-      return;
-    }
-    const dirAttr = isRtl ? "rtl" : "ltr";
-    w.document.write(`<!doctype html>
-<html dir="${dirAttr}" lang="${isRtl ? "he" : "en"}">
-<head>
-<meta charset="utf-8" />
-<title>Envelope #${envelopeNumber} — ${envelopeLabel}</title>
-<style>
-  @page { size: A4; margin: 20mm; }
-  html, body { margin: 0; padding: 0; }
-  body {
-    font-family: 'Georgia', 'Times New Roman', serif;
-    color: #111;
-    background: #fff;
-    line-height: 1.55;
-    font-size: 12pt;
-  }
-  .letterhead {
-    border-bottom: 1px solid #444;
-    padding-bottom: 8mm;
-    margin-bottom: 8mm;
-    font-family: 'Helvetica Neue', Arial, sans-serif;
-    font-size: 9pt;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: #555;
-    display: flex;
-    justify-content: space-between;
-  }
-  .body { white-space: pre-wrap; }
-</style>
-</head>
-<body>
-  <div class="letterhead">
-    <span>${escapeHtml(projectTitle || "Case File")}</span>
-    <span>Envelope #${envelopeNumber}${envelopeLabel ? " · " + escapeHtml(envelopeLabel) : ""}</span>
-  </div>
-  <div class="body">${escapeHtml(text || "")}</div>
-  <script>window.addEventListener('load', () => { window.focus(); window.print(); });<\/script>
-</body>
-</html>`);
-    w.document.close();
-  };
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-          A4 insert preview
-        </Label>
-        <Button size="sm" variant="outline" className="gap-2 h-8" onClick={handlePrint} disabled={!text.trim()}>
-          <Printer className="h-3.5 w-3.5" /> Print A4
-        </Button>
-      </div>
-      <div className="rounded-lg border bg-muted/20 p-3 overflow-hidden">
-        <div
-          ref={printRef}
-          className="bg-white text-neutral-900 shadow-sm mx-auto"
-          style={{
-            width: "210mm",
-            minHeight: "297mm",
-            padding: "20mm",
-            transform: "scale(0.42)",
-            transformOrigin: "top left",
-            marginBottom: "calc(297mm * -0.58)",
-            marginRight: "calc(210mm * -0.58)",
-            fontFamily: "Georgia, 'Times New Roman', serif",
-            fontSize: "12pt",
-            lineHeight: 1.55,
-          }}
-          dir={isRtl ? "rtl" : "ltr"}
-        >
-          <div
-            className="flex justify-between text-[9pt] uppercase tracking-widest text-neutral-500 border-b border-neutral-400 pb-2 mb-4"
-            style={{ fontFamily: "'Helvetica Neue', Arial, sans-serif" }}
-          >
-            <span>{projectTitle || "Case File"}</span>
-            <span>
-              Envelope #{envelopeNumber}
-              {envelopeLabel ? " · " + envelopeLabel : ""}
-            </span>
-          </div>
-          <div style={{ whiteSpace: "pre-wrap" }}>
-            {text || (
-              <span className="text-neutral-400 italic">
-                The printed insert will appear here once you write the task.
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-      <p className="text-[11px] text-muted-foreground">
-        Live preview of the A4 page that goes inside this envelope. Click <strong>Print A4</strong> to open a print dialog scaled exactly to A4.
-      </p>
-    </div>
-  );
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
