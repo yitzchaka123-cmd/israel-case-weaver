@@ -459,7 +459,7 @@ function EnvelopeCard({
         quality,
         aspect: "portrait",
         category: "envelope",
-        title: `Envelope #${slot.n} — ${slot.label}`,
+        title: `Envelope ${displayLabel(slot.n)} — ${slot.label}`,
       });
       toast.message("Generating in the background — you can close the tab.");
     } catch {
