@@ -280,6 +280,10 @@ export function AssistantPlaybookPanel({}: Props = {}) {
               placeholder="LENGTH · VOICE · REQUIRED STRUCTURE · ANTI-SPOILER RULE"
             />
           </div>
+        </div>
+      </Card>
+
+      {/* 4. Phase 1 setup order */}
       <Card
         id="phase1"
         title="Phase 1 setup order"
