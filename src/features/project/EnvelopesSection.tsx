@@ -588,22 +588,7 @@ function EnvelopeCard({
               placeholder="Detective — you've caught a case…&#10;&#10;Full A4 letter from the Case Officer to the Detective. Vague-but-clear task. Never name specific docs or clues."
             />
             <p className="text-[11px] text-muted-foreground">
-              This text fills one A4 page printed inside the envelope. Use the preview on the right to print it.
-            </p>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-              Opening trigger
-            </Label>
-            <Textarea
-              rows={2}
-              value={value("notes") as string}
-              onChange={(e) => onUpdate({ notes: e.target.value })}
-              placeholder="When does the player open this envelope? e.g. 'Open after you've narrowed it to two suspects.' All documents are already in the box — this envelope holds a task or reveal, not evidence."
-            />
-            <p className="text-[11px] text-muted-foreground">
-              Sealed task gate. Players only open this when they reach the matching beat in the case.
+              This is the full A4 page the player reads when they open this envelope. Aim for a real briefing — at least 400 words.
             </p>
           </div>
 
@@ -616,7 +601,7 @@ function EnvelopeCard({
                 <Button variant="outline" className="w-full justify-between font-normal">
                   <span className="truncate text-sm">
                     {linkedDocs.length === 0
-                      ? "Empty (default — all documents live loose in the box from the start)"
+                      ? "None (default — all documents live loose in the box from the start)"
                       : linkedDocs
                           .map((d) => `#${d.doc_number ?? "?"} ${d.title}`)
                           .join(", ")}
@@ -626,8 +611,26 @@ function EnvelopeCard({
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-[320px] max-h-72 overflow-y-auto" align="start">
                 <DropdownMenuLabel className="text-xs">
-                  Rare — only set this if you are physically sealing a document inside this envelope (e.g. a late interrogation reveal)
+                  Rare — only set this if you are physically sealing one or more documents inside this envelope (e.g. a late interrogation reveal). Pick multiple if needed.
                 </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-xs"
+                  disabled={linkedDocs.length === 0}
+                  onSelect={async (e) => {
+                    e.preventDefault();
+                    const idsToClear = linkedDocs.map((d) => d.id);
+                    await onUpdate({ linked_document_ids: [] });
+                    if (idsToClear.length > 0) {
+                      await supabase
+                        .from("documents")
+                        .update({ envelope_number: null })
+                        .in("id", idsToClear);
+                    }
+                  }}
+                >
+                  Clear selection (default — none)
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 {docs.length === 0 && (
                   <div className="px-2 py-3 text-xs text-muted-foreground">
@@ -655,7 +658,7 @@ function EnvelopeCard({
                         {d.title}
                       </span>
                       {otherEnv != null && (
-                        <span className="text-[10px] text-warning ml-1">→ env #{otherEnv}</span>
+                        <span className="text-[10px] text-warning ml-1">→ env {displayLabel(otherEnv)}</span>
                       )}
                     </DropdownMenuCheckboxItem>
                   );
@@ -663,7 +666,7 @@ function EnvelopeCard({
               </DropdownMenuContent>
             </DropdownMenu>
             <p className="text-[11px] text-muted-foreground">
-              Default: empty. All documents live loose in the box from the start — envelopes are sealed task gates, not document containers. Use this only for the rare creative drop (≈1 per game) where you are physically sealing a document inside this envelope.
+              Default: none. Pick one or more documents to seal physically inside this envelope (rare).
             </p>
           </div>
 
