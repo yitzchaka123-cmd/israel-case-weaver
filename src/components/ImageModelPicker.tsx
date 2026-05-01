@@ -20,6 +20,7 @@ const QUALITY_PREFIX = "imgQuality:";
 export function getStoredImageModel(surface: string, fallback: ImageModelKey): ImageModelKey {
   if (typeof window === "undefined") return fallback;
   const v = window.localStorage.getItem(STORAGE_PREFIX + surface);
+  if (surface === "envelope" && (v === "chatgpt-image" || v === "chatgpt-image-2")) return fallback;
   if (v && IMAGE_MODELS.some((m) => m.value === v)) return v as ImageModelKey;
   return fallback;
 }
@@ -54,7 +55,11 @@ export function ImageModelPicker({ surface, defaultModel, className, size = "sm"
   const [quality, setQuality] = useState<ImageQuality>("high");
   const [geminiKeyPresent, setGeminiKeyPresent] = useState<boolean | null>(null);
   const { hidden } = useHiddenModels();
-  const visibleModels = filterModelOptions(IMAGE_MODELS, hidden, value);
+  const visibleModels = filterModelOptions(
+    surface === "envelope" ? IMAGE_MODELS.filter((m) => !m.value.startsWith("chatgpt-image")) : IMAGE_MODELS,
+    hidden,
+    value,
+  );
 
   useEffect(() => {
     setValue(getStoredImageModel(surface, defaultModel));

@@ -1,7 +1,7 @@
 // Envelopes — full design/generation surface (mirrors Documents and Suspects).
 // Each envelope row carries label/task (player-facing Hebrew copy), linked
 // documents, internal notes, and a separate design brief that drives the
-// envelope cover mock-up via generate-image. The "Brief me" / "Generate all"
+// A4 page-insert mock-up via generate-image. The "Brief me" / "Generate all"
 // global actions tie the assistant + bulk-AI generation together.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -94,6 +94,24 @@ const FOOTNOTE_HE =
 
 /** Player-facing envelope label: 0 → "Open First", N → "N". */
 const displayLabel = (n: number): string => (n === 0 ? "Open First" : String(n));
+
+const envelopeImageModel = () => getStoredImageModel("envelope", "nano-banana-2");
+const envelopeImageQuality = () => {
+  const model = envelopeImageModel();
+  const quality = getStoredImageQuality("envelope", "medium");
+  return model.startsWith("chatgpt-image") && quality === "high" ? "medium" : quality;
+};
+
+const pageInsertPrompt = (raw: string, label: string) => {
+  const compact = raw.replace(/\s+/g, " ").trim().slice(0, 3200);
+  return [
+    "Generate a portrait A4 page insert that will be placed inside a physical envelope. This is NOT an envelope cover: no envelope, no flap, no wax seal, no kraft mailer, no outside-envelope label.",
+    "If the saved design notes below mention envelope covers, wax seals, flaps, kraft paper, mailers, or front-of-envelope labels, ignore those parts and reinterpret the intent as a printed case briefing page.",
+    "The page should look like a real in-world briefing/recap sheet with varied, document-appropriate realism. Do not default to coffee stains; only include stains if they make sense for this specific page style. Choose fresh tactile details such as fax noise, carbon-copy offset, binder holes, routing initials, scan-edge shadow, redaction tape, stamped docket code, or handwritten officer marks as appropriate.",
+    `Page marker/slot: ${label}.`,
+    compact,
+  ].join("\n\n");
+};
 
 const STATUS_TIP =
   "Production status — used by the Production Dashboard to count progress, NOT by the player.\n" +
@@ -280,14 +298,14 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
     if (generatingAllCovers) return;
     const targets = (data ?? []).filter((e) => !e.cover_image_url && (e.design_instructions ?? "").trim());
     if (targets.length === 0) {
-      toast.info("Every envelope already has a cover (or no design instructions yet — open one to draft).");
+      toast.info("Every envelope already has a page mock-up (or no design instructions yet — open one to draft).");
       return;
     }
-    if (!confirm(`Generate ${targets.length} envelope cover${targets.length === 1 ? "" : "s"}?`)) return;
+    if (!confirm(`Generate ${targets.length} A4 page mock-up${targets.length === 1 ? "" : "s"}?`)) return;
     setGeneratingAllCovers(true);
     try {
-      const modelOverride = getStoredImageModel("envelope", "chatgpt-image");
-      const quality = getStoredImageQuality("envelope", "high");
+      const modelOverride = envelopeImageModel();
+      const quality = envelopeImageQuality();
       const { data: { session } } = await supabase.auth.getSession();
       const auth = `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`;
       const settled = await runWithConcurrency(targets, 3, async (env) => {
@@ -296,9 +314,9 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
           headers: { "Content-Type": "application/json", Authorization: auth },
           body: JSON.stringify({
             projectId, target: "envelope", targetId: env.id,
-            mode: "background", prompt: (env.design_instructions ?? "").trim(),
+            mode: "background", prompt: pageInsertPrompt((env.design_instructions ?? "").trim(), displayLabel(env.number)),
             modelOverride, quality, aspect: "portrait", category: "envelope",
-            title: `Envelope #${env.number} — ${env.label ?? ""}`,
+            title: `Envelope ${displayLabel(env.number)} page insert — ${env.label ?? ""}`,
           }),
         });
         const json = await resp.json().catch(() => ({}));
@@ -309,9 +327,9 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
         if (r.status === "fulfilled") return { id: r.value.jobId, label: r.value.label };
         return { id: `kick-failed-${targets[i].id}`, label: `#${targets[i].number}`, kickFailed: true as const };
       });
-      coverBatch.start(slots, "Generating envelope covers");
+      coverBatch.start(slots, "Generating A4 page mock-ups");
       const failures = settled.filter((r) => r.status === "rejected").length;
-      toast.success(`Started ${settled.length - failures} of ${targets.length} cover${targets.length === 1 ? "" : "s"}${failures ? ` · ${failures} kickoff failed` : ""}`);
+      toast.success(`Started ${settled.length - failures} of ${targets.length} page mock-up${targets.length === 1 ? "" : "s"}${failures ? ` · ${failures} kickoff failed` : ""}`);
     } finally {
       setGeneratingAllCovers(false);
     }
@@ -356,7 +374,7 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
               ) : (
                 <ImagePlus className="h-4 w-4" />
               )}
-              Generate all covers
+              Generate all page mock-ups
             </Button>
           </div>
         </div>
@@ -416,7 +434,7 @@ function EnvelopeCard({
     targetId: env?.id,
     onDone: async (url) => {
       await onUpdate({ status: "review", cover_image_url: url });
-      toast.success("Envelope mock-up ready");
+      toast.success("A4 page mock-up ready");
     },
     onError: (msg) => toast.error(msg, { duration: 15000 }),
   });
@@ -455,16 +473,16 @@ function EnvelopeCard({
       toast.error("Save the envelope first");
       return;
     }
-    const modelOverride = getStoredImageModel("envelope", "chatgpt-image");
-    const quality = getStoredImageQuality("envelope", "high");
+    const modelOverride = envelopeImageModel();
+    const quality = envelopeImageQuality();
     try {
       await coverJob.start({
-        prompt,
+        prompt: pageInsertPrompt(prompt, displayLabel(slot.n)),
         modelOverride,
         quality,
         aspect: "portrait",
         category: "envelope",
-        title: `Envelope ${displayLabel(slot.n)} — ${slot.label}`,
+        title: `Envelope ${displayLabel(slot.n)} page insert — ${slot.label}`,
       });
       toast.message("Generating in the background — you can close the tab.");
     } catch {
@@ -539,7 +557,7 @@ function EnvelopeCard({
                 <button
                   type="button"
                   onClick={async () => {
-                    if (!confirm(`Reset envelope ${displayLabel(slot.n)}? This clears its label, task, design, cover image, and links. The slot itself stays.`)) return;
+                    if (!confirm(`Reset envelope ${displayLabel(slot.n)}? This clears its label, task, design, page mock-up, and links. The slot itself stays.`)) return;
                     const { error } = await supabase.from("envelopes").delete().eq("id", env.id);
                     if (error) { toast.error(error.message); return; }
                     // Unlink any documents that pointed to this envelope number.
@@ -682,7 +700,7 @@ function EnvelopeCard({
         {/* RIGHT — design & generation */}
         <div className="space-y-4">
           <div className="flex items-center justify-end gap-2">
-            <ImageModelPicker surface="envelope" defaultModel="chatgpt-image" />
+            <ImageModelPicker surface="envelope" defaultModel="nano-banana-2" />
           </div>
 
           <DocumentPromptAssistant
@@ -702,7 +720,7 @@ function EnvelopeCard({
               ) : (
                 <ImagePlus className="h-4 w-4" />
               )}
-              Generate envelope mock-up
+              Generate A4 page mock-up
             </Button>
             <Button variant="ghost" className="gap-2" onClick={openInAssistant}>
               <ExternalLink className="h-4 w-4" /> Open in Assistant
@@ -718,7 +736,7 @@ function EnvelopeCard({
             >
               <img
                 src={cover}
-                alt={`Envelope ${displayLabel(slot.n)} cover`}
+                alt={`Envelope ${displayLabel(slot.n)} A4 page mock-up`}
                 className="w-full h-auto max-h-72 object-contain"
               />
               <AiOriginBadge
@@ -733,12 +751,12 @@ function EnvelopeCard({
                 <DownloadButton url={cover} title={`envelope-${displayLabel(slot.n)}-${slot.label ?? ''}`} />
               </span>
               {coverJob.isPending && (
-                <GenerationTimer elapsedSec={coverJob.state.elapsedSec} label="Generating mock-up" />
+                <GenerationTimer elapsedSec={coverJob.state.elapsedSec} label="Generating page mock-up" />
               )}
             </a>
           ) : (
             <div className="rounded-lg border border-dashed bg-muted/20 px-3 py-6 text-center text-xs text-muted-foreground">
-              No mock-up yet. Generate one to preview the printed envelope.
+              No mock-up yet. Generate one to preview the printed A4 page insert.
             </div>
           )}
         </div>
