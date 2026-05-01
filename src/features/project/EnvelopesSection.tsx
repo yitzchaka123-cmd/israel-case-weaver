@@ -42,6 +42,7 @@ import {
   FileText,
   ChevronDown,
   Trash2,
+  Printer,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
@@ -142,11 +143,12 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
   const { data: project } = useQuery({
     queryKey: ["project-language", projectId],
     queryFn: async () => {
-      const { data } = await supabase.from("projects").select("game_language").eq("id", projectId).maybeSingle();
+      const { data } = await supabase.from("projects").select("game_language, title").eq("id", projectId).maybeSingle();
       return data;
     },
   });
   const gameLanguage = project?.game_language ?? "Hebrew";
+  const projectTitle = project?.title ?? "";
 
   const { data: docs = [] } = useQuery({
     queryKey: ["envelope-doc-options", projectId],
@@ -306,6 +308,7 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
                 projectId={projectId}
                 playbookCount={playbook.envelopes.count}
                 gameLanguage={gameLanguage}
+                projectTitle={projectTitle}
               />
             );
           })}
@@ -324,6 +327,7 @@ function EnvelopeCard({
   projectId,
   playbookCount,
   gameLanguage,
+  projectTitle,
 }: {
   slot: { n: number; label: string };
   env: Envelope | undefined;
@@ -333,6 +337,7 @@ function EnvelopeCard({
   projectId: string;
   playbookCount: number;
   gameLanguage: string;
+  projectTitle: string;
 }) {
   
   const coverJob = useBackgroundImageJob({
@@ -499,16 +504,23 @@ function EnvelopeCard({
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-              Task (Hebrew, short & bold)
-            </Label>
-            <Input
-              dir="rtl"
-              className="text-right font-semibold text-destructive"
+            <div className="flex items-center justify-between">
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+                Task — A4 in-character letter
+              </Label>
+              <TaskWordCount text={(value("task") as string) ?? ""} />
+            </div>
+            <Textarea
+              dir={["Hebrew", "Arabic", "Persian", "Urdu", "Yiddish"].includes(gameLanguage) ? "rtl" : "ltr"}
+              rows={14}
+              className="text-sm leading-relaxed font-serif"
               value={value("task") as string}
               onChange={(e) => onUpdate({ task: e.target.value })}
-              placeholder="המשימה — קצרה, ברורה, לא חושפת"
+              placeholder="Detective — you've caught a case…&#10;&#10;Full A4 letter from the Case Officer to the Detective. Vague-but-clear task. Never name specific docs or clues."
             />
+            <p className="text-[11px] text-muted-foreground">
+              This text fills one A4 page printed inside the envelope. Use the preview on the right to print it.
+            </p>
           </div>
 
           <div className="space-y-1.5">
@@ -656,8 +668,171 @@ function EnvelopeCard({
               No mock-up yet. Generate one to preview the printed envelope.
             </div>
           )}
+
+          <A4InsertPreview
+            text={(value("task") as string) ?? ""}
+            envelopeNumber={slot.n}
+            envelopeLabel={slot.label}
+            projectTitle={projectTitle}
+            gameLanguage={gameLanguage}
+          />
         </div>
       </div>
     </div>
   );
+}
+
+function TaskWordCount({ text }: { text: string }) {
+  const words = (text.trim().match(/\S+/g) ?? []).length;
+  const target = 350;
+  const max = 500;
+  const status =
+    words === 0
+      ? "empty"
+      : words < target
+        ? "short"
+        : words <= max
+          ? "good"
+          : "long";
+  const color =
+    status === "good"
+      ? "text-emerald-500"
+      : status === "long"
+        ? "text-amber-500"
+        : "text-muted-foreground";
+  return (
+    <span className={`text-[11px] tabular-nums ${color}`}>
+      {words} / ~{target}–{max} words
+    </span>
+  );
+}
+
+function A4InsertPreview({
+  text,
+  envelopeNumber,
+  envelopeLabel,
+  projectTitle,
+  gameLanguage,
+}: {
+  text: string;
+  envelopeNumber: number;
+  envelopeLabel: string;
+  projectTitle: string;
+  gameLanguage: string;
+}) {
+  const isRtl = ["Hebrew", "Arabic", "Persian", "Urdu", "Yiddish"].includes(gameLanguage);
+  const printRef = useRef<HTMLDivElement>(null);
+
+  const handlePrint = () => {
+    const node = printRef.current;
+    if (!node) return;
+    const w = window.open("", "_blank", "width=900,height=1200");
+    if (!w) {
+      toast.error("Pop-up blocked — allow pop-ups to print this envelope insert.");
+      return;
+    }
+    const dirAttr = isRtl ? "rtl" : "ltr";
+    w.document.write(`<!doctype html>
+<html dir="${dirAttr}" lang="${isRtl ? "he" : "en"}">
+<head>
+<meta charset="utf-8" />
+<title>Envelope #${envelopeNumber} — ${envelopeLabel}</title>
+<style>
+  @page { size: A4; margin: 20mm; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: 'Georgia', 'Times New Roman', serif;
+    color: #111;
+    background: #fff;
+    line-height: 1.55;
+    font-size: 12pt;
+  }
+  .letterhead {
+    border-bottom: 1px solid #444;
+    padding-bottom: 8mm;
+    margin-bottom: 8mm;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    font-size: 9pt;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #555;
+    display: flex;
+    justify-content: space-between;
+  }
+  .body { white-space: pre-wrap; }
+</style>
+</head>
+<body>
+  <div class="letterhead">
+    <span>${escapeHtml(projectTitle || "Case File")}</span>
+    <span>Envelope #${envelopeNumber}${envelopeLabel ? " · " + escapeHtml(envelopeLabel) : ""}</span>
+  </div>
+  <div class="body">${escapeHtml(text || "")}</div>
+  <script>window.addEventListener('load', () => { window.focus(); window.print(); });<\/script>
+</body>
+</html>`);
+    w.document.close();
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+          A4 insert preview
+        </Label>
+        <Button size="sm" variant="outline" className="gap-2 h-8" onClick={handlePrint} disabled={!text.trim()}>
+          <Printer className="h-3.5 w-3.5" /> Print A4
+        </Button>
+      </div>
+      <div className="rounded-lg border bg-muted/20 p-3 overflow-hidden">
+        <div
+          ref={printRef}
+          className="bg-white text-neutral-900 shadow-sm mx-auto"
+          style={{
+            width: "210mm",
+            minHeight: "297mm",
+            padding: "20mm",
+            transform: "scale(0.42)",
+            transformOrigin: "top left",
+            marginBottom: "calc(297mm * -0.58)",
+            marginRight: "calc(210mm * -0.58)",
+            fontFamily: "Georgia, 'Times New Roman', serif",
+            fontSize: "12pt",
+            lineHeight: 1.55,
+          }}
+          dir={isRtl ? "rtl" : "ltr"}
+        >
+          <div
+            className="flex justify-between text-[9pt] uppercase tracking-widest text-neutral-500 border-b border-neutral-400 pb-2 mb-4"
+            style={{ fontFamily: "'Helvetica Neue', Arial, sans-serif" }}
+          >
+            <span>{projectTitle || "Case File"}</span>
+            <span>
+              Envelope #{envelopeNumber}
+              {envelopeLabel ? " · " + envelopeLabel : ""}
+            </span>
+          </div>
+          <div style={{ whiteSpace: "pre-wrap" }}>
+            {text || (
+              <span className="text-neutral-400 italic">
+                The printed insert will appear here once you write the task.
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        Live preview of the A4 page that goes inside this envelope. Click <strong>Print A4</strong> to open a print dialog scaled exactly to A4.
+      </p>
+    </div>
+  );
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }

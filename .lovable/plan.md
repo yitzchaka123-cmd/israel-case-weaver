@@ -1,86 +1,117 @@
-## What's actually happening
+# Envelopes: A4-length, in-character detective briefings (revised)
 
-The bulk job from last night is a ghost. Docs 0–3 generated successfully (~22:38–22:41 UTC). After Doc 3, the background worker died (Worker eviction or unhandled crash) but the `bulk_generation_jobs` row was never closed. The UI keeps showing "Working on: Building Keycard Access Log Extract" because that was the last `current_doc_title` written before death — nothing is actually generating. The frontend then blocks all new bulk runs because it sees `status='running'`.
+## Goal
+1. Each envelope's printed insert fills an **A4 page** of player-facing copy.
+2. The whole set reads like a real case hand-off — the briefing opens like a precinct dispatch ("Detective — you've caught a case…"), and every later envelope keeps that voice.
+3. **Tasks stay vague-but-clear and never spoil.** No "pull Doc 3 and Doc 7", no pointing at specific pieces of evidence, no naming the floor plan or the timeline grid. The task names a *goal* ("work out which suspect is lying about the 7:42 phone call") and lets the player figure out which documents in the box prove it.
+4. Approved Phase-1 mystery facts (47-min window, Lab 3B, suspect roster, finale) are preserved — only voice, length and presentation change.
 
-Root causes:
-1. The worker uses `req.waitUntil(...)` — that API does not exist on Deno's `Request`. The fallback is "fire and forget", so when the HTTP response returns the runtime can evict the worker mid-batch. (`generate-image` already uses the correct `globalThis.EdgeRuntime.waitUntil` — `bulk-generate-documents` doesn't.)
-2. There is no `finally` / hard-timeout / heartbeat that guarantees the job row gets closed. A killed worker = permanent ghost.
-3. There is no per-doc job state, so we can't tell what's pending vs done vs failed without scanning `documents`.
-4. `increment_bulk_completed` RPC doesn't exist — every successful doc does a SELECT-then-UPDATE round-trip (works, but slow and not atomic).
-5. The assistant's `bulk_generate_documents` tool is fine, but nothing **forces** the assistant to use it for small batches (2, 3, 5 docs). It tends to call `add_documents` / `generate_document` in a loop instead, which is what kept blowing out reasoning rounds.
-6. Bulk run UI never asks "skip already-generated or overwrite?" up front in the assistant flow — only in the manual modal.
+## Anti-spoiler rule (locked in for prompt + playbook)
+The task body MUST:
+- State a **goal** in the world ("identify who could not have been in Lab 3B during the window", "decide whose alibi doesn't hold", "narrow the field to two suspects").
+- Use **investigative verbs**, not document verbs: *work out, decide, narrow down, place, account for, rule out, choose*.
+- Reference categories at most ("the materials in your case file", "what you've gathered so far"), never specific Doc numbers, doc titles, or specific clue mechanics (no "compare alibis on the timeline grid", no "decode the cipher on page 2").
+- Never reveal the culprit, motive, method, or which clue is the smoking gun.
+- The player decides which documents to consult — that *is* the gameplay.
 
----
+## What changes
 
-## Fix plan
+### 1. Generation prompt — `supabase/functions/generate-envelopes/index.ts`
+Rewrite the system-prompt rules for the `task` field:
 
-### 1. Kill the ghost job (data fix, not migration)
-Mark the stuck row from 22:37 UTC as `failed` with an explanatory error, so the Documents tab unlocks. Docs 0–3 keep their generated images.
+- **Length:** ~350–500 words per envelope (fills one A4 page at ~12 pt with margins). The final envelope (accusation) may be shorter — it carries the form/reveal card.
+- **Voice:** second-person, addressing "Detective", written by an in-world Case Officer / dispatcher. A short signature line at the end (e.g. "— Dispatch, Central Precinct").
+- **Required structure per envelope:**
+  1. **Hand-off line** ("Detective — …") that sets the emotional beat.
+  2. **Where you stand right now** — 1 short paragraph of in-world context tied to the Logic Flow node this envelope gates. No meta instructions.
+  3. **Your task** — explicit, bolded objective. Vague-but-clear per the anti-spoiler rule.
+  4. **How to approach it** — 3–5 *general* investigative prompts, e.g. "Re-read everything tied to the 47-minute window.", "Compare what each suspect said they were doing against where they could physically have been.", "Mark anyone whose story has a hole." — never naming specific docs or clue mechanics.
+  5. **What to do when you have your answer** — tells the player they may then break the seal on the next envelope (no spoiler about what's inside it).
+  6. **Sign-off** — one closing pressure line + signature.
+- **Envelope #0 special rules:** opens with "Detective — you've caught a case." Establishes role, jurisdiction, victim, the 47-minute window, the location (Lab 3B), and that the case file in front of them is everything they get. Points the player at Doc 0 only as the *index* of the case file (allowed, since it's just a table of contents — not a clue). Ends with the first task: reconstruct the window and place who could and couldn't have reached Lab 3B unseen.
+- **Final envelope:** ceremonial accusation letter — "you've reached the end, name your culprit", points to the accusation form/solution card folded inside.
+- **Invariants kept:** never spoil; opening_trigger stays a single sentence (UI-facing); `closing_line_he` is appended by UI — don't include it in the body; logo/branding rules unchanged.
 
-### 2. Make the bulk worker un-killable in the obvious ways
-Edit `supabase/functions/bulk-generate-documents/index.ts`:
-- Replace `req.waitUntil(...)` with `globalThis.EdgeRuntime.waitUntil(work)` (matches `generate-image` and `assistant-chat`).
-- Wrap the entire background `work` body in `try / catch / finally`. The `finally` always closes the job (`completed` / `failed` / `cancelled_stale`) so a crash can never leave `status='running'`.
-- Add a hard ceiling (e.g. 25 min). If exceeded, mark the job `failed` with reason "exceeded hard timeout".
-- Add a stale-job sweep at the **start** of every bulk kickoff: any row with `status='running'` AND no heartbeat for 4 min → close it as `failed` with reason "auto-closed: stale (no heartbeat)". This unblocks future runs even without the data fix above.
+Also update the JSON schema description for `task` to: *"In-character A4 letter from the Case Officer to the Detective, ~350–500 words. Vague-but-clear task. Never references specific document numbers, document titles, or clue mechanics."*
 
-### 3. Add a heartbeat (small migration)
-Add two columns to `bulk_generation_jobs`:
-- `last_heartbeat_at timestamptz` (default `now()`)
-- `cancel_requested boolean` (default `false`)
+### 2. Playbook — keep prompt and playbook in sync
+Update both:
+- `src/lib/assistant-playbook.ts`
+- `supabase/functions/_shared/assistant-playbook.ts`
 
-The worker writes `last_heartbeat_at = now()` before each doc, after each doc, and during the 30s rate-limit sleeps. The worker checks `cancel_requested` between docs and exits cleanly if true.
+Add a new field on the envelopes config (so it shows up in the assistant playbook everywhere envelopes are discussed) — `task_voice_template`, containing the structure + anti-spoiler rule above. Wire it into `renderEnvelopesSummary()` so the assistant chat, the envelope-generation prompt, and the settings playbook panel all see the same rules. Bump `count`/`labels` defaults are unchanged.
 
-### 4. Add a "Stop / Resume" UI
-In `DocumentsSection.tsx`:
-- Show heartbeat age. If stale (>4 min) and not finished → red banner "Looks stuck — last update Xm ago" with a **Force-stop** button that sets `cancel_requested=true` and `status='failed'`.
-- After any failed/stale job, show a **Resume remaining** button → kicks a new bulk run with `skipExisting=true`, same scope/mode.
-- The "running" guard that blocks new runs softens: if heartbeat is stale, the guard auto-clears the ghost instead of blocking.
+### 3. Envelope insert preview/print — `src/features/project/EnvelopesSection.tsx`
+Add a per-envelope **A4 insert preview** beside the task editor:
+- Renders the `task` text inside a fixed `210 × 297 mm` page frame (scaled to fit), serif body, generous margins, light case-file letterhead with project title + envelope #.
+- RTL-aware via existing `isRtl`.
+- **Print** button → print dialog scoped to that page (`@page { size: A4; margin: 20mm }` + print stylesheet hiding the rest of the UI).
+- Small word-count + "fits A4 / overflows A4" indicator.
 
-### 5. Make the assistant use bulk for any 2+ docs (the part you asked for)
-Two changes in `supabase/functions/assistant-chat/index.ts` and the playbook:
+No DB changes needed — `envelopes.task` already holds free-form text.
 
-**a. Hard rule in the system prompt / playbook (`assistant-playbook.ts`):**
-> When generating, drafting, or regenerating **2 or more documents**, you MUST call `bulk_generate_documents`. Calling `generate_document` more than once per turn is forbidden — use the bulk tool with `scope='ids'` and the explicit document_ids. This is non-negotiable; one-shot per-doc calls are only for a single document the user pointed at by name.
+### 4. Regenerate the 6 approved envelopes
+After the prompt + playbook ship, run "Generate envelopes" once so all 6 rows are rewritten in the new A4 voice while preserving the approved beats from your finalized copy. You can then hand-edit any envelope and Print each insert as a real A4 page.
 
-**b. Server-side guard (defense in depth):**
-After the assistant emits its tool calls in a round, count `generate_document` calls. If ≥2 in the same round (or ≥2 cumulative this turn), reject them with a synthetic tool-result that says: "🛑 You called generate_document N times. Use bulk_generate_documents with scope='ids' and these document_ids: [...]. Re-emit now." The assistant then re-emits a single bulk call.
+## Examples for your approval
 
-**c. Mandatory clarifying question for any "all"/multi-doc request:**
-Before the assistant calls `bulk_generate_documents`, it must check whether **any** of the target docs already have output for the requested mode (`hebrew_content` for draft, `generated_asset_url` for image, `generated_document_url`/`generated_pdf_url` for document). If yes, it must ask the user **one** question with two buttons:
-- **Skip already-done** (`skipExisting: true`) — keep what's there, only fill the gaps.
-- **Regenerate everything** (`skipExisting: false`) — overwrite all of them.
+> These are samples of the *style and length* the new prompt will produce. They use the approved Phase-1 facts (47-minute window, Lab 3B, six suspects). They name no specific documents and reveal no answers.
 
-This is enforced by:
-- Adding an `ask_bulk_overwrite_choice` helper tool the assistant calls when any conflict exists. It writes a `project_notifications` row with `kind='bulk_overwrite_choice'` and two starter prompts, OR posts an interactive question via the existing question system. The assistant then waits for the user's pick before launching the bulk run.
-- Updating the playbook so this is the literal flow: detect conflicts → ask → launch bulk.
+### Envelope #0 — Mission Briefing (sample)
 
-### 6. Pass the user's image quality through bulk
-Right now bulk runs always use the project default. Add `imageModelOverride` and `quality` pass-through in both `bulk-generate-documents` (request body) and `callGenerateDocument`. The Documents bulk modal already has the picker; just wire it through. (Keeps the existing per-doc HIGH-quality background path working — gpt-image-2 high mode goes async, the bulk worker will see `status: 202` and poll `image_generations` instead of treating it as a failure.)
+> **CENTRAL PRECINCT — HOMICIDE DIVISION**
+> **Case File 24-0317 · Cold open · For the attention of the duty detective**
+>
+> Detective — you've caught a case.
+>
+> At 02:14 this morning a body was found inside Lab 3B at the Halden Research Institute. The victim was alone in a secured wing. Six people had legitimate reason to be on that floor between 01:27 and 02:14 — a forty-seven-minute window during which the camera feed went dark and the keycard log shows nothing useful. One of those six killed our victim. The other five are lying about something, but lying isn't the same as killing, and your job is to tell the difference.
+>
+> Everything we've recovered from the scene, the institute, and the prelim interviews is in the case file in front of you. Treat it as your only source of truth — there is nothing else coming. Start by getting the file open and your workspace laid out. The cover sheet at the front of the box is your index; use it to find your way around. Don't try to read everything at once.
+>
+> **Your task:** reconstruct the forty-seven-minute window. Place every one of the six suspects somewhere — physically — for as much of that window as you can. By the time you are done you should be able to say, in plain language, who *could* have reached Lab 3B unseen and who could not.
+>
+> A few habits that will save you time:
+>
+> - Build a single timeline you can keep adding to. Keep it visible.
+> - Don't trust anyone's word for where they were until something else backs it up.
+> - When two accounts of the same minute disagree, mark it. Those are the moments that crack a case.
+> - It is fine to leave gaps. Note them. We come back to them.
+>
+> When you can speak to that window with confidence — when you've placed the people you can place and flagged the ones you can't — break the seal on the next envelope. Not before.
+>
+> Move carefully, Detective. Six people are watching to see how good you are.
+>
+> — Dispatch, Central Precinct
 
-### 7. Per-doc retry visibility
-When a doc fails inside a bulk run, write a row to `project_notifications` (already done) **plus** save the error onto the doc itself in a new `last_generation_error` column (small migration) so the user sees a red dot inline next to the doc in the Documents table without opening the bell.
+### Envelope #1 — first gated beat (sample)
 
----
+> **CENTRAL PRECINCT — HOMICIDE DIVISION**
+> **Case File 24-0317 · Update 01 · For the attention of the duty detective**
+>
+> Detective — good. You've got the window mapped.
+>
+> That means you already know something the suspects do not: at least one of their stories does not survive contact with the timeline. People lie to police for a thousand reasons — embarrassment, an affair, a bad debt, a small theft they don't want surfaced. Most of those lies are not your problem tonight. One of them is.
+>
+> **Your task:** identify which of the six is lying in a way that matters. Not every inconsistency is a confession. We are looking for the suspect whose account of that forty-seven-minute window cannot be true — the one whose story actively *requires* something the rest of the file says didn't happen.
+>
+> Work it like this:
+>
+> - Take each suspect's account of the window in turn and ask, *if this is true, what else has to be true?*
+> - Anywhere a suspect's story needs a fact that the rest of your case file contradicts, that's a hard lie. Mark it.
+> - Soft lies — vague timing, a forgotten name, an embarrassed pause — set aside. They are noise tonight.
+> - You should end with one suspect, possibly two, whose accounts cannot both stand.
+>
+> Be honest with yourself about the strength of what you have. A hard lie about the window is a lead. It is not yet a culprit. Don't get ahead of the evidence.
+>
+> When you've named the suspect (or the pair) whose story breaks against the timeline, break the seal on the next envelope.
+>
+> — Dispatch, Central Precinct
 
-## Files I'll change
+## Files touched
+- `supabase/functions/generate-envelopes/index.ts` — prompt + schema description.
+- `src/lib/assistant-playbook.ts` and `supabase/functions/_shared/assistant-playbook.ts` — new `task_voice_template` + anti-spoiler rule, surfaced via `renderEnvelopesSummary()`.
+- `src/features/project/EnvelopesSection.tsx` — A4 preview panel + print button + print CSS.
 
-- `supabase/functions/bulk-generate-documents/index.ts` — `EdgeRuntime.waitUntil`, `try/finally`, heartbeat writes, cancel check, stale sweep, image quality pass-through
-- `supabase/functions/assistant-chat/index.ts` — server-side ≥2-call guard + overwrite-question gating
-- `supabase/functions/_shared/assistant-playbook.ts` and `src/lib/assistant-playbook.ts` — the "2+ → bulk" rule and the overwrite-question rule
-- `src/features/project/DocumentsSection.tsx` — stale banner, Force-stop button, Resume remaining button, soften the running guard
-- `src/features/project/useActiveBulkJob.ts` — treat stale heartbeat as not-active
-- New migration: add `last_heartbeat_at`, `cancel_requested` to `bulk_generation_jobs`; add `last_generation_error` to `documents`
-- One-time data update: close the ghost row from 22:37 UTC
-
----
-
-## What you'll see after
-
-- The stuck "Bulk generation in progress · 0/41" banner clears.
-- "Draft all" / "Generate all" works again immediately.
-- If the worker ever crashes again, within ~4 min the UI shows "Looks stuck — Force stop / Resume remaining" instead of locking up overnight.
-- When you tell the assistant "draft these 5", "generate images for docs 4–10", "regenerate docs 6 and 7" — it calls `bulk_generate_documents` once, never a per-doc loop.
-- Before any multi-doc generation that would overwrite work, the assistant asks: **Skip already-generated** or **Regenerate everything**, with the two buttons. Single-doc generations don't ask.
-
-Approve and I'll implement.
+## Out of scope
+- Hints (stages 1–5) and packaging/print checklist — handled in a follow-up.
+- Envelope cover artwork — unchanged.

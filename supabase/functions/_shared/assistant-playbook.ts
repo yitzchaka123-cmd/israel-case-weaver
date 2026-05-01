@@ -55,6 +55,7 @@ export type Playbook = {
     labels: string[];
     closing_line_he: string;
     design_brief_template: string;
+    task_voice_template: string;
   };
   phase1_setup: {
     order: PhaseSetupStep[];
@@ -181,6 +182,48 @@ BRANDING (mandatory when a company logo is supplied)
 
 AUTHENTICITY
 Looks like an actual archival envelope from the case era — NOT a modern Canva mock-up. Period-correct paper, ink, and stamp shapes. Never invent real institutional emblems or signatures.`,
+    task_voice_template: `ENVELOPE TASK BODY — A4 IN-CHARACTER LETTER (workspace default)
+
+Each envelope's "task" is the FULL printed insert that goes inside the envelope. It must read like a real case-officer hand-off to the detective and FILL AN A4 PAGE.
+
+LENGTH
+- Envelopes #0 and the middle envelopes: ~350–500 words.
+- Final envelope (accusation / solution reveal): ~150–250 words — it carries the accusation form / solution card.
+
+VOICE
+- Second-person, addressing "Detective" (game-language equivalent).
+- Written in-world by a Case Officer / Dispatcher / Captain.
+- Sober, direct, a little weight to it.
+- Ends with a short in-character signature line (e.g. "— Dispatch, Central Precinct").
+
+REQUIRED STRUCTURE — every envelope's task body, in this order:
+1. Letterhead-style header line ("CASE FILE 24-0317 · UPDATE 0X · For the attention of the duty detective" — invent a plausible case number tied to this case).
+2. Hand-off line opening with "Detective —" (game-language equivalent), setting the emotional beat for this stage.
+3. One short paragraph of in-world context tied to the Logic Flow beat this envelope gates. NO meta game instructions.
+4. Visually-set-off "Your task:" line stating the goal.
+5. Short list of 3–5 GENERAL investigative prompts ("Re-read everything tied to the window.", "Compare what each suspect said with where they could physically have been.", "Mark anyone whose story has a hole.").
+6. "What to do when you have your answer" line — tells the player they may then break the seal on the next envelope. NEVER hint at what is inside the next envelope.
+7. One-line sign-off + in-character signature.
+
+ENVELOPE #0 (Mission Briefing) — also:
+- Opens with the equivalent of "Detective — you've caught a case."
+- Establishes role/jurisdiction, victim, location, time window, and that the case file in front of them is everything they get.
+- Points the player at Doc 0 ONLY as the case-file index/table of contents (Doc 0 is not a clue).
+- Ends with the first task: a vague-but-clear goal that walks them into the first beat.
+
+FINAL ENVELOPE — also:
+- Ceremonial accusation letter: tells the detective they've reached the end and must now name the culprit.
+- Points to the accusation form / solution card folded inside this same envelope.
+- Does NOT contain the answer. Does NOT contain the next task list.
+
+ANTI-SPOILER RULE (LOCKED — non-negotiable)
+The task body MUST NOT:
+- Name or reference any specific document by number, title, or filename. The ONLY allowed mention of a doc is Doc 0 in envelope #0, and only as the case-file index/table of contents — never as a clue.
+- Reference a specific clue mechanic ("decode the cipher on page 2", "compare the alibis on the timeline grid", "match the prints", "check the receipts").
+- Reveal or strongly hint at the culprit, the motive, the murder method, the red herring, or which clue is decisive.
+- Tell the player which evidence proves what.
+
+Tasks must instead state a GOAL in the world using investigative verbs — work out, decide, narrow down, place, account for, rule out, choose, identify, reconstruct. The player decides which materials to consult — that IS the gameplay. References to evidence stay at the category level at most ("the materials in your case file", "what you've gathered so far", "the statements you have").`,
   },
   phase1_setup: {
     order: [
@@ -742,6 +785,10 @@ export function resolvePlaybook(override: unknown): Playbook {
     o.envelopes?.design_brief_template,
     d.envelopes.design_brief_template,
   );
+  const task_voice_template = cleanString(
+    (o.envelopes as { task_voice_template?: unknown } | undefined)?.task_voice_template,
+    d.envelopes.task_voice_template,
+  );
 
   const orderRaw = Array.isArray(o.phase1_setup?.order) ? o.phase1_setup!.order : null;
   const order = orderRaw
@@ -923,7 +970,7 @@ export function resolvePlaybook(override: unknown): Playbook {
   return {
     suspect_counts,
     hints: { per_stage, ladder_labels },
-    envelopes: { count: envCount, labels: labelsResized, closing_line_he, design_brief_template },
+    envelopes: { count: envCount, labels: labelsResized, closing_line_he, design_brief_template, task_voice_template },
     phase1_setup: { order, title_options_count },
     vocab,
     realism,
@@ -968,12 +1015,16 @@ After writing a stage, drop a matching \`hint\` node on the canvas via \`add_can
 }
 
 export function renderEnvelopesLine(p: Playbook): string {
-  return `Envelopes (workspace default ≈ ${p.envelopes.count}; the project's APPROVED envelopes roster in CURRENT PROJECT STATE is the source of truth — match that count exactly, typically 5–6, do NOT force the default if the roster differs): ${p.envelopes.labels.join(" / ")}. Envelopes are SEALED TASK GATES, not document containers. All evidence documents live loose in the box from the start; envelopes only hold a short task / reveal / instruction the player reads when they reach the matching beat in the case. Each envelope has an opening trigger (the case beat that unlocks it). Envelope #0 is the mission briefing (opened first, points the player at Doc 0). The final envelope is the accusation/solution reveal. Tasks short, bold, never reveal the solution. Closing line when language matches: "${p.envelopes.closing_line_he}"`;
+  return `Envelopes (workspace default ≈ ${p.envelopes.count}; the project's APPROVED envelopes roster in CURRENT PROJECT STATE is the source of truth — match that count exactly, typically 5–6, do NOT force the default if the roster differs): ${p.envelopes.labels.join(" / ")}. Envelopes are SEALED TASK GATES, not document containers. All evidence documents live loose in the box from the start; envelopes only hold a full A4 in-character letter from the Case Officer to the Detective (the "task" — vague-but-clear goal, NEVER references specific docs/clues, NEVER spoils the solution). Each envelope has an opening trigger (the case beat that unlocks it). Envelope #0 is the mission briefing (opened first; the only envelope that may name Doc 0, and only as the case-file index — never as a clue). The final envelope is the accusation/solution reveal (shorter, ceremonial). Closing line when language matches: "${p.envelopes.closing_line_he}"`;
 }
 
 export function renderEnvelopeDesignTemplate(p: Playbook): string {
   return `ENVELOPE DESIGN BRIEF TEMPLATE (workspace default — use as the seed when drafting an image prompt for any envelope row, then customise per envelope's label/task and the case era/genre):
 ${p.envelopes.design_brief_template}`;
+}
+
+export function renderEnvelopeTaskVoiceTemplate(p: Playbook): string {
+  return p.envelopes.task_voice_template;
 }
 
 export function renderPhase1OrderSentence(p: Playbook): string {
