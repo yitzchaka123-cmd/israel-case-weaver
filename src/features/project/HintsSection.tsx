@@ -159,18 +159,101 @@ export function HintsSection({ projectId }: { projectId: string }) {
     toast.success(`Placed Stage ${stage} on the final board`);
   };
 
+  // ── Batch tools ─────────────────────────────────────────────
+  const batch = useImageBatchProgress(projectId);
+  const [draftingAll, setDraftingAll] = useState(false);
+  const [generatingAllSheets, setGeneratingAllSheets] = useState(false);
+
+  const draftAllHints = async () => {
+    if (draftingAll) return;
+    if (stages.length === 0) { toast.info("Add a stage first"); return; }
+    setDraftingAll(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/bulk-draft-hints`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
+        body: JSON.stringify({ projectId }),
+      });
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok) { toast.error(json.error ?? "Couldn't draft hints"); return; }
+      const filled = json.filled ?? 0;
+      const failed = json.failed ?? 0;
+      if (filled === 0 && failed === 0) toast.info(json.message ?? "Every stage already has hints");
+      else toast.success(`Drafted ${filled} hint${filled === 1 ? "" : "s"} across ${json.stages ?? 0} stage${(json.stages ?? 0) === 1 ? "" : "s"}${failed ? ` · ${failed} failed` : ""}`);
+      qc.invalidateQueries({ queryKey: ["hints", projectId] });
+    } finally {
+      setDraftingAll(false);
+    }
+  };
+
+  const generateAllHintSheets = async () => {
+    if (generatingAllSheets) return;
+    if (!sheets || sheets.length === 0) { toast.info("Open a stage and create its hint-sheet prompt first."); return; }
+    const targets = sheets.filter((s) => !s.image_url && !s.uploaded_image_url && (s.prompt ?? "").trim());
+    if (targets.length === 0) {
+      toast.info("Every stage already has a hint sheet (or no prompt yet — open the stage to draft one).");
+      return;
+    }
+    if (!confirm(`Generate ${targets.length} hint sheet${targets.length === 1 ? "" : "s"}?`)) return;
+    setGeneratingAllSheets(true);
+    try {
+      const modelOverride = getStoredImageModel("hint", "chatgpt-image");
+      const quality = getStoredImageQuality("hint", "high");
+      const { data: { session } } = await supabase.auth.getSession();
+      const auth = `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`;
+      const settled = await runWithConcurrency(targets, 3, async (sheet) => {
+        const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-image`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: auth },
+          body: JSON.stringify({
+            projectId, target: "hint-sheet", targetId: String(sheet.stage),
+            mode: "background", prompt: (sheet.prompt ?? "").trim(),
+            modelOverride, quality, aspect: "portrait", category: "hint-sheet",
+          }),
+        });
+        const json = await resp.json().catch(() => ({}));
+        if (!resp.ok || !json.jobId) throw new Error(json.error ?? `Failed (${resp.status})`);
+        return { jobId: json.jobId as string, label: `Stage ${sheet.stage}` };
+      });
+      const slots = settled.map((r, i) => {
+        if (r.status === "fulfilled") return { id: r.value.jobId, label: r.value.label };
+        return { id: `kick-failed-${targets[i].id}`, label: `Stage ${targets[i].stage}`, kickFailed: true as const };
+      });
+      batch.start(slots, "Generating hint sheets");
+      const failures = settled.filter((r) => r.status === "rejected").length;
+      toast.success(`Started ${settled.length - failures} of ${targets.length} sheet${targets.length === 1 ? "" : "s"}${failures ? ` · ${failures} kickoff failed` : ""}`);
+    } finally {
+      setGeneratingAllSheets(false);
+    }
+  };
+
   return (
     <div className="max-w-5xl mx-auto px-6 md:px-10 py-8 space-y-6">
-      <div className="flex items-end justify-between gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h2 className="font-display text-3xl">Hint system</h2>
           <p className="text-sm text-muted-foreground mt-1">
             Three hints per stage — vague, helpful, then reveal. Linked to the printed hint card QR flow.
           </p>
         </div>
-        <Button onClick={addStage} className="gap-2">
-          <Plus className="h-4 w-4" /> Add stage
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" className="gap-2" onClick={draftAllHints} disabled={draftingAll}>
+            {draftingAll ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            Draft all hints
+          </Button>
+          <Button variant="outline" className="gap-2" onClick={generateAllHintSheets} disabled={generatingAllSheets}>
+            {generatingAllSheets ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+            Generate all sheets
+          </Button>
+          <Button onClick={addStage} className="gap-2">
+            <Plus className="h-4 w-4" /> Add stage
+          </Button>
+        </div>
+      </div>
+      {batch.progress.total > 0 && (
+        <InlineBatchStrip progress={batch.progress} onDismiss={batch.dismiss} />
+      )}
       </div>
 
       {stages.length === 0 || !data?.length ? (
