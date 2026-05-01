@@ -1,70 +1,58 @@
 ## Goal
 
-Trim the Envelopes section to the minimum the user wants, fix labeling (Open First / 1 / 2 / 3 / 4 — no "#0"), and make sure the AI-drafted task body is a real full-page A4 briefing (already half-built in the previous plan; carry it through).
+Generate envelope page mock-ups with **ChatGPT Image 2** (`gpt-image-2`) instead of Nano Banana 2, and confirm we're calling OpenAI's image API the right way per the latest docs.
 
-## File: `src/features/project/EnvelopesSection.tsx`
+## On gpt-image-2 (per OpenAI docs)
 
-### Header toolbar
-- **Shrink "Brief me on envelopes"** to a small icon-only button: `<Button variant="ghost" size="icon">` with the `Sparkles` icon and a tooltip "Brief me on envelopes". Same `briefMe()` handler.
-- **Add a new "Draft all envelopes" button** next to it, before the existing "Generate all envelopes with AI" button. This calls the same `generate-envelopes` edge function as `generateAll` but with a flag `mode: "text-only"` so it only writes label + task + design notes (it already does — there is no separate cover step in that function). Concretely we keep one button doing the text drafting and rename the existing one — see next bullet.
-- The current single `generateAll` already does text drafting. We will:
-  - Rename the existing primary button from **"Generate all envelopes with AI"** → **"Draft all envelopes"** (Wand2 icon). Same handler.
-  - Keep **"Generate all covers"** as-is (image batch).
-  - Net result on the toolbar: `[✨ icon] [Draft all envelopes] [Generate all covers]`.
+- Endpoint: `POST https://api.openai.com/v1/images/generations` ✅ (we already use this)
+- Model id: `gpt-image-2` ✅ (already mapped in `IMAGE_MODEL`)
+- Sizes: `1024x1024`, `1024x1536` (portrait), `1536x1024` (landscape) ✅
+- Quality: `low` | `medium` | `high` ✅
+- `n`: supported (per-call multi-image), `output_format`: `png` | `jpeg` | `webp`, `output_compression`, `moderation: "auto"` ✅
+- **Streaming**: not supported. **Function calling**: not supported.
+- **Batch API** (`v1/batch`): supported, but it's an **asynchronous 24-hour-turnaround** job queue meant for offline workloads — not for an interactive "Generate all" button. So we **won't** wire it up for envelope mock-ups; instead we already fan out parallel `n=1` requests with `runWithConcurrency`, which is the correct pattern for synchronous UI.
+- Rate limits on Tier 1 are very tight (5 IPM). If the user hits 429 during "Generate all page mock-ups", we should surface the existing 429 message clearly. No code change needed beyond what we already do.
 
-### Envelope numbering / labels everywhere
-Replace every `#${slot.n}` / `Envelope ${slot.n + 1} of ${playbookCount}` with a small helper:
-- `displayLabel(n)` → `n === 0 ? "Open First" : String(n)`
-- Card header: `{displayLabel(slot.n)} — {slot.label}` (when slot.n>0, slot.label is already "1", "2"… so we just show e.g. `1 — 1`; instead show `Envelope 1` for n>0 and `Open First` for n=0).
-  - Final form: title is `Envelope {displayLabel(slot.n)}` (so "Envelope Open First", "Envelope 1", "Envelope 2"…). Drop the duplicate `slot.label` chip.
-- Subline: `Envelope {n+1} of {playbookCount}` stays.
-- Reset confirm dialog, image title, toasts, "Open in Assistant" prompt, A4 print header — all use `displayLabel(slot.n)`.
+Conclusion: our existing OpenAI call shape is already correct and on-spec. The only thing wrong is that we force-route envelopes off OpenAI.
 
-### Remove the "Opening trigger" field
-Delete the entire `Opening trigger` Label + Textarea + helper paragraph block (lines ~587–600). The opening trigger is fully implied by the task content + envelope order; the AI prompt already encodes it. Keep the underlying `notes` column untouched in the DB — just stop editing it from the UI.
+## Changes
 
-### "Documents physically sealed inside (rare)" — multi-select + reset
-The dropdown is already a multi-select (`DropdownMenuCheckboxItem`). Add a "Clear selection" reset row at the top of the menu:
-- Above the existing items, render a `<DropdownMenuItem>` "Clear selection (default — none)" that calls `onUpdate({ linked_document_ids: [] })` and also clears `documents.envelope_number` for every doc currently linked to this envelope.
-- Keep the helper text but tighten it: "Default: none. Pick one or more documents to seal physically inside this envelope (rare)."
+### 1. `supabase/functions/generate-image/index.ts`
 
-### Prompt assistant button rename
-In `src/components/DocumentPromptAssistant.tsx`, change the button label `Create prompt` → `Draft` (line 135). Also update the placeholder line 157 to "…or leave empty and click Draft." No behavior change.
+Remove the auto-reroute that downgrades envelopes to Nano Banana 2.
 
-### Remove the A4 insert preview
-- Delete the `<A4InsertPreview …/>` render call (line 733–739).
-- Delete the entire `A4InsertPreview` and `escapeHtml` function definitions (lines 771–899).
-- Drop the now-unused imports: `Printer` from lucide-react, `useRef` if no longer used elsewhere in the file (it is used by `allDraftedPrev` — keep).
-- The card right column is now: model picker → DocumentPromptAssistant → action buttons → cover image (or empty state). Cleaner and shorter.
+- Delete the line that flips `pref` to `"nano-banana-2"` when `target === "envelope"` and the requested model is OpenAI (around line 276). Envelopes should honor whatever model the caller picked, just like every other surface.
+- Keep the existing 145s `AbortController` timeout and the friendly 504 error message — that's the right safety net if `gpt-image-2` at high quality runs long.
+- No other changes to the OpenAI request body — `model`, `prompt`, `size`, `quality`, `n: 1`, `moderation: "auto"`, `output_format: "jpeg"`, `output_compression: 90` are all valid for `gpt-image-2`.
 
-### Task helper text
-Update the helper line under the task textarea from "This text fills one A4 page printed inside the envelope. Use the preview on the right to print it." → "This is the full A4 page the player reads when they open this envelope. Aim for a real briefing — at least 400 words." Keep the word counter; raise its target band to `400–700`.
+### 2. `src/components/ImageModelPicker.tsx`
 
-## Content quality (carry the previous plan through)
+Stop hiding ChatGPT Image options for the envelope surface.
 
-The previous plan already updated the prompt in `supabase/functions/generate-envelopes/index.ts` and the playbook templates to enforce the three-part A/B/C structure with a 400-word floor. Verify and tighten:
+- In `getStoredImageModel`, remove the special-case `if (surface === "envelope" && (v === "chatgpt-image" || v === "chatgpt-image-2")) return fallback;` so a stored ChatGPT preference for envelopes is respected.
+- In the picker render, remove the `surface === "envelope" ? IMAGE_MODELS.filter(...) : IMAGE_MODELS` filter so all models (including both `chatgpt-image-2` and `chatgpt-image-1`) appear in the envelope dropdown.
 
-- In `generate-envelopes/index.ts`:
-  - Replace remaining mentions of "Envelope #0" displayed to the player with the language-appropriate "Open First" framing (internal numbering in the prompt stays as `#0..#N-1`; only player-facing strings change).
-  - Re-confirm the JSON tool's `task` field description says "Full A4 page, 450–700 words, three labeled parts (Briefing/Recap → Your task → Seal instruction). Floor: 400 words. Reject anything shorter."
-  - Drop any instruction that tells the model to write the "opening trigger" field — we are no longer surfacing it; have the function set `notes` to empty string (or skip the field entirely on the upsert).
+### 3. `src/features/project/EnvelopesSection.tsx`
 
-- In both `supabase/functions/_shared/assistant-playbook.ts` and `src/lib/assistant-playbook.ts` (kept in sync):
-  - `task_voice_template` keeps the three-part structure already added.
-  - Update the workspace default labels comment to clarify "Open First, 1, 2, 3, 4 — never '#0'".
+Make ChatGPT Image 2 the default for envelopes and stop forcing medium quality on OpenAI.
+
+- Change `getStoredImageModel("envelope", "nano-banana-2")` → `getStoredImageModel("envelope", "chatgpt-image-2")` so new users default to ChatGPT Image 2 and existing nano-banana selections persist.
+- Remove the `envelopeImageQuality` downgrade (`model.startsWith("chatgpt-image") && quality === "high" ? "medium" : quality`). gpt-image-2 supports `high`; let the user choose. We keep the 145s timeout in the edge function as the safety net, and the picker already shows the "High can take up to 2 min" warning.
+- The `pageInsertPrompt` wrapper stays as-is (it instructs the model that this is an A4 page insert, not an envelope cover, with varied tactile realism — that's exactly what we want for gpt-image-2 too).
+
+### 4. (No change) Generation flow
+
+- "Generate all page mock-ups" already fans out per-envelope with `runWithConcurrency` and `mode: "background"`, so each call is its own job and a single slow envelope can't block the others. That's the correct pattern for `gpt-image-2` since OpenAI's Batch API is asynchronous (24h SLA) and unsuitable for interactive use.
 
 ## Acceptance check
 
-- Header: small ✨ icon button (tooltip "Brief me"), then "Draft all envelopes", then "Generate all covers".
-- Each envelope card title reads "Envelope Open First", "Envelope 1", "Envelope 2"… — never "#0".
-- Opening-trigger textarea is gone.
-- Documents-sealed-inside dropdown supports multi-select (already did) and has a "Clear selection" row that resets to none.
-- Prompt assistant button reads "Draft".
-- A4 insert preview block is gone from the right column.
-- Running "Draft all envelopes" produces a real ≥400-word briefing per envelope, three labeled parts, no doc-name spoilers (Open-First envelope may name Doc 0 once as the index).
+- Open an envelope card → model picker shows **ChatGPT Image 2** as the default and Nano Banana options are still selectable.
+- Click "Generate all page mock-ups" → requests go to `gpt-image-2` via `api.openai.com/v1/images/generations`, return JPEGs, and land on each envelope card.
+- AI Run Log shows `requestedModel: gpt-image-2`, `provider: openai-direct` (or `openai-image2` if `OPENAI_IMAGE2_API_KEY` is set), no automatic Gemini fallback.
+- If a single call exceeds 145s, the user gets the existing "OpenAI took too long" message on that one envelope only; the rest still complete.
 
 ## Out of scope
 
-- No DB schema changes (the `notes` column stays; we just stop editing it).
-- No changes to envelope count, closing line, cover generation flow, or cover image prompts.
-- No retroactive rewrite of envelopes already approved — re-running "Draft all envelopes" is the user's call.
+- Wiring up OpenAI's `v1/batch` Files API for envelopes — async 24h turnaround makes it the wrong fit for a "click to generate" flow. Happy to add it later as an opt-in "Queue overnight render" if you want.
+- Changing any other surface's default model.
+- Text-drafting flow for envelopes (unchanged).

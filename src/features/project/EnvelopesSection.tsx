@@ -95,12 +95,8 @@ const FOOTNOTE_HE =
 /** Player-facing envelope label: 0 → "Open First", N → "N". */
 const displayLabel = (n: number): string => (n === 0 ? "Open First" : String(n));
 
-const envelopeImageModel = () => getStoredImageModel("envelope", "nano-banana-2");
-const envelopeImageQuality = () => {
-  const model = envelopeImageModel();
-  const quality = getStoredImageQuality("envelope", "medium");
-  return model.startsWith("chatgpt-image") && quality === "high" ? "medium" : quality;
-};
+const envelopeImageModel = () => getStoredImageModel("envelope", "chatgpt-image-2");
+const envelopeImageQuality = () => getStoredImageQuality("envelope", "medium");
 
 const pageInsertPrompt = (raw: string, label: string) => {
   const compact = raw.replace(/\s+/g, " ").trim().slice(0, 3200);
