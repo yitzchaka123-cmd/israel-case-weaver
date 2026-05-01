@@ -717,7 +717,7 @@ function EnvelopeCard({
             >
               <img
                 src={cover}
-                alt={`Envelope ${slot.n} cover`}
+                alt={`Envelope ${displayLabel(slot.n)} cover`}
                 className="w-full h-auto max-h-72 object-contain"
               />
               <AiOriginBadge
@@ -729,7 +729,7 @@ function EnvelopeCard({
                 hoverOnly
               />
               <span className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10" onClick={(e) => { e.stopPropagation(); e.preventDefault(); }}>
-                <DownloadButton url={cover} title={`envelope-${slot.n}-${slot.label ?? ''}`} />
+                <DownloadButton url={cover} title={`envelope-${displayLabel(slot.n)}-${slot.label ?? ''}`} />
               </span>
               {coverJob.isPending && (
                 <GenerationTimer elapsedSec={coverJob.state.elapsedSec} label="Generating mock-up" />
@@ -740,14 +740,6 @@ function EnvelopeCard({
               No mock-up yet. Generate one to preview the printed envelope.
             </div>
           )}
-
-          <A4InsertPreview
-            text={(value("task") as string) ?? ""}
-            envelopeNumber={slot.n}
-            envelopeLabel={slot.label}
-            projectTitle={projectTitle}
-            gameLanguage={gameLanguage}
-          />
         </div>
       </div>
     </div>
