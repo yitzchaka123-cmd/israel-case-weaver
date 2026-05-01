@@ -60,6 +60,9 @@ import { resolvePlaybook } from "@/lib/assistant-playbook";
 import { DocumentPromptAssistant } from "@/components/DocumentPromptAssistant";
 import { useBackgroundImageJob } from "@/features/project/useBackgroundImageJob";
 import { GenerationTimer } from "@/features/project/GenerationTimer";
+import { useImageBatchProgress } from "@/features/project/useImageBatchProgress";
+import { InlineBatchStrip } from "@/features/project/InlineBatchStrip";
+import { runWithConcurrency } from "@/lib/run-with-concurrency";
 
 interface Envelope {
   id: string;
