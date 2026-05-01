@@ -500,7 +500,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
     void notifyAssistantOfApproval(projectId);
   };
 
-  const createFinalDocumentsMap = async () => {
+  const createFinalDocumentsMap = async (mode: "from-logic" | "from-existing" | null = null) => {
     if (!approved) return toast.error("Approve the Logic Flow first");
     if (nodes.length > 0 && !confirm("This will replace the current Final board document map. Continue?")) return;
     setCreatingFinalMap(true);
@@ -512,7 +512,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
           "Content-Type": "application/json",
           Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
-        body: JSON.stringify({ projectId, replace: true }),
+        body: JSON.stringify({ projectId, replace: true, mode }),
       });
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) return toast.error(data.error ?? "Could not create Final Documents Map");
