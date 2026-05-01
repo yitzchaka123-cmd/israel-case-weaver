@@ -71,7 +71,7 @@ function docDescription(doc: PlannedDoc) {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   try {
-    const { projectId, replace = true, createdByMessageId = null } = await req.json();
+    const { projectId, replace = true, createdByMessageId = null, mode = null } = await req.json();
     if (!projectId) return new Response(JSON.stringify({ error: "projectId required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
     const supa = createClient(SUPABASE_URL, SERVICE);
@@ -100,7 +100,18 @@ Deno.serve(async (req) => {
     const planned: PlannedDoc[] = [];
     const proposedRaw = Array.isArray(project.proposed_document_set) ? project.proposed_document_set as ProposedDoc[] : [];
     const proposedStatus = String(project.proposed_document_set_status ?? "none");
-    const useProposal = proposedRaw.length > 0 && (proposedStatus === "approved" || proposedStatus === "bypassed" || proposedStatus === "proposed");
+    // Mode override from the UI:
+    //   "from-logic"     → always use the assistant's approved/proposed doc set (fresh plan from logic)
+    //   "from-existing"  → always use the existing document rows already created for this case
+    //   null (default)   → previous heuristic (proposal if usable, else existing)
+    const proposalUsable = proposedRaw.length > 0 && (proposedStatus === "approved" || proposedStatus === "bypassed" || proposedStatus === "proposed");
+    let useProposal: boolean;
+    if (mode === "from-logic") useProposal = proposalUsable;
+    else if (mode === "from-existing") useProposal = false;
+    else useProposal = proposalUsable;
+    if (mode === "from-logic" && !proposalUsable) {
+      return new Response(JSON.stringify({ error: "No approved logic-based document plan found. Ask the assistant to propose the document set first." }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
     const logicById = new Map(logic.map((node) => [node.id, node]));
     const titlesFor = (ids: string[] | undefined) => (ids ?? []).map((id) => logicById.get(id)?.title).filter((t): t is string => typeof t === "string" && t.length > 0);
 
