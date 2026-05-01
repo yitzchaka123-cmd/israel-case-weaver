@@ -82,11 +82,11 @@ Deno.serve(async (req) => {
       .maybeSingle();
     const brand = companyProfile as { company_name?: string | null; tagline?: string | null; logo_url?: string | null } | null;
     const brandingBlock = brand?.logo_url
-      ? `COMPANY BRANDING (apply to every envelope cover):
+      ? `COMPANY BRANDING (apply to every A4 page insert):
 - Company name: ${brand.company_name ?? "(unspecified)"}
 - Tagline: ${brand.tagline ?? "(none)"}
 - Logo URL: ${brand.logo_url}
-The image generator will receive the logo file separately. In the design_instructions, REQUIRE the logo to appear at the top of the envelope (top-center, top-left, or top-right — pick the spot that frames this envelope best, and use the SAME spot for every envelope in the set so the box looks like one branded series). Logo height ≈ 8–12% of envelope's longer side, with breathing room from the wax seal and diagonal stamp. Treat it as if printed onto the envelope (matte ink, period-correct registration), not a sticker, not a watermark, no drop shadows. If a company name is supplied, render it in small clean type beside or beneath the logo.`
+The image generator will receive the logo file separately. In the design_instructions, REQUIRE the logo to appear in the top letterhead/header area of the A4 page insert (top-center, top-left, or top-right — pick the spot that fits this page layout best, and use the SAME spot for every page insert in the set so the box looks like one branded series). Logo height ≈ 5–9% of the page's longer side, with breathing room from stamps, file codes, and title text. Treat it as if printed onto the page (matte ink, period-correct registration), not a sticker, not a watermark, no drop shadows. If a company name is supplied, render it in small clean type beside or beneath the logo.`
       : `COMPANY BRANDING: no company logo configured for this workspace — do NOT invent one. Skip the branding lockup entirely.`;
 
     const { data: existing } = await supa
@@ -183,13 +183,17 @@ ${renderEnvelopeTaskVoiceTemplate(playbook)}
 
 ${renderEnvelopeDesignTemplate(playbook)}
 
+DESIGN_INSTRUCTIONS TARGET (IMPORTANT): The generated mockup is NOT a physical envelope. It is the A4 printed PAGE INSERT that goes inside a real envelope the user will assemble manually. Never describe wax seals, envelope flaps, kraft mailers, front-of-envelope labels, or sealed covers unless the user explicitly asks. The page insert should look like a believable in-world briefing/recap sheet.
+
+REALISM VARIETY (IMPORTANT): Each page insert needs realism details chosen specifically for its own page style and case beat. Do NOT repeat a generic list across envelopes. Do NOT default to coffee stains. If a detail appears on one page, choose different tactile/administrative details on the next page whenever possible.
+
 ${brandingBlock}
 
 For each envelope you generate:
 - "label": short ${gameLanguage} name shown on the envelope front. ${isRtl ? "RTL" : "LTR"}, grammatical.
 - "task": the FULL A4 in-character letter described above, in ${gameLanguage}, ${isRtl ? "RTL" : "LTR"}. ~450–700 words for #0..#${count - 2} (hard floor 400 — do NOT ship short), ~150–250 for the final. MUST follow the three-part A/B/C structure (Briefing-or-Recap → Your Task → Seal Instruction). Strictly no specific-document, specific-clue, or solution references. The closing line is appended by the UI — do NOT include it.
 - "opening_trigger": 1 short sentence in ${gameLanguage}. For envelope #0, the equivalent of "Open first." For envelope #${count - 1}, the equivalent of "Open only after completing the task in envelope #${count - 2}, when you are ready to name the culprit." For every other envelope #N, the equivalent of "Open only after you have completed the task in envelope #N − 1." Do NOT reference specific case beats here — that belongs in the previous envelope's task.
-- "design_instructions": a long structured visual brief for the image generator, customised from the workspace template above. Include the envelope's number, the ${gameLanguage} label verbatim, and at least one detail tied to this case (era, genre, setting). When a company logo is configured (see COMPANY BRANDING block above), the brief MUST include explicit instructions to print the logo at the chosen top position — keep that position consistent across every envelope you write in this batch. 10–22 lines.`;
+- "design_instructions": a structured visual brief for the image generator describing the A4 page insert placed inside the physical envelope — NOT an envelope cover. Include the envelope marker (${labels[0]}, 1, 2, 3...) as a page header/filing mark, the ${gameLanguage} label verbatim, and at least one detail tied to this case (era, genre, setting). Choose 3–6 fresh realism details that fit this specific page format and do not repeat generic coffee-stain/stamp/fold-line phrasing across the set. When a company logo is configured (see COMPANY BRANDING block above), the brief MUST include explicit instructions to print the logo in the chosen top letterhead/header position — keep that position consistent across every page insert you write in this batch. Keep the brief concise enough for image generation: 8–14 lines.`;
 
     const userPrompt = `CASE CONTEXT
 Title: ${project.title}
