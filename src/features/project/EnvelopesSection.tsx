@@ -156,7 +156,6 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
     },
   });
   const gameLanguage = project?.game_language ?? "Hebrew";
-  const projectTitle = project?.title ?? "";
 
   const { data: docs = [] } = useQuery({
     queryKey: ["envelope-doc-options", projectId],
