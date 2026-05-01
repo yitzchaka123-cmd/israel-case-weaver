@@ -121,15 +121,51 @@ The image generator will receive the logo file separately. In the design_instruc
 GAME-FLOW MODEL (read carefully):
 - All evidence documents in this case are in the box from the very start. The player has access to every document immediately.
 - Envelopes are NOT document containers. Each envelope is a SEALED TASK GATE — the player only opens envelope #N after they finish the task printed inside envelope #N − 1.
-- Inside each envelope is a short task, a reveal, or an instruction — NEVER the next batch of evidence to read.
+- Inside each envelope is a full A4-page in-character letter from the Case Officer to the Detective — never the next batch of evidence.
 
 ENVELOPE FLOW RULES (workspace defaults — follow):
 - There are exactly ${count} envelopes in this case, in order: ${labels.map((l, i) => `#${i} "${l}"`).join(", ")}.
-- Envelope #0 ("${labels[0]}") is the MISSION BRIEFING — opened first, before anything else. It introduces the case, the player's role, and points the player at Doc 0 (the master inventory of all documents in the box). Its opening trigger is simply the equivalent of "Open first, before reading anything else."
-- The FINAL envelope (#${count - 1}) contains the ACCUSATION FORM / SOLUTION REVEAL. Its opening trigger is the equivalent of "Open only after you have completed the task in envelope #${count - 2} and you are ready to name the culprit."
+- Envelope #0 ("${labels[0]}") is the MISSION BRIEFING — opened first. It introduces the case, the detective's role, the victim, the location, the time window, and points the player at Doc 0 ONLY as the case-file index/table-of-contents (Doc 0 is not a clue). Its opening trigger is the equivalent of "Open first, before reading anything else."
+- The FINAL envelope (#${count - 1}) is the ACCUSATION / SOLUTION REVEAL — a shorter ceremonial letter pointing the player to the accusation form / solution card folded inside. Its opening trigger is the equivalent of "Open only after you have completed the task in envelope #${count - 2} and you are ready to name the culprit."
 - Every other envelope (#1..#${count - 2}) is unlocked by ONE thing only: the player completing the task printed inside the previous envelope. The "task" you write for envelope #N is what gates envelope #N + 1 — design the chain so the tasks form a coherent investigative arc that walks the player through the Logic Flow beat by beat.
-- DO NOT write opening triggers like "open after you narrow it down to two suspects" or "open after you decode the cipher." The trigger is ALWAYS "open after you complete the task in the previous envelope" (env #0 excepted). The actual narrowing / decoding / ruling-out work IS the task printed inside the previous envelope.
-- Tasks are SHORT, BOLD, in ${gameLanguage}, ${isRtl ? "RTL" : "LTR"}. Never spoiler-heavy. The closing line "${playbook.envelopes.closing_line_he}" is appended automatically by the UI when the language matches — do NOT include it in the task field.
+- DO NOT write opening triggers like "open after you narrow it down to two suspects" or "open after you decode the cipher." The trigger is ALWAYS "open after you complete the task in the previous envelope" (env #0 excepted). The actual investigative work IS the task printed inside the previous envelope.
+- All player-facing text is in ${gameLanguage}, ${isRtl ? "RTL" : "LTR"}. The closing line "${playbook.envelopes.closing_line_he}" is appended automatically by the UI when the language matches — do NOT include it in the task field.
+
+TASK FIELD — A4 IN-CHARACTER LETTER (CRITICAL — read carefully):
+The "task" field is the FULL printed insert that goes inside the envelope. It must read like a real case-officer hand-off to the detective and FILL AN A4 PAGE.
+
+LENGTH: ~350–500 words for envelopes #0..#${count - 2}. The final envelope (#${count - 1}) may be shorter (~150–250 words) — it carries the accusation form / solution card.
+
+VOICE: second-person, addressing "Detective" (or the ${gameLanguage} equivalent). Written in-world by a Case Officer / Dispatcher / Captain. Sober, direct, a little weight to it. End with a short signature line in character (e.g. "— Dispatch, Central Precinct").
+
+REQUIRED STRUCTURE — every envelope's task body MUST contain, in this order:
+1. A short letterhead-style header line (e.g. "CASE FILE 24-0317 · UPDATE 0X · For the attention of the duty detective" — invent a plausible case number tied to this case).
+2. A hand-off line that opens with "Detective —" (or the ${gameLanguage} equivalent) and sets the emotional beat for this stage of the investigation.
+3. One short paragraph of in-world context tied to the Logic Flow beat this envelope gates. Refers to what the detective has just figured out / what just landed on the desk. NO meta instructions about the game.
+4. The Your-Task line, set off and visually emphasised (use a clear marker the UI/print can render — e.g. a line that begins with "Your task:" in ${gameLanguage}).
+5. A short list of 3–5 GENERAL investigative prompts ("Re-read everything tied to the window.", "Compare what each suspect said they were doing against where they could physically have been.", "Mark anyone whose story has a hole.").
+6. A "what to do when you have your answer" line — tells the player they may then break the seal on the next envelope. NEVER hint at what is inside the next envelope.
+7. A one-line sign-off + in-character signature.
+
+ANTI-SPOILER RULE (LOCKED — non-negotiable):
+The task body MUST NOT:
+- Name or reference any specific document by number, title, or filename (no "pull Doc 3", no "open the autopsy report", no "look at the floor plan"). The ONLY allowed mention of a doc is Doc 0 in envelope #0, and only as the case-file index/table of contents — never as a clue.
+- Reference a specific clue mechanic ("decode the cipher on page 2", "compare the alibis on the timeline grid", "match the prints", "check the receipts").
+- Reveal or strongly hint at the culprit, the motive, the murder method, the red herring, or which clue is decisive.
+- Tell the player which evidence proves what.
+
+Tasks must instead state a GOAL in the world using investigative verbs — work out, decide, narrow down, place, account for, rule out, choose, identify, reconstruct. The player decides which materials in the case file to consult — that IS the gameplay. References to evidence stay at the category level at most ("the materials in your case file", "what you've gathered so far", "the statements you have").
+
+ENVELOPE #0 (Mission Briefing) — additional rules:
+- Open with the ${gameLanguage} equivalent of "Detective — you've caught a case."
+- Establish: the detective's role/jurisdiction, the victim (use approved Phase-1 facts only — never invent a different solution), the location, the time window, and that the case file in front of them is everything they get.
+- Point the player at Doc 0 as the case-file index/table of contents and tell them to set up their workspace.
+- End with the first task: a vague-but-clear goal that walks them into the first beat of the Logic Flow.
+
+FINAL ENVELOPE (#${count - 1}) — additional rules:
+- Ceremonial accusation letter. Tells the detective they've reached the end and must now name the culprit.
+- Points to the accusation form / solution card folded inside this same envelope.
+- Does NOT contain the answer. Does NOT contain the next task list.
 
 ${renderEnvelopeDesignTemplate(playbook)}
 
@@ -137,7 +173,7 @@ ${brandingBlock}
 
 For each envelope you generate:
 - "label": short ${gameLanguage} name shown on the envelope front. ${isRtl ? "RTL" : "LTR"}, grammatical.
-- "task": short, bold ${gameLanguage} task / instruction / reveal the player reads when they open it at the right moment. 1–2 short sentences. Never reveal the solution. Never tell the player to "go open the next envelope to get more evidence" — the documents are already in the box. The task itself should be the gate that, once completed, justifies opening the next envelope.
+- "task": the FULL A4 in-character letter described above, in ${gameLanguage}, ${isRtl ? "RTL" : "LTR"}. ~350–500 words for #0..#${count - 2}, ~150–250 for the final. Strictly no specific-document, specific-clue, or solution references. The closing line is appended by the UI — do NOT include it.
 - "opening_trigger": 1 short sentence in ${gameLanguage}. For envelope #0, the equivalent of "Open first." For envelope #${count - 1}, the equivalent of "Open only after completing the task in envelope #${count - 2}, when you are ready to name the culprit." For every other envelope #N, the equivalent of "Open only after you have completed the task in envelope #N − 1." Do NOT reference specific case beats here — that belongs in the previous envelope's task.
 - "design_instructions": a long structured visual brief for the image generator, customised from the workspace template above. Include the envelope's number, the ${gameLanguage} label verbatim, and at least one detail tied to this case (era, genre, setting). When a company logo is configured (see COMPANY BRANDING block above), the brief MUST include explicit instructions to print the logo at the chosen top position — keep that position consistent across every envelope you write in this batch. 10–22 lines.`;
 
