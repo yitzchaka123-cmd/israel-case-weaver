@@ -268,7 +268,12 @@ async function runImageGeneration(req: Request): Promise<Response> {
       .eq("id", projectId)
       .single();
 
-    const pref = (modelOverride || (project?.ai_provider_images as string) || "chatgpt-image");
+    let pref = (modelOverride || (project?.ai_provider_images as string) || "chatgpt-image");
+    // Envelope-slot mockups are actually A4 page inserts with long briefing text.
+    // OpenAI image calls regularly hit the 145s gateway timeout here, so route
+    // this surface to the faster Gemini image model even if an old browser
+    // preference still says ChatGPT Image.
+    if (target === "envelope" && OPENAI_KEYS.has(pref)) pref = "nano-banana-2";
     const model = IMAGE_MODEL[pref] ?? IMAGE_MODEL["chatgpt-image"];
     const useOpenAI = OPENAI_KEYS.has(pref);
     requestedModelForLog = model;
