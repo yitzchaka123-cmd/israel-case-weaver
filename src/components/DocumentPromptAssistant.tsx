@@ -132,7 +132,7 @@ export function DocumentPromptAssistant({
             title="Create Design + Content in the Final prompt tab using the instructions."
           >
             {drafting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-            Create prompt
+            Draft
           </Button>
         </div>
       </div>
