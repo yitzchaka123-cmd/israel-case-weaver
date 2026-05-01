@@ -246,25 +246,30 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
     setGeneratingAll(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const resp = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-envelopes`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${
-              session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
-            }`,
+      const auth = `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`;
+      // Fan out per-envelope so each model call is small (one ~600-word letter)
+      // and we don't hit the gateway timeout on a single 5×600-word request.
+      const numbers = Array.from({ length: slots.length }, (_, i) => i);
+      const results = await runWithConcurrency(numbers, 3, async (n) => {
+        const resp = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-envelopes`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: auth },
+            body: JSON.stringify({ projectId, envelopeNumber: n }),
           },
-          body: JSON.stringify({ projectId }),
-        },
-      );
-      const json = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        toast.error(json.error ?? "Couldn't generate envelopes");
-        return;
+        );
+        const json = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(json.error ?? `Envelope ${n} failed (${resp.status})`);
+        return n;
+      });
+      const ok = results.filter((r) => r.status === "fulfilled").length;
+      const failed = results.length - ok;
+      if (failed > 0) {
+        const firstErr = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
+        toast.error(`${failed} envelope${failed === 1 ? "" : "s"} failed${firstErr ? `: ${(firstErr.reason as Error).message}` : ""}`);
       }
-      toast.success(`Generated ${json.count ?? slots.length} envelopes`);
+      if (ok > 0) toast.success(`Generated ${ok} envelope${ok === 1 ? "" : "s"}`);
       qc.invalidateQueries({ queryKey: ["envelopes", projectId] });
     } finally {
       setGeneratingAll(false);
