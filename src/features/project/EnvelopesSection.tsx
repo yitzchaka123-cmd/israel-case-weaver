@@ -504,16 +504,23 @@ function EnvelopeCard({
             />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-              Task (Hebrew, short & bold)
-            </Label>
-            <Input
-              dir="rtl"
-              className="text-right font-semibold text-destructive"
+            <div className="flex items-center justify-between">
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+                Task — A4 in-character letter
+              </Label>
+              <TaskWordCount text={(value("task") as string) ?? ""} />
+            </div>
+            <Textarea
+              dir={["Hebrew", "Arabic", "Persian", "Urdu", "Yiddish"].includes(gameLanguage) ? "rtl" : "ltr"}
+              rows={14}
+              className="text-sm leading-relaxed font-serif"
               value={value("task") as string}
               onChange={(e) => onUpdate({ task: e.target.value })}
-              placeholder="המשימה — קצרה, ברורה, לא חושפת"
+              placeholder="Detective — you've caught a case…&#10;&#10;Full A4 letter from the Case Officer to the Detective. Vague-but-clear task. Never name specific docs or clues."
             />
+            <p className="text-[11px] text-muted-foreground">
+              This text fills one A4 page printed inside the envelope. Use the preview on the right to print it.
+            </p>
           </div>
 
           <div className="space-y-1.5">
