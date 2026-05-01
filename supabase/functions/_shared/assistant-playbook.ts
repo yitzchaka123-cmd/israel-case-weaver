@@ -1015,12 +1015,16 @@ After writing a stage, drop a matching \`hint\` node on the canvas via \`add_can
 }
 
 export function renderEnvelopesLine(p: Playbook): string {
-  return `Envelopes (workspace default ≈ ${p.envelopes.count}; the project's APPROVED envelopes roster in CURRENT PROJECT STATE is the source of truth — match that count exactly, typically 5–6, do NOT force the default if the roster differs): ${p.envelopes.labels.join(" / ")}. Envelopes are SEALED TASK GATES, not document containers. All evidence documents live loose in the box from the start; envelopes only hold a short task / reveal / instruction the player reads when they reach the matching beat in the case. Each envelope has an opening trigger (the case beat that unlocks it). Envelope #0 is the mission briefing (opened first, points the player at Doc 0). The final envelope is the accusation/solution reveal. Tasks short, bold, never reveal the solution. Closing line when language matches: "${p.envelopes.closing_line_he}"`;
+  return `Envelopes (workspace default ≈ ${p.envelopes.count}; the project's APPROVED envelopes roster in CURRENT PROJECT STATE is the source of truth — match that count exactly, typically 5–6, do NOT force the default if the roster differs): ${p.envelopes.labels.join(" / ")}. Envelopes are SEALED TASK GATES, not document containers. All evidence documents live loose in the box from the start; envelopes only hold a full A4 in-character letter from the Case Officer to the Detective (the "task" — vague-but-clear goal, NEVER references specific docs/clues, NEVER spoils the solution). Each envelope has an opening trigger (the case beat that unlocks it). Envelope #0 is the mission briefing (opened first; the only envelope that may name Doc 0, and only as the case-file index — never as a clue). The final envelope is the accusation/solution reveal (shorter, ceremonial). Closing line when language matches: "${p.envelopes.closing_line_he}"`;
 }
 
 export function renderEnvelopeDesignTemplate(p: Playbook): string {
   return `ENVELOPE DESIGN BRIEF TEMPLATE (workspace default — use as the seed when drafting an image prompt for any envelope row, then customise per envelope's label/task and the case era/genre):
 ${p.envelopes.design_brief_template}`;
+}
+
+export function renderEnvelopeTaskVoiceTemplate(p: Playbook): string {
+  return p.envelopes.task_voice_template;
 }
 
 export function renderPhase1OrderSentence(p: Playbook): string {
