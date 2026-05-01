@@ -175,7 +175,7 @@ TYPOGRAPHY
 AUTHENTICITY / REALISM VARIETY
 Design realism must be chosen fresh for this exact page and must NOT repeat the same generic details across the set. Do not default to coffee stains. Only use coffee/water stains if they make story and document-style sense.
 Pick 3–6 tactile details that belong to THIS page format: examples include carbon-copy offset, stapled corner impression, fax noise, uneven typewriter baseline, registrar stamp, punched binder holes, folded dispatch crease, smudged signature, redaction tape, circled paragraph in pencil, archival scan shadow at page edge, official routing initials, courier receipt tear, docket number, or period-correct date stamp. Vary the details, paper, ink, and administrative markings from one page insert to the next.
-Looks like a real in-world printed page from the case era — NOT a modern Canva mock-up, NOT an envelope, NOT a decorative poster. Never invent real institutional emblems or signatures.``,
+Looks like a real in-world printed page from the case era — NOT a modern Canva mock-up, NOT an envelope, NOT a decorative poster. Never invent real institutional emblems or signatures.`,
     task_voice_template: `ENVELOPE TASK BODY — A4 IN-CHARACTER LETTER (workspace default)
 
 Each envelope's "task" is the FULL printed insert that goes inside the envelope. It must read like a real case-officer hand-off to the detective and EASILY FILL AN A4 PAGE — sometimes spilling onto a second. Thin notes are unacceptable.
