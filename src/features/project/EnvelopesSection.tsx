@@ -101,9 +101,10 @@ const envelopeImageQuality = () => getStoredImageQuality("envelope", "medium");
 const pageInsertPrompt = (raw: string, label: string) => {
   const compact = raw.replace(/\s+/g, " ").trim().slice(0, 3200);
   return [
-    "Generate a portrait A4 page insert that will be placed inside a physical envelope. This is NOT an envelope cover: no envelope, no flap, no wax seal, no kraft mailer, no outside-envelope label.",
-    "If the saved design notes below mention envelope covers, wax seals, flaps, kraft paper, mailers, or front-of-envelope labels, ignore those parts and reinterpret the intent as a printed case briefing page.",
-    "The page should look like a real in-world briefing/recap sheet with varied, document-appropriate realism. Do not default to coffee stains; only include stains if they make sense for this specific page style. Choose fresh tactile details such as fax noise, carbon-copy offset, binder holes, routing initials, scan-edge shadow, redaction tape, stamped docket code, or handwritten officer marks as appropriate.",
+    "Top-down (bird's-eye) photograph of a SINGLE printed A4 page lying flat on a neutral surface. The page fills almost the entire frame in portrait orientation, with only a thin margin of surface visible at the edges.",
+    "This is a PAGE, not an envelope. Absolutely no envelopes, flaps, wax seals, kraft mailers, manila sleeves, string-and-button closures, postage, or outside-envelope labels anywhere in the image. If the saved design notes mention any of those, ignore that framing and render only the printed page that would go inside.",
+    "Treat this exactly like the other in-world documents in this case: the printed sheet is the subject — typed/printed text, headers, stamps, handwritten annotations, etc. — shot from directly above as if photographed on a desk for evidence intake.",
+    "Use varied, document-appropriate realism. Do not default to coffee stains; only include stains if they fit this specific page. Pick fresh tactile details such as fax noise, carbon-copy offset, binder holes, routing initials, scan-edge shadow, redaction tape, stamped docket code, or handwritten officer marks as appropriate.",
     `Page marker/slot: ${label}.`,
     compact,
   ].join("\n\n");
