@@ -128,11 +128,11 @@ Deno.serve(async (req) => {
           .maybeSingle();
         const brand = cp as { company_name?: string | null; tagline?: string | null; logo_url?: string | null } | null;
         envelopeBrandingBlock = brand?.logo_url
-          ? `\n\nCOMPANY BRANDING (must be reflected in the envelope design):
+          ? `\n\nCOMPANY BRANDING (must be reflected in the A4 page insert design):
 - Company: ${brand.company_name ?? "(unspecified)"}
 - Tagline: ${brand.tagline ?? "(none)"}
 - Logo URL: ${brand.logo_url}
-Require the brief to place the logo at the top of the envelope (top-center, top-left, or top-right — pick the spot that frames this envelope best). Logo height ≈ 8–12% of the envelope's longer side, with breathing room from the wax seal and stamps. Treat the logo as if printed onto the envelope (matte ink, period-correct registration), NOT a sticker, NOT a watermark, no drop shadows. Render the company name in small clean type beside or beneath the logo when supplied.`
+Require the brief to place the logo in the top letterhead/header area of the A4 page insert (top-center, top-left, or top-right — pick the spot that frames this page best). Logo height ≈ 5–9% of the page's longer side, with breathing room from stamps, file codes, and title text. Treat the logo as if printed onto the page (matte ink, period-correct registration), NOT a sticker, NOT a watermark, no drop shadows. Render the company name in small clean type beside or beneath the logo when supplied.`
           : `\n\nCOMPANY BRANDING: no company logo configured for this workspace — do NOT invent one. Skip the branding lockup entirely.`;
       }
     }
@@ -207,11 +207,11 @@ Require the brief to place the logo at the top of the envelope (top-center, top-
           .maybeSingle();
         if (envRow) {
           targetBlock = [
-            `THIS ENVELOPE:`,
+            `THIS ENVELOPE SLOT / PAGE INSERT:`,
             envRow.number !== null && `- Number: ${envRow.number}`,
             envRow.label && `- Current label: ${envRow.label}`,
             envRow.task && `- Current task: ${envRow.task}`,
-            `- Print: a sealed envelope cover (front face).`,
+            `- Print: a full A4 page insert placed inside a physical envelope. Not an envelope cover.`,
           ].filter(Boolean).join("\n");
         }
       }
@@ -247,10 +247,10 @@ Require the brief to place the logo at the top of the envelope (top-center, top-
         `  • Explicit "do NOT include" rules (e.g. no real names, no real emblems, no modern Canva styling, no watermark text).`,
         `  Default to exhaustive senior-print-designer detail — but ONLY when the user did not ask for brevity.`,
         ``,
-        `Part 2 — CONTENT (${gameLanguage}, ${isRtl ? "RTL" : "LTR"}): the EXACT final text that appears on the ${isEnv ? "envelope" : "document"}. Ready to typeset. No meta-commentary, no English explanations inside the content, no placeholders like "[insert name here]", no markdown headings — just the actual prop text in ${gameLanguage}. Names, dates, numbers, quotes — all final.`,
+        `Part 2 — CONTENT (${gameLanguage}, ${isRtl ? "RTL" : "LTR"}): the EXACT final text that appears on the ${isEnv ? "A4 page insert inside this physical envelope" : "document"}. Ready to typeset. No meta-commentary, no English explanations inside the content, no placeholders like "[insert name here]", no markdown headings — just the actual prop text in ${gameLanguage}. Names, dates, numbers, quotes — all final.`,
         ``,
         isEnv
-          ? `Envelope-specific rules: the content is what's printed on the OUTSIDE of the envelope (label + opening trigger / task). Keep it short, bold, non-spoilery. Never reveal the case solution.`
+          ? `Envelope-slot rules: produce an A4 page insert, not the outside of an envelope. Design it as the full printed briefing/recap/task page that goes inside the physical envelope. Vary the realism details according to this page's format and beat; do not default to coffee stains or repeat the same stains/stamps/fold lines from other pages. Never reveal the case solution.`
           : `Document-specific rules: stay in-world; do not reveal the full solution; honor the document's planned role inside the case. For Doc 0 / contents inventory, the design must be a plain white printer-paper sheet (no realism), and content is a numbered list of every game document.`,
         ``,
         `OUTPUT FORMAT: a single strict JSON object with EXACTLY these two string keys: {"design_instructions": "...", "content": "..."}. No prose around it, no markdown fences, no extra keys.`,
