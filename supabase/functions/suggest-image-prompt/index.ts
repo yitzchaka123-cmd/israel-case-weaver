@@ -44,7 +44,7 @@ const CATEGORY_GUIDANCE: Record<string, string> = {
   news: "A still frame as if from a televised news report covering the case. Lower-third / chyron friendly. Photorealistic, broadcast feel.",
   promo: "Cinematic key art / promo still that could anchor a short trailer. Dramatic lighting, strong silhouette.",
   external: "A general supporting visual related to the case world.",
-  envelope: "A single sealed in-world envelope, photographed flat. Tactile period-correct paper, wax seal, era-appropriate stamps, large RTL Hebrew label visible. Archival-scan look — no hands, no desk, no modern Canva styling.",
+  envelope: "A full A4 in-world page insert that will be placed inside a physical envelope. It should look like a real briefing/recap/task sheet, not an envelope cover: no flap, no wax seal, no mailer. Use varied page-specific realism and avoid repeated generic coffee stains.",
   "hint-sheet": "A printable single-side hint card (A6/A7 portrait), designed to slip into the case folder. Large RTL Hebrew stage label at the top (e.g. \"רמז שלב N\"), three clearly-marked panels below (1 / 2 / 3) sized for scratch-off coatings — leave them visually empty/blank, NO Hebrew hint text inside the panels (those are placeholders for physical scratch-off labels). Era-appropriate paper texture matching the case (vintage, noir, sci-fi, etc.). Tactile and authentic, not Canva-flat. NO spoilers visible — just the structure and chrome of a printed hint card.",
 };
 
@@ -120,7 +120,7 @@ Deno.serve(async (req) => {
       if (category === "envelope" || category === STRUCTURED_ENV) {
         const playbook = resolvePlaybook((profile as { assistant_playbook?: unknown } | null)?.assistant_playbook);
         envelopeTemplateBlock = `\n\n${renderEnvelopeDesignTemplate(playbook)}`;
-        // Pull workspace branding so envelope covers carry the logo.
+        // Pull workspace branding so page inserts carry the logo.
         const { data: cp } = await supa
           .from("company_profiles")
           .select("company_name, tagline, logo_url")
