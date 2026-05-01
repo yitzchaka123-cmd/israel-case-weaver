@@ -885,7 +885,8 @@ export function AssistantSection({
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
-                    if (!sending) send(input);
+                    if (sending) cancelRun();
+                    else send(input);
                   }
                 }}
                 placeholder={
