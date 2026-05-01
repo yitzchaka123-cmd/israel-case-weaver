@@ -106,6 +106,7 @@ const pageInsertPrompt = (raw: string, label: string) => {
   const compact = raw.replace(/\s+/g, " ").trim().slice(0, 3200);
   return [
     "Generate a portrait A4 page insert that will be placed inside a physical envelope. This is NOT an envelope cover: no envelope, no flap, no wax seal, no kraft mailer, no outside-envelope label.",
+    "If the saved design notes below mention envelope covers, wax seals, flaps, kraft paper, mailers, or front-of-envelope labels, ignore those parts and reinterpret the intent as a printed case briefing page.",
     "The page should look like a real in-world briefing/recap sheet with varied, document-appropriate realism. Do not default to coffee stains; only include stains if they make sense for this specific page style. Choose fresh tactile details such as fax noise, carbon-copy offset, binder holes, routing initials, scan-edge shadow, redaction tape, stamped docket code, or handwritten officer marks as appropriate.",
     `Page marker/slot: ${label}.`,
     compact,
