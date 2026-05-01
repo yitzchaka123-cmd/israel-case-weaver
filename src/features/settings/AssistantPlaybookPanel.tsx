@@ -261,10 +261,25 @@ export function AssistantPlaybookPanel({}: Props = {}) {
               placeholder="GOAL · OUTPUT FORMAT · VISUAL STYLE · LAYOUT · TYPOGRAPHY · AUTHENTICITY"
             />
           </div>
-        </div>
-      </Card>
-
-      {/* 4. Phase 1 setup order */}
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">
+              Envelope task body template (A4 in-character letter)
+            </Label>
+            <p className="text-[11px] text-muted-foreground -mt-1">
+              The voice + structure rules the model follows when writing the printed insert
+              that goes inside each envelope. Detective hand-off, vague-but-clear task,
+              never references specific docs or clues.
+            </p>
+            <Textarea
+              rows={14}
+              value={playbook.envelopes.task_voice_template}
+              onChange={(e) =>
+                update("envelopes", { ...playbook.envelopes, task_voice_template: e.target.value })
+              }
+              className="text-xs font-mono leading-relaxed"
+              placeholder="LENGTH · VOICE · REQUIRED STRUCTURE · ANTI-SPOILER RULE"
+            />
+          </div>
       <Card
         id="phase1"
         title="Phase 1 setup order"
