@@ -143,11 +143,12 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
   const { data: project } = useQuery({
     queryKey: ["project-language", projectId],
     queryFn: async () => {
-      const { data } = await supabase.from("projects").select("game_language").eq("id", projectId).maybeSingle();
+      const { data } = await supabase.from("projects").select("game_language, title").eq("id", projectId).maybeSingle();
       return data;
     },
   });
   const gameLanguage = project?.game_language ?? "Hebrew";
+  const projectTitle = project?.title ?? "";
 
   const { data: docs = [] } = useQuery({
     queryKey: ["envelope-doc-options", projectId],
@@ -307,6 +308,7 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
                 projectId={projectId}
                 playbookCount={playbook.envelopes.count}
                 gameLanguage={gameLanguage}
+                projectTitle={projectTitle}
               />
             );
           })}
@@ -325,6 +327,7 @@ function EnvelopeCard({
   projectId,
   playbookCount,
   gameLanguage,
+  projectTitle,
 }: {
   slot: { n: number; label: string };
   env: Envelope | undefined;
@@ -334,6 +337,7 @@ function EnvelopeCard({
   projectId: string;
   playbookCount: number;
   gameLanguage: string;
+  projectTitle: string;
 }) {
   
   const coverJob = useBackgroundImageJob({
