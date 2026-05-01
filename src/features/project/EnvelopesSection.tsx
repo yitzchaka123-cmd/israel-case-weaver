@@ -469,7 +469,7 @@ function EnvelopeCard({
 
   const openInAssistant = () => {
     const prompt =
-      `Help me write envelope #${slot.n} (${slot.label}). ` +
+      `Help me write envelope ${displayLabel(slot.n)} (${slot.label}). ` +
       `Current Hebrew label: "${(value("label") as string) || "(empty)"}". ` +
       `Current Hebrew task: "${(value("task") as string) || "(empty)"}". ` +
       `Brief me on the playbook rules for THIS envelope, then propose a Hebrew label, ` +
