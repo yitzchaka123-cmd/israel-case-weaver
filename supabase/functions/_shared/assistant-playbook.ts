@@ -55,6 +55,7 @@ export type Playbook = {
     labels: string[];
     closing_line_he: string;
     design_brief_template: string;
+    task_voice_template: string;
   };
   phase1_setup: {
     order: PhaseSetupStep[];
