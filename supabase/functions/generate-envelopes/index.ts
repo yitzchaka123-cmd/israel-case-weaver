@@ -211,7 +211,9 @@ ${(logicNodes ?? []).slice(0, 40).map((n) => `- [${n.node_type}] ${n.title}${n.d
 DOCUMENTS in the box (${docs?.length ?? 0} total — all available to the player from the start; do NOT use these to fill envelopes):
 ${(docs ?? []).slice(0, 30).map((d) => `#${d.doc_number ?? "?"} ${d.title} (${d.doc_type ?? "—"})`).join("\n") || "(none yet)"}
 
-Produce all ${count} envelopes now in numerical order. Reuse the labels above as the starting point for the "label" field but you may refine them. Each envelope must have a distinct opening_trigger anchored in this case's logic flow.`;
+${onlyNumber !== null
+  ? `Produce ONLY envelope #${onlyNumber} (label starting point: "${labels[Math.max(0, Math.min(count - 1, onlyNumber))]}"). Return a single-element envelopes array containing just that envelope. Follow every rule above as if it were part of the full set — its task body must respect the three-part structure and the recap/briefing distinction for its position in the chain.`
+  : `Produce all ${count} envelopes now in numerical order. Reuse the labels above as the starting point for the "label" field but you may refine them. Each envelope must have a distinct opening_trigger anchored in this case's logic flow.`}`;
 
     const tool = {
       type: "function",
