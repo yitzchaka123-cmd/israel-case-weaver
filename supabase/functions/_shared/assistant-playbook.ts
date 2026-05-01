@@ -184,46 +184,51 @@ AUTHENTICITY
 Looks like an actual archival envelope from the case era — NOT a modern Canva mock-up. Period-correct paper, ink, and stamp shapes. Never invent real institutional emblems or signatures.`,
     task_voice_template: `ENVELOPE TASK BODY — A4 IN-CHARACTER LETTER (workspace default)
 
-Each envelope's "task" is the FULL printed insert that goes inside the envelope. It must read like a real case-officer hand-off to the detective and FILL AN A4 PAGE.
+Each envelope's "task" is the FULL printed insert that goes inside the envelope. It must read like a real case-officer hand-off to the detective and EASILY FILL AN A4 PAGE — sometimes spilling onto a second. Thin notes are unacceptable.
 
 LENGTH
-- Envelopes #0 and the middle envelopes: ~350–500 words.
+- Envelope #0 and middle envelopes: ~450–700 words. Hard floor: 400 words. Do NOT ship short.
 - Final envelope (accusation / solution reveal): ~150–250 words — it carries the accusation form / solution card.
 
 VOICE
 - Second-person, addressing "Detective" (game-language equivalent).
 - Written in-world by a Case Officer / Dispatcher / Captain.
-- Sober, direct, a little weight to it.
+- Sober, direct, a little weight to it. Period- and setting-appropriate.
 - Ends with a short in-character signature line (e.g. "— Dispatch, Central Precinct").
 
-REQUIRED STRUCTURE — every envelope's task body, in this order:
-1. Letterhead-style header line ("CASE FILE 24-0317 · UPDATE 0X · For the attention of the duty detective" — invent a plausible case number tied to this case).
-2. Hand-off line opening with "Detective —" (game-language equivalent), setting the emotional beat for this stage.
-3. One short paragraph of in-world context tied to the Logic Flow beat this envelope gates. NO meta game instructions.
-4. Visually-set-off "Your task:" line stating the goal.
-5. Short list of 3–5 GENERAL investigative prompts ("Re-read everything tied to the window.", "Compare what each suspect said with where they could physically have been.", "Mark anyone whose story has a hole.").
-6. "What to do when you have your answer" line — tells the player they may then break the seal on the next envelope. NEVER hint at what is inside the next envelope.
-7. One-line sign-off + in-character signature.
+REQUIRED THREE-PART STRUCTURE — every middle and #0 envelope's task body, in this order:
 
-ENVELOPE #0 (Mission Briefing) — also:
-- Opens with the equivalent of "Detective — you've caught a case."
-- Establishes role/jurisdiction, victim, location, time window, and that the case file in front of them is everything they get.
-- Points the player at Doc 0 ONLY as the case-file index/table of contents (Doc 0 is not a clue).
-- Ends with the first task: a vague-but-clear goal that walks them into the first beat.
+PART A — BRIEFING (env #0) or RECAP (envs #1..#N-2). At least 2 real paragraphs, ~180–280 words.
+- Envelope #0 (Mission Briefing): Opens with the equivalent of "Hi, Detective — you've been assigned to this case." Two paragraphs that set the scene: the victim (use approved Phase-1 facts only — never invent a different victim or solution), where and when it happened, the detective's role/jurisdiction, the mood/era of the case, and that the case file in front of them is everything they get. Mention Doc 0 ONCE as the case-file index/table of contents (Doc 0 is not a clue) — this is the only envelope where Doc 0 may be named. Vivid and atmospheric, never spoils the solution.
+- Envelopes #1..#N-2 (Stage Recap): Opens with the equivalent of "By now you've probably worked out that…" Two paragraphs that summarise — in-world, as if the player succeeded — what the detective should have figured out by this beat, anchored to the Logic Flow node this envelope gates. Refer to suspects by name when the beat is about them. Acknowledge what's still open ahead. Never name a specific document, never reveal the final culprit/method/motive/red-herring/decisive-clue.
 
-FINAL ENVELOPE — also:
-- Ceremonial accusation letter: tells the detective they've reached the end and must now name the culprit.
-- Points to the accusation form / solution card folded inside this same envelope.
-- Does NOT contain the answer. Does NOT contain the next task list.
+PART B — YOUR TASK. ~80–140 words.
+- A clear, visually set-off line: "Your task:" (game-language equivalent).
+- ONE vague-but-clear investigative goal in the world, invented to fit THIS case's beat — not template phrasing. Examples of the SHAPE only: "Identify which of the suspects is lying in their statement.", "Place each suspect on the map between 21:00 and 22:30.", "Decide who actually had a reason to want him dead." Use the Logic Flow node and case context to write a fresh, specific-to-this-case goal each time.
+- Then 3–5 GENERAL investigative prompts — verbs like work out, narrow down, account for, rule out, reconstruct. NO specific doc/clue/mechanic references.
 
-ANTI-SPOILER RULE (LOCKED — non-negotiable)
+PART C — SEAL INSTRUCTION. 2–3 lines.
+- The equivalent of "Only break the seal on the next envelope once you are sure you have completed this task correctly." Always references "the next envelope" generically — never hints what is inside it.
+- One-line sign-off + in-character signature.
+
+ENVELOPE #0 — also:
+- Part A is the BRIEFING variant above. No "you've probably worked out…" — the case is brand new.
+- Part B walks the player into the first beat of the Logic Flow with a vague-but-clear goal.
+
+FINAL ENVELOPE — special shorter shape:
+- One short Part-A-style recap of the whole case so far (1 paragraph, no spoilers).
+- Ceremonial accusation prompt: tells the detective they've reached the end and must now name the culprit, pointing them at the accusation form / solution card folded inside this same envelope.
+- Closing line. Does NOT contain the answer. Does NOT contain a next-task list.
+
+ANTI-SPOILER RULE (LOCKED — non-negotiable, applies to ALL three parts including the new recap)
 The task body MUST NOT:
 - Name or reference any specific document by number, title, or filename. The ONLY allowed mention of a doc is Doc 0 in envelope #0, and only as the case-file index/table of contents — never as a clue.
 - Reference a specific clue mechanic ("decode the cipher on page 2", "compare the alibis on the timeline grid", "match the prints", "check the receipts").
 - Reveal or strongly hint at the culprit, the motive, the murder method, the red herring, or which clue is decisive.
 - Tell the player which evidence proves what.
+- In Part A recap, reveal answers to beats AFTER the previous envelope's task — only summarise what should already be solved.
 
-Tasks must instead state a GOAL in the world using investigative verbs — work out, decide, narrow down, place, account for, rule out, choose, identify, reconstruct. The player decides which materials to consult — that IS the gameplay. References to evidence stay at the category level at most ("the materials in your case file", "what you've gathered so far", "the statements you have").`,
+Allowed in Part A: naming suspects (they're public), naming the victim, summarising in-world events, naming what the detective is still unsure about. Goals stay at the category level at most ("the materials in your case file", "what you've gathered so far", "the statements you have").`,
   },
   phase1_setup: {
     order: [
