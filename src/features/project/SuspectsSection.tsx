@@ -5,7 +5,7 @@ import { AutoSaveInput, AutoSaveTextarea } from "@/components/AutoSave";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Plus, Upload, Trash2, UserCircle2, Loader2 } from "lucide-react";
+import { Plus, Upload, Trash2, UserCircle2, Loader2, Wand2, Sparkles } from "lucide-react";
 import { useRef, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { ImageModelPicker, getStoredImageModel, getStoredImageQuality } from "@/components/ImageModelPicker";
@@ -18,6 +18,9 @@ import { DownloadButton } from "@/components/DownloadButton";
 import { useBackgroundImageJob } from "@/features/project/useBackgroundImageJob";
 import { GenerationTimer } from "@/features/project/GenerationTimer";
 import { syncSuspectThumbnailToIntakeDocs } from "@/features/project/syncSuspectIntake";
+import { useImageBatchProgress } from "@/features/project/useImageBatchProgress";
+import { InlineBatchStrip } from "@/features/project/InlineBatchStrip";
+import { runWithConcurrency } from "@/lib/run-with-concurrency";
 
 interface Suspect {
   id: string;
