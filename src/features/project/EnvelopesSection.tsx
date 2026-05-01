@@ -1,7 +1,7 @@
 // Envelopes — full design/generation surface (mirrors Documents and Suspects).
 // Each envelope row carries label/task (player-facing Hebrew copy), linked
 // documents, internal notes, and a separate design brief that drives the
-// envelope cover mock-up via generate-image. The "Brief me" / "Generate all"
+// A4 page-insert mock-up via generate-image. The "Brief me" / "Generate all"
 // global actions tie the assistant + bulk-AI generation together.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -94,6 +94,23 @@ const FOOTNOTE_HE =
 
 /** Player-facing envelope label: 0 → "Open First", N → "N". */
 const displayLabel = (n: number): string => (n === 0 ? "Open First" : String(n));
+
+const envelopeImageModel = () => getStoredImageModel("envelope", "nano-banana-2");
+const envelopeImageQuality = () => {
+  const model = envelopeImageModel();
+  const quality = getStoredImageQuality("envelope", "medium");
+  return model.startsWith("chatgpt-image") && quality === "high" ? "medium" : quality;
+};
+
+const pageInsertPrompt = (raw: string, label: string) => {
+  const compact = raw.replace(/\s+/g, " ").trim().slice(0, 3200);
+  return [
+    "Generate a portrait A4 page insert that will be placed inside a physical envelope. This is NOT an envelope cover: no envelope, no flap, no wax seal, no kraft mailer, no outside-envelope label.",
+    "The page should look like a real in-world briefing/recap sheet with varied, document-appropriate realism. Do not default to coffee stains; only include stains if they make sense for this specific page style. Choose fresh tactile details such as fax noise, carbon-copy offset, binder holes, routing initials, scan-edge shadow, redaction tape, stamped docket code, or handwritten officer marks as appropriate.",
+    `Page marker/slot: ${label}.`,
+    compact,
+  ].join("\n\n");
+};
 
 const STATUS_TIP =
   "Production status — used by the Production Dashboard to count progress, NOT by the player.\n" +
@@ -280,14 +297,14 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
     if (generatingAllCovers) return;
     const targets = (data ?? []).filter((e) => !e.cover_image_url && (e.design_instructions ?? "").trim());
     if (targets.length === 0) {
-      toast.info("Every envelope already has a cover (or no design instructions yet — open one to draft).");
+      toast.info("Every envelope already has a page mock-up (or no design instructions yet — open one to draft).");
       return;
     }
-    if (!confirm(`Generate ${targets.length} envelope cover${targets.length === 1 ? "" : "s"}?`)) return;
+    if (!confirm(`Generate ${targets.length} A4 page mock-up${targets.length === 1 ? "" : "s"}?`)) return;
     setGeneratingAllCovers(true);
     try {
-      const modelOverride = getStoredImageModel("envelope", "chatgpt-image");
-      const quality = getStoredImageQuality("envelope", "high");
+      const modelOverride = envelopeImageModel();
+      const quality = envelopeImageQuality();
       const { data: { session } } = await supabase.auth.getSession();
       const auth = `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`;
       const settled = await runWithConcurrency(targets, 3, async (env) => {
@@ -296,9 +313,9 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
           headers: { "Content-Type": "application/json", Authorization: auth },
           body: JSON.stringify({
             projectId, target: "envelope", targetId: env.id,
-            mode: "background", prompt: (env.design_instructions ?? "").trim(),
+            mode: "background", prompt: pageInsertPrompt((env.design_instructions ?? "").trim(), displayLabel(env.number)),
             modelOverride, quality, aspect: "portrait", category: "envelope",
-            title: `Envelope #${env.number} — ${env.label ?? ""}`,
+            title: `Envelope ${displayLabel(env.number)} page insert — ${env.label ?? ""}`,
           }),
         });
         const json = await resp.json().catch(() => ({}));
@@ -309,9 +326,9 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
         if (r.status === "fulfilled") return { id: r.value.jobId, label: r.value.label };
         return { id: `kick-failed-${targets[i].id}`, label: `#${targets[i].number}`, kickFailed: true as const };
       });
-      coverBatch.start(slots, "Generating envelope covers");
+      coverBatch.start(slots, "Generating A4 page mock-ups");
       const failures = settled.filter((r) => r.status === "rejected").length;
-      toast.success(`Started ${settled.length - failures} of ${targets.length} cover${targets.length === 1 ? "" : "s"}${failures ? ` · ${failures} kickoff failed` : ""}`);
+      toast.success(`Started ${settled.length - failures} of ${targets.length} page mock-up${targets.length === 1 ? "" : "s"}${failures ? ` · ${failures} kickoff failed` : ""}`);
     } finally {
       setGeneratingAllCovers(false);
     }
