@@ -748,8 +748,8 @@ function EnvelopeCard({
 
 function TaskWordCount({ text }: { text: string }) {
   const words = (text.trim().match(/\S+/g) ?? []).length;
-  const target = 350;
-  const max = 500;
+  const target = 400;
+  const max = 700;
   const status =
     words === 0
       ? "empty"
