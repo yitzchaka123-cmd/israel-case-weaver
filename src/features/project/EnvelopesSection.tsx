@@ -104,7 +104,7 @@ const pageInsertPrompt = (raw: string, label: string) => {
     "Top-down (bird's-eye) photograph of a SINGLE printed A4 page lying flat on a neutral surface. The page fills almost the entire frame in portrait orientation, with only a thin margin of surface visible at the edges.",
     "This is a PAGE, not an envelope. Absolutely no envelopes, flaps, wax seals, kraft mailers, manila sleeves, string-and-button closures, postage, or outside-envelope labels anywhere in the image. If the saved design notes mention any of those, ignore that framing and render only the printed page that would go inside.",
     "Treat this exactly like the other in-world documents in this case: the printed sheet is the subject — typed/printed text, headers, stamps, handwritten annotations, etc. — shot from directly above as if photographed on a desk for evidence intake.",
-    "Use varied, document-appropriate realism. Do not default to coffee stains; only include stains if they fit this specific page. Pick fresh tactile details such as fax noise, carbon-copy offset, binder holes, routing initials, scan-edge shadow, redaction tape, stamped docket code, or handwritten officer marks as appropriate.",
+    "Realism rule: render ONLY the tactile details described in the design notes below for THIS specific page. Do not invent or add generic realism details that aren't in the notes. Do not reuse coffee stains, fold lines, binder holes, fax noise, carbon-copy offset, redaction tape, scan-edge shadow, or any other tactile motif unless the notes for THIS page explicitly call for it. Each page in this set has its own document type, paper, ink, era, and wear pattern — honor what's written and nothing else.",
     `Page marker/slot: ${label}.`,
     compact,
   ].join("\n\n");
