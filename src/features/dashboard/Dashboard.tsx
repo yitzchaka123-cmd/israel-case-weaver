@@ -325,7 +325,23 @@ function ProjectCard({ project }: { project: Project }) {
   });
 
   return (
-    <div className="group text-left bg-card border rounded-2xl overflow-hidden shadow-soft hover:shadow-pop hover:-translate-y-0.5 transition-all">
+    <div className="group relative text-left bg-card border rounded-2xl overflow-hidden shadow-soft hover:shadow-pop hover:-translate-y-0.5 transition-all">
+      {!project.deleted_at && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (confirm(`Move "${project.title}" to trash? You can restore it later.`)) {
+              trash.mutate();
+            }
+          }}
+          disabled={trash.isPending}
+          aria-label="Move case to trash"
+          className="absolute top-3 right-3 z-10 inline-flex items-center justify-center h-8 w-8 rounded-md bg-surface/90 backdrop-blur text-muted-foreground hover:text-destructive hover:bg-surface opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity disabled:opacity-50"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      )}
       <button onClick={() => !project.deleted_at && nav({ to: "/projects/$projectId", params: { projectId: project.id } })} className="block w-full text-left disabled:cursor-default" disabled={!!project.deleted_at}>
         <div className="aspect-[4/3] bg-gradient-soft relative overflow-hidden">
         {project.cover_image_url ? (
