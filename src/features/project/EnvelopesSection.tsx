@@ -333,8 +333,23 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
               )}
               Generate all envelopes with AI
             </Button>
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={generateAllCovers}
+              disabled={generatingAllCovers}
+            >
+              {generatingAllCovers ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <ImagePlus className="h-4 w-4" />
+              )}
+              Generate all covers
+            </Button>
           </div>
         </div>
+
+        <InlineBatchStrip progress={coverBatch.progress} onDismiss={coverBatch.dismiss} />
 
         <div className="grid gap-4">
           {slots.map((slot) => {
