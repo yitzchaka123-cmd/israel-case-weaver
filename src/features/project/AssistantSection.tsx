@@ -39,6 +39,7 @@ import {
   Check,
   Copy,
   Brain,
+  Square,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useVoiceInput } from "@/hooks/use-voice-input";
