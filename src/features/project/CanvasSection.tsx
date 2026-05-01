@@ -979,12 +979,27 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
             <div className="min-w-0 flex-1">
               <div className="font-display text-base text-foreground">Final Documents Map not created yet</div>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                Create planned document nodes from the approved logic flow. This maps the production checklist only; it does not generate files.
+                {showBothBuildOptions
+                  ? `You already have ${existingDocCount} document row${existingDocCount === 1 ? "" : "s"} for this case. Choose whether to plan fresh document nodes from the approved logic, or map from the documents you've already created.`
+                  : "Create planned document nodes from the approved logic flow. This maps the production checklist only; it does not generate files."}
               </p>
-              <Button className="mt-3 gap-2 h-9" onClick={createFinalDocumentsMap} disabled={creatingFinalMap}>
-                {creatingFinalMap ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-                Create map from approved logic
-              </Button>
+              {showBothBuildOptions ? (
+                <div className="mt-3 flex flex-col gap-2">
+                  <Button className="gap-2 h-9 justify-start" onClick={() => createFinalDocumentsMap("from-logic")} disabled={creatingFinalMap}>
+                    {creatingFinalMap ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                    Create new map with new documents from approved logic
+                  </Button>
+                  <Button variant="outline" className="gap-2 h-9 justify-start" onClick={() => createFinalDocumentsMap("from-existing")} disabled={creatingFinalMap}>
+                    {creatingFinalMap ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                    Create map from existing documents
+                  </Button>
+                </div>
+              ) : (
+                <Button className="mt-3 gap-2 h-9" onClick={() => createFinalDocumentsMap(null)} disabled={creatingFinalMap}>
+                  {creatingFinalMap ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                  Create map from approved logic
+                </Button>
+              )}
             </div>
           </div>
         </div>
