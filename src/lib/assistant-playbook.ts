@@ -148,31 +148,34 @@ export const PLAYBOOK_DEFAULTS: Playbook = {
     closing_line_he:
       "פתחו את המעטפה הבאה רק אם הגעתם לרגע המתאים בחקירה. כל המסמכים כבר בקופסה — המשיכו לחקור איתם.",
     design_brief_template: `GOAL
-A single sealed kraft-paper envelope, photographed flat on a neutral background. This is an in-world TASK envelope — sealed shut so the player only opens it when they reach a specific beat in the case. The envelope must look heavy and important; what's inside is an instruction, a reveal, or a task — never the next batch of evidence (all evidence documents live loose in the box from the start).
+A single full-page A4 case-officer briefing page that will be placed inside a physical envelope by the game maker. This is NOT an envelope cover and must never look like an envelope, folder, package, wax-sealed object, or external mailer. It is the printed insert the player reads after opening the physical envelope: an in-world task briefing, recap, or final accusation hand-off.
 
 OUTPUT FORMAT
-Single image, portrait orientation, ~2480×3508 px (A4 at 300 DPI). Flat archival-style scan: no hands, no desk, no shadows from a photographer. The envelope fills ~70% of the frame, centered, with a small gutter of clean off-white margin around it.
+Single image, portrait orientation, A4 ratio (~2480×3508 px at 300 DPI). Flat archival-style scan of one printed page: no hands, no desk, no envelope, no envelope flap, no wax seal, no photographer shadows. The page fills most of the frame with a small clean gutter, fully legible margins, and enough text-area structure to feel like a real briefing sheet.
 
 VISUAL STYLE
-- Era-appropriate kraft / manila stock, mild edge wear, faint horizontal fold line.
-- One dark red wax seal centered on the flap; subtle cracks along the wax edges.
-- A diagonal classification stamp in muted red ink (era-appropriate) — e.g. "סודי" / "Top Secret" / case-specific category.
-- A typewritten or rubber-stamped label in the upper-left or center showing the envelope number and short Hebrew label (RTL).
-- Optional smaller marks: routing initials in pencil, a small punched hole, a string-and-button closure, an ink fingerprint smudge.
+- Choose a page style that fits THIS case's era, setting, genre, and envelope beat: police memo, dispatch briefing, field-office letterhead, intelligence hand-off, captain's note, case-room recap, court-clerk notice, or another page format that makes sense for the story.
+- Use appropriate paper stock for a printed insert: official letterhead, thin copier paper, aged station stationery, typed memo paper, faxed sheet, carbon-copy form, telegram-style memo, or other case-specific paper — not kraft/manila envelope stock.
+- Include the envelope label/number as a small filing marker or header on the page, not as an envelope-front label.
+- Layout should contain a strong briefing title, body text blocks, a clear task section, and a short seal/next-envelope instruction area.
+- The page can include subtle stamps, routing marks, signatures, marginal notes, tabs, redactions, or filing codes ONLY when they fit this specific page style.
 
 LAYOUT
-1. Center: large Hebrew label (RTL) — the envelope's name.
-2. Below or beside it: envelope number, framed.
-3. Diagonal classification stamp across the upper-third.
-4. Bottom-right: small reference code (case id + envelope #).
-5. Wax seal centered over the flap line.
+1. Top zone: optional company logo/letterhead lockup when branding is supplied; otherwise use case-office header text or a simple file reference.
+2. Header: the page insert label and envelope marker (Open First / 1 / 2 / 3 / 4) in the game language.
+3. Main body: visually believable dense briefing text blocks, with paragraph rhythm and section breaks.
+4. Task area: a clearly separated 'Your task' section in the game language.
+5. Footer: small reference code, date/time stamp, or officer signature line appropriate to the case.
 
 TYPOGRAPHY
-- Bold formal Hebrew label, era-correct (typewriter, rubber-stamp, or hand-lettered depending on the case).
-- All Hebrew text grammatically correct, RTL, no gibberish, no Latin filler.
+- All game-language text grammatically correct and directionally correct (RTL for Hebrew/Arabic/etc.). No gibberish, no Latin filler.
+- Use period-appropriate type: typewriter, government memo typography, police report type, or clean official letterhead depending on the case.
+- Make text look like real printed paragraphs, but do not require microscopic fully readable body copy if the image model cannot render every word.
 
-AUTHENTICITY
-Looks like an actual archival envelope from the case era — NOT a modern Canva mock-up. Period-correct paper, ink, and stamp shapes. Never invent real institutional emblems or signatures.`,
+AUTHENTICITY / REALISM VARIETY
+Design realism must be chosen fresh for this exact page and must NOT repeat the same generic details across the set. Do not default to coffee stains. Only use coffee/water stains if they make story and document-style sense.
+Pick 3–6 tactile details that belong to THIS page format: examples include carbon-copy offset, stapled corner impression, fax noise, uneven typewriter baseline, registrar stamp, punched binder holes, folded dispatch crease, smudged signature, redaction tape, circled paragraph in pencil, archival scan shadow at page edge, official routing initials, courier receipt tear, docket number, or period-correct date stamp. Vary the details, paper, ink, and administrative markings from one page insert to the next.
+Looks like a real in-world printed page from the case era — NOT a modern Canva mock-up, NOT an envelope, NOT a decorative poster. Never invent real institutional emblems or signatures.``,
     task_voice_template: `ENVELOPE TASK BODY — A4 IN-CHARACTER LETTER (workspace default)
 
 Each envelope's "task" is the FULL printed insert that goes inside the envelope. It must read like a real case-officer hand-off to the detective and EASILY FILL AN A4 PAGE — sometimes spilling onto a second. Thin notes are unacceptable.
@@ -1015,7 +1018,7 @@ export function renderEnvelopesLine(p: Playbook): string {
 }
 
 export function renderEnvelopeDesignTemplate(p: Playbook): string {
-  return `ENVELOPE DESIGN BRIEF TEMPLATE (workspace default — use as the seed when drafting an image prompt for any envelope row, then customise per envelope's label/task and the case era/genre):
+  return `A4 PAGE INSERT DESIGN BRIEF TEMPLATE (workspace default — use as the seed when drafting an image prompt for any envelope row, then customise per envelope's label/task and the case era/genre). The generated image is the page placed inside the physical envelope, not the envelope itself:
 ${p.envelopes.design_brief_template}`;
 }
 
