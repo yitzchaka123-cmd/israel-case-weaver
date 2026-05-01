@@ -55,7 +55,11 @@ export function ImageModelPicker({ surface, defaultModel, className, size = "sm"
   const [quality, setQuality] = useState<ImageQuality>("high");
   const [geminiKeyPresent, setGeminiKeyPresent] = useState<boolean | null>(null);
   const { hidden } = useHiddenModels();
-  const visibleModels = filterModelOptions(IMAGE_MODELS, hidden, value);
+  const visibleModels = filterModelOptions(
+    surface === "envelope" ? IMAGE_MODELS.filter((m) => !m.value.startsWith("chatgpt-image")) : IMAGE_MODELS,
+    hidden,
+    value,
+  );
 
   useEffect(() => {
     setValue(getStoredImageModel(surface, defaultModel));
