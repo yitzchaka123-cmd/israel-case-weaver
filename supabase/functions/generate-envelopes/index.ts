@@ -223,7 +223,7 @@ Produce all ${count} envelopes now in numerical order. Reuse the labels above as
                 properties: {
                   number: { type: "number", description: `0..${count - 1}` },
                   label: { type: "string" },
-                  task: { type: "string", description: "Full A4 in-character letter from the Case Officer to the Detective, ~350–500 words (final envelope ~150–250). Header line, hand-off, in-world context, 'Your task' line, 3–5 general investigative prompts, sign-off + signature. Strictly NEVER references specific document numbers/titles, specific clue mechanics, or the solution. Closing line is appended by UI — do not include it." },
+                  task: { type: "string", description: "Full A4 in-character letter from the Case Officer to the Detective, ~450–700 words (hard floor 400) for env #0 and middle envelopes, ~150–250 for the final envelope. Three-part structure: PART A briefing (env #0) or recap 'By now you've probably worked out…' (middle envelopes), at least 2 paragraphs ~180–280 words; PART B 'Your task:' line + one vague-but-clear case-specific goal + 3–5 general investigative prompts; PART C 2–3 line seal instruction telling the player to only open the next envelope when sure, plus in-character sign-off. Strictly NEVER references specific document numbers/titles, specific clue mechanics, or the solution. Closing line is appended by UI — do not include it." },
                   opening_trigger: { type: "string", description: "1-sentence description of when the player should open this envelope (in the game language)." },
                   design_instructions: { type: "string" },
                 },
