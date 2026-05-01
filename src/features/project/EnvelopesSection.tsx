@@ -42,6 +42,7 @@ import {
   FileText,
   ChevronDown,
   Trash2,
+  Printer,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
