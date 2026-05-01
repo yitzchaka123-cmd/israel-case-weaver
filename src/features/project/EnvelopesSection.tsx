@@ -498,11 +498,11 @@ function EnvelopeCard({
         </div>
         <div className="flex-1 min-w-0">
           <div className="font-display text-lg leading-tight flex items-center gap-2">
-            #{slot.n} — {slot.label}
+            Envelope {displayLabel(slot.n)}
             {createdByMsg && <AssistantOriginBadge messageId={createdByMsg} />}
           </div>
           <div className="text-xs text-muted-foreground">
-            Envelope {slot.n + 1} of {playbookCount}
+            {slot.n + 1} of {playbookCount}
           </div>
         </div>
         <div className="flex items-center gap-1.5">
