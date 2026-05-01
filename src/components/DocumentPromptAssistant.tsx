@@ -154,7 +154,7 @@ export function DocumentPromptAssistant({
           <Textarea
             value={instructions}
             onChange={(e) => setInstructions(e.target.value)}
-            placeholder="Type any specific guidance for this document, or leave empty and click Create prompt."
+            placeholder="Type any specific guidance for this document, or leave empty and click Draft."
             rows={5}
             className="text-xs leading-relaxed"
           />
