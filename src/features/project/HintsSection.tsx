@@ -5,7 +5,7 @@ import { AutoSaveTextarea } from "@/components/AutoSave";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Lightbulb, Plus, Trash2, ImageIcon, ChevronDown, Loader2, Pin, Upload } from "lucide-react";
+import { Lightbulb, Plus, Trash2, ImageIcon, ChevronDown, Loader2, Pin, Upload, Wand2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { ImagePromptAssistant } from "@/components/ImagePromptAssistant";
 import { ImageHistoryStrip, type ImageHistoryRow } from "@/components/ImageHistoryStrip";
@@ -15,6 +15,9 @@ import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { DownloadButton } from "@/components/DownloadButton";
 import { useBackgroundImageJob } from "@/features/project/useBackgroundImageJob";
 import { GenerationTimer } from "@/features/project/GenerationTimer";
+import { useImageBatchProgress } from "@/features/project/useImageBatchProgress";
+import { InlineBatchStrip } from "@/features/project/InlineBatchStrip";
+import { runWithConcurrency } from "@/lib/run-with-concurrency";
 
 interface Hint {
   id: string;
