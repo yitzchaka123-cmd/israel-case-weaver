@@ -161,6 +161,42 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
   );
   const envelopeCount = envelopes?.length ?? 0;
 
+  // For the Final-board action: figure out whether the user has BOTH
+  //   (a) an assistant-approved/proposed document set derived from the logic, and
+  //   (b) existing document rows already created (e.g. produced before the
+  //       Final Flow was built).
+  // When both are present, the user gets two distinct buttons so they can
+  // choose to rebuild the map fresh from the approved logic OR map from the
+  // existing document rows they've already worked on.
+  const { data: finalMapSourceState } = useQuery({
+    queryKey: ["final-map-source-state", projectId],
+    queryFn: async () => {
+      const [{ data: proj }, { count: docCount }] = await Promise.all([
+        supabase
+          .from("projects")
+          .select("proposed_document_set, proposed_document_set_status")
+          .eq("id", projectId)
+          .single(),
+        supabase
+          .from("documents")
+          .select("id", { head: true, count: "exact" })
+          .eq("project_id", projectId),
+      ]);
+      const proposalArr = Array.isArray((proj as { proposed_document_set?: unknown } | null)?.proposed_document_set)
+        ? ((proj as { proposed_document_set: unknown[] }).proposed_document_set as unknown[])
+        : [];
+      const status = String((proj as { proposed_document_set_status?: unknown } | null)?.proposed_document_set_status ?? "none");
+      const proposalUsable = proposalArr.length > 0 && ["approved", "bypassed", "proposed"].includes(status);
+      return {
+        proposalUsable,
+        existingDocCount: docCount ?? 0,
+      };
+    },
+  });
+  const proposalUsable = !!finalMapSourceState?.proposalUsable;
+  const existingDocCount = finalMapSourceState?.existingDocCount ?? 0;
+  const showBothBuildOptions = proposalUsable && existingDocCount > 0;
+
   const [nodes, setNodes] = useNodesState([]);
   const [edges, setEdges] = useEdgesState([]);
   const [generatingFlow, setGeneratingFlow] = useState(false);
