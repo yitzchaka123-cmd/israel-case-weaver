@@ -13,7 +13,7 @@ import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { permanentlyDeleteProject, restoreTrashedProject } from "@/lib/project-versions";
+import { permanentlyDeleteProject, restoreTrashedProject, trashProject } from "@/lib/project-versions";
 import { DEFAULT_GAME_LANGUAGE, DEFAULT_GAME_LANGUAGES, normalizeGameLanguage } from "@/lib/game-language";
 
 interface Project {
@@ -312,6 +312,14 @@ function ProjectCard({ project }: { project: Project }) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["projects"] });
       toast.success("Case permanently deleted");
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const trash = useMutation({
+    mutationFn: () => trashProject(project.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      toast.success("Case moved to trash", { description: "You can restore it from the Trash filter." });
     },
     onError: (e: Error) => toast.error(e.message),
   });
