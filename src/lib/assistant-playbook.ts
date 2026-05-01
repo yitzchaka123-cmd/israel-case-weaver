@@ -776,6 +776,10 @@ export function resolvePlaybook(override: unknown): Playbook {
     o.envelopes?.design_brief_template,
     d.envelopes.design_brief_template,
   );
+  const task_voice_template = cleanString(
+    (o.envelopes as { task_voice_template?: unknown } | undefined)?.task_voice_template,
+    d.envelopes.task_voice_template,
+  );
 
   const orderRaw = Array.isArray(o.phase1_setup?.order) ? o.phase1_setup!.order : null;
   const order = orderRaw
@@ -957,7 +961,7 @@ export function resolvePlaybook(override: unknown): Playbook {
   return {
     suspect_counts,
     hints: { per_stage, ladder_labels },
-    envelopes: { count: envCount, labels: labelsResized, closing_line_he, design_brief_template },
+    envelopes: { count: envCount, labels: labelsResized, closing_line_he, design_brief_template, task_voice_template },
     phase1_setup: { order, title_options_count },
     vocab,
     realism,
