@@ -103,6 +103,8 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
   const [draft, setDraft] = useState<Record<number, Partial<Envelope>>>({});
   const [generatingAll, setGeneratingAll] = useState(false);
+  const [generatingAllCovers, setGeneratingAllCovers] = useState(false);
+  const coverBatch = useImageBatchProgress(projectId);
   const { create: createNotification } = useProjectNotifications(projectId);
 
   // Owner playbook → drives envelope count + briefing prompt (count, labels,
