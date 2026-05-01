@@ -161,6 +161,42 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
   );
   const envelopeCount = envelopes?.length ?? 0;
 
+  // For the Final-board action: figure out whether the user has BOTH
+  //   (a) an assistant-approved/proposed document set derived from the logic, and
+  //   (b) existing document rows already created (e.g. produced before the
+  //       Final Flow was built).
+  // When both are present, the user gets two distinct buttons so they can
+  // choose to rebuild the map fresh from the approved logic OR map from the
+  // existing document rows they've already worked on.
+  const { data: finalMapSourceState } = useQuery({
+    queryKey: ["final-map-source-state", projectId],
+    queryFn: async () => {
+      const [{ data: proj }, { count: docCount }] = await Promise.all([
+        supabase
+          .from("projects")
+          .select("proposed_document_set, proposed_document_set_status")
+          .eq("id", projectId)
+          .single(),
+        supabase
+          .from("documents")
+          .select("id", { head: true, count: "exact" })
+          .eq("project_id", projectId),
+      ]);
+      const proposalArr = Array.isArray((proj as { proposed_document_set?: unknown } | null)?.proposed_document_set)
+        ? ((proj as { proposed_document_set: unknown[] }).proposed_document_set as unknown[])
+        : [];
+      const status = String((proj as { proposed_document_set_status?: unknown } | null)?.proposed_document_set_status ?? "none");
+      const proposalUsable = proposalArr.length > 0 && ["approved", "bypassed", "proposed"].includes(status);
+      return {
+        proposalUsable,
+        existingDocCount: docCount ?? 0,
+      };
+    },
+  });
+  const proposalUsable = !!finalMapSourceState?.proposalUsable;
+  const existingDocCount = finalMapSourceState?.existingDocCount ?? 0;
+  const showBothBuildOptions = proposalUsable && existingDocCount > 0;
+
   const [nodes, setNodes] = useNodesState([]);
   const [edges, setEdges] = useEdgesState([]);
   const [generatingFlow, setGeneratingFlow] = useState(false);
@@ -500,7 +536,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
     void notifyAssistantOfApproval(projectId);
   };
 
-  const createFinalDocumentsMap = async () => {
+  const createFinalDocumentsMap = async (mode: "from-logic" | "from-existing" | null = null) => {
     if (!approved) return toast.error("Approve the Logic Flow first");
     if (nodes.length > 0 && !confirm("This will replace the current Final board document map. Continue?")) return;
     setCreatingFinalMap(true);
@@ -512,7 +548,7 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
           "Content-Type": "application/json",
           Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
-        body: JSON.stringify({ projectId, replace: true }),
+        body: JSON.stringify({ projectId, replace: true, mode }),
       });
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) return toast.error(data.error ?? "Could not create Final Documents Map");
@@ -847,15 +883,40 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
         )}
 
         {board === "final" && approved && (
-          <Button
-            variant={nodes.length === 0 ? "default" : "outline"}
-            className="gap-2 h-9"
-            onClick={createFinalDocumentsMap}
-            disabled={creatingFinalMap}
-          >
-            {creatingFinalMap ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-            {nodes.length === 0 ? "Create Final Documents Map" : "Rebuild Final Map"}
-          </Button>
+          showBothBuildOptions ? (
+            <>
+              <Button
+                variant={nodes.length === 0 ? "default" : "outline"}
+                className="gap-2 h-9"
+                onClick={() => createFinalDocumentsMap("from-logic")}
+                disabled={creatingFinalMap}
+                title="Build planned document nodes from the assistant's approved doc set (derived from the approved logic flow). Existing document rows are not used."
+              >
+                {creatingFinalMap ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                {nodes.length === 0 ? "Create new map with new documents from approved logic" : "Rebuild from approved logic"}
+              </Button>
+              <Button
+                variant="outline"
+                className="gap-2 h-9"
+                onClick={() => createFinalDocumentsMap("from-existing")}
+                disabled={creatingFinalMap}
+                title={`Build planned document nodes from the ${existingDocCount} document row${existingDocCount === 1 ? "" : "s"} already created for this case.`}
+              >
+                {creatingFinalMap ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                {nodes.length === 0 ? "Create map from existing documents" : "Rebuild from existing documents"}
+              </Button>
+            </>
+          ) : (
+            <Button
+              variant={nodes.length === 0 ? "default" : "outline"}
+              className="gap-2 h-9"
+              onClick={() => createFinalDocumentsMap(null)}
+              disabled={creatingFinalMap}
+            >
+              {creatingFinalMap ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+              {nodes.length === 0 ? "Create Final Documents Map" : "Rebuild Final Map"}
+            </Button>
+          )
         )}
       </div>
 
@@ -918,12 +979,27 @@ function CanvasInner({ projectId, board, setBoard }: { projectId: string; board:
             <div className="min-w-0 flex-1">
               <div className="font-display text-base text-foreground">Final Documents Map not created yet</div>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                Create planned document nodes from the approved logic flow. This maps the production checklist only; it does not generate files.
+                {showBothBuildOptions
+                  ? `You already have ${existingDocCount} document row${existingDocCount === 1 ? "" : "s"} for this case. Choose whether to plan fresh document nodes from the approved logic, or map from the documents you've already created.`
+                  : "Create planned document nodes from the approved logic flow. This maps the production checklist only; it does not generate files."}
               </p>
-              <Button className="mt-3 gap-2 h-9" onClick={createFinalDocumentsMap} disabled={creatingFinalMap}>
-                {creatingFinalMap ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-                Create map from approved logic
-              </Button>
+              {showBothBuildOptions ? (
+                <div className="mt-3 flex flex-col gap-2">
+                  <Button className="gap-2 h-9 justify-start" onClick={() => createFinalDocumentsMap("from-logic")} disabled={creatingFinalMap}>
+                    {creatingFinalMap ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                    Create new map with new documents from approved logic
+                  </Button>
+                  <Button variant="outline" className="gap-2 h-9 justify-start" onClick={() => createFinalDocumentsMap("from-existing")} disabled={creatingFinalMap}>
+                    {creatingFinalMap ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                    Create map from existing documents
+                  </Button>
+                </div>
+              ) : (
+                <Button className="mt-3 gap-2 h-9" onClick={() => createFinalDocumentsMap(null)} disabled={creatingFinalMap}>
+                  {creatingFinalMap ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                  Create map from approved logic
+                </Button>
+              )}
             </div>
           </div>
         </div>
