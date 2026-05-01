@@ -322,16 +322,21 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" className="gap-2" onClick={briefMe}>
-              <Sparkles className="h-4 w-4" /> Brief me on envelopes
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-9 w-9" onClick={briefMe} aria-label="Brief me on envelopes">
+                  <Sparkles className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Brief me on envelopes</TooltipContent>
+            </Tooltip>
             <Button className="gap-2" onClick={generateAll} disabled={generatingAll}>
               {generatingAll ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <Wand2 className="h-4 w-4" />
               )}
-              Generate all envelopes with AI
+              Draft all envelopes
             </Button>
             <Button
               variant="outline"
