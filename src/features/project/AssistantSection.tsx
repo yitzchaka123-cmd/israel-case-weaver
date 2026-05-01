@@ -916,12 +916,15 @@ export function AssistantSection({
               </Button>
               <Button
                 size="icon"
-                onClick={() => send(input)}
-                disabled={sending || !input.trim()}
+                onClick={() => (sending ? cancelRun() : send(input))}
+                disabled={!sending && !input.trim()}
+                variant={sending ? "destructive" : "default"}
+                title={sending ? "Stop generating" : "Send message"}
+                aria-label={sending ? "Stop generating" : "Send message"}
                 className="absolute bottom-2.5 right-2.5 h-9 w-9 rounded-lg"
               >
                 {sending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Square className="h-4 w-4 fill-current" />
                 ) : (
                   <Send className="h-4 w-4" />
                 )}
