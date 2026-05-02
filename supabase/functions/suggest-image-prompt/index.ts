@@ -194,10 +194,30 @@ Require the brief to place the logo in the top letterhead/header area of the A4 
             `THIS DOCUMENT:`,
             docRow.doc_number !== null && `- Number: ${docRow.doc_number}`,
             docRow.title && `- Title: ${docRow.title}`,
-            docRow.doc_type && `- Type / format hint: ${docRow.doc_type}`,
+            docRow.doc_type && `- Type / format hint (NOT binding — you may invent a better-fitting format): ${docRow.doc_type}`,
             docRow.print_size && `- Print size: ${docRow.print_size}`,
             docRow.envelope_number !== null && `- Belongs to envelope: ${docRow.envelope_number}`,
           ].filter(Boolean).join("\n");
+        }
+
+        // Load sibling documents so the assistant can pick a format that's
+        // distinct from the rest of the case and coherent with the whole story.
+        const { data: siblingDocs } = await supa
+          .from("documents")
+          .select("doc_number, title, doc_type")
+          .eq("project_id", projectId)
+          .neq("id", documentId)
+          .order("doc_number", { ascending: true });
+        if (siblingDocs && siblingDocs.length > 0) {
+          const siblingLines = siblingDocs
+            .map((s) => {
+              const num = s.doc_number !== null && s.doc_number !== undefined ? `#${s.doc_number} ` : "";
+              const title = s.title || "(untitled)";
+              const type = s.doc_type ? ` — ${s.doc_type}` : "";
+              return `- ${num}"${title}"${type}`;
+            })
+            .join("\n");
+          targetBlock += `\n\nSIBLING DOCUMENTS IN THIS CASE (for variety — don't duplicate their format/paper/era unless the story specifically demands it):\n${siblingLines}`;
         }
       } else if (category === STRUCTURED_ENV && envelopeId) {
         const { data: envRow } = await supa
@@ -251,7 +271,7 @@ Require the brief to place the logo in the top letterhead/header area of the A4 
         ``,
         isEnv
           ? `Envelope-slot rules: produce an A4 page insert, not the outside of an envelope. Design it as the full printed briefing/recap/task page that goes inside the physical envelope. Choose a DISTINCT document type for THIS page (e.g. typewritten memo, dispatch telegram, handwritten note, mimeograph bulletin, courier receipt, registrar letter, casebook page, dossier cover sheet, index card, ledger page, etc.) — it must not duplicate the document type or paper of the other envelope pages in this set. Pick realism details that belong specifically to THAT chosen document type and era; do NOT reuse coffee stains, fold lines, binder holes, fax noise, carbon-copy offset, redaction tape, or any other tactile motif that already appears on a sibling envelope page. Never reveal the case solution.`
-          : `Document-specific rules: stay in-world; do not reveal the full solution; honor the document's planned role inside the case. For Doc 0 / contents inventory, the design must be a plain white printer-paper sheet (no realism), and content is a numbered list of every game document.`,
+          : `Document-specific rules: stay in-world; do not reveal the full solution; honor the document's planned role inside the case.\n\nDOCUMENT-TYPE CREATIVITY: You have full creative license to choose the document type / format that BEST serves (a) the overall mystery's tone, era, setting, and stakes, and (b) this specific document's role in the case. The doc_type field above is a hint from earlier planning — feel free to invent a more fitting format if you can justify it from the story (e.g. a coroner's intake card, a backstage call sheet, a hand-drawn map on a napkin scrap, a confessional transcript, a hotel switchboard log, a dictaphone transcription, a redacted internal memo, a child's school exercise book page, a torn diary leaf, a betting-shop slip, a pawnshop ticket — whatever the world of THIS case calls for). Pick paper, ink, typography, and realism details that belong specifically to that chosen format and era.\n\nVARIETY ACROSS THE CASE: Look at the SIBLING DOCUMENTS list above. Don't duplicate a sibling's document type, paper, or era unless the story specifically demands a matched pair (e.g. "two telegrams from the same correspondent"). Each document should feel like a distinct physical artifact a player would pick up and immediately recognize as different from the last one.\n\nDOC 0 EXCEPTION: If this is doc 0 / contents inventory, the design must be a plain white printer-paper sheet (no realism), and content is a numbered list of every game document.`,
         ``,
         `OUTPUT FORMAT: a single strict JSON object with EXACTLY these two string keys: {"design_instructions": "...", "content": "..."}. No prose around it, no markdown fences, no extra keys.`,
         globalAssistantInstructions
