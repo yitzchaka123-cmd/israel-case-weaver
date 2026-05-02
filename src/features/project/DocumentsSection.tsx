@@ -215,13 +215,15 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
     launchingRef.current = true;
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      const effectiveMode = overrides?.mode ?? bulkMode;
+      const effectiveSkipExisting = overrides?.skipExisting ?? bulkSkipExisting;
       const payload = {
         projectId,
         scope: overrides?.scope ?? bulkScope,
-        mode: overrides?.mode ?? bulkMode,
+        mode: effectiveMode,
         documentFormat: overrides?.format ?? bulkFormat,
         concurrency: overrides?.concurrency ?? bulkConcurrency,
-        skipExisting: bulkSkipExisting,
+        skipExisting: effectiveSkipExisting,
       };
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/bulk-generate-documents`, {
         method: "POST",
@@ -233,7 +235,14 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
       });
       const json = await resp.json().catch(() => ({} as { jobId?: string; total?: number; error?: string; message?: string }));
       if (!resp.ok) { toast.error(json.error ?? `Bulk start failed (${resp.status})`); return; }
-      if (!json.jobId) { toast.info(json.message ?? "No matching documents."); return; }
+      if (!json.jobId) {
+        if (effectiveMode === "draft" && effectiveSkipExisting) {
+          toast.info("All documents already have drafts — pick \"Overwrite all\" to redo them.");
+        } else {
+          toast.info(json.message ?? "No matching documents.");
+        }
+        return;
+      }
       setActiveJobId(json.jobId);
       setBulkOpen(false);
       if (overrides?.logChat) {
