@@ -554,6 +554,29 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
         gameLanguage={project?.game_language ?? "Hebrew"}
         onClose={() => { setSelected(null); refetch(); }}
       />
+      <AlertDialog open={draftAllOpen} onOpenChange={setDraftAllOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Draft all documents</AlertDialogTitle>
+            <AlertDialogDescription>
+              Choose how you want to draft text for the documents in this case.
+              <br /><br />
+              <strong>Overwrite all</strong> re-drafts every document — existing drafts will be replaced.
+              <br />
+              <strong>Only missing</strong> drafts only the documents that don&apos;t have any text yet.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:gap-2">
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => runDraftAll(false)}>
+              Only missing
+            </AlertDialogAction>
+            <AlertDialogAction onClick={() => runDraftAll(true)}>
+              Overwrite all
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
