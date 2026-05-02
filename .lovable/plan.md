@@ -1,65 +1,38 @@
-## Goal
+## Why "Draft all" said "no scope"
 
-When the assistant drafts the design + content for a **document** (not an envelope), it should be free to creatively invent the document type/format that best fits (a) the overall story, and (b) this specific document's role — instead of just defaulting to the `doc_type` field or producing generic admin pages. It should also avoid accidentally giving every document in the case the same format.
-
-This applies to the document branch only. Envelopes already got their own creative-variety pass and aren't touched here.
-
-## Scope
-
-Single edit to `supabase/functions/suggest-image-prompt/index.ts` in the structured-document path (`category === STRUCTURED_DOC`).
-
-## Changes
-
-### 1. Load sibling documents for context
-
-Right after we load `docRow` (around line 191), also fetch the other documents in the same project so the assistant can see what types/formats are already in play across the case:
+The Documents tab's **Draft all** button calls the bulk function with the default `skipExisting: true`. The bulk function then filters out every document that already has Hebrew text:
 
 ```ts
-const { data: siblingDocs } = await supa
-  .from("documents")
-  .select("doc_number, title, doc_type")
-  .eq("project_id", projectId)
-  .neq("id", documentId)
-  .order("doc_number", { ascending: true });
+if (mode === "draft") return !(d.hebrew_content && d.hebrew_content.trim().length > 0);
 ```
 
-Append a `SIBLING DOCUMENTS IN THIS CASE` block to `targetBlock` (or pass it through to `structuredUser`) listing each as `#N "title" — doc_type`. This lets the AI pick a format that's *different* from the others and *coherent* with the story.
+Your case already has drafts on every doc (status "review"), so 0 docs matched and you got the "No documents matched the scope." toast. The confirm dialog promised "Existing drafts will be regenerated," but the code did the opposite — that's the bug.
 
-### 2. Treat `doc_type` as a hint, not a mandate
+## Fix
 
-In the `THIS DOCUMENT` block, relabel the existing line:
+Replace the simple `confirm()` in `startDraftAll` with a small choice dialog so each click of **Draft all** lets you pick:
 
-```
-- Type / format hint (NOT binding — you may invent a better-fitting format): {doc_type}
-```
+- **Overwrite all drafts** — re-draft every document in this case (sends `skipExisting: false`).
+- **Only missing drafts** — draft only docs that have no Hebrew content yet (sends `skipExisting: true`, current behavior).
 
-So the AI knows it can override an auto-assigned type.
+Plus a small UX cleanup so empty results aren't confusing.
 
-### 3. Replace the document-specific rules block (line 254)
+### Changes
 
-Swap the current one-liner for an explicit creative-license rule:
+1. **`src/features/project/DocumentsSection.tsx`**
+   - Add a small AlertDialog (or shadcn Dialog) state for "Draft all" with two action buttons: *Overwrite all* and *Only missing*. Cancel closes it.
+   - `startDraftAll` opens the dialog instead of calling `confirm()` directly.
+   - Each action calls `launchBulk({ mode: "draft", scope: "all_remaining", concurrency: 2, skipExisting: <bool>, logChat: ... })` with a `logChat` line that reflects the chosen mode.
+   - In `launchBulk`, when the response is the empty-scope case (`!json.jobId`), upgrade the toast copy depending on mode: for draft + skipExisting it should say "All documents already have drafts — pick 'Overwrite all' to redo them." instead of the generic "No matching documents."
 
-> Document-specific rules: stay in-world; don't reveal the full solution; honor the document's planned role inside the case.
->
-> **Document-type creativity:** You have full creative license to choose the document type / format that BEST serves (a) the overall mystery's tone, era, setting, and stakes, and (b) this specific document's role in the case. The `doc_type` field above is a hint from earlier planning — feel free to invent a more fitting format if you can justify it from the story (e.g. a coroner's intake card, a backstage call sheet, a hand-drawn map on a napkin, a confessional transcript, a hotel switchboard log, a dictaphone transcription, a redacted internal memo, a child's school exercise book page — whatever the world calls for).
->
-> **Variety across the case:** Look at SIBLING DOCUMENTS above. Don't duplicate a sibling's document type, paper, or era unless the story specifically demands a matched pair (e.g. "two telegrams from the same correspondent"). Each document should feel like a distinct artifact a player would physically pick up and recognize.
->
-> **Doc 0 / contents inventory exception:** if this is doc 0 / the contents inventory, the design must be a plain white printer-paper sheet (no realism), and content is a numbered list of every game document.
+2. **`src/features/project/DocumentsSection.tsx` → `launchBulk` signature**
+   - Accept `skipExisting?: boolean` in `overrides` and forward it in the request body to `bulk-generate-documents`.
 
-### 4. Keep envelope branch untouched
+3. **No edge function changes needed.** `bulk-generate-documents` already honors `skipExisting` from the request body (line 269). We just need to send `false` from the client when the user picks "Overwrite all."
 
-The `isEnv` branch already has its own creativity rule from the previous turn and stays as-is.
+### Out of scope
 
-## Out of scope
+- Not changing the bulk function defaults — other callers (image / document modes) still benefit from `skipExisting: true`.
+- Not touching the `Generate all` flow.
 
-- No DB schema changes.
-- No frontend changes — the existing "Generate" / "Revise" buttons in `DocumentsSection.tsx` keep working unchanged.
-- No regeneration of already-approved documents; the user re-runs "Draft design + content" on a doc when they want the new creative behavior.
-- Envelope prompt logic untouched.
-
-## Acceptance check
-
-- Drafting a fresh doc shows the AI proposing a document type that fits the case's tone (Victorian séance pamphlet, 1970s precinct file, etc.) instead of a generic memo.
-- Drafting the 2nd, 3rd, 4th documents in the same case yields visibly different document types/papers from each other.
-- If the user explicitly types "make it a typewritten memo" in user instructions, that still wins (existing user-instruction-overrides-everything rule is preserved).
+After approval I'll implement these edits and you can re-run **Draft all** on this case.

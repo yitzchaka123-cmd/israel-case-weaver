@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AutoSaveInput } from "@/components/AutoSave";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Plus, FileText, Trash2, Upload, Image as ImageIcon, Loader2, FileDown, Copy, RotateCcw, Wand2, X } from "lucide-react";
@@ -184,7 +185,7 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
   }, [projectId, refetchJob, refetch]);
 
   const launchingRef = useRef(false);
-  const launchBulk = async (overrides?: { mode?: typeof bulkMode; scope?: typeof bulkScope; format?: typeof bulkFormat; concurrency?: number; logChat?: string }) => {
+  const launchBulk = async (overrides?: { mode?: typeof bulkMode; scope?: typeof bulkScope; format?: typeof bulkFormat; concurrency?: number; logChat?: string; skipExisting?: boolean }) => {
     // Guard against double-clicks creating multiple parallel jobs that fight
     // over the same docs and burn through provider quota.
     if (launchingRef.current) { toast.info("A bulk run is already starting…"); return; }
@@ -215,13 +216,15 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
     launchingRef.current = true;
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      const effectiveMode = overrides?.mode ?? bulkMode;
+      const effectiveSkipExisting = overrides?.skipExisting ?? bulkSkipExisting;
       const payload = {
         projectId,
         scope: overrides?.scope ?? bulkScope,
-        mode: overrides?.mode ?? bulkMode,
+        mode: effectiveMode,
         documentFormat: overrides?.format ?? bulkFormat,
         concurrency: overrides?.concurrency ?? bulkConcurrency,
-        skipExisting: bulkSkipExisting,
+        skipExisting: effectiveSkipExisting,
       };
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/bulk-generate-documents`, {
         method: "POST",
@@ -233,7 +236,14 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
       });
       const json = await resp.json().catch(() => ({} as { jobId?: string; total?: number; error?: string; message?: string }));
       if (!resp.ok) { toast.error(json.error ?? `Bulk start failed (${resp.status})`); return; }
-      if (!json.jobId) { toast.info(json.message ?? "No matching documents."); return; }
+      if (!json.jobId) {
+        if (effectiveMode === "draft" && effectiveSkipExisting) {
+          toast.info("All documents already have drafts — pick \"Overwrite all\" to redo them.");
+        } else {
+          toast.info(json.message ?? "No matching documents.");
+        }
+        return;
+      }
       setActiveJobId(json.jobId);
       setBulkOpen(false);
       if (overrides?.logChat) {
@@ -253,13 +263,18 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
     }
   };
 
-  const startDraftAll = async () => {
-    if (!confirm("Draft text content for all remaining documents? Existing drafts will be regenerated.")) return;
+  const [draftAllOpen, setDraftAllOpen] = useState(false);
+  const startDraftAll = () => setDraftAllOpen(true);
+  const runDraftAll = async (overwrite: boolean) => {
+    setDraftAllOpen(false);
     await launchBulk({
       mode: "draft",
       scope: "all_remaining",
       concurrency: 2,
-      logChat: "I just hit Draft all on the Documents tab. You'll see per-doc updates in the bell as each draft lands; once it's done, please acknowledge and tell me whether to review or jump to generating images + PDFs for the whole set.",
+      skipExisting: !overwrite,
+      logChat: overwrite
+        ? "I just hit Draft all → Overwrite all on the Documents tab. Every document is being re-drafted from scratch. You'll see per-doc updates in the bell as each draft lands; once it's done, please acknowledge and tell me whether to review or jump to generating images + PDFs for the whole set."
+        : "I just hit Draft all → Only missing on the Documents tab. Only documents without a draft are being filled in. You'll see per-doc updates in the bell as each draft lands; once it's done, please acknowledge and tell me whether to review or jump to generating images + PDFs for the whole set.",
     });
   };
 
@@ -539,6 +554,29 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
         gameLanguage={project?.game_language ?? "Hebrew"}
         onClose={() => { setSelected(null); refetch(); }}
       />
+      <AlertDialog open={draftAllOpen} onOpenChange={setDraftAllOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Draft all documents</AlertDialogTitle>
+            <AlertDialogDescription>
+              Choose how you want to draft text for the documents in this case.
+              <br /><br />
+              <strong>Overwrite all</strong> re-drafts every document — existing drafts will be replaced.
+              <br />
+              <strong>Only missing</strong> drafts only the documents that don&apos;t have any text yet.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2 sm:gap-2">
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => runDraftAll(false)}>
+              Only missing
+            </AlertDialogAction>
+            <AlertDialogAction onClick={() => runDraftAll(true)}>
+              Overwrite all
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
