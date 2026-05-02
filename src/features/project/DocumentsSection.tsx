@@ -262,13 +262,18 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
     }
   };
 
-  const startDraftAll = async () => {
-    if (!confirm("Draft text content for all remaining documents? Existing drafts will be regenerated.")) return;
+  const [draftAllOpen, setDraftAllOpen] = useState(false);
+  const startDraftAll = () => setDraftAllOpen(true);
+  const runDraftAll = async (overwrite: boolean) => {
+    setDraftAllOpen(false);
     await launchBulk({
       mode: "draft",
       scope: "all_remaining",
       concurrency: 2,
-      logChat: "I just hit Draft all on the Documents tab. You'll see per-doc updates in the bell as each draft lands; once it's done, please acknowledge and tell me whether to review or jump to generating images + PDFs for the whole set.",
+      skipExisting: !overwrite,
+      logChat: overwrite
+        ? "I just hit Draft all → Overwrite all on the Documents tab. Every document is being re-drafted from scratch. You'll see per-doc updates in the bell as each draft lands; once it's done, please acknowledge and tell me whether to review or jump to generating images + PDFs for the whole set."
+        : "I just hit Draft all → Only missing on the Documents tab. Only documents without a draft are being filled in. You'll see per-doc updates in the bell as each draft lands; once it's done, please acknowledge and tell me whether to review or jump to generating images + PDFs for the whole set.",
     });
   };
 
