@@ -194,10 +194,30 @@ Require the brief to place the logo in the top letterhead/header area of the A4 
             `THIS DOCUMENT:`,
             docRow.doc_number !== null && `- Number: ${docRow.doc_number}`,
             docRow.title && `- Title: ${docRow.title}`,
-            docRow.doc_type && `- Type / format hint: ${docRow.doc_type}`,
+            docRow.doc_type && `- Type / format hint (NOT binding — you may invent a better-fitting format): ${docRow.doc_type}`,
             docRow.print_size && `- Print size: ${docRow.print_size}`,
             docRow.envelope_number !== null && `- Belongs to envelope: ${docRow.envelope_number}`,
           ].filter(Boolean).join("\n");
+        }
+
+        // Load sibling documents so the assistant can pick a format that's
+        // distinct from the rest of the case and coherent with the whole story.
+        const { data: siblingDocs } = await supa
+          .from("documents")
+          .select("doc_number, title, doc_type")
+          .eq("project_id", projectId)
+          .neq("id", documentId)
+          .order("doc_number", { ascending: true });
+        if (siblingDocs && siblingDocs.length > 0) {
+          const siblingLines = siblingDocs
+            .map((s) => {
+              const num = s.doc_number !== null && s.doc_number !== undefined ? `#${s.doc_number} ` : "";
+              const title = s.title || "(untitled)";
+              const type = s.doc_type ? ` — ${s.doc_type}` : "";
+              return `- ${num}"${title}"${type}`;
+            })
+            .join("\n");
+          targetBlock += `\n\nSIBLING DOCUMENTS IN THIS CASE (for variety — don't duplicate their format/paper/era unless the story specifically demands it):\n${siblingLines}`;
         }
       } else if (category === STRUCTURED_ENV && envelopeId) {
         const { data: envRow } = await supa
