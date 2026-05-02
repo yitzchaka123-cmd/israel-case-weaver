@@ -1,58 +1,65 @@
 ## Goal
 
-Generate envelope page mock-ups with **ChatGPT Image 2** (`gpt-image-2`) instead of Nano Banana 2, and confirm we're calling OpenAI's image API the right way per the latest docs.
+When the assistant drafts the design + content for a **document** (not an envelope), it should be free to creatively invent the document type/format that best fits (a) the overall story, and (b) this specific document's role — instead of just defaulting to the `doc_type` field or producing generic admin pages. It should also avoid accidentally giving every document in the case the same format.
 
-## On gpt-image-2 (per OpenAI docs)
+This applies to the document branch only. Envelopes already got their own creative-variety pass and aren't touched here.
 
-- Endpoint: `POST https://api.openai.com/v1/images/generations` ✅ (we already use this)
-- Model id: `gpt-image-2` ✅ (already mapped in `IMAGE_MODEL`)
-- Sizes: `1024x1024`, `1024x1536` (portrait), `1536x1024` (landscape) ✅
-- Quality: `low` | `medium` | `high` ✅
-- `n`: supported (per-call multi-image), `output_format`: `png` | `jpeg` | `webp`, `output_compression`, `moderation: "auto"` ✅
-- **Streaming**: not supported. **Function calling**: not supported.
-- **Batch API** (`v1/batch`): supported, but it's an **asynchronous 24-hour-turnaround** job queue meant for offline workloads — not for an interactive "Generate all" button. So we **won't** wire it up for envelope mock-ups; instead we already fan out parallel `n=1` requests with `runWithConcurrency`, which is the correct pattern for synchronous UI.
-- Rate limits on Tier 1 are very tight (5 IPM). If the user hits 429 during "Generate all page mock-ups", we should surface the existing 429 message clearly. No code change needed beyond what we already do.
+## Scope
 
-Conclusion: our existing OpenAI call shape is already correct and on-spec. The only thing wrong is that we force-route envelopes off OpenAI.
+Single edit to `supabase/functions/suggest-image-prompt/index.ts` in the structured-document path (`category === STRUCTURED_DOC`).
 
 ## Changes
 
-### 1. `supabase/functions/generate-image/index.ts`
+### 1. Load sibling documents for context
 
-Remove the auto-reroute that downgrades envelopes to Nano Banana 2.
+Right after we load `docRow` (around line 191), also fetch the other documents in the same project so the assistant can see what types/formats are already in play across the case:
 
-- Delete the line that flips `pref` to `"nano-banana-2"` when `target === "envelope"` and the requested model is OpenAI (around line 276). Envelopes should honor whatever model the caller picked, just like every other surface.
-- Keep the existing 145s `AbortController` timeout and the friendly 504 error message — that's the right safety net if `gpt-image-2` at high quality runs long.
-- No other changes to the OpenAI request body — `model`, `prompt`, `size`, `quality`, `n: 1`, `moderation: "auto"`, `output_format: "jpeg"`, `output_compression: 90` are all valid for `gpt-image-2`.
+```ts
+const { data: siblingDocs } = await supa
+  .from("documents")
+  .select("doc_number, title, doc_type")
+  .eq("project_id", projectId)
+  .neq("id", documentId)
+  .order("doc_number", { ascending: true });
+```
 
-### 2. `src/components/ImageModelPicker.tsx`
+Append a `SIBLING DOCUMENTS IN THIS CASE` block to `targetBlock` (or pass it through to `structuredUser`) listing each as `#N "title" — doc_type`. This lets the AI pick a format that's *different* from the others and *coherent* with the story.
 
-Stop hiding ChatGPT Image options for the envelope surface.
+### 2. Treat `doc_type` as a hint, not a mandate
 
-- In `getStoredImageModel`, remove the special-case `if (surface === "envelope" && (v === "chatgpt-image" || v === "chatgpt-image-2")) return fallback;` so a stored ChatGPT preference for envelopes is respected.
-- In the picker render, remove the `surface === "envelope" ? IMAGE_MODELS.filter(...) : IMAGE_MODELS` filter so all models (including both `chatgpt-image-2` and `chatgpt-image-1`) appear in the envelope dropdown.
+In the `THIS DOCUMENT` block, relabel the existing line:
 
-### 3. `src/features/project/EnvelopesSection.tsx`
+```
+- Type / format hint (NOT binding — you may invent a better-fitting format): {doc_type}
+```
 
-Make ChatGPT Image 2 the default for envelopes and stop forcing medium quality on OpenAI.
+So the AI knows it can override an auto-assigned type.
 
-- Change `getStoredImageModel("envelope", "nano-banana-2")` → `getStoredImageModel("envelope", "chatgpt-image-2")` so new users default to ChatGPT Image 2 and existing nano-banana selections persist.
-- Remove the `envelopeImageQuality` downgrade (`model.startsWith("chatgpt-image") && quality === "high" ? "medium" : quality`). gpt-image-2 supports `high`; let the user choose. We keep the 145s timeout in the edge function as the safety net, and the picker already shows the "High can take up to 2 min" warning.
-- The `pageInsertPrompt` wrapper stays as-is (it instructs the model that this is an A4 page insert, not an envelope cover, with varied tactile realism — that's exactly what we want for gpt-image-2 too).
+### 3. Replace the document-specific rules block (line 254)
 
-### 4. (No change) Generation flow
+Swap the current one-liner for an explicit creative-license rule:
 
-- "Generate all page mock-ups" already fans out per-envelope with `runWithConcurrency` and `mode: "background"`, so each call is its own job and a single slow envelope can't block the others. That's the correct pattern for `gpt-image-2` since OpenAI's Batch API is asynchronous (24h SLA) and unsuitable for interactive use.
+> Document-specific rules: stay in-world; don't reveal the full solution; honor the document's planned role inside the case.
+>
+> **Document-type creativity:** You have full creative license to choose the document type / format that BEST serves (a) the overall mystery's tone, era, setting, and stakes, and (b) this specific document's role in the case. The `doc_type` field above is a hint from earlier planning — feel free to invent a more fitting format if you can justify it from the story (e.g. a coroner's intake card, a backstage call sheet, a hand-drawn map on a napkin, a confessional transcript, a hotel switchboard log, a dictaphone transcription, a redacted internal memo, a child's school exercise book page — whatever the world calls for).
+>
+> **Variety across the case:** Look at SIBLING DOCUMENTS above. Don't duplicate a sibling's document type, paper, or era unless the story specifically demands a matched pair (e.g. "two telegrams from the same correspondent"). Each document should feel like a distinct artifact a player would physically pick up and recognize.
+>
+> **Doc 0 / contents inventory exception:** if this is doc 0 / the contents inventory, the design must be a plain white printer-paper sheet (no realism), and content is a numbered list of every game document.
 
-## Acceptance check
+### 4. Keep envelope branch untouched
 
-- Open an envelope card → model picker shows **ChatGPT Image 2** as the default and Nano Banana options are still selectable.
-- Click "Generate all page mock-ups" → requests go to `gpt-image-2` via `api.openai.com/v1/images/generations`, return JPEGs, and land on each envelope card.
-- AI Run Log shows `requestedModel: gpt-image-2`, `provider: openai-direct` (or `openai-image2` if `OPENAI_IMAGE2_API_KEY` is set), no automatic Gemini fallback.
-- If a single call exceeds 145s, the user gets the existing "OpenAI took too long" message on that one envelope only; the rest still complete.
+The `isEnv` branch already has its own creativity rule from the previous turn and stays as-is.
 
 ## Out of scope
 
-- Wiring up OpenAI's `v1/batch` Files API for envelopes — async 24h turnaround makes it the wrong fit for a "click to generate" flow. Happy to add it later as an opt-in "Queue overnight render" if you want.
-- Changing any other surface's default model.
-- Text-drafting flow for envelopes (unchanged).
+- No DB schema changes.
+- No frontend changes — the existing "Generate" / "Revise" buttons in `DocumentsSection.tsx` keep working unchanged.
+- No regeneration of already-approved documents; the user re-runs "Draft design + content" on a doc when they want the new creative behavior.
+- Envelope prompt logic untouched.
+
+## Acceptance check
+
+- Drafting a fresh doc shows the AI proposing a document type that fits the case's tone (Victorian séance pamphlet, 1970s precinct file, etc.) instead of a generic memo.
+- Drafting the 2nd, 3rd, 4th documents in the same case yields visibly different document types/papers from each other.
+- If the user explicitly types "make it a typewritten memo" in user instructions, that still wins (existing user-instruction-overrides-everything rule is preserved).
