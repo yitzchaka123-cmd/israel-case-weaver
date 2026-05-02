@@ -184,7 +184,7 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
   }, [projectId, refetchJob, refetch]);
 
   const launchingRef = useRef(false);
-  const launchBulk = async (overrides?: { mode?: typeof bulkMode; scope?: typeof bulkScope; format?: typeof bulkFormat; concurrency?: number; logChat?: string }) => {
+  const launchBulk = async (overrides?: { mode?: typeof bulkMode; scope?: typeof bulkScope; format?: typeof bulkFormat; concurrency?: number; logChat?: string; skipExisting?: boolean }) => {
     // Guard against double-clicks creating multiple parallel jobs that fight
     // over the same docs and burn through provider quota.
     if (launchingRef.current) { toast.info("A bulk run is already starting…"); return; }
