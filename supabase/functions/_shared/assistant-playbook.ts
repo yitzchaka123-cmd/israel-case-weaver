@@ -1052,9 +1052,22 @@ If you can't map a user's free-text answer to one of the canonical values with c
 }
 
 export function renderRealismParagraphs(p: Playbook): string {
-  return `Realism floor — MANDATORY MINIMUM ${p.realism.realworld_min_details} concrete realism details under "ADDITIONAL REALISM DETAILS" for any document type that exists in the real world (memos, letters, reports, transcripts, newspapers, photos, ID cards, receipts, telegrams, police forms, bank statements, medical records, ticket stubs, business cards, etc.). Examples of valid realism details: paper aging tone, fold lines, punch holes, staples/paperclips, coffee/water stains, smudged ink, typewriter offset, photocopy shadowing, intake/filing stamps with date format of the era, handwritten marginalia, signature scribbles, classification banners, reference codes, distribution lists, period-correct phone/address formats, ribbon impressions, carbon-copy bleed-through, edge wear, dog-eared corners, perforation marks, redaction bars, tape residue, fingerprint smudges, etc. Each item must be concrete (not "looks aged").
+  return `Realism floor — MANDATORY MINIMUM ${p.realism.realworld_min_details} concrete realism details under "ADDITIONAL REALISM DETAILS" for any real-world document type. CRITICAL: realism details must be REASONED FROM THIS SPECIFIC DOCUMENT TYPE + THE GAME'S ERA AND SETTING. Do NOT pick from a generic prop list. Ask yourself "what would a real example of THIS exact document, in THIS year, in THIS setting, actually have on it?" and write THOSE details.
 
-Creative / unusual props (maps, hand-drawn diagrams, ciphers, blueprints, matchbook covers, napkin sketches, ransom notes, tarot/playing cards, photo collages, surveillance polaroids, evidence bag tags, ship/building maps, treasure-style charts, anything non-standard): the realism floor does NOT apply. Instead, add ${p.realism.creative_min_details}–${p.realism.creative_max_details} CREATIVE / UNUSUAL DETAILS that make the prop feel hand-made, in-world, and surprising — e.g. a smudged compass rose with a personal initial, a coded margin doodle, a torn corner taped back on, a coffee-ring obscuring one room on the map, a crayon arrow added by a child, a misspelling crossed out by hand, a hidden symbol only visible at an angle, a fictitious printer mark, an unusual aspect ratio, an inserted Polaroid, etc. State clearly that this prop trades photorealistic bureaucracy for tactile, creative, prop-style authenticity.`;
+Worked examples of type-driven realism (do NOT copy these — derive your own per document):
+  • Police booking sheet (1970s precinct) → mugshot photo strip clipped to top-right, ten-print fingerprint card, booking number stamped in red, arresting officer signature, intake date stamp, height chart background visible behind mugshot.
+  • Autopsy report (1950s county morgue) → medical examiner letterhead, toe-tag reference number, anatomical front/back diagram with marks, chain-of-custody seal, pathologist initials in margin.
+  • School detention slip (1990s middle school) → student name field, period number circled, teacher initials, three-hole punch, hallway crease from being folded into a pocket, principal's stamp.
+  • Telegram (1920s) → Western Union–style header lines (or in-world equivalent), block-cap typed text, time/origin code in top corner, paste-strip seam between header and body.
+  • Hotel receipt (1980s motel) → carbon-copy pink underlay bleed, room number scrawled in pen, NCR perforation, manager signature.
+
+HARD RULES:
+- Coffee stains and water rings are massively overused. DEFAULT = NONE. The entire game should ship with at most ONE coffee/water stain across the whole document set, and only when it serves the story (e.g. a doc found at a café). Never add one to a clean admin doc, a printed form, an ID card, a receipt, a transcript, a school page, etc.
+- Two documents in the same case must NOT share the same realism details. Each doc gets its own type-specific list.
+- Generic fallback motifs to avoid as defaults: coffee stains, water rings, fold lines, "smudged ink", staples, "paper aging" without a reason. Use them only when the SPECIFIC document type genuinely calls for them.
+- Each item must be concrete (not "looks aged").
+
+Creative / unusual props (maps, hand-drawn diagrams, ciphers, blueprints, matchbook covers, napkin sketches, ransom notes, tarot/playing cards, photo collages, surveillance polaroids, evidence bag tags, ship/building maps, treasure-style charts, anything non-standard): the realism floor does NOT apply. Instead, add ${p.realism.creative_min_details}–${p.realism.creative_max_details} CREATIVE / UNUSUAL DETAILS reasoned from what THIS prop physically is and where it came from in the case. State clearly that this prop trades photorealistic bureaucracy for tactile, creative, prop-style authenticity.`;
 }
 
 export function renderExplanationLengthLine(p: Playbook): string {
@@ -1099,8 +1112,19 @@ export function renderCatalogsBlock(p: Playbook): string {
     .join("\n");
   const rules = div.rules.map((r) => `  - ${r}`).join("\n");
   return `Available print sizes (pick from this list when proposing print_size): ${p.catalogs.print_sizes.join(", ")}.
-Common document types (pick from this list when proposing doc_type, but invent variants when needed): ${p.catalogs.document_types.join(", ")}.
-Unusual / creative-prop document types (use these when the case calls for tactile, surprising, hand-made props instead of bureaucratic paperwork — they trigger the creative-realism floor, not the photo-realism one): ${p.catalogs.unusual_document_types.join(", ")}.
+
+PER-GAME DOCUMENT TYPE BRAINSTORM (do this BEFORE calling propose_document_set):
+The list below is REFERENCE EXAMPLES ONLY — it is NOT a menu to pick from. The actual doc_type values for THIS proposal must be invented from THIS game's setting, era, and characters. Spend a moment brainstorming 8–15 document types that NATURALLY EXIST in this world, then use those.
+  • School setting → homework page, hall pass, yearbook page, detention slip, cafeteria menu, report card, locker combination card, science-fair ribbon.
+  • Corporate HQ → expense report, business card, lanyard ID badge, internal memo, performance review, conference-room booking slip, severance letter.
+  • 1920s séance / occult → calling card, telegram, séance log, newspaper clipping, palmistry diagram, theatre playbill, train ticket stub.
+  • 1970s precinct → booking sheet, evidence inventory tag, beat-cop notebook page, polaroid, dispatch radio log, parking citation.
+  • Cruise ship / hotel → folio receipt, room-service docket, deck plan, key-card sleeve, cocktail-menu insert, life-raft drill checklist.
+  • Hospital → admission form, prescription pad slip, x-ray envelope, nurse's chart, visitor badge, lab requisition.
+Do NOT default to police-procedural types unless the case actually involves law enforcement. Do NOT pad with generic "reports". Each doc_type should make a player think "of course this exists in this world".
+
+Reference examples of common types you MAY draw inspiration from (still — invent the actual doc_type strings to fit THIS game): ${p.catalogs.document_types.join(", ")}.
+Reference examples of unusual / creative-prop types (these trigger the creative-realism floor, not photo-realism): ${p.catalogs.unusual_document_types.join(", ")}.
 
 DOCUMENT-SET DIVERSITY (HARD RULES — apply to propose_document_set BEFORE you call the tool):
   - No single doc_type family may exceed ${div.max_share_per_family_pct}% of the proposal. Specifically: the player must NOT receive a box where most documents are "reports" — that is the #1 failure mode and is forbidden.
