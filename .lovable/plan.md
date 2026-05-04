@@ -1,62 +1,51 @@
 ## Goal
 
-Make documents and envelope inserts feel real by reasoning about realism *per document type*, and let the AI invent the document-type catalog *per game* — instead of leaning on a generic example list that defaults every page to "coffee stain + fold lines + stamps".
-
-## Problems today
-
-1. The realism floor (`assistant-playbook.ts` ~line 1055) gives the model a fixed example list — "paper aging tone, fold lines, punch holes, staples, **coffee/water stains**, smudged ink, typewriter offset, …". The model treats it as a checklist and reuses the same 4–6 items on every doc.
-2. The "do not default to coffee stains" guardrail only exists for **envelope inserts** (`generate-envelopes`, `suggest-image-prompt`), not for regular documents (`generate-document`).
-3. Realism isn't reasoned per doc-type. There's nothing telling the model "police report → mugshot photo + fingerprint card + booking number"; "school setting → homework page + report card + hall pass".
-4. The doc-type catalog is a hardcoded list (`p.catalogs.document_types`) the model picks from. It doesn't think about which types belong to *this game's world* (school → homework / detention slips; corporate → expense reports / business cards; 1940s noir → telegrams / matchbook covers).
+Stop "Draft all" from appearing stuck forever when the bulk worker dies mid-run. Today, if the worker crashes, the `bulk_generation_jobs` row stays in `running` and the UI keeps acting as if work is happening — for hours.
 
 ## Plan
 
-### 1. Rewrite the realism floor (shared playbook)
+### 1. Auto-sweep on read (frontend)
 
-Files: `src/lib/assistant-playbook.ts` and `supabase/functions/_shared/assistant-playbook.ts` (mirror).
+`src/features/project/useActiveBulkJob.ts` already treats heartbeats older than 4 minutes as "not active" for the dot, but the DB row stays `running`. Update the hook so when it detects a stale row it also calls the `sweep_stale_bulk_jobs(p_project_id, 4)` RPC. This closes the row the moment any user opens the project.
 
-Replace the fixed example list at `renderRealismParagraphs` with type-driven reasoning:
+### 2. Auto-sweep on write (backend)
 
-- Remove "coffee/water stains" from the inline examples; it's overused.
-- Reframe the rule as: "Pick 3–6 realism details that a real example of THIS specific document type would have. A police booking sheet → mugshot photo strip, ten-print fingerprint card, booking number, arresting officer signature, intake stamp. An autopsy report → toe-tag reference, medical examiner letterhead, anatomical diagram, chain-of-custody seal. A school detention slip → student name field, period number, teacher initials, three-hole punch, hallway crease."
-- Hard cap: at most ONE coffee/water stain across the entire game's document set. Default = none.
-- Forbid copy-pasting the same realism details across two documents in the same case.
+`supabase/functions/bulk-generate-documents/index.ts` already pre-flights for an active job before starting a new one. Add the same sweep call at the top of that pre-flight so a user clicking "Draft all" again can't be blocked by a ghost row.
 
-### 2. Apply the same anti-default rule to regular documents
+### 3. Scheduled maintenance (pg_cron)
 
-File: `supabase/functions/generate-document/index.ts`.
+Add a migration that:
+- Enables `pg_cron` if not already enabled.
+- Schedules `sweep_stale_bulk_jobs(NULL, 4)` to run every minute across all projects.
 
-Add a "no generic realism defaults" line to the realism block injected into the document-body prompt (mirroring what `generate-envelopes` and `suggest-image-prompt` already do for inserts). Tell the model: realism details must be reasoned from the doc_type + game era + setting, not from a generic prop list.
+This guarantees ghost rows die within ~1 minute even if no one opens the project.
 
-### 3. Per-game document type catalog
+### 4. Surface failures as notifications
 
-Files: `src/lib/assistant-playbook.ts` + `_shared/assistant-playbook.ts` (`renderDocumentSetDiversityBlock` / catalog area), and the `propose_document_set` tool guidance.
+When the sweep closes a row (frontend path in step 1), insert a `project_notifications` row:
+- kind: `bulk_job_stalled`
+- title: `Drafting stopped at {completed}/{total}`
+- body: `The worker stopped responding. {failed} failed, {completed} completed. You can resume drafting the remaining documents.`
+- starter_prompt: `Resume drafting the remaining documents in this project.`
 
-- Stop treating `p.catalogs.document_types` as the menu the model picks from. Reframe as "*reference examples only — invent the actual doc_type values for THIS game from its setting, era and characters*".
-- Add an explicit step before `propose_document_set`: "First brainstorm 8–15 candidate document types that naturally exist in THIS game's world (school → homework, hall pass, yearbook page, detention slip, cafeteria menu; corporate HQ → expense report, business card, badge, memo, performance review; 1920s seance → calling card, telegram, séance log, newspaper clipping). Use those as the doc_type values. Do not default to police-procedural types unless the case actually involves law enforcement."
-- Keep the diversity floor (≥12 distinct types, ≥6 families, family-share cap) — but families should now be derived from the *game's* invented types, not the hardcoded family map.
+So the user sees in the bell that the job died, instead of silent.
 
-### 4. Envelope insert guidance softened
+### 5. One-time cleanup
 
-File: `supabase/functions/generate-envelopes/index.ts` and `suggest-image-prompt/index.ts`.
-
-User said envelope inserts should just be "regular era-appropriate briefings" — strip the heavy "pick a DISTINCT document type per insert (telegram / mimeograph / dispatch / casebook page / index card / ledger…)" pressure. Replace with: "A simple in-world briefing page from the game's era and setting. Use a normal sheet that fits the case (e.g. a typed memo on letterhead). Don't pile on tactile gimmicks; subtle aging is enough." Coffee-stain ban stays.
-
-### 5. Game-wide realism budget
-
-In `generate-document`, when building the prompt, fetch the count of already-generated documents in the project that mention "coffee" / "water stain" in their `design_instructions` or `hebrew_content`. Pass a single line: "This game already has N documents with a coffee/water stain — do NOT add another." Threshold 1.
-
-(Lightweight; doesn't require a new column. If too noisy we can just rely on the playbook rule.)
+Run the sweep once for the stuck 41-doc project (and any other current ghosts) so the user's other project unblocks immediately.
 
 ## Technical notes
 
-- `renderRealismParagraphs(p)` is the single chokepoint — both files (`src/lib/...` and `supabase/functions/_shared/...`) must be updated identically; they're mirrored copies.
-- No DB migration needed. No new edge functions.
-- Edge functions touched (must redeploy): `generate-document`, `generate-envelopes`, `suggest-image-prompt`.
-- Risk: loosening the hardcoded catalog could hurt diversity audits. Keep the numeric thresholds (≥12 distinct types, ≤25% per family) but compute families from the proposed list rather than the static `family_groups` map — add a fallback so existing audits still pass.
+- `sweep_stale_bulk_jobs` already exists (SECURITY DEFINER, sets `status='failed'`, appends "auto-closed: stale" to `error`, sets `finished_at = now()`). No DB function changes needed.
+- The frontend RPC call from step 1: `supabase.rpc('sweep_stale_bulk_jobs', { p_project_id: projectId, p_stale_minutes: 4 })`. After it returns >0, fetch the just-failed row to read `completed/total/failed` for the notification body, then insert into `project_notifications`.
+- Step 3 cron uses pg_cron directly (SQL-only, no edge function needed):
+  ```sql
+  select cron.schedule('sweep-stale-bulk-jobs', '* * * * *', $$select public.sweep_stale_bulk_jobs(null, 4);$$);
+  ```
+- Edge function to redeploy: `bulk-generate-documents`.
+- No schema changes. No new tables.
 
 ## Out of scope
 
-- No UI changes.
-- No changes to image generation models or per-slot inline image logic.
-- Not removing the envelope-insert image-generation pipeline; only relaxing the prompt copy.
+- Reworking the bulk worker to checkpoint/resume mid-document. (Separate task — for now "resume" just means re-clicking Draft all on remaining drafts.)
+- Changing the 4-minute staleness threshold per project.
