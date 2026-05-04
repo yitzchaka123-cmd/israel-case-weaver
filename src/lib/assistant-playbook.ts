@@ -1112,8 +1112,19 @@ export function renderCatalogsBlock(p: Playbook): string {
     .join("\n");
   const rules = div.rules.map((r) => `  - ${r}`).join("\n");
   return `Available print sizes (pick from this list when proposing print_size): ${p.catalogs.print_sizes.join(", ")}.
-Common document types (pick from this list when proposing doc_type, but invent variants when needed): ${p.catalogs.document_types.join(", ")}.
-Unusual / creative-prop document types (use these when the case calls for tactile, surprising, hand-made props instead of bureaucratic paperwork — they trigger the creative-realism floor, not the photo-realism one): ${p.catalogs.unusual_document_types.join(", ")}.
+
+PER-GAME DOCUMENT TYPE BRAINSTORM (do this BEFORE calling propose_document_set):
+The list below is REFERENCE EXAMPLES ONLY — it is NOT a menu to pick from. The actual doc_type values for THIS proposal must be invented from THIS game's setting, era, and characters. Spend a moment brainstorming 8–15 document types that NATURALLY EXIST in this world, then use those.
+  • School setting → homework page, hall pass, yearbook page, detention slip, cafeteria menu, report card, locker combination card, science-fair ribbon.
+  • Corporate HQ → expense report, business card, lanyard ID badge, internal memo, performance review, conference-room booking slip, severance letter.
+  • 1920s séance / occult → calling card, telegram, séance log, newspaper clipping, palmistry diagram, theatre playbill, train ticket stub.
+  • 1970s precinct → booking sheet, evidence inventory tag, beat-cop notebook page, polaroid, dispatch radio log, parking citation.
+  • Cruise ship / hotel → folio receipt, room-service docket, deck plan, key-card sleeve, cocktail-menu insert, life-raft drill checklist.
+  • Hospital → admission form, prescription pad slip, x-ray envelope, nurse's chart, visitor badge, lab requisition.
+Do NOT default to police-procedural types unless the case actually involves law enforcement. Do NOT pad with generic "reports". Each doc_type should make a player think "of course this exists in this world".
+
+Reference examples of common types you MAY draw inspiration from (still — invent the actual doc_type strings to fit THIS game): ${p.catalogs.document_types.join(", ")}.
+Reference examples of unusual / creative-prop types (these trigger the creative-realism floor, not photo-realism): ${p.catalogs.unusual_document_types.join(", ")}.
 
 DOCUMENT-SET DIVERSITY (HARD RULES — apply to propose_document_set BEFORE you call the tool):
   - No single doc_type family may exceed ${div.max_share_per_family_pct}% of the proposal. Specifically: the player must NOT receive a box where most documents are "reports" — that is the #1 failure mode and is forbidden.
