@@ -812,16 +812,34 @@ export function AssistantSection({
                   const last = messages[messages.length - 1];
                   const inFlight =
                     last && last.role === "assistant" && last.metadata?.in_progress ? last : null;
-                  if (!inFlight) return null;
                   const lastUser = [...messages].reverse().find((m) => m.role === "user");
-                  if (
+                  const placeholderStale =
+                    inFlight &&
                     lastUser &&
                     inFlight.created_at &&
                     lastUser.created_at &&
                     new Date(inFlight.created_at).getTime() <
-                      new Date(lastUser.created_at).getTime()
-                  ) {
-                    return null;
+                      new Date(lastUser.created_at).getTime();
+
+                  // Fallback minimal "Starting…" bubble while we wait for the
+                  // server to insert the in-progress assistant placeholder.
+                  // Without this, there's a 1-3s window after sending where
+                  // the UI shows nothing at all.
+                  if (!inFlight || placeholderStale) {
+                    return (
+                      <div className="flex gap-3 items-start">
+                        <Avatar role="assistant" />
+                        <div className="flex-1 pt-1.5">
+                          <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="inline-block h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
+                              Starting…
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
                   }
 
                   const stage = inFlight?.metadata?.stage ?? null;
