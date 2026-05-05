@@ -1,46 +1,42 @@
-## What I tested
+## Plan: Multi-doc batch image generation for perfect consistency
 
-I read the chat history, `assistant_runs`, and the live-bubble code path for the project you're on (`8267a98f…`). There are two distinct bugs causing what you're seeing:
+Keep the current per-doc image system exactly as-is. Add a new opt-in path on top of it: a "Generate as a consistent set" action that sends **one** ChatGPT Image 2 call containing all sibling docs + all referenced suspect portraits, and asks the model to return N images that share an identical layout/style.
 
-### Bug 1 — "Starting to think" appears even though the previous turn already finished
+### How it works
 
-- Run `40135f45` (the one that posted "Drafts mode locked…") has `status='running'` and `finished_at=NULL` in `assistant_runs` — it never closed. The next two runs ran fine, but that row is still "running".
-- The assistant message it wrote (`5d64cbdb`) was saved with `metadata.in_progress = true` and never flipped back to `false`, even though it has full content and two later assistant messages exist after it.
-- The live "Starting…" bubble in `AssistantSection.tsx` (line 806) finds *any* assistant message with `in_progress: true`. Our recent guard only suppresses it when the *latest* assistant message is settled — but here the latest IS settled, so the guard should fire. Re‑reading: the guard checks `lastAssistant.metadata?.in_progress`. That's `false` on `c502b021`, so the bubble *should* be hidden… unless `sending` flips on before the new user message has rendered, in which case `lastAssistant` is still that older zombie. So the bubble shows the OLD turn's stage/reasoning while a new turn is starting. That's the "still showing starting and everything" you saw.
+1. **User selects a sibling group** (e.g. all 5 "Interrogation Transcript" docs, or all 5 "Police Briefing" docs). Trigger points:
+   - New button on `DocumentsSection`: "Generate as consistent set" (visible when ≥2 docs share the same `doc_type`).
+   - Assistant tool: `generate_consistent_document_set({ docIds: [...] })` so it can do this on its own.
 
-### Bug 2 — Clicked the button, got the same response back
+2. **New edge function: `generate-consistent-document-images`**
+   - Loads all selected docs + their `linked_suspect_ids` + each suspect's `thumbnail_url`.
+   - Builds **one** ChatGPT Image 2 prompt that contains:
+     - A "set brief": "Generate N images. They MUST share the same layout, paper, header bar, fonts, stamps, hole-punch positions, color grade, and form-field design. The ONLY differences between them are the per-doc content listed below."
+     - Per-doc block: title, doc_type, key text excerpts, which suspect portrait to use (referenced by index #1..#N).
+     - All suspect portrait URLs attached as input reference images.
+   - Calls `gpt-image-2` with `n: docCount` (or sequential calls within the same request context if `n>1` not supported — falls back to a loop that passes the **first generated image as a reference** into each subsequent call, exactly like our existing anchor flow but with the whole-document image as the anchor instead of just the inline slot).
+   - Saves each returned image as the doc's `generated_asset_url` and writes a `media_assets` history row tagged `generation_mode: "consistent_set"` with the set id so the UI can show them as a group.
 
-- Looking at the last 3 assistant turns, the model asked the cast-size question **three times in a row** ("Keep 4 / Expand to 6 / Expand to 7"). Each time you answered "Keep 4 suspects" it acknowledged and then re‑asked the same gate, sometimes paired with a new gate ("draft everything vs draft 5–8"). That's why clicking a button produced "the same thing".
-- Also — the message at 15:14 still says "draft Docs **0–40**" (mentions Doc 0 in the user-visible plan), which you told me earlier must never happen.
+3. **Anchor lock for the set**
+   - Store a `consistent_set_id` (uuid) on each participating doc. The first generated image becomes the locked reference for the whole set; regenerating any single doc later passes that anchor back in (same trick we already use for suspect portraits and inline image groups).
+   - Future "add a 6th interrogation" automatically inherits the set anchor.
 
-## Plan
+4. **No template tables, no schema for "templates."** The consistency lives entirely in the batched prompt + the set anchor URL — the existing per-doc system is untouched.
 
-### A. Kill the stale "thinking" bubble for good
-1. In `AssistantSection.tsx`, change the live-bubble selection so it only renders when *the very last assistant row* is `in_progress` AND that row was created after the most recent user message. If the last assistant message is settled (or older than the latest user message), render nothing — even while `sending` is true. This eliminates the "shows the previous turn's reasoning" flash.
-2. Also clear `inFlight.metadata.reasoning / stage_history` from the live bubble when the bubble is suppressed, so we never reuse stale stages for a new turn.
+### Technical changes
 
-### B. Self-heal zombie `in_progress` rows
-3. In `assistant-chat/index.ts`, when a new run starts for a project, mark any prior `chat_messages` row in that project with `metadata.in_progress = true` as `false` and set `metadata.error = 'auto_closed_zombie'`. Pair this with closing any `assistant_runs` row left in `running` for that project (status='error', error='auto_closed_zombie'). This is what the existing client-side 8‑minute watchdog tries to do, but it's leaving the `chat_messages` row dirty.
-4. One-time fix for the current project: close run `40135f45` and clear `in_progress` on message `5d64cbdb` so the UI stops surfacing it as "live".
+- **New edge function** `supabase/functions/generate-consistent-document-images/index.ts` — does the batched call (OpenAI `gpt-image-2` with multi-image reference input + `n` outputs; loop-with-anchor fallback if needed).
+- **Migration** — add `consistent_set_id uuid` and `consistent_set_anchor_url text` columns to `documents`. No new tables.
+- **Client**
+  - `src/features/project/DocumentsSection.tsx` — multi-select + "Generate as consistent set" button when ≥2 docs of same `doc_type` selected.
+  - Small badge on doc cards: "Set member · same look as N others."
+- **Assistant**
+  - Add `generate_consistent_document_set` tool in `supabase/functions/assistant-chat/index.ts` (3-doc cap still respected for *other* batch tools; this one is intentionally allowed up to ~8 since it's a single image API call).
+  - Playbook rule: "When you create multiple documents that must look identical (e.g. all interrogation transcripts, all police briefings, all forensic reports), after creating them call `generate_consistent_document_set` with their IDs in one call."
 
-### C. Stop the model from re-asking confirmed gates
-5. In `_shared/assistant-playbook.ts` (and `src/lib/assistant-playbook.ts` mirror), add a hard rule under the Phase 3→4 handoff:
-   > Once cast size has been confirmed (suspects table is non-empty AND user has either approved logic OR responded to a previous cast-size `propose_options`), DO NOT re-ask cast size. Treat it as locked. Never call `propose_options` for cast size more than once per project.
-6. Same section: add an explicit "single-gate-per-turn" rule — when the user has just answered a `propose_options`, the next assistant turn must move forward (draft / build / generate), not pose another structurally identical gate.
-7. Server-side guardrail in `assistant-chat/index.ts`: before persisting an assistant message that contains a `propose_options` whose labels include "Keep N suspects" / "Expand to N suspects", check the prior 3 assistant turns. If the same cast-size options were already posted, strip them from `metadata.options` and rewrite the prose tail to a short "Cast size already confirmed — proceeding." This prevents the loop even if the prompt rule is missed.
+### Why this answers your actual concern
 
-### D. Re-enforce the "Doc 0 is invisible" rule
-8. Same playbook file: tighten the existing rule to "Never mention Doc 0, Doc zero, the box doc, or any 0-indexed document in user-facing prose, options, or proposed-document titles. The drafting range you communicate is always **Docs 1..N**."
-9. Add a server-side scrub in `assistant-chat/index.ts` final-message-write step: regex-strip mentions of "Doc 0", "Doc zero", "Docs 0–", "Doc 0 +" from `content` before insert. Cheap belt-and-suspenders.
+- You said: same prompt → still different images. True. The fix is **not** "send the same prompt 5 times" — it's "send **one** request that produces all 5 images together, with all suspect portraits attached as references, and explicitly instruct the model to keep layout/style identical and only vary the content." ChatGPT Image 2 supports both multi-image input and multi-image output, which is exactly what this needs. The set anchor then locks future regenerations to that same look.
+- Suspect portraits stay pixel-perfect because we're passing the existing `thumbnail_url` files directly as reference images — no re-rolling them.
 
-### E. Verify
-10. After deploy, send "Keep 4 suspects" once more from the same project and confirm: (i) no "Starting…" bubble flashes after the response settles, (ii) the assistant moves forward to actually drafting Doc 1 instead of re-asking cast size, (iii) no "Doc 0" appears in any new message.
-
-## Files
-
-- `src/features/project/AssistantSection.tsx` — tighten live-bubble guard (A1, A2).
-- `supabase/functions/assistant-chat/index.ts` — zombie cleanup on new run (B3), cast-size loop guard (C7), Doc 0 scrub (D9).
-- `supabase/functions/_shared/assistant-playbook.ts` + `src/lib/assistant-playbook.ts` — rules C5, C6, D8.
-- One-time SQL: close run `40135f45`, clear `in_progress` on message `5d64cbdb` for project `8267a98f…` (B4).
-
-Approve and I'll implement.
+Approve and I'll implement it.
