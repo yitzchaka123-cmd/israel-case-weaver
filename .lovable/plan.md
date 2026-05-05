@@ -1,45 +1,51 @@
-# Fix: "I send a message and nothing shows up"
+## What's actually broken
 
-## What's happening
+Two distinct problems are stacking on top of each other:
 
-In `AssistantSection.tsx`'s `send()`, after the user hits Send:
-1. `setInput("")` clears the textarea.
-2. `hookSend()` POSTs to `assistant-chat` (background mode).
-3. The server inserts the user's `chat_messages` row.
-4. The realtime subscription fires → invalidates the `["chat", projectId]` query → user's bubble finally appears.
+### 1. The assistant kills its own run as a "zombie" (server bug)
 
-There is **no optimistic insert**, so for the 1–4s window between step 1 and step 4 the user sees: textarea cleared, no bubble, no "Starting…" indicator yet (the "Starting…" placeholder only renders once `sending` is true AND there's no in-flight assistant message — but on a slow network, even `sending` flipping isn't enough to feel responsive when the user's own bubble hasn't appeared).
+In `supabase/functions/assistant-chat/index.ts` (~line 3529–3551), the request handler self-heals by marking **all** `assistant_runs` for the project with `status='running'` as `auto_closed_zombie`. That sweep runs **before** the new placeholder/run row is inserted — but it filters only on `project_id` + `status=running`, with no time floor and no exclusion for the run that's about to start.
 
-The "Starting…" assistant placeholder helps, but the user's **own** message disappearing into the void is what makes it feel like nothing was sent.
+Symptom in DB right now for project `ac854710…`:
+- User msg `ccbd6bc6` ("Draft all in one shot") inserted at `21:59:04.066`
+- `assistant_runs` row started `21:59:03.878`, finished `21:59:04.152` with `error = auto_closed_zombie`
+- Assistant placeholder `be3a2a78` still has `metadata.in_progress = true`, `content = ""`
+- Edge log shows `[stream-reasoning] openai-responses … effort=low tools=26` AFTER the run was already marked errored
 
-## Fix
+Net effect: the model streams, but the run row it's tied to is already "error", so the client's `useAssistantRun` hook treats the turn as failed (silently, because `auto_closed_zombie` is in the suppressed-errors list), the placeholder bubble is hidden (in_progress + empty content), and the user sees nothing.
 
-In `src/features/project/AssistantSection.tsx`, inside `send()` (around lines 509–528), insert the user's message into the React Query cache immediately, before calling `hookSend`. The realtime subscription will swap it for the real DB row a moment later (same content, real id) — the user sees a continuous bubble, no flicker.
+This was almost certainly introduced or worsened by the recent "anti-stall nudge" / batching work — the sweep got stricter and now nukes the current turn.
 
-```ts
-const optimisticId = `optimistic-${Date.now()}`;
-qc.setQueryData<Msg[]>(["chat", projectId], (prev) => [
-  ...(prev ?? []),
-  {
-    id: optimisticId,
-    role: "user",
-    content,
-    created_at: new Date().toISOString(),
-    metadata: null,
-  },
-]);
-```
+### 2. The preview iframe lost its Vite client
 
-Place it right after `setInput("")` and before building `convo`. The same trick should be applied in `editAndResend` (around line 534) so edited prompts also appear instantly.
+Console: `[vite] server connection lost. Polling for restart…`
+Runtime: `Failed to fetch dynamically imported module: …/virtual:tanstack-start-client-entry`
 
-## Why this is enough
+That's a separate transient — `lovable-tagger` failed to resolve `tailwind.config.ts` (this project uses Tailwind v4 via `src/styles.css`, no `tailwind.config.ts` exists), and the dev server hasn't recovered the client entry. A clean reload usually clears it; the fix is to make the tagger tolerant.
 
-- The "Starting…" assistant bubble already renders as soon as `sending` flips true (line 806–842), so once the user's bubble appears optimistically, the assistant spinner shows up right behind it within ~100ms.
-- If the server fetch fails, `hookSend` already toasts an error and writes an assistant error message; the optimistic user bubble stays visible (which is correct — they did send it).
-- React Query keeps the optimistic row until the realtime invalidation refetches; the real row has a different `id` but identical `content` + `role`, so the visual replacement is seamless.
+## Plan
+
+### A. Fix the self-zombie sweep (root cause of "assistant isn't working")
+
+In `supabase/functions/assistant-chat/index.ts`, change the zombie sweep that runs before creating the new placeholder so it cannot kill the in-flight turn:
+
+1. Add an age floor: only mark prior runs as `auto_closed_zombie` if `started_at < now() - interval '90 seconds'` (well above any realistic concurrent send, well below the 3-min stale ceiling already used elsewhere).
+2. Same age floor on the `chat_messages` placeholder cleanup that flips `in_progress=true → false`.
+3. Move the sweep to run **after** the new `assistant_runs` row is inserted, and pass that new run's id as an explicit `neq('id', newRunId)` guard for safety.
+4. Recover the orphaned placeholder for `be3a2a78-…` once (a one-shot `UPDATE chat_messages SET metadata = jsonb_set(metadata,'{in_progress}','false')`) so the user's current "Draft all in one shot" turn doesn't sit forever on "Starting…".
+
+### B. Make the dev-server tagger non-fatal for Tailwind v4
+
+The repo has no `tailwind.config.ts` (Tailwind v4 uses `@theme` in `src/styles.css`). `lovable-tagger` is throwing because it expects one. Add an empty stub `tailwind.config.ts` exporting `export default {}` so the tagger's esbuild step resolves. This silences the error and lets the Vite client entry rebuild reliably, fixing the "failed to fetch dynamically imported module" in the preview.
+
+### C. Verify
+
+1. After A: send a new message in the project; confirm `assistant_runs` reaches `done` and the assistant bubble fills in.
+2. After B: reload preview; confirm no `virtual:tanstack-start-client-entry` error and no tagger esbuild error in `/tmp/dev-server-logs/dev-server.log`.
 
 ## Files to edit
 
-- `src/features/project/AssistantSection.tsx` — `send()` (~509) and `editAndResend()` (~534): add optimistic `qc.setQueryData` insert for the user message.
+- `supabase/functions/assistant-chat/index.ts` — sweep guards (A1–A3) + one-shot recovery insert (A4, can be a small migration instead).
+- `tailwind.config.ts` (new, stub) — fix B.
 
-No DB or edge-function changes.
+No schema changes required. No client changes required.
