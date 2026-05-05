@@ -211,7 +211,11 @@ Deno.serve(async (req) => {
       if (!doc.sourceDocumentId) continue;
       const existing = existingDocs.find((d) => d.id === doc.sourceDocumentId);
       const nextLinked = Array.from(new Set([...(existing?.linked_node_ids ?? []), docNodeByIndex[i]]));
-      await supa.from("documents").update({ linked_node_ids: nextLinked }).eq("id", doc.sourceDocumentId);
+      const update: Record<string, unknown> = { linked_node_ids: nextLinked };
+      if (doc.linkedSuspectIds && doc.linkedSuspectIds.length > 0) {
+        update.linked_suspect_ids = doc.linkedSuspectIds;
+      }
+      await supa.from("documents").update(update).eq("id", doc.sourceDocumentId);
     }
 
     return new Response(JSON.stringify({ ok: true, nodeCount: logicRows.length + docRows.length, documentNodeCount: docRows.length, edgeCount: finalEdges.length }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
