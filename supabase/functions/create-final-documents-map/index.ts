@@ -34,6 +34,7 @@ type ProposedDoc = {
   envelope_number?: number | null;
   purpose?: string;
   linked_logic_node_ids?: string[];
+  linked_suspect_ids?: string[];
 };
 
 const COLORS: Record<string, string> = {
