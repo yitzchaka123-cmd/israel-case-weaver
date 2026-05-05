@@ -1029,9 +1029,13 @@ function MessageBubble({
   const metaOptions: QuickOption[] = (() => {
     if (rawMetaOptions.length === 0) return [];
     if (msg.role !== "assistant") return rawMetaOptions;
-    const numberedItems = extractNumberedListItems(msg.content);
-    if (numberedItems.length === 0) return rawMetaOptions;
-    const haystack = numberedItems.join(" \n ").toLowerCase();
+    const runs = findNumberedRuns(msg.content);
+    if (runs.length === 0) return rawMetaOptions;
+    // Validate metadata options against the LAST numbered run (the closing
+    // gate), not against any list anywhere in the message — labels that only
+    // match an early recap list are stale from a previous turn.
+    const lastRun = runs[runs.length - 1];
+    const haystack = lastRun.items.map((it) => it.text).join(" \n ").toLowerCase();
     const anyMatches = rawMetaOptions.some(
       (o) => o.label && haystack.includes(o.label.trim().toLowerCase()),
     );
@@ -1517,22 +1521,14 @@ function extractNumberedListItems(text: string): string[] {
   return out;
 }
 
-// Mirror of the server-side fallback in supabase/functions/assistant-chat/index.ts.
-// When the model wrote a numbered choice list in prose but no `options` were
-// attached to the message metadata (e.g. older messages, or the server
-// fallback also missed it), parse the prose and surface buttons.
-function synthesizeOptionsFromProse(
-  text: string,
-): { options: QuickOption[]; question: string | null } | null {
-  if (!text) return null;
-  const trimmed = text.trim();
-  if (!trimmed) return null;
-
-  // Scan the WHOLE message line-by-line for a contiguous run of numbered
-  // items (1, 2, 3, …) — list may sit anywhere, not just last paragraph.
-  const lines = trimmed.split("\n");
+// Scan a message for contiguous numbered runs (1, 2, 3, …). Used by both
+// the prose synthesizer and the metadata validator so they stay in sync.
+type NumberedRun = { startIdx: number; items: Array<{ n: number; text: string }> };
+function findNumberedRuns(text: string): NumberedRun[] {
+  if (!text) return [];
+  const lines = text.split("\n");
   const itemLineRegex = /^\s*(?:[-*•]\s*)?(\d+)[\.\)]\s+(?:\*\*)?(.+?)(?:\*\*)?\s*$/;
-  let bestRun: { startIdx: number; items: Array<{ n: number; text: string }> } | null = null;
+  const runs: NumberedRun[] = [];
   let i = 0;
   while (i < lines.length) {
     const first = itemLineRegex.exec(lines[i]);
@@ -1548,17 +1544,34 @@ function synthesizeOptionsFromProse(
         run.push({ n, text: next[2].trim() });
         j++;
       }
-      if (run.length >= 2 && run.length <= 6) {
-        if (!bestRun || run.length > bestRun.items.length) {
-          bestRun = { startIdx, items: run };
-        }
-      }
+      runs.push({ startIdx, items: run });
       i = j;
       continue;
     }
     i++;
   }
-  if (!bestRun) return null;
+  return runs;
+}
+
+// Mirror of the server-side fallback in supabase/functions/assistant-chat/index.ts.
+// When the model wrote a numbered choice list in prose but no `options` were
+// attached to the message metadata (e.g. older messages, or the server
+// fallback also missed it), parse the prose and surface buttons.
+function synthesizeOptionsFromProse(
+  text: string,
+): { options: QuickOption[]; question: string | null } | null {
+  if (!text) return null;
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+
+  const lines = trimmed.split("\n");
+  const allRuns = findNumberedRuns(trimmed).filter(
+    (r) => r.items.length >= 2 && r.items.length <= 6,
+  );
+  if (allRuns.length === 0) return null;
+  // Prefer the LAST qualifying run — a question gate is almost always the
+  // closing element. Earlier numbered lists are usually recaps/summaries.
+  const bestRun = allRuns[allRuns.length - 1];
   for (const it of bestRun.items) {
     if (!it.text || it.text.length > 120) return null;
   }
