@@ -88,11 +88,16 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
         body: { documentIds: ids, quality: "medium" },
       });
       if (error) throw error;
-      const results = (data as { results?: Array<{ id: string; url?: string; error?: string }> }).results ?? [];
-      const ok = results.filter((r) => r.url).length;
-      const failed = results.filter((r) => r.error);
-      if (failed.length) toast.warning(`${ok}/${ids.length} generated. Failed: ${failed.length}`);
-      else toast.success(`Generated ${ok} matching images`);
+      const payload = data as { queued?: boolean; results?: Array<{ id: string; url?: string; error?: string }> };
+      if (payload.queued) {
+        toast.success(`Generating ${ids.length} matching documents in background — they'll appear as they finish.`);
+      } else {
+        const results = payload.results ?? [];
+        const ok = results.filter((r) => r.url).length;
+        const failed = results.filter((r) => r.error);
+        if (failed.length) toast.warning(`${ok}/${ids.length} generated. Failed: ${failed.length}`);
+        else toast.success(`Generated ${ok} matching images`);
+      }
       setSetSelection(new Set());
       refetch();
     } catch (e) {
