@@ -1029,9 +1029,13 @@ function MessageBubble({
   const metaOptions: QuickOption[] = (() => {
     if (rawMetaOptions.length === 0) return [];
     if (msg.role !== "assistant") return rawMetaOptions;
-    const numberedItems = extractNumberedListItems(msg.content);
-    if (numberedItems.length === 0) return rawMetaOptions;
-    const haystack = numberedItems.join(" \n ").toLowerCase();
+    const runs = findNumberedRuns(msg.content);
+    if (runs.length === 0) return rawMetaOptions;
+    // Validate metadata options against the LAST numbered run (the closing
+    // gate), not against any list anywhere in the message — labels that only
+    // match an early recap list are stale from a previous turn.
+    const lastRun = runs[runs.length - 1];
+    const haystack = lastRun.items.map((it) => it.text).join(" \n ").toLowerCase();
     const anyMatches = rawMetaOptions.some(
       (o) => o.label && haystack.includes(o.label.trim().toLowerCase()),
     );
