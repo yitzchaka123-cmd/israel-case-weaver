@@ -486,9 +486,10 @@ B. **Generating more than one doc** — when the user asks to generate more than
   1. If ANY target docs are missing \`hebrew_content\`, call \`bulk_generate_documents\` ONCE with \`mode: "draft"\` for the full target scope. Capture the returned \`job_id\`.
   2. Then call \`bulk_generate_documents\` AGAIN with \`mode: "both"\` for the same scope, passing \`wait_for_job_id\` = the draft job id from step 1 so the worker chains automatically. If step 1 was skipped (everything already drafted), call \`mode: "both"\` directly without \`wait_for_job_id\`.
   Both calls return immediately — they only QUEUE work. Tell the user explicitly "QUEUED" / "STARTED", never "DONE" / "FINISHED" in that turn. Do NOT loop \`generate_document_assets\` for batch requests. Single-doc generation still uses \`generate_document_assets\`.
-C. **Doc 0 + the rest in the SAME turn (CRITICAL — applies to "draft all docs" / "draft everything" / "draft all the documents" / any phrasing that asks for the full document set in one go)** — Doc 0 (contents inventory) requires special handling and MUST go through \`add_document\`. BUT when the user asks you to draft EVERYTHING at once, you MUST chain ALL the calls in the SAME assistant turn, in this exact order, with NO intervening prose round:
+C. **Doc 0 + the rest in the SAME turn (CRITICAL — applies to "draft all docs" / "draft everything" / "draft all the documents" / any phrasing that asks for the full document set in one go)** — When the user approves a multi-doc proposal — even a 40-doc one — you fire ALL batches in this same turn with NO confirmation question. Asking "ready?", "say go and I'll start", "starting with docs 1-3?", "before I fire those batches", "tool limit hit, tell me go", "quick confirmation", or any variant is a CRITICAL FAILURE. The 3-doc per-call cap is an internal mechanic — NEVER surface it to the user as a reason to pause; just chain the batches silently. Doc 0 (contents inventory) requires special handling and MUST go through \`add_document\`. The order is:
    1. Round 1, call 1: \`add_document\` for Doc 0 (doc_number=0, doc_type="contents checklist").
    2. Round 1, calls 2..K: one \`add_documents\` (PLURAL) call per chunk of AT MOST 3 documents, covering EVERY remaining proposed document (Docs 1..N) across the chunks. Emit them all in the SAME tool_calls array if the runtime supports parallel calls; otherwise emit them back-to-back across consecutive rounds with NO prose in between.
+   **C.1 — BATCH GROUPING (consistent visual sets first):** When you split the proposal across \`add_documents\` calls, GROUP docs that share a visual template into the SAME 3-doc batches BEFORE the standalone one-offs. Templated families include: interrogation transcripts, witness statements, suspect file pages, forensic/autopsy reports, police briefings, lab reports, evidence intake forms — anything you'd later pass to \`generate_consistent_document_set\`. Standalone one-offs (maps, photos, news clippings, letters, tickets, receipts) go in the trailing batches. This way a later "generate all" run can call \`generate_consistent_document_set\` per group with clean inputs and the templated docs come out visually identical. Mention the grouping in ONE short line at the end (e.g. "Drafted all 40 — grouped 6 interrogation logs and 4 forensic reports into consistent sets for image generation.").
    Stopping after Doc 0 to "discuss the rest" or "ask the user about envelopes" or "think about it more" is a CRITICAL FAILURE — the user already approved the proposal, the round budget is small, and stalling causes the per-turn timeout to fire and look like the assistant got stuck. Do NOT pause for confirmation between Doc 0 and the batches. Do NOT ask follow-up questions about envelopes mid-batch — envelopes are a separate workflow (\`update_envelope\` / \`generate_envelopes\`), they are NEVER drafted by \`add_document\` or \`add_documents\`, and confusion about envelopes must NOT block the document batch.
 D. **Post-completion follow-up** — when a bulk run finishes, the system will auto-open the Assistant with a starter prompt asking you to acknowledge results and propose the next step. Reply with a short, concrete acknowledgement (X/Y succeeded, name any failed docs) and one clear next-step recommendation appropriate to the project phase (review, retry failures, move to envelopes/hints/marketing).
 E. **HARD RULE — 2+ DOCS ⇒ BULK (NON-NEGOTIABLE)**: If the user's request involves generating, drafting, regenerating, or producing assets for **two (2) or more documents** — even just two — you MUST call \`bulk_generate_documents\` ONCE with \`scope: "ids"\` and an explicit \`document_ids\` array. Calling \`generate_document_assets\` more than once per turn is FORBIDDEN; the server will refuse all such calls and force you to re-emit a single \`bulk_generate_documents\` call. Per-doc \`generate_document_assets\` is ONLY for a single document the user named explicitly ("regenerate Doc 5", "redo the bus ticket"). When in doubt: bulk.
@@ -3900,12 +3901,33 @@ async function processConversation(
     // models like Gemini and GPT-5 (thinking mode) burn rounds 0–1 on pure
     // reasoning ("should I call X? what about Y?") before ever emitting a
     // tool. Catching it at round 0 saves the entire turn.
+    // Detect a "confirmation pause" — the model wrote prose asking the user
+    // to say "go" / confirm before firing the batches, even though the user
+    // already approved. We treat this as equivalent to skipping the batch
+    // tool call.
+    const PAUSE_PATTERNS = [
+      /tell me ["']?go["']?/i,
+      /\bsay ["']?go["']?\b/i,
+      /quick confirmation/i,
+      /before i fire/i,
+      /before i (start|begin|kick)/i,
+      /ready\?/i,
+      /shall i (start|begin|proceed|go ahead|fire)/i,
+      /should i (start|begin|proceed|go ahead) (with|by|drafting)/i,
+      /starting with docs? \d/i,
+      /tool limit hit/i,
+      /do you want me to draft/i,
+    ];
+    const isConfirmationPause = PAUSE_PATTERNS.some((re) => re.test(finalText));
+
     if (
       isBatchRequest &&
       nudgeCount < MAX_NUDGES &&
       !isFinalRound &&
-      !executedTools.some(
-        (t) => t.name === "add_documents" || t.name === "bulk_generate_documents",
+      (
+        !executedTools.some(
+          (t) => t.name === "add_documents" || t.name === "bulk_generate_documents",
+        ) || isConfirmationPause
       )
     ) {
       nudgeCount += 1;
@@ -3913,6 +3935,7 @@ async function processConversation(
         model,
         round,
         nudgeCount,
+        isConfirmationPause,
       });
       convo.push({
         role: "assistant",
@@ -3922,12 +3945,13 @@ async function processConversation(
       convo.push({
         role: "system",
         content: escalated
-          ? "🛑 STOP REASONING. This is your final correction. EMIT THE TOOL CALL NOW. No more prose. No more analysis. No envelope questions (envelopes are a SEPARATE workflow — `update_envelope` / `generate_envelopes` only — and have NOTHING to do with this batch). Call `add_documents` (plural) with every remaining doc in one array, or `bulk_generate_documents` for the full scope. If you find yourself thinking 'should I ask about envelopes?' or 'should I batch in chunks of 10?' — STOP. Ship the call with sensible defaults. The user already approved the proposal."
-          : "🔴 You are stalling. The user asked for a BATCH action ('draft all', 'generate everything', or similar). On your NEXT turn you MUST emit a tool call — either `add_document` for Doc 0 followed by `add_documents` (plural) with every remaining doc in the SAME turn, or `bulk_generate_documents` for the full scope. Do NOT write more prose, do NOT ask follow-up questions about envelopes (envelopes use a separate workflow), do NOT pause for confirmation. Ship the tool call now with the proposed/approved doc set.",
+          ? "🛑 STOP REASONING. This is your final correction. EMIT THE TOOL CALL NOW. No more prose. No more analysis. No 'tell me go', no 'quick confirmation', no 'starting with docs 1-3'. The user ALREADY approved. The 3-doc per-call cap is internal — chain the batches silently. Group templated docs (interrogation logs, forensic reports, witness statements) into the SAME batches first; one-offs in trailing batches. Call `add_document` for Doc 0 + `add_documents` (plural) chunks for every remaining doc in this turn, or `bulk_generate_documents` for the full scope."
+          : "🔴 You are stalling with a confirmation question. The user already approved the proposal — do NOT ask 'tell me go', 'quick confirmation', or 'starting with docs 1-3?'. The 3-doc cap is an internal mechanic, NEVER surface it as a reason to pause. On your NEXT turn emit `add_document` for Doc 0 + chained `add_documents` (plural, ≤3 each) covering every remaining doc in the SAME turn. Group docs that share a visual template (interrogation logs, forensic reports, witness statements, suspect file pages) into the SAME 3-doc batches FIRST so a later consistent-set image run has clean groups; standalone one-offs (maps, photos, letters) go in the trailing batches. Ship the calls now.",
       });
       flushProgress(`nudging batch tool (${nudgeCount}/${MAX_NUDGES})…`);
       continue;
     }
+
 
     // Defensive: if the model returned no text, no tools, AND no reasoning,
     // something silently failed (e.g. provider quota exhausted but stream
