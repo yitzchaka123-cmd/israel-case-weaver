@@ -813,6 +813,19 @@ export function AssistantSection({
                   const inFlight = [...messages]
                     .reverse()
                     .find((m) => m.role === "assistant" && m.metadata?.in_progress);
+
+                  // Suppress the synthetic "Starting…" bubble when the latest
+                  // assistant row is already settled (not in_progress). This
+                  // prevents the duplicate "thinking again" flicker that
+                  // appears between the assistant finishing and `sending`
+                  // flipping back to false.
+                  const lastAssistant = [...messages]
+                    .reverse()
+                    .find((m) => m.role === "assistant");
+                  if (!inFlight && lastAssistant && !lastAssistant.metadata?.in_progress) {
+                    return null;
+                  }
+
                   const stage = inFlight?.metadata?.stage ?? null;
                   const liveTools = inFlight?.metadata?.tools ?? [];
                   const liveReasoning = inFlight?.metadata?.reasoning ?? [];
