@@ -227,91 +227,105 @@ Deno.serve(async (req) => {
     const setBrief = buildSetBrief(sortedDocs, body.setBriefOverride);
     const size = sizeFor(sortedDocs[0].print_size);
 
-    const results: Array<{ id: string; url?: string; error?: string }> = [];
+    // Mark all docs as generating so the UI shows progress while the
+    // background job runs (image generation can take several minutes for
+    // a set of 2–8 docs and would otherwise exceed edge wall-clock).
+    await supa
+      .from("documents")
+      .update({ status: "generating", consistent_set_id: setId })
+      .in("id", sortedDocs.map((d) => d.id));
 
-    for (let i = 0; i < sortedDocs.length; i += 1) {
-      const doc = sortedDocs[i];
-      const suspects = (doc.linked_suspect_ids ?? [])
-        .map((sid) => suspectsById.get(sid))
-        .filter((x): x is SuspectRow => Boolean(x));
+    const runJob = async () => {
+      let liveAnchor = anchorUrl;
+      for (let i = 0; i < sortedDocs.length; i += 1) {
+        const doc = sortedDocs[i];
+        const suspects = (doc.linked_suspect_ids ?? [])
+          .map((sid) => suspectsById.get(sid))
+          .filter((x): x is SuspectRow => Boolean(x));
 
-      // Reference images: anchor first (if exists), then suspect portraits.
-      const refs: Array<{ blob: Blob; filename: string }> = [];
-      const hasAnchor = Boolean(anchorUrl);
-      if (anchorUrl) {
-        const a = await fetchAsBlob(anchorUrl);
-        if (a) refs.push(a);
-      }
-      for (const s of suspects) {
-        if (!s.thumbnail_url) continue;
-        const b = await fetchAsBlob(s.thumbnail_url);
-        if (b) refs.push(b);
-      }
-      // OpenAI requires at least 1 input image for /images/edits.
-      if (refs.length === 0) {
-        // Inject a tiny blank canvas so the call is valid even when there are
-        // no suspects and no anchor yet (only possible for doc #1 of a set
-        // with no suspects). We synthesize a 1x1 png.
-        const blank = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="), (c) => c.charCodeAt(0));
-        refs.push({ blob: new Blob([blank], { type: "image/png" }), filename: "blank.png" });
-      }
-
-      const prompt = buildPerDocPrompt({
-        setBrief, doc, suspects, index: i, total: sortedDocs.length, hasAnchor,
-      });
-
-      try {
-        const { bytes, mime } = await callOpenAiEdit({ prompt, refImages: refs, size, quality });
-        const path = `${projectId}/consistent-set/${setId}/${doc.id}-${Date.now()}.jpg`;
-        await supa.storage.from("documents").upload(path, bytes, { contentType: mime, upsert: true });
-        const { data: pub } = supa.storage.from("documents").getPublicUrl(path);
-        const url = pub.publicUrl;
-
-        const patch: Record<string, unknown> = {
-          generated_asset_url: url,
-          active_version: "generated",
-          status: "review",
-          document_model: "gpt-image-2",
-          document_provider: "openai-image2",
-          consistent_set_id: setId,
-        };
-        if (i === 0 && !anchorUrl) {
-          patch.consistent_set_anchor_url = url;
-          anchorUrl = url; // lock anchor for the rest of the loop
-        } else {
-          // ensure every doc in the set carries the anchor url
-          patch.consistent_set_anchor_url = anchorUrl;
+        const refs: Array<{ blob: Blob; filename: string }> = [];
+        const hasAnchor = Boolean(liveAnchor);
+        if (liveAnchor) {
+          const a = await fetchAsBlob(liveAnchor);
+          if (a) refs.push(a);
         }
-        await supa.from("documents").update(patch).eq("id", doc.id);
+        for (const s of suspects) {
+          if (!s.thumbnail_url) continue;
+          const b = await fetchAsBlob(s.thumbnail_url);
+          if (b) refs.push(b);
+        }
+        if (refs.length === 0) {
+          const blank = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="), (c) => c.charCodeAt(0));
+          refs.push({ blob: new Blob([blank], { type: "image/png" }), filename: "blank.png" });
+        }
 
-        await supa.from("media_assets").insert({
-          project_id: projectId,
-          category: "document",
-          title: `${doc.title} — consistent set`,
-          url,
-          mime_type: mime,
-          prompt,
-          provider: "openai-image2",
-          model: "gpt-image-2",
-          effective_model: "gpt-image-2",
-          asset_type: "image",
-          source_document_id: doc.id,
-          generation_mode: "consistent_set",
-          status: "generated",
-        } as never);
+        const prompt = buildPerDocPrompt({
+          setBrief, doc, suspects, index: i, total: sortedDocs.length, hasAnchor,
+        });
 
-        results.push({ id: doc.id, url });
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : "unknown";
-        results.push({ id: doc.id, error: msg });
+        try {
+          const { bytes, mime } = await callOpenAiEdit({ prompt, refImages: refs, size, quality });
+          const path = `${projectId}/consistent-set/${setId}/${doc.id}-${Date.now()}.jpg`;
+          await supa.storage.from("documents").upload(path, bytes, { contentType: mime, upsert: true });
+          const { data: pub } = supa.storage.from("documents").getPublicUrl(path);
+          const url = pub.publicUrl;
+
+          const patch: Record<string, unknown> = {
+            generated_asset_url: url,
+            active_version: "generated",
+            status: "review",
+            document_model: "gpt-image-2",
+            document_provider: "openai-image2",
+            consistent_set_id: setId,
+          };
+          if (i === 0 && !liveAnchor) {
+            patch.consistent_set_anchor_url = url;
+            liveAnchor = url;
+          } else {
+            patch.consistent_set_anchor_url = liveAnchor;
+          }
+          await supa.from("documents").update(patch).eq("id", doc.id);
+
+          await supa.from("media_assets").insert({
+            project_id: projectId,
+            category: "document",
+            title: `${doc.title} — consistent set`,
+            url,
+            mime_type: mime,
+            prompt,
+            provider: "openai-image2",
+            model: "gpt-image-2",
+            effective_model: "gpt-image-2",
+            asset_type: "image",
+            source_document_id: doc.id,
+            generation_mode: "consistent_set",
+            status: "generated",
+          } as never);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : "unknown";
+          console.error(`consistent-set doc ${doc.id} failed:`, msg);
+          await supa
+            .from("documents")
+            .update({ status: "error", consistent_set_id: setId })
+            .eq("id", doc.id);
+        }
       }
+    };
+
+    // Fire-and-forget: don't make the client wait for the whole batch.
+    // @ts-ignore EdgeRuntime is available in Supabase edge runtime.
+    if (typeof EdgeRuntime !== "undefined" && typeof EdgeRuntime.waitUntil === "function") {
+      // @ts-ignore
+      EdgeRuntime.waitUntil(runJob());
+    } else {
+      runJob().catch((e) => console.error("consistent-set job error:", e));
     }
 
     return new Response(JSON.stringify({
       ok: true,
+      queued: true,
       setId,
-      anchorUrl,
-      results,
+      documentIds: sortedDocs.map((d) => d.id),
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "unknown";
