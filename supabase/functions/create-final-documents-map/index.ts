@@ -24,6 +24,7 @@ type PlannedDoc = {
   sourceDocumentId?: string;
   sourceLogicNodeIds?: string[];
   linkedLogicTitles?: string[];
+  linkedSuspectIds?: string[];
   generationStatus: string;
 };
 type ProposedDoc = {
@@ -34,6 +35,7 @@ type ProposedDoc = {
   envelope_number?: number | null;
   purpose?: string;
   linked_logic_node_ids?: string[];
+  linked_suspect_ids?: string[];
 };
 
 const COLORS: Record<string, string> = {
@@ -139,6 +141,9 @@ Deno.serve(async (req) => {
           purpose: String(p.purpose ?? "Planned by the assistant from the Logic Flow."),
           sourceLogicNodeIds: linkedIds.length > 0 ? linkedIds : undefined,
           linkedLogicTitles: titlesFor(linkedIds),
+          linkedSuspectIds: Array.isArray(p.linked_suspect_ids)
+            ? (p.linked_suspect_ids as string[]).filter((x) => typeof x === "string")
+            : undefined,
           sourceDocumentId: existing?.id,
           generationStatus: statusFor(existing),
         });
@@ -166,7 +171,7 @@ Deno.serve(async (req) => {
     }
 
     const logicRows = logic.map((node, i) => ({ project_id: projectId, board: "final", node_type: node.node_type, title: node.title, description: node.description, color: node.color || COLORS[node.node_type] || null, position_x: 60 + (i % 3) * 260, position_y: 70 + Math.floor(i / 3) * 150, data: { ...(node.data ?? {}), sourceLogicNodeId: node.id, finalMapRole: "logic" }, ...(createdByMessageId ? { created_by_message_id: createdByMessageId } : {}) }));
-    const docRows = planned.map((doc, i) => ({ project_id: projectId, board: "final", node_type: "document", title: doc.docNumber === 0 && !/^doc\s*0/i.test(doc.title) ? `Doc 0 — ${doc.title}` : doc.title, description: docDescription(doc), color: COLORS.document, position_x: 940 + (i % 3) * 270, position_y: 70 + Math.floor(i / 3) * 155, data: { generationStatus: doc.generationStatus, docNumber: doc.docNumber, docType: doc.docType, printSize: doc.printSize, envelopeNumber: doc.envelopeNumber, purpose: doc.purpose, documentId: doc.sourceDocumentId ?? null, sourceLogicNodeIds: doc.sourceLogicNodeIds ?? [], linkedLogicTitles: doc.linkedLogicTitles ?? [], finalMapRole: "document" }, ...(createdByMessageId ? { created_by_message_id: createdByMessageId } : {}) }));
+    const docRows = planned.map((doc, i) => ({ project_id: projectId, board: "final", node_type: "document", title: doc.docNumber === 0 && !/^doc\s*0/i.test(doc.title) ? `Doc 0 — ${doc.title}` : doc.title, description: docDescription(doc), color: COLORS.document, position_x: 940 + (i % 3) * 270, position_y: 70 + Math.floor(i / 3) * 155, data: { generationStatus: doc.generationStatus, docNumber: doc.docNumber, docType: doc.docType, printSize: doc.printSize, envelopeNumber: doc.envelopeNumber, purpose: doc.purpose, documentId: doc.sourceDocumentId ?? null, sourceLogicNodeIds: doc.sourceLogicNodeIds ?? [], linkedLogicTitles: doc.linkedLogicTitles ?? [], linkedSuspectIds: doc.linkedSuspectIds ?? [], finalMapRole: "document" }, ...(createdByMessageId ? { created_by_message_id: createdByMessageId } : {}) }));
 
     const { data: inserted, error: insertError } = await supa.from("canvas_nodes").insert([...logicRows, ...docRows]).select("id, node_type, data");
     if (insertError) throw insertError;
@@ -206,7 +211,11 @@ Deno.serve(async (req) => {
       if (!doc.sourceDocumentId) continue;
       const existing = existingDocs.find((d) => d.id === doc.sourceDocumentId);
       const nextLinked = Array.from(new Set([...(existing?.linked_node_ids ?? []), docNodeByIndex[i]]));
-      await supa.from("documents").update({ linked_node_ids: nextLinked }).eq("id", doc.sourceDocumentId);
+      const update: Record<string, unknown> = { linked_node_ids: nextLinked };
+      if (doc.linkedSuspectIds && doc.linkedSuspectIds.length > 0) {
+        update.linked_suspect_ids = doc.linkedSuspectIds;
+      }
+      await supa.from("documents").update(update).eq("id", doc.sourceDocumentId);
     }
 
     return new Response(JSON.stringify({ ok: true, nodeCount: logicRows.length + docRows.length, documentNodeCount: docRows.length, edgeCount: finalEdges.length }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });

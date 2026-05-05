@@ -1,40 +1,50 @@
-## Why you have duplicates
+## Goal
 
-Docs 1–4 were created at 21:53 (first `add_documents` call). Docs 5–8 are exact title duplicates of 1–4, created 90 minutes later at 23:23 by a second `add_documents` call from the same assistant turn (`created_by_message_id 8b675356…`).
+Guarantee that EVERY game's document set starts with two docs per suspect — a **Police Briefing** (with realistic AI portrait + bio) and an **Interrogation Transcript** — regardless of what the assistant model decides. Today this is only a soft prompt rule, so models skip it (your new case has 4 suspects and 0 such docs).
 
-`add_documents` in `supabase/functions/assistant-chat/index.ts` only deduplicates on `doc_number`. The second call didn't pass numbers, so the auto-numberer assigned fresh 5/6/7/8 and re-inserted the same titles. There is no DB unique constraint on (project_id, title) and no application-side title check.
+## Why your last change didn't work (short version)
 
-So this is not a one-off — any retry, double-click, or "regenerate" of the batch will keep adding shadow copies.
+- The rule lives only in the system prompt; nothing on the server enforces it.
+- `propose_document_set` tool schema has no `linked_suspect_ids` field, so the model can't attach a portrait even if it wanted to.
+- Suspects on the Logic canvas aren't mirrored into the `suspects` table for this project, so there's nothing to link or generate a portrait from.
 
-## Plan
+## Changes
 
-### 1. Dedupe by title in `add_documents`
-File: `supabase/functions/assistant-chat/index.ts` (the batch handler around line 2083).
+### 1. Make `suspects` table the source of truth (assistant-chat)
+- When the assistant approves the Logic Flow (or when `propose_document_set` is called), auto-mirror every `canvas_nodes` row of type `suspect` (and `red_herring` if `is_red_herring` semantics apply) into `public.suspects` — name from node title, summary/role from node description. Idempotent (match by name within project).
+- This gives every suspect a stable `suspects.id` to attach portraits and to use in `linked_suspect_ids`.
 
-Pre-fetch `id, doc_number, title` for the project. Build a normalized-title map (`trim().toLowerCase().replace(/\s+/g," ")`). For each incoming row:
-- If a doc with that normalized title already exists, skip the insert and report it in the response as `skipped: [{ title, existingId, doc_number }]`.
-- Otherwise insert as today.
+### 2. Extend `propose_document_set` tool
+- Add `linked_suspect_ids: string[]` to the tool's JSON schema and to the `cleaned` mapping inside the handler so it's persisted into `proposed_document_set` jsonb.
+- Update tool description to require: for each suspect, exactly one entry with `doc_type: "Police briefing"` and one with `doc_type: "Interrogation transcript"`, both with `linked_suspect_ids: [<that suspect id>]`, both as the first entries (doc_number 1..2N).
 
-Return shape becomes `{ ok, created, skipped, failed }` so the assistant can tell the user "8 created, 4 already existed, 0 failed" instead of silently double-writing.
+### 3. Server-side enforcement (the teeth)
+Inside the `propose_document_set` handler in `supabase/functions/assistant-chat/index.ts`:
+- Load `suspects` for the project (after the mirror in step 1).
+- Validate the incoming `documents`:
+  - For every suspect, exactly one Police Briefing + one Interrogation Transcript with that suspect's id in `linked_suspect_ids`.
+  - These 2N entries occupy doc_number 1..2N (briefing then transcript per suspect, in suspect order).
+- If the proposal is missing pairs or has them out of order, **auto-repair**: synthesize the missing briefing/transcript entries with sensible default titles in the project's `game_language`, renumber so they come first, and shift other docs' numbers up. Save the repaired list and return a note like `"Repaired: inserted N missing per-suspect docs."` so the assistant tells the user.
+- This makes the rule structurally impossible to break — even on Just build it.
 
-### 2. Same dedupe in single-doc `add_document`
-Same file, the `add_document` handler (~line 1920). Before the final insert (after the Doc 0 branch), look up an existing doc with the same normalized title in this project. If found, return `{ ok: true, message: "Document already exists: …", id: existing.id }` instead of inserting. Doc 0 already has its own update-instead-of-insert path — leave it.
+### 4. Carry `linked_suspect_ids` into Final board + `documents` rows
+- `supabase/functions/create-final-documents-map/index.ts`: extend `ProposedDoc` type with `linked_suspect_ids`, pass through into the planned doc and the inserted `canvas_nodes.data`.
+- When the final-map step (or whichever step writes `documents` rows) creates the actual `documents` row for these planned items, populate `documents.linked_suspect_ids` so the existing UI logic that pins the suspect's `thumbnail_url` into the document's first inline image slot fires automatically. (Existing playbook already says: anchor portrait = locked first inline image.)
 
-### 3. Clean up the 4 existing duplicates
-Delete docs 5–8 in project `87e9ab59-…` (the later-created exact-title copies). Keep docs 1–4. Then re-number nothing — the gap from 5–8 doesn't matter, but if you prefer a clean sequence I can also shift 9→5, 10→6, … 44→40 in the same step. Default = just delete the 4 duplicates and leave numbering as-is so existing canvas/envelope links don't break.
+### 5. Generate the realistic portrait if missing
+- Before doc generation, ensure each suspect has a `thumbnail_url`. If a suspect linked to a Briefing/Interrogation has no portrait, trigger the existing suspect-portrait generation path (Nano Banana / `generate-image`) using the suspect's name + role + case era/setting from the project. Reuse the same portrait for both that suspect's briefing and interrogation (anchor consistency).
 
-### 4. (Optional but recommended) DB safety net
-Add a unique partial index `documents_project_title_uniq` on `(project_id, lower(btrim(title)))` so this can never recur even if a future code path forgets to dedupe. Drop the matching duplicate rows first (step 3) so the index can build. If you'd rather keep this purely application-side, skip step 4.
+### 6. Backfill for the current project
+- One-time backfill for project `d3e6eacc…`: mirror the 4 Logic suspect nodes into `suspects`, repair the existing `proposed_document_set` to insert 8 missing per-suspect docs at positions 1–8, renumber the rest, and re-run the final-map build so the user sees the corrected list immediately.
 
-## Technical notes
+## Files to edit
 
-- Title normalization must match between insert-side and DB index (both use `lower(btrim(title))`).
-- The `skipped` array lets the assistant correctly report "no new work" instead of re-listing rows it didn't actually create.
-- `create-final-documents-map` already dedupes on `doc_number` and falls back to title — it won't be affected.
+- `supabase/functions/assistant-chat/index.ts` — schema + handler enforcement + auto-mirror suspects.
+- `supabase/functions/_shared/assistant-playbook.ts` and `src/lib/assistant-playbook.ts` — minor wording: "Police Briefing + Interrogation are server-enforced, not optional".
+- `supabase/functions/create-final-documents-map/index.ts` — pass `linked_suspect_ids` through; populate on `documents` row creation.
+- (No DB schema changes — `documents.linked_suspect_ids` and `suspects.thumbnail_url` already exist.)
 
-## Out of scope
+## What you'll see after this lands
 
-- Changing the prompt to discourage the assistant from calling `add_documents` twice. The server-side dedupe makes prompt changes unnecessary.
-- Renumbering existing docs after delete.
-
-**Approve to apply steps 1–3 (and 4 if you want the DB constraint)?**
+- New cases: docs 1..2N are auto-named "Police Briefing — <Name>" and "Interrogation Transcript — <Name>" (translated to the game language), each pinned with the suspect's portrait.
+- Your current case: the 4 suspects get 8 new docs inserted at the top, the other docs shift to 9+, and portraits get generated for any suspect that doesn't already have one.
