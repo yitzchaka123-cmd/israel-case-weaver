@@ -68,7 +68,7 @@ export function useAssistantRun(projectId: string) {
     // and self-heal: locally clear the spinner AND write status='error' so
     // other tabs/devices recover too. Without this, a Worker that died mid-run
     // would leave the chat spinner stuck forever.
-    const STALE_AFTER_MS = 8 * 60 * 1000;
+    const STALE_AFTER_MS = 3 * 60 * 1000;
     void (async () => {
       const { data } = await supabase
         .from("assistant_runs")

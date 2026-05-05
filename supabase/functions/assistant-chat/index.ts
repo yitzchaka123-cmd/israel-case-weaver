@@ -481,7 +481,7 @@ ${renderDocModeButtonsBlock(playbook)}
 8. If the user asks to install/add a Claude Skill from chat and there is no attached installable package, call explain_claude_skill_install. Claude can automatically choose among enabled installed skills passed to it, but the app must manage installation.
 
 BATCH RULES (CRITICAL — applies to drafting AND generating documents):
-A. **Drafting many docs in one turn** — when the user asks to draft a numbered range ("docs 7-20", "the next 10"), "all of them", "the rest", or more than ~3 documents at once, you MUST call \`add_documents\` (plural) ONCE with every document spec in the array. NEVER loop \`add_document\` for batch requests — the per-turn round budget will silently truncate it and most rows will never be written. After \`add_documents\` returns, list every entry from \`created\` as a numbered roster in your prose so the user sees what was written. Single-doc / "auto" / "ask" workflows still use \`add_document\` per-doc so the per-doc preview rules apply.
+A. **Drafting many docs in one turn** — when the user asks to draft a numbered range ("docs 7-20", "the next 10"), "all of them", "the rest", or more than ~3 documents at once, you MUST call \`add_documents\` (plural) for those drafts. NEVER loop \`add_document\` for batch requests — the per-turn round budget will silently truncate it and most rows will never be written. **HARD CAP — never request more than 3 documents in a single \`add_documents\` call.** For larger sets, chain MULTIPLE \`add_documents\` calls in the SAME turn (the same tool_calls array if your runtime supports it; otherwise back-to-back rounds), each with at most 3 documents in its \`documents\` array. The server will refuse any single call that exceeds 3 docs and you will have to re-emit. After all batches return, list every entry from each \`created\` array as one combined numbered roster in your prose so the user sees what was written. Single-doc / "auto" / "ask" workflows still use \`add_document\` per-doc so the per-doc preview rules apply.
 B. **Generating more than one doc** — when the user asks to generate more than one doc, "all docs", "the rest", a numbered range, or "everything", FIRST say in one short sentence: "I'll first draft them all, then generate them one shot each — watch the Documents tab (live indicator) and the bell for per-doc previews." Then in the SAME turn:
   1. If ANY target docs are missing \`hebrew_content\`, call \`bulk_generate_documents\` ONCE with \`mode: "draft"\` for the full target scope. Capture the returned \`job_id\`.
   2. Then call \`bulk_generate_documents\` AGAIN with \`mode: "both"\` for the same scope, passing \`wait_for_job_id\` = the draft job id from step 1 so the worker chains automatically. If step 1 was skipped (everything already drafted), call \`mode: "both"\` directly without \`wait_for_job_id\`.
@@ -2120,6 +2120,12 @@ async function executeTool(
         .documents
         : [];
       if (rawDocs.length === 0) return { ok: false, message: "add_documents needs at least one document" };
+      if (rawDocs.length > 3) {
+        return {
+          ok: false,
+          message: `add_documents accepts at most 3 documents per call (you passed ${rawDocs.length}). Split this into ${Math.ceil(rawDocs.length / 3)} separate add_documents calls of ≤3 docs each, ideally in the same turn.`,
+        };
+      }
       const { data: proj } = await supa
         .from("projects")
         .select("solution_summary, logic_approved_at")
