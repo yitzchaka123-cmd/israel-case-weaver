@@ -69,6 +69,38 @@ interface Doc {
 
 export function DocumentsSection({ projectId }: { projectId: string }) {
   const [selected, setSelected] = useState<string | null>(null);
+  const [setSelection, setSetSelection] = useState<Set<string>>(new Set());
+  const [setRunning, setSetRunning] = useState(false);
+  const toggleInSet = (id: string) => {
+    setSetSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const runConsistentSet = async () => {
+    const ids = Array.from(setSelection);
+    if (ids.length < 2) { toast.error("Select 2+ documents"); return; }
+    if (ids.length > 8) { toast.error("Max 8 per consistent set"); return; }
+    setSetRunning(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-consistent-document-images", {
+        body: { documentIds: ids, quality: "medium" },
+      });
+      if (error) throw error;
+      const results = (data as { results?: Array<{ id: string; url?: string; error?: string }> }).results ?? [];
+      const ok = results.filter((r) => r.url).length;
+      const failed = results.filter((r) => r.error);
+      if (failed.length) toast.warning(`${ok}/${ids.length} generated. Failed: ${failed.length}`);
+      else toast.success(`Generated ${ok} matching images`);
+      setSetSelection(new Set());
+      refetch();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Consistent-set generation failed");
+    } finally {
+      setSetRunning(false);
+    }
+  };
 
   const { data: project } = useQuery({
     queryKey: ["project", projectId],
