@@ -1,50 +1,46 @@
-## Goal
+## What I tested
 
-Guarantee that EVERY game's document set starts with two docs per suspect — a **Police Briefing** (with realistic AI portrait + bio) and an **Interrogation Transcript** — regardless of what the assistant model decides. Today this is only a soft prompt rule, so models skip it (your new case has 4 suspects and 0 such docs).
+I read the chat history, `assistant_runs`, and the live-bubble code path for the project you're on (`8267a98f…`). There are two distinct bugs causing what you're seeing:
 
-## Why your last change didn't work (short version)
+### Bug 1 — "Starting to think" appears even though the previous turn already finished
 
-- The rule lives only in the system prompt; nothing on the server enforces it.
-- `propose_document_set` tool schema has no `linked_suspect_ids` field, so the model can't attach a portrait even if it wanted to.
-- Suspects on the Logic canvas aren't mirrored into the `suspects` table for this project, so there's nothing to link or generate a portrait from.
+- Run `40135f45` (the one that posted "Drafts mode locked…") has `status='running'` and `finished_at=NULL` in `assistant_runs` — it never closed. The next two runs ran fine, but that row is still "running".
+- The assistant message it wrote (`5d64cbdb`) was saved with `metadata.in_progress = true` and never flipped back to `false`, even though it has full content and two later assistant messages exist after it.
+- The live "Starting…" bubble in `AssistantSection.tsx` (line 806) finds *any* assistant message with `in_progress: true`. Our recent guard only suppresses it when the *latest* assistant message is settled — but here the latest IS settled, so the guard should fire. Re‑reading: the guard checks `lastAssistant.metadata?.in_progress`. That's `false` on `c502b021`, so the bubble *should* be hidden… unless `sending` flips on before the new user message has rendered, in which case `lastAssistant` is still that older zombie. So the bubble shows the OLD turn's stage/reasoning while a new turn is starting. That's the "still showing starting and everything" you saw.
 
-## Changes
+### Bug 2 — Clicked the button, got the same response back
 
-### 1. Make `suspects` table the source of truth (assistant-chat)
-- When the assistant approves the Logic Flow (or when `propose_document_set` is called), auto-mirror every `canvas_nodes` row of type `suspect` (and `red_herring` if `is_red_herring` semantics apply) into `public.suspects` — name from node title, summary/role from node description. Idempotent (match by name within project).
-- This gives every suspect a stable `suspects.id` to attach portraits and to use in `linked_suspect_ids`.
+- Looking at the last 3 assistant turns, the model asked the cast-size question **three times in a row** ("Keep 4 / Expand to 6 / Expand to 7"). Each time you answered "Keep 4 suspects" it acknowledged and then re‑asked the same gate, sometimes paired with a new gate ("draft everything vs draft 5–8"). That's why clicking a button produced "the same thing".
+- Also — the message at 15:14 still says "draft Docs **0–40**" (mentions Doc 0 in the user-visible plan), which you told me earlier must never happen.
 
-### 2. Extend `propose_document_set` tool
-- Add `linked_suspect_ids: string[]` to the tool's JSON schema and to the `cleaned` mapping inside the handler so it's persisted into `proposed_document_set` jsonb.
-- Update tool description to require: for each suspect, exactly one entry with `doc_type: "Police briefing"` and one with `doc_type: "Interrogation transcript"`, both with `linked_suspect_ids: [<that suspect id>]`, both as the first entries (doc_number 1..2N).
+## Plan
 
-### 3. Server-side enforcement (the teeth)
-Inside the `propose_document_set` handler in `supabase/functions/assistant-chat/index.ts`:
-- Load `suspects` for the project (after the mirror in step 1).
-- Validate the incoming `documents`:
-  - For every suspect, exactly one Police Briefing + one Interrogation Transcript with that suspect's id in `linked_suspect_ids`.
-  - These 2N entries occupy doc_number 1..2N (briefing then transcript per suspect, in suspect order).
-- If the proposal is missing pairs or has them out of order, **auto-repair**: synthesize the missing briefing/transcript entries with sensible default titles in the project's `game_language`, renumber so they come first, and shift other docs' numbers up. Save the repaired list and return a note like `"Repaired: inserted N missing per-suspect docs."` so the assistant tells the user.
-- This makes the rule structurally impossible to break — even on Just build it.
+### A. Kill the stale "thinking" bubble for good
+1. In `AssistantSection.tsx`, change the live-bubble selection so it only renders when *the very last assistant row* is `in_progress` AND that row was created after the most recent user message. If the last assistant message is settled (or older than the latest user message), render nothing — even while `sending` is true. This eliminates the "shows the previous turn's reasoning" flash.
+2. Also clear `inFlight.metadata.reasoning / stage_history` from the live bubble when the bubble is suppressed, so we never reuse stale stages for a new turn.
 
-### 4. Carry `linked_suspect_ids` into Final board + `documents` rows
-- `supabase/functions/create-final-documents-map/index.ts`: extend `ProposedDoc` type with `linked_suspect_ids`, pass through into the planned doc and the inserted `canvas_nodes.data`.
-- When the final-map step (or whichever step writes `documents` rows) creates the actual `documents` row for these planned items, populate `documents.linked_suspect_ids` so the existing UI logic that pins the suspect's `thumbnail_url` into the document's first inline image slot fires automatically. (Existing playbook already says: anchor portrait = locked first inline image.)
+### B. Self-heal zombie `in_progress` rows
+3. In `assistant-chat/index.ts`, when a new run starts for a project, mark any prior `chat_messages` row in that project with `metadata.in_progress = true` as `false` and set `metadata.error = 'auto_closed_zombie'`. Pair this with closing any `assistant_runs` row left in `running` for that project (status='error', error='auto_closed_zombie'). This is what the existing client-side 8‑minute watchdog tries to do, but it's leaving the `chat_messages` row dirty.
+4. One-time fix for the current project: close run `40135f45` and clear `in_progress` on message `5d64cbdb` so the UI stops surfacing it as "live".
 
-### 5. Generate the realistic portrait if missing
-- Before doc generation, ensure each suspect has a `thumbnail_url`. If a suspect linked to a Briefing/Interrogation has no portrait, trigger the existing suspect-portrait generation path (Nano Banana / `generate-image`) using the suspect's name + role + case era/setting from the project. Reuse the same portrait for both that suspect's briefing and interrogation (anchor consistency).
+### C. Stop the model from re-asking confirmed gates
+5. In `_shared/assistant-playbook.ts` (and `src/lib/assistant-playbook.ts` mirror), add a hard rule under the Phase 3→4 handoff:
+   > Once cast size has been confirmed (suspects table is non-empty AND user has either approved logic OR responded to a previous cast-size `propose_options`), DO NOT re-ask cast size. Treat it as locked. Never call `propose_options` for cast size more than once per project.
+6. Same section: add an explicit "single-gate-per-turn" rule — when the user has just answered a `propose_options`, the next assistant turn must move forward (draft / build / generate), not pose another structurally identical gate.
+7. Server-side guardrail in `assistant-chat/index.ts`: before persisting an assistant message that contains a `propose_options` whose labels include "Keep N suspects" / "Expand to N suspects", check the prior 3 assistant turns. If the same cast-size options were already posted, strip them from `metadata.options` and rewrite the prose tail to a short "Cast size already confirmed — proceeding." This prevents the loop even if the prompt rule is missed.
 
-### 6. Backfill for the current project
-- One-time backfill for project `d3e6eacc…`: mirror the 4 Logic suspect nodes into `suspects`, repair the existing `proposed_document_set` to insert 8 missing per-suspect docs at positions 1–8, renumber the rest, and re-run the final-map build so the user sees the corrected list immediately.
+### D. Re-enforce the "Doc 0 is invisible" rule
+8. Same playbook file: tighten the existing rule to "Never mention Doc 0, Doc zero, the box doc, or any 0-indexed document in user-facing prose, options, or proposed-document titles. The drafting range you communicate is always **Docs 1..N**."
+9. Add a server-side scrub in `assistant-chat/index.ts` final-message-write step: regex-strip mentions of "Doc 0", "Doc zero", "Docs 0–", "Doc 0 +" from `content` before insert. Cheap belt-and-suspenders.
 
-## Files to edit
+### E. Verify
+10. After deploy, send "Keep 4 suspects" once more from the same project and confirm: (i) no "Starting…" bubble flashes after the response settles, (ii) the assistant moves forward to actually drafting Doc 1 instead of re-asking cast size, (iii) no "Doc 0" appears in any new message.
 
-- `supabase/functions/assistant-chat/index.ts` — schema + handler enforcement + auto-mirror suspects.
-- `supabase/functions/_shared/assistant-playbook.ts` and `src/lib/assistant-playbook.ts` — minor wording: "Police Briefing + Interrogation are server-enforced, not optional".
-- `supabase/functions/create-final-documents-map/index.ts` — pass `linked_suspect_ids` through; populate on `documents` row creation.
-- (No DB schema changes — `documents.linked_suspect_ids` and `suspects.thumbnail_url` already exist.)
+## Files
 
-## What you'll see after this lands
+- `src/features/project/AssistantSection.tsx` — tighten live-bubble guard (A1, A2).
+- `supabase/functions/assistant-chat/index.ts` — zombie cleanup on new run (B3), cast-size loop guard (C7), Doc 0 scrub (D9).
+- `supabase/functions/_shared/assistant-playbook.ts` + `src/lib/assistant-playbook.ts` — rules C5, C6, D8.
+- One-time SQL: close run `40135f45`, clear `in_progress` on message `5d64cbdb` for project `8267a98f…` (B4).
 
-- New cases: docs 1..2N are auto-named "Police Briefing — <Name>" and "Interrogation Transcript — <Name>" (translated to the game language), each pinned with the suspect's portrait.
-- Your current case: the 4 suspects get 8 new docs inserted at the top, the other docs shift to 9+, and portraits get generated for any suspect that doesn't already have one.
+Approve and I'll implement.

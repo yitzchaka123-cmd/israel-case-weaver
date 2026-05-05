@@ -805,24 +805,22 @@ export function AssistantSection({
 
               {sending &&
                 (() => {
-                  // Find the most recent in-progress assistant placeholder. The
-                  // edge function streams `stage`, `stage_history`, `tools` and
-                  // accumulated `reasoning` into its metadata between rounds via
-                  // realtime UPDATE on chat_messages, so this bubble shows live
-                  // thinking/tool activity instead of a silent spinner.
-                  const inFlight = [...messages]
-                    .reverse()
-                    .find((m) => m.role === "assistant" && m.metadata?.in_progress);
-
-                  // Suppress the synthetic "Starting…" bubble when the latest
-                  // assistant row is already settled (not in_progress). This
-                  // prevents the duplicate "thinking again" flicker that
-                  // appears between the assistant finishing and `sending`
-                  // flipping back to false.
-                  const lastAssistant = [...messages]
-                    .reverse()
-                    .find((m) => m.role === "assistant");
-                  if (!inFlight && lastAssistant && !lastAssistant.metadata?.in_progress) {
+                  // Live bubble rule: only render when the VERY LAST message is
+                  // an in-progress assistant placeholder created AFTER the last
+                  // user turn. Otherwise we'd flash stale stage/reasoning from
+                  // a previous (zombie) turn while a new one is starting.
+                  const last = messages[messages.length - 1];
+                  const inFlight =
+                    last && last.role === "assistant" && last.metadata?.in_progress ? last : null;
+                  if (!inFlight) return null;
+                  const lastUser = [...messages].reverse().find((m) => m.role === "user");
+                  if (
+                    lastUser &&
+                    inFlight.created_at &&
+                    lastUser.created_at &&
+                    new Date(inFlight.created_at).getTime() <
+                      new Date(lastUser.created_at).getTime()
+                  ) {
                     return null;
                   }
 

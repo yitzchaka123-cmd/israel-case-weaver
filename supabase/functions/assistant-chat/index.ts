@@ -448,6 +448,9 @@ ${(() => {
 PHASE 4 PLANNING GATE (mandatory): After the Logic Flow is approved and BEFORE you call \`create_final_documents_map\` or \`add_document\`, you MUST first call \`propose_document_set\`. You reason through every approved Logic Flow node + suspect to propose the EXACT list of documents this case needs — each entry is one document with a player-facing title, a format-style hint (doc_type), the SPECIFIC clue/purpose it delivers, and the logic-flow node ids it supports. Do NOT assign documents to envelopes; documents are not gated by envelopes. Doc 0 is added automatically — do not include it. Templates are forbidden: two cases must yield two completely different document lists driven by their actual logic chains, not by a fixed boilerplate.
 TARGET DOCUMENT COUNT (HARD RULE): The number of documents you propose MUST land within ±5 of the project's \`target_doc_count\` (visible in the runtime context block as "Target documents"). Envelopes are NEVER counted toward \`target_doc_count\` — only loose-pile documents count (Doc 0 + every numbered evidence doc). Sealed task envelopes are listed separately under the doc proposal but never inflate or deflate the document count. If \`target_doc_count\` is missing, 0, or below 10, you MUST NOT call \`propose_document_set\` yet. Instead: in this same turn, ask the user how many documents the case should ship with — suggest 30–40 as the standard for an Unsolved-Case-Files-style box (the typical published case has ~35) — and offer \`propose_options\` with three buttons: "30 documents", "35 documents", "40 documents". When the user picks (or types a number), call \`update_project({target_doc_count: N})\` BEFORE calling \`propose_document_set\`. Only then plan the document set, aiming for that count. A 10-document proposal for a case asking for 35 is a failure — do not under-propose.
 SUSPECT POLICE BRIEFINGS + INTERROGATIONS (MANDATORY — COUNTED IN target_doc_count, ORDERED FIRST): The proposed document set MUST include exactly TWO documents per suspect (including red herrings, no exceptions for case genre): (1) a "Police Briefing" and (2) an "Interrogation Transcript". Title each in-language using the patterns "Police Briefing — <Suspect Name>" / "Interrogation Transcript — <Suspect Name>" (Hebrew: "תדריך משטרתי — <שם>" / "תמליל תשאול — <שם>"; Arabic: "ملف الشرطة — <الاسم>" / "محضر استجواب — <الاسم>"; Spanish: "Informe Policial — <Nombre>" / "Transcripción de Interrogatorio — <Nombre>" — adapt similarly for other languages). Set \`doc_type\` to "Suspect profile" (or "Police briefing") for the briefing, and "Interrogation transcript" for the transcript. Each entry MUST list the matching suspect's id in \`linked_suspect_ids\` so the UI pins the suspect's portrait into the document's first inline-image slot as the LOCKED ANCHOR (see ANCHOR PORTRAIT RULE below). **ORDERING (HARD RULE):** these per-suspect docs MUST be the FIRST entries of the document set right after Doc 0 — assign doc_number 1..(2 × suspect_count) so they always print at the top of the pile. Order them suspect-by-suspect: for suspect #1 emit briefing then transcript (doc 1, doc 2), for suspect #2 emit briefing then transcript (doc 3, doc 4), and so on. Only AFTER all per-suspect briefing+transcript pairs may you assign doc_numbers to the rest of the evidence documents. These docs COUNT toward \`target_doc_count\`. When auditing the proposal, confirm: (a) one briefing AND one transcript per suspect row exist, (b) every entry has \`linked_suspect_ids\` populated, (c) docs 1..(2·N) are exactly the per-suspect pairs in order, (d) total count (Doc 0 + 2·suspects + other docs) is within ±5 of \`target_doc_count\`. If any are missing or out of order, REBALANCE the proposal — never ship a set without per-suspect briefings + interrogations at the top.
+CAST SIZE LOCK (HARD RULE): The current suspect roster (rows in the \`suspects\` table) IS the cast size — it is already locked. Do NOT re-ask the user "keep N suspects / expand to M suspects" once suspects exist. Never call \`propose_options\` with cast-size buttons more than once per project. If the user wants to change cast size, they will explicitly say so ("add a suspect", "remove X"); only then call \`add_suspect\` or \`delete_suspect\`.
+SINGLE GATE PER TURN (HARD RULE): When the user has just answered a \`propose_options\` choice, the next assistant turn MUST advance the work (draft, build, generate). Do NOT pose another structurally similar gate immediately after — that creates a confirmation loop. One gate per turn maximum.
+DOC 0 INVISIBILITY (HARD RULE): Doc 0 is an internal box-inventory item generated automatically. NEVER mention "Doc 0", "Doc zero", "doc number 0", or ranges starting at 0 ("Docs 0–40", "Doc 0 + Docs 1–40") in user-facing prose, options, proposed-document titles, or summaries. The drafting/communication range is always **Docs 1..N**.
 ANCHOR PORTRAIT RULE: Suspect intake docs reuse the suspect's saved \`thumbnail_url\` as the document's first inline-image slot, with \`is_anchor=true\`. The portrait is the visual identity for that suspect across the whole case — every other appearance of that suspect (mugshot board, surveillance still, ID card) MUST use that same anchor portrait so lighting, age, lens and wardrobe palette stay consistent. When the user updates a suspect's portrait, the linked intake doc's anchor slot is auto-synced — do NOT propose regenerating those intake docs unless the user explicitly asks.
 HIGH-QUALITY REGEN RULE: When the user says any of "high quality", "in high res", "redo at high quality", "regenerate hi-res", "make it high quality", "regenerate this in high quality", or the Hebrew variants "באיכות גבוהה" / "ברזולוציה גבוהה" / "באיכות הכי גבוהה" — for any image artifact (cover, back cover, suspect portrait, envelope mock-up, hint sheet, inline document image, marketing visual) — you MUST treat that as an explicit instruction to re-run that image's generator with the HIGH quality tier. If a tool you call accepts a \`quality\` argument, ALWAYS pass \`quality: "high"\` for these requests (never "medium" or "low"). If the regeneration is performed in the UI rather than via a tool call, tell the user in 1 short sentence which panel to use AND that they should keep the model picker on its default "High" quality (do NOT downgrade to medium for speed). Always warn briefly that High can take up to ~2 minutes per image.
 After \`propose_document_set\` succeeds, present the proposed list as numbered bullets in your prose AND call \`propose_options\` with three buttons (in this exact order):
@@ -715,6 +718,21 @@ function optionsMatchProse(
   if (items.length === 0) return true; // no numbered list in prose → can't check
   const haystack = items.join(" \n ");
   return options.some((o) => o?.label && haystack.includes(o.label.trim().toLowerCase()));
+}
+
+// Belt-and-suspenders: strip any user-facing mention of "Doc 0" / "Doc zero".
+// Doc 0 is an internal box-inventory item — never something the player or the
+// designer should be asked to read or draft. Range phrases like "Docs 0–40"
+// or "Doc 0 + Docs 1–40" get normalised to start at 1.
+function scrubDocZeroMentions(text: string): string {
+  if (!text) return text;
+  let out = text;
+  out = out.replace(/\bDocs?\s*0\s*[+&,]\s*(?=Docs?\s*\d)/gi, "");
+  out = out.replace(/\bDocs?\s*0\s*[–—-]\s*(\d+)/gi, "Docs 1–$1");
+  out = out.replace(/\(\s*Docs?\s*0\s*\+\s*([^)]+)\)/gi, "($1)");
+  out = out.replace(/\bDoc\s*(?:0|zero)\b[^\.\n]*[\.\n]?/gi, "");
+  out = out.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n");
+  return out.trim();
 }
 
 function synthesizeOptionsFromProse(
@@ -3430,6 +3448,27 @@ async function processConversation(
     });
   }
 
+  // Self-heal zombie state from a previous run that died mid-flight before it
+  // could flip its placeholder/run row. Without this, the live "Starting…"
+  // bubble keeps surfacing the OLD turn's stage/reasoning during a new turn.
+  await supa
+    .from("chat_messages")
+    .update({
+      metadata: { in_progress: false, error: "auto_closed_zombie" },
+    })
+    .eq("project_id", projectId)
+    .eq("role", "assistant")
+    .filter("metadata->>in_progress", "eq", "true");
+  await supa
+    .from("assistant_runs")
+    .update({
+      status: "error",
+      error: "auto_closed_zombie",
+      finished_at: new Date().toISOString(),
+    })
+    .eq("project_id", projectId)
+    .eq("status", "running");
+
   const assistantMessageId = crypto.randomUUID();
   // Placeholder INSERT so any tool call that stamps `created_by_message_id`
   // (documents, suspects, canvas_nodes) satisfies its FK to chat_messages
@@ -3859,10 +3898,43 @@ async function processConversation(
       }
     }
 
+    // Cast-size loop guard: if the model is re-asking "Keep N suspects /
+    // Expand to M suspects" and an identical gate already appeared in a
+    // recent assistant turn, drop the buttons and shorten the prose so the
+    // user isn't asked the same question twice.
+    let scrubbedText = finalText;
+    const looksLikeCastSize = (labels: string[]): boolean =>
+      labels.some((l) => /^\s*(keep|expand to)\s+\d+\s+suspects?/i.test(l));
+    if (quickOptions && looksLikeCastSize(quickOptions.map((o) => o.label))) {
+      const { data: prior } = await supa
+        .from("chat_messages")
+        .select("metadata")
+        .eq("project_id", projectId)
+        .eq("role", "assistant")
+        .order("created_at", { ascending: false })
+        .limit(6);
+      const repeated = (prior ?? []).some((row) => {
+        const opts = ((row as { metadata?: { options?: Array<{ label: string }> } }).metadata
+          ?.options ?? []) as Array<{ label: string }>;
+        return opts.length > 0 && looksLikeCastSize(opts.map((o) => o.label));
+      });
+      if (repeated) {
+        console.warn("[assistant-chat] suppressing duplicate cast-size gate");
+        quickOptions = null;
+        quickQuestion = null;
+        scrubbedText =
+          "Cast size already confirmed — proceeding. (If you want to change it, say so explicitly.)";
+      }
+    }
+
+    // Doc 0 scrub: Doc 0 is an internal box-inventory item; it must never
+    // appear in user-facing prose, options, titles, or ranges.
+    scrubbedText = scrubDocZeroMentions(scrubbedText);
+
     await supa
       .from("chat_messages")
       .update({
-        content: finalText,
+        content: scrubbedText,
         metadata: {
           model,
           effective_model: lastFb.effectiveModel,
