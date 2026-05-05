@@ -69,6 +69,38 @@ interface Doc {
 
 export function DocumentsSection({ projectId }: { projectId: string }) {
   const [selected, setSelected] = useState<string | null>(null);
+  const [setSelection, setSetSelection] = useState<Set<string>>(new Set());
+  const [setRunning, setSetRunning] = useState(false);
+  const toggleInSet = (id: string) => {
+    setSetSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const runConsistentSet = async () => {
+    const ids = Array.from(setSelection);
+    if (ids.length < 2) { toast.error("Select 2+ documents"); return; }
+    if (ids.length > 8) { toast.error("Max 8 per consistent set"); return; }
+    setSetRunning(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("generate-consistent-document-images", {
+        body: { documentIds: ids, quality: "medium" },
+      });
+      if (error) throw error;
+      const results = (data as { results?: Array<{ id: string; url?: string; error?: string }> }).results ?? [];
+      const ok = results.filter((r) => r.url).length;
+      const failed = results.filter((r) => r.error);
+      if (failed.length) toast.warning(`${ok}/${ids.length} generated. Failed: ${failed.length}`);
+      else toast.success(`Generated ${ok} matching images`);
+      setSetSelection(new Set());
+      refetch();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Consistent-set generation failed");
+    } finally {
+      setSetRunning(false);
+    }
+  };
 
   const { data: project } = useQuery({
     queryKey: ["project", projectId],
@@ -325,6 +357,18 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
             {jobRunning && activeJob?.mode !== "draft" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
             Generate all
           </Button>
+          {setSelection.size >= 2 && (
+            <Button
+              variant="outline"
+              onClick={runConsistentSet}
+              disabled={setRunning || setSelection.size > 8}
+              className="gap-2"
+              title="Generate matching images for the selected documents (same form, different content)"
+            >
+              {setRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageIcon className="h-4 w-4" />}
+              Generate as consistent set ({setSelection.size})
+            </Button>
+          )}
           <Button onClick={addDoc} className="gap-2"><Plus className="h-4 w-4" /> New document</Button>
         </div>
       </div>
@@ -492,6 +536,7 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
           <table className="w-full text-sm">
             <thead className="bg-muted/50 text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
+                <th className="px-2 py-3 w-8"></th>
                 <th className="text-left px-4 py-3">#</th>
                 <th className="text-left px-4 py-3">Title</th>
                 <th className="text-left px-4 py-3 hidden md:table-cell">Type</th>
@@ -507,6 +552,15 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
                   onClick={() => setSelected(d.id)}
                   className="border-t cursor-pointer hover:bg-muted/40 transition-colors group"
                 >
+                  <td className="px-2 py-3" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={setSelection.has(d.id)}
+                      onChange={() => toggleInSet(d.id)}
+                      className="h-4 w-4 rounded border-input cursor-pointer"
+                      aria-label="Select for consistent set"
+                    />
+                  </td>
                   <td className="px-4 py-3 font-mono text-xs">{d.doc_number ?? "—"}</td>
                   <td className="px-4 py-3 font-medium">
                     <span className="inline-flex items-center gap-1.5">

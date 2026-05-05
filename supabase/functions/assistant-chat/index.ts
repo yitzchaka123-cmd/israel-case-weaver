@@ -496,7 +496,9 @@ F. **OVERWRITE QUESTION (REQUIRED before any multi-doc bulk run)**: Before you c
   • "Skip already-generated" → on the user's pick, call \`bulk_generate_documents\` with \`skip_existing: true\` (only fills the gaps).
   • "Regenerate everything" → on the user's pick, call \`bulk_generate_documents\` with \`skip_existing: false\` (overwrites everything).
   Do NOT add a third option. Do NOT default silently. If NONE of the target docs have prior content, skip the question entirely and launch the bulk run with \`skip_existing: true\`.
-G. **NO ANALYSIS PARALYSIS** — if the user just asked for a batch action ("draft all", "generate all", "do everything") and you have already spent ≥1 reasoning round without emitting any tool call, STOP THINKING and emit the batch tool call (\`add_documents\` or \`bulk_generate_documents\`) immediately on the next round with whatever sensible defaults you have. Looping in reasoning while the round budget burns down is the #1 cause of the "stuck assistant" watchdog firing — the user sees a recovery message and assumes the system is broken. The system prompt and the proposal already give you everything you need; ship the call.`;
+G. **NO ANALYSIS PARALYSIS** — if the user just asked for a batch action ("draft all", "generate all", "do everything") and you have already spent ≥1 reasoning round without emitting any tool call, STOP THINKING and emit the batch tool call (\`add_documents\` or \`bulk_generate_documents\`) immediately on the next round with whatever sensible defaults you have. Looping in reasoning while the round budget burns down is the #1 cause of the "stuck assistant" watchdog firing — the user sees a recovery message and assumes the system is broken. The system prompt and the proposal already give you everything you need; ship the call.
+
+H. **CONSISTENT-SET DOC IMAGES** — whenever you create OR are about to generate the page-images for ≥2 documents that should look like the SAME form/template (e.g. all interrogation transcripts, all police briefings, all forensic reports, all witness statements), do NOT call \`generate_document_assets\` per-doc for the image. Instead, after the docs exist, call \`generate_consistent_document_set\` ONCE with all their ids in one array (max 8 per call; chain calls if more). This is the only way the layout, header, paper, fonts, and stamps end up identical across the set — same-prompt-different-call always produces visually different images. Suspect portraits are passed pixel-perfect from each suspect's existing thumbnail file, so faces also stay identical. Forensic reports MUST also include a clinical body-injury diagram as one of the inline images (use \`add_document_inline_images\` with a slot labeled "Body injury diagram" describing front+back anatomical silhouettes with numbered injury markers).`;
 })()}
 
 ${
@@ -1652,6 +1654,37 @@ const BASE_TOOLS = [
           },
         },
         required: ["document_id", "images"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "generate_consistent_document_set",
+      description:
+        "Generate the COVER/PAGE images for a group of 2-8 documents that MUST look visually identical (same form, same paper, same header, same fonts, same stamps) — only the per-doc content and per-doc suspect photo differ. Use this whenever the user asks for a series of sibling documents that should look like the same template (e.g. 5 interrogation transcripts, 5 police briefings, 5 forensic reports). Sends ONE coordinated job that locks layout/style across the whole set and embeds the suspect's existing portrait file (pixel-perfect, no re-rolling faces). The first document in the array becomes the visual anchor; later regenerations of any doc in the set will keep matching it.",
+      parameters: {
+        type: "object",
+        properties: {
+          document_ids: {
+            type: "array",
+            minItems: 2,
+            maxItems: 8,
+            items: { type: "string" },
+            description: "Existing document ids that should share one visual template.",
+          },
+          set_brief: {
+            type: "string",
+            description: "Optional extra style notes appended to the locked set brief (e.g. 'manila folder, red CONFIDENTIAL stamp, 1970s typewriter font').",
+          },
+          quality: {
+            type: "string",
+            enum: ["low", "medium", "high"],
+            description: "Image quality. Defaults to medium.",
+          },
+        },
+        required: ["document_ids"],
         additionalProperties: false,
       },
     },
@@ -2942,6 +2975,44 @@ async function executeTool(
         message: `Queued ${targetIds.length} document${targetIds.length === 1 ? "" : "s"} for ${mode} generation${chainHint}. Tell the user to watch the Documents tab (live indicator) and the bell for per-doc previews. Do NOT claim docs are finished, only that generation is QUEUED/STARTED. If you need to chain another bulk call, pass wait_for_job_id="${jobId ?? ""}".`,
         total: targetIds.length,
       };
+    }
+    if (name === "generate_consistent_document_set") {
+      const a = args as { document_ids?: unknown; set_brief?: unknown; quality?: unknown };
+      const ids = Array.isArray(a.document_ids)
+        ? (a.document_ids as unknown[]).filter((s): s is string => typeof s === "string")
+        : [];
+      if (ids.length < 2) return { ok: false, message: "Need at least 2 document_ids." };
+      if (ids.length > 8) return { ok: false, message: "Max 8 documents per consistent-set call." };
+      try {
+        const r = await fetch(`${SUPABASE_URL}/functions/v1/generate-consistent-document-images`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            documentIds: ids,
+            setBriefOverride: typeof a.set_brief === "string" ? a.set_brief : undefined,
+            quality: typeof a.quality === "string" ? a.quality : "medium",
+          }),
+        });
+        const body = await r.json().catch(() => ({} as Record<string, unknown>));
+        if (!r.ok) {
+          return { ok: false, message: `Consistent-set generation failed: ${(body as { error?: string }).error ?? r.status}` };
+        }
+        const results = (body as { results?: Array<{ id: string; url?: string; error?: string }> }).results ?? [];
+        const ok = results.filter((x) => x.url).length;
+        const failed = results.filter((x) => x.error);
+        return {
+          ok: true,
+          message: `Generated ${ok}/${ids.length} consistent-set images.${failed.length ? ` Failed: ${failed.map((f) => f.id).join(", ")}.` : ""}`,
+          set_id: (body as { setId?: string }).setId,
+          anchor_url: (body as { anchorUrl?: string }).anchorUrl,
+          results,
+        };
+      } catch (e) {
+        return { ok: false, message: `Consistent-set request failed: ${e instanceof Error ? e.message : "unknown"}` };
+      }
     }
     if (name === "explain_claude_skill_install") {
       const requested =
