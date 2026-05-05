@@ -2211,8 +2211,77 @@ async function executeTool(
         : [];
       if (proposalDocs.length === 0)
         return { ok: false, message: "propose_document_set needs at least one document" };
-      // Sanitize entries — keep only the planning fields, drop unknowns.
-      const cleaned = proposalDocs.map((raw, i) => {
+
+      // --- Step A: mirror Logic-board suspect nodes into the suspects table.
+      // The Police Briefing + Interrogation Transcript pairs need a stable
+      // suspects.id to anchor the portrait. Idempotent: match by name within
+      // the project. Red-herring nodes count too — they need files just like
+      // real suspects so the player can rule them out.
+      const { data: projForLang } = await supa
+        .from("projects")
+        .select("game_language")
+        .eq("id", projectId)
+        .single();
+      const gameLang = String((projForLang as { game_language?: string } | null)?.game_language ?? "Hebrew");
+
+      const { data: suspectNodes } = await supa
+        .from("canvas_nodes")
+        .select("id, title, description, node_type, position_x, position_y")
+        .eq("project_id", projectId)
+        .eq("board", "logic")
+        .in("node_type", ["suspect", "red_herring"])
+        .order("position_x", { ascending: true });
+      const nodes = (suspectNodes ?? []) as Array<{ id: string; title: string; description: string | null; node_type: string }>;
+
+      const { data: existingSuspects } = await supa
+        .from("suspects")
+        .select("id, name")
+        .eq("project_id", projectId);
+      const existingByName = new Map(
+        ((existingSuspects ?? []) as Array<{ id: string; name: string }>).map((s) => [
+          s.name.trim().toLowerCase(),
+          s.id,
+        ]),
+      );
+
+      const toInsert: Array<{ project_id: string; name: string; summary: string | null; role_in_case: string | null; is_red_herring: boolean; position: number }> = [];
+      nodes.forEach((node, idx) => {
+        const name = (node.title ?? "").trim();
+        if (!name) return;
+        if (existingByName.has(name.toLowerCase())) return;
+        toInsert.push({
+          project_id: projectId,
+          name,
+          summary: node.description ?? null,
+          role_in_case: node.node_type === "red_herring" ? "Red herring" : null,
+          is_red_herring: node.node_type === "red_herring",
+          position: idx,
+        });
+      });
+      if (toInsert.length > 0) {
+        await supa.from("suspects").insert(toInsert);
+      }
+
+      // Re-fetch the canonical suspect list (in original Logic board order).
+      const { data: allSuspects } = await supa
+        .from("suspects")
+        .select("id, name, position, is_red_herring")
+        .eq("project_id", projectId)
+        .order("position", { ascending: true });
+      const suspects = ((allSuspects ?? []) as Array<{ id: string; name: string; position: number; is_red_herring: boolean }>);
+
+      // --- Step B: sanitize incoming documents (now with linked_suspect_ids).
+      type CleanedDoc = {
+        doc_number: number | null;
+        title: string;
+        doc_type: string;
+        print_size: string;
+        envelope_number: number | null;
+        purpose: string;
+        linked_logic_node_ids: string[];
+        linked_suspect_ids: string[];
+      };
+      const cleaned: CleanedDoc[] = proposalDocs.map((raw, i) => {
         const d = (raw ?? {}) as Record<string, unknown>;
         return {
           doc_number: typeof d.doc_number === "number" ? d.doc_number : null,
@@ -2231,25 +2300,123 @@ async function executeTool(
             1200,
           ),
           linked_logic_node_ids: Array.isArray(d.linked_logic_node_ids)
-            ? (d.linked_logic_node_ids as unknown[]).filter(
-                (x): x is string => typeof x === "string",
-              )
+            ? (d.linked_logic_node_ids as unknown[]).filter((x): x is string => typeof x === "string")
+            : [],
+          linked_suspect_ids: Array.isArray(d.linked_suspect_ids)
+            ? (d.linked_suspect_ids as unknown[]).filter((x): x is string => typeof x === "string")
             : [],
         };
       });
+
+      // --- Step C: enforce per-suspect Police Briefing + Interrogation
+      // Transcript pairs as the FIRST entries (doc 1..2N). Auto-repair when
+      // missing or out of order, regardless of what the model emitted.
+      const isBriefing = (d: CleanedDoc) => /police\s*briefing|suspect\s*profile|תדריך משטרתי|ملف الشرطة|informe policial/i.test(`${d.title} ${d.doc_type}`);
+      const isInterrogation = (d: CleanedDoc) => /interrogation\s*transcript|interrogation|תמליל תשאול|תשאול|محضر استجواب|transcripción de interrogatorio/i.test(`${d.title} ${d.doc_type}`);
+
+      const briefingTitle = (name: string) => {
+        const lang = gameLang.toLowerCase();
+        if (lang.includes("hebrew") || lang.includes("עברית")) return `תדריך משטרתי — ${name}`;
+        if (lang.includes("arabic") || lang.includes("عربي")) return `ملف الشرطة — ${name}`;
+        if (lang.includes("spanish") || lang.includes("español")) return `Informe Policial — ${name}`;
+        return `Police Briefing — ${name}`;
+      };
+      const interrogationTitle = (name: string) => {
+        const lang = gameLang.toLowerCase();
+        if (lang.includes("hebrew") || lang.includes("עברית")) return `תמליל תשאול — ${name}`;
+        if (lang.includes("arabic") || lang.includes("عربي")) return `محضر استجواب — ${name}`;
+        if (lang.includes("spanish") || lang.includes("español")) return `Transcripción de Interrogatorio — ${name}`;
+        return `Interrogation Transcript — ${name}`;
+      };
+
+      const matchSuspectFor = (d: CleanedDoc): string | null => {
+        // Prefer explicit link, otherwise try to match suspect name in title.
+        for (const id of d.linked_suspect_ids) {
+          if (suspects.some((s) => s.id === id)) return id;
+        }
+        const t = d.title.toLowerCase();
+        const hit = suspects.find((s) => s.name && t.includes(s.name.toLowerCase()));
+        return hit?.id ?? null;
+      };
+
+      // Bucket existing entries; everything else is "other".
+      const briefingBySuspect = new Map<string, CleanedDoc>();
+      const interrogationBySuspect = new Map<string, CleanedDoc>();
+      const otherDocs: CleanedDoc[] = [];
+      for (const d of cleaned) {
+        const sid = matchSuspectFor(d);
+        if (sid && isBriefing(d) && !briefingBySuspect.has(sid)) {
+          briefingBySuspect.set(sid, { ...d, linked_suspect_ids: [sid] });
+          continue;
+        }
+        if (sid && isInterrogation(d) && !interrogationBySuspect.has(sid)) {
+          interrogationBySuspect.set(sid, { ...d, linked_suspect_ids: [sid] });
+          continue;
+        }
+        otherDocs.push(d);
+      }
+
+      // Synthesize any missing pair members.
+      let synthesized = 0;
+      for (const s of suspects) {
+        if (!briefingBySuspect.has(s.id)) {
+          synthesized++;
+          briefingBySuspect.set(s.id, {
+            doc_number: null,
+            title: briefingTitle(s.name),
+            doc_type: "Police briefing",
+            print_size: "A4",
+            envelope_number: null,
+            purpose: `Suspect dossier for ${s.name}: realistic portrait, background, occupation, relationship to the victim, known whereabouts, alibi summary, and prior record.`,
+            linked_logic_node_ids: [],
+            linked_suspect_ids: [s.id],
+          });
+        }
+        if (!interrogationBySuspect.has(s.id)) {
+          synthesized++;
+          interrogationBySuspect.set(s.id, {
+            doc_number: null,
+            title: interrogationTitle(s.name),
+            doc_type: "Interrogation transcript",
+            print_size: "A4",
+            envelope_number: null,
+            purpose: `In-character police interrogation transcript with ${s.name}. Tied to the case logic — surfaces motive, contradictions, and at least one verifiable claim the player can cross-check.`,
+            linked_logic_node_ids: [],
+            linked_suspect_ids: [s.id],
+          });
+        }
+      }
+
+      // Assemble: per-suspect pairs first (in suspect order, briefing then transcript), then the rest.
+      const repaired: CleanedDoc[] = [];
+      let n = 1;
+      for (const s of suspects) {
+        const b = briefingBySuspect.get(s.id)!;
+        const it = interrogationBySuspect.get(s.id)!;
+        repaired.push({ ...b, doc_number: n++ });
+        repaired.push({ ...it, doc_number: n++ });
+      }
+      for (const o of otherDocs) {
+        repaired.push({ ...o, doc_number: n++ });
+      }
+
       const { error } = await supa
         .from("projects")
         .update({
-          proposed_document_set: cleaned,
+          proposed_document_set: repaired,
           proposed_document_set_status: "proposed",
           proposed_document_set_approved_at: null,
         })
         .eq("id", projectId);
       if (error) return { ok: false, message: `Failed to save proposal: ${error.message}` };
+      const repairNote =
+        synthesized > 0
+          ? ` Auto-inserted ${synthesized} missing per-suspect doc(s) so every suspect has a Police Briefing + Interrogation Transcript at the top of the pile.`
+          : "";
       return {
         ok: true,
-        message: `Document plan proposed with ${cleaned.length} documents. Doc 0 will be added automatically. Ask the user to Approve, Just build it (skip review), or Revise.`,
-        proposal: cleaned,
+        message: `Document plan proposed with ${repaired.length} documents (${suspects.length} suspects → ${suspects.length * 2} per-suspect docs at positions 1–${suspects.length * 2}).${repairNote} Doc 0 will be added automatically. Ask the user to Approve, Just build it (skip review), or Revise.`,
+        proposal: repaired,
       };
     }
     if (name === "create_final_documents_map") {
