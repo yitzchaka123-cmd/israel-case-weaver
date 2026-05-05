@@ -3901,12 +3901,33 @@ async function processConversation(
     // models like Gemini and GPT-5 (thinking mode) burn rounds 0–1 on pure
     // reasoning ("should I call X? what about Y?") before ever emitting a
     // tool. Catching it at round 0 saves the entire turn.
+    // Detect a "confirmation pause" — the model wrote prose asking the user
+    // to say "go" / confirm before firing the batches, even though the user
+    // already approved. We treat this as equivalent to skipping the batch
+    // tool call.
+    const PAUSE_PATTERNS = [
+      /tell me ["']?go["']?/i,
+      /\bsay ["']?go["']?\b/i,
+      /quick confirmation/i,
+      /before i fire/i,
+      /before i (start|begin|kick)/i,
+      /ready\?/i,
+      /shall i (start|begin|proceed|go ahead|fire)/i,
+      /should i (start|begin|proceed|go ahead) (with|by|drafting)/i,
+      /starting with docs? \d/i,
+      /tool limit hit/i,
+      /do you want me to draft/i,
+    ];
+    const isConfirmationPause = PAUSE_PATTERNS.some((re) => re.test(finalText));
+
     if (
       isBatchRequest &&
       nudgeCount < MAX_NUDGES &&
       !isFinalRound &&
-      !executedTools.some(
-        (t) => t.name === "add_documents" || t.name === "bulk_generate_documents",
+      (
+        !executedTools.some(
+          (t) => t.name === "add_documents" || t.name === "bulk_generate_documents",
+        ) || isConfirmationPause
       )
     ) {
       nudgeCount += 1;
@@ -3914,6 +3935,7 @@ async function processConversation(
         model,
         round,
         nudgeCount,
+        isConfirmationPause,
       });
       convo.push({
         role: "assistant",
@@ -3923,12 +3945,13 @@ async function processConversation(
       convo.push({
         role: "system",
         content: escalated
-          ? "🛑 STOP REASONING. This is your final correction. EMIT THE TOOL CALL NOW. No more prose. No more analysis. No envelope questions (envelopes are a SEPARATE workflow — `update_envelope` / `generate_envelopes` only — and have NOTHING to do with this batch). Call `add_documents` (plural) with every remaining doc in one array, or `bulk_generate_documents` for the full scope. If you find yourself thinking 'should I ask about envelopes?' or 'should I batch in chunks of 10?' — STOP. Ship the call with sensible defaults. The user already approved the proposal."
-          : "🔴 You are stalling. The user asked for a BATCH action ('draft all', 'generate everything', or similar). On your NEXT turn you MUST emit a tool call — either `add_document` for Doc 0 followed by `add_documents` (plural) with every remaining doc in the SAME turn, or `bulk_generate_documents` for the full scope. Do NOT write more prose, do NOT ask follow-up questions about envelopes (envelopes use a separate workflow), do NOT pause for confirmation. Ship the tool call now with the proposed/approved doc set.",
+          ? "🛑 STOP REASONING. This is your final correction. EMIT THE TOOL CALL NOW. No more prose. No more analysis. No 'tell me go', no 'quick confirmation', no 'starting with docs 1-3'. The user ALREADY approved. The 3-doc per-call cap is internal — chain the batches silently. Group templated docs (interrogation logs, forensic reports, witness statements) into the SAME batches first; one-offs in trailing batches. Call `add_document` for Doc 0 + `add_documents` (plural) chunks for every remaining doc in this turn, or `bulk_generate_documents` for the full scope."
+          : "🔴 You are stalling with a confirmation question. The user already approved the proposal — do NOT ask 'tell me go', 'quick confirmation', or 'starting with docs 1-3?'. The 3-doc cap is an internal mechanic, NEVER surface it as a reason to pause. On your NEXT turn emit `add_document` for Doc 0 + chained `add_documents` (plural, ≤3 each) covering every remaining doc in the SAME turn. Group docs that share a visual template (interrogation logs, forensic reports, witness statements, suspect file pages) into the SAME 3-doc batches FIRST so a later consistent-set image run has clean groups; standalone one-offs (maps, photos, letters) go in the trailing batches. Ship the calls now.",
       });
       flushProgress(`nudging batch tool (${nudgeCount}/${MAX_NUDGES})…`);
       continue;
     }
+
 
     // Defensive: if the model returned no text, no tools, AND no reasoning,
     // something silently failed (e.g. provider quota exhausted but stream
