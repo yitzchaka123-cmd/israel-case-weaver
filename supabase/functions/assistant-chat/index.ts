@@ -2080,14 +2080,20 @@ async function executeTool(
             "Cannot create final documents yet — the Final Flow is not mapped. Call create_final_documents_map first, then retry add_documents.",
         };
       }
-      // Pre-fetch existing doc_numbers to auto-assign without collision.
+      // Pre-fetch existing doc_numbers + titles to auto-assign without
+      // collision AND to skip duplicate-title inserts (the assistant
+      // sometimes calls add_documents twice for the same proposal, which
+      // previously created shadow copies under fresh doc_numbers).
+      const normTitle = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
       const { data: existingDocs } = await supa
         .from("documents")
-        .select("doc_number")
+        .select("id, doc_number, title")
         .eq("project_id", projectId);
       const usedNumbers = new Set<number>(
         (existingDocs ?? []).map((d: any) => Number(d.doc_number)).filter((n: number) => Number.isFinite(n)),
       );
+      const existingByTitle = new Map<string, { id: string; doc_number: number | null; title: string }>();
+      (existingDocs ?? []).forEach((d: any) => existingByTitle.set(normTitle(d.title ?? ""), d));
       let nextAuto = 1;
       const pickNumber = (requested: unknown): number => {
         const n = Number(requested);

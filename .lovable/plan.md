@@ -1,51 +1,40 @@
-## Goal
+## Why you have duplicates
 
-Stop "Draft all" from appearing stuck forever when the bulk worker dies mid-run. Today, if the worker crashes, the `bulk_generation_jobs` row stays in `running` and the UI keeps acting as if work is happening — for hours.
+Docs 1–4 were created at 21:53 (first `add_documents` call). Docs 5–8 are exact title duplicates of 1–4, created 90 minutes later at 23:23 by a second `add_documents` call from the same assistant turn (`created_by_message_id 8b675356…`).
+
+`add_documents` in `supabase/functions/assistant-chat/index.ts` only deduplicates on `doc_number`. The second call didn't pass numbers, so the auto-numberer assigned fresh 5/6/7/8 and re-inserted the same titles. There is no DB unique constraint on (project_id, title) and no application-side title check.
+
+So this is not a one-off — any retry, double-click, or "regenerate" of the batch will keep adding shadow copies.
 
 ## Plan
 
-### 1. Auto-sweep on read (frontend)
+### 1. Dedupe by title in `add_documents`
+File: `supabase/functions/assistant-chat/index.ts` (the batch handler around line 2083).
 
-`src/features/project/useActiveBulkJob.ts` already treats heartbeats older than 4 minutes as "not active" for the dot, but the DB row stays `running`. Update the hook so when it detects a stale row it also calls the `sweep_stale_bulk_jobs(p_project_id, 4)` RPC. This closes the row the moment any user opens the project.
+Pre-fetch `id, doc_number, title` for the project. Build a normalized-title map (`trim().toLowerCase().replace(/\s+/g," ")`). For each incoming row:
+- If a doc with that normalized title already exists, skip the insert and report it in the response as `skipped: [{ title, existingId, doc_number }]`.
+- Otherwise insert as today.
 
-### 2. Auto-sweep on write (backend)
+Return shape becomes `{ ok, created, skipped, failed }` so the assistant can tell the user "8 created, 4 already existed, 0 failed" instead of silently double-writing.
 
-`supabase/functions/bulk-generate-documents/index.ts` already pre-flights for an active job before starting a new one. Add the same sweep call at the top of that pre-flight so a user clicking "Draft all" again can't be blocked by a ghost row.
+### 2. Same dedupe in single-doc `add_document`
+Same file, the `add_document` handler (~line 1920). Before the final insert (after the Doc 0 branch), look up an existing doc with the same normalized title in this project. If found, return `{ ok: true, message: "Document already exists: …", id: existing.id }` instead of inserting. Doc 0 already has its own update-instead-of-insert path — leave it.
 
-### 3. Scheduled maintenance (pg_cron)
+### 3. Clean up the 4 existing duplicates
+Delete docs 5–8 in project `87e9ab59-…` (the later-created exact-title copies). Keep docs 1–4. Then re-number nothing — the gap from 5–8 doesn't matter, but if you prefer a clean sequence I can also shift 9→5, 10→6, … 44→40 in the same step. Default = just delete the 4 duplicates and leave numbering as-is so existing canvas/envelope links don't break.
 
-Add a migration that:
-- Enables `pg_cron` if not already enabled.
-- Schedules `sweep_stale_bulk_jobs(NULL, 4)` to run every minute across all projects.
-
-This guarantees ghost rows die within ~1 minute even if no one opens the project.
-
-### 4. Surface failures as notifications
-
-When the sweep closes a row (frontend path in step 1), insert a `project_notifications` row:
-- kind: `bulk_job_stalled`
-- title: `Drafting stopped at {completed}/{total}`
-- body: `The worker stopped responding. {failed} failed, {completed} completed. You can resume drafting the remaining documents.`
-- starter_prompt: `Resume drafting the remaining documents in this project.`
-
-So the user sees in the bell that the job died, instead of silent.
-
-### 5. One-time cleanup
-
-Run the sweep once for the stuck 41-doc project (and any other current ghosts) so the user's other project unblocks immediately.
+### 4. (Optional but recommended) DB safety net
+Add a unique partial index `documents_project_title_uniq` on `(project_id, lower(btrim(title)))` so this can never recur even if a future code path forgets to dedupe. Drop the matching duplicate rows first (step 3) so the index can build. If you'd rather keep this purely application-side, skip step 4.
 
 ## Technical notes
 
-- `sweep_stale_bulk_jobs` already exists (SECURITY DEFINER, sets `status='failed'`, appends "auto-closed: stale" to `error`, sets `finished_at = now()`). No DB function changes needed.
-- The frontend RPC call from step 1: `supabase.rpc('sweep_stale_bulk_jobs', { p_project_id: projectId, p_stale_minutes: 4 })`. After it returns >0, fetch the just-failed row to read `completed/total/failed` for the notification body, then insert into `project_notifications`.
-- Step 3 cron uses pg_cron directly (SQL-only, no edge function needed):
-  ```sql
-  select cron.schedule('sweep-stale-bulk-jobs', '* * * * *', $$select public.sweep_stale_bulk_jobs(null, 4);$$);
-  ```
-- Edge function to redeploy: `bulk-generate-documents`.
-- No schema changes. No new tables.
+- Title normalization must match between insert-side and DB index (both use `lower(btrim(title))`).
+- The `skipped` array lets the assistant correctly report "no new work" instead of re-listing rows it didn't actually create.
+- `create-final-documents-map` already dedupes on `doc_number` and falls back to title — it won't be affected.
 
 ## Out of scope
 
-- Reworking the bulk worker to checkpoint/resume mid-document. (Separate task — for now "resume" just means re-clicking Draft all on remaining drafts.)
-- Changing the 4-minute staleness threshold per project.
+- Changing the prompt to discourage the assistant from calling `add_documents` twice. The server-side dedupe makes prompt changes unnecessary.
+- Renumbering existing docs after delete.
+
+**Approve to apply steps 1–3 (and 4 if you want the DB constraint)?**
