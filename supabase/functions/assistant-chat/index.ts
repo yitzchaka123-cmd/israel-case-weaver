@@ -3430,6 +3430,27 @@ async function processConversation(
     });
   }
 
+  // Self-heal zombie state from a previous run that died mid-flight before it
+  // could flip its placeholder/run row. Without this, the live "Starting…"
+  // bubble keeps surfacing the OLD turn's stage/reasoning during a new turn.
+  await supa
+    .from("chat_messages")
+    .update({
+      metadata: { in_progress: false, error: "auto_closed_zombie" },
+    })
+    .eq("project_id", projectId)
+    .eq("role", "assistant")
+    .filter("metadata->>in_progress", "eq", "true");
+  await supa
+    .from("assistant_runs")
+    .update({
+      status: "error",
+      error: "auto_closed_zombie",
+      finished_at: new Date().toISOString(),
+    })
+    .eq("project_id", projectId)
+    .eq("status", "running");
+
   const assistantMessageId = crypto.randomUUID();
   // Placeholder INSERT so any tool call that stamps `created_by_message_id`
   // (documents, suspects, canvas_nodes) satisfies its FK to chat_messages
