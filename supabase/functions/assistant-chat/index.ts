@@ -3880,10 +3880,43 @@ async function processConversation(
       }
     }
 
+    // Cast-size loop guard: if the model is re-asking "Keep N suspects /
+    // Expand to M suspects" and an identical gate already appeared in a
+    // recent assistant turn, drop the buttons and shorten the prose so the
+    // user isn't asked the same question twice.
+    let scrubbedText = finalText;
+    const looksLikeCastSize = (labels: string[]): boolean =>
+      labels.some((l) => /^\s*(keep|expand to)\s+\d+\s+suspects?/i.test(l));
+    if (quickOptions && looksLikeCastSize(quickOptions.map((o) => o.label))) {
+      const { data: prior } = await supa
+        .from("chat_messages")
+        .select("metadata")
+        .eq("project_id", projectId)
+        .eq("role", "assistant")
+        .order("created_at", { ascending: false })
+        .limit(6);
+      const repeated = (prior ?? []).some((row) => {
+        const opts = ((row as { metadata?: { options?: Array<{ label: string }> } }).metadata
+          ?.options ?? []) as Array<{ label: string }>;
+        return opts.length > 0 && looksLikeCastSize(opts.map((o) => o.label));
+      });
+      if (repeated) {
+        console.warn("[assistant-chat] suppressing duplicate cast-size gate");
+        quickOptions = null;
+        quickQuestion = null;
+        scrubbedText =
+          "Cast size already confirmed — proceeding. (If you want to change it, say so explicitly.)";
+      }
+    }
+
+    // Doc 0 scrub: Doc 0 is an internal box-inventory item; it must never
+    // appear in user-facing prose, options, titles, or ranges.
+    scrubbedText = scrubDocZeroMentions(scrubbedText);
+
     await supa
       .from("chat_messages")
       .update({
-        content: finalText,
+        content: scrubbedText,
         metadata: {
           model,
           effective_model: lastFb.effectiveModel,
