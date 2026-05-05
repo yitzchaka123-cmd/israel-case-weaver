@@ -944,6 +944,12 @@ const BASE_TOOLS = [
             type: "string",
             description: "Optional Final board document-node id this row is being created from.",
           },
+          linked_suspect_ids: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "Suspect ids this document is about. REQUIRED for Police Briefing and Interrogation Transcript docs — exactly one suspect id. Pins the suspect's portrait into the doc's first inline-image slot.",
+          },
         },
         required: ["title"],
         additionalProperties: false,
