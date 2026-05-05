@@ -1656,6 +1656,37 @@ const BASE_TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "generate_consistent_document_set",
+      description:
+        "Generate the COVER/PAGE images for a group of 2-8 documents that MUST look visually identical (same form, same paper, same header, same fonts, same stamps) — only the per-doc content and per-doc suspect photo differ. Use this whenever the user asks for a series of sibling documents that should look like the same template (e.g. 5 interrogation transcripts, 5 police briefings, 5 forensic reports). Sends ONE coordinated job that locks layout/style across the whole set and embeds the suspect's existing portrait file (pixel-perfect, no re-rolling faces). The first document in the array becomes the visual anchor; later regenerations of any doc in the set will keep matching it.",
+      parameters: {
+        type: "object",
+        properties: {
+          document_ids: {
+            type: "array",
+            minItems: 2,
+            maxItems: 8,
+            items: { type: "string" },
+            description: "Existing document ids that should share one visual template.",
+          },
+          set_brief: {
+            type: "string",
+            description: "Optional extra style notes appended to the locked set brief (e.g. 'manila folder, red CONFIDENTIAL stamp, 1970s typewriter font').",
+          },
+          quality: {
+            type: "string",
+            enum: ["low", "medium", "high"],
+            description: "Image quality. Defaults to medium.",
+          },
+        },
+        required: ["document_ids"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 // Build the tool list with the playbook-derived `phase` enum substituted in.
