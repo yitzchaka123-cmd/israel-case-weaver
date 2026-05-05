@@ -2188,6 +2188,13 @@ async function executeTool(
           hebrew_content: typeof d.hebrew_content === "string" ? d.hebrew_content : null,
           envelope_number: typeof d.envelope_number === "number" ? d.envelope_number : null,
           ...(linkedNodeIds ? { linked_node_ids: linkedNodeIds } : {}),
+          ...(Array.isArray(d.linked_suspect_ids)
+            ? {
+                linked_suspect_ids: (d.linked_suspect_ids as unknown[]).filter(
+                  (x): x is string => typeof x === "string",
+                ),
+              }
+            : {}),
         });
         const { data: row, error } = await supa
           .from("documents")
