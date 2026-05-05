@@ -1781,6 +1781,10 @@ export type Database = {
       }
       increment_bulk_failed: { Args: { p_job_id: string }; Returns: undefined }
       redeem_invite_code: { Args: { p_code: string }; Returns: Json }
+      sweep_stale_assistant_runs: {
+        Args: { p_stale_minutes?: number }
+        Returns: number
+      }
       sweep_stale_bulk_jobs: {
         Args: { p_project_id?: string; p_stale_minutes?: number }
         Returns: number
