@@ -24,6 +24,7 @@ type PlannedDoc = {
   sourceDocumentId?: string;
   sourceLogicNodeIds?: string[];
   linkedLogicTitles?: string[];
+  linkedSuspectIds?: string[];
   generationStatus: string;
 };
 type ProposedDoc = {
