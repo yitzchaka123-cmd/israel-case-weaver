@@ -2250,7 +2250,7 @@ async function executeTool(
         .select("id, title, description, node_type, position_x, position_y")
         .eq("project_id", projectId)
         .eq("board", "logic")
-        .in("node_type", ["suspect", "red_herring"])
+        .eq("node_type", "suspect")
         .order("position_x", { ascending: true });
       const nodes = (suspectNodes ?? []) as Array<{ id: string; title: string; description: string | null; node_type: string }>;
 
