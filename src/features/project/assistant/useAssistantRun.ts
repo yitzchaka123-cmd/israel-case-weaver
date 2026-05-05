@@ -138,10 +138,21 @@ export function useAssistantRun(projectId: string) {
             if (status === "done") toast.success("Assistant updated your case");
             else if ((payload.new as { error?: string } | null)?.error) {
               const error = (payload.new as { error: string }).error;
-              toast.error(error, { duration: 9000 });
-              void writeAssistantError(projectId, error).then(() =>
-                qc.invalidateQueries({ queryKey: ["chat", projectId] }),
-              );
+              // Synthetic housekeeping errors written by the server-side
+              // zombie sweep (or the client watchdog) are not real failures
+              // for the user's current turn — they just retire a stale row
+              // from a previous run. Don't surface them as toasts/bubbles.
+              const isSynthetic =
+                error === "auto_closed_zombie" ||
+                error.startsWith("stale_recovered") ||
+                error.startsWith("cpu_timeout") ||
+                error === "Cancelled for edit and re-run";
+              if (!isSynthetic) {
+                toast.error(error, { duration: 9000 });
+                void writeAssistantError(projectId, error).then(() =>
+                  qc.invalidateQueries({ queryKey: ["chat", projectId] }),
+                );
+              }
             }
           }
         },
