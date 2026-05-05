@@ -3527,10 +3527,12 @@ async function processConversation(
   }
 
   // Self-heal zombie state from a previous run that died mid-flight before it
-  // could flip its placeholder/run row. Without this, the live "Starting…"
-  // bubble keeps surfacing the OLD turn's stage/reasoning during a new turn.
-  // Also sweep any run (any project) older than 3 minutes — edge function
-  // CPU/wall-time ceiling is well under that, so anything older is dead.
+  // could flip its placeholder/run row. CRITICAL: apply an age floor of 90s
+  // so we don't kill the run we ourselves just inserted (background mode
+  // creates the assistant_runs row in the outer handler before invoking this
+  // function — without an age guard, this sweep would mark the in-flight run
+  // as "auto_closed_zombie" and the client would treat the new turn as failed.)
+  const zombieCutoff = new Date(Date.now() - 90 * 1000).toISOString();
   await supa.rpc("sweep_stale_assistant_runs", { p_stale_minutes: 3 });
   await supa
     .from("chat_messages")
@@ -3539,6 +3541,7 @@ async function processConversation(
     })
     .eq("project_id", projectId)
     .eq("role", "assistant")
+    .lt("created_at", zombieCutoff)
     .filter("metadata->>in_progress", "eq", "true");
   await supa
     .from("assistant_runs")
@@ -3548,7 +3551,8 @@ async function processConversation(
       finished_at: new Date().toISOString(),
     })
     .eq("project_id", projectId)
-    .eq("status", "running");
+    .eq("status", "running")
+    .lt("started_at", zombieCutoff);
 
   const assistantMessageId = crypto.randomUUID();
   // Placeholder INSERT so any tool call that stamps `created_by_message_id`
