@@ -1970,12 +1970,8 @@ async function executeTool(
       const finalNodeId = typeof args.final_node_id === "string" ? args.final_node_id : null;
       const insertArgs = { ...args };
       delete insertArgs.final_node_id;
-      const linkedSuspectIdsRaw = Array.isArray((args as { linked_suspect_ids?: unknown }).linked_suspect_ids)
-        ? ((args as { linked_suspect_ids: unknown[] }).linked_suspect_ids).filter(
-            (x): x is string => typeof x === "string",
-          )
-        : null;
-      // linked_suspect_ids is a real DB column on documents, so leave it on insertArgs.
+      // linked_suspect_ids is a real column on `documents`; it stays on
+      // insertArgs so it persists when the row is inserted/updated below.
       const docNumber = insertArgs.doc_number ?? Math.floor(100 + Math.random() * 900);
       const linkedNodeIds = finalNodeId ? [finalNodeId] : undefined;
       const isDoc0 =
