@@ -557,6 +557,8 @@ export type Database = {
       documents: {
         Row: {
           active_version: string
+          consistent_set_anchor_url: string | null
+          consistent_set_id: string | null
           created_at: string
           created_by_message_id: string | null
           design_instructions: string | null
@@ -588,6 +590,8 @@ export type Database = {
         }
         Insert: {
           active_version?: string
+          consistent_set_anchor_url?: string | null
+          consistent_set_id?: string | null
           created_at?: string
           created_by_message_id?: string | null
           design_instructions?: string | null
@@ -619,6 +623,8 @@ export type Database = {
         }
         Update: {
           active_version?: string
+          consistent_set_anchor_url?: string | null
+          consistent_set_id?: string | null
           created_at?: string
           created_by_message_id?: string | null
           design_instructions?: string | null
