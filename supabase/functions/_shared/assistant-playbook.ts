@@ -551,7 +551,7 @@ Allowed in Part A: naming suspects (they're public), naming the victim, summaris
         enabled: true,
         title_template: "Doc 0 — Contents / Case File Inventory",
         purpose:
-          "Bare contents list for the box. ONE line per item — no descriptions, no purposes, no commentary. Two sections only: (1) Documents — each line is exactly \"#N — Short Name\" (every loose-pile document, including one Police Briefing per suspect). (2) Envelopes — each line is exactly \"Envelope N — Short Label\". No tasks, no opening triggers, no spoilers, no solution.",
+          "Bare contents list for the box. ONE line per item — no descriptions, no purposes, no commentary. Two sections only: (1) Documents — each line is exactly \"#N — Short Name\" (every loose-pile document, including one Police Briefing AND one Interrogation Transcript per suspect, ordered first). (2) Envelopes — each line is exactly \"Envelope N — Short Label\". No tasks, no opening triggers, no spoilers, no solution.",
         doc_type: "contents checklist",
         print_size: "A4",
         list_scope: "planned",
