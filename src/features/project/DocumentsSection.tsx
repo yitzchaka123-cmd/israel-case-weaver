@@ -536,6 +536,7 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
           <table className="w-full text-sm">
             <thead className="bg-muted/50 text-xs uppercase tracking-wider text-muted-foreground">
               <tr>
+                <th className="px-2 py-3 w-8"></th>
                 <th className="text-left px-4 py-3">#</th>
                 <th className="text-left px-4 py-3">Title</th>
                 <th className="text-left px-4 py-3 hidden md:table-cell">Type</th>
