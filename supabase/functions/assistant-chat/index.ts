@@ -2023,6 +2023,33 @@ async function executeTool(
           };
         }
       }
+      // Skip duplicate-title inserts (the assistant sometimes retries
+      // add_document for a doc that's already in the project).
+      if (!isDoc0 && typeof insertArgs.title === "string" && insertArgs.title.trim()) {
+        const normTitle = insertArgs.title.trim().toLowerCase().replace(/\s+/g, " ");
+        const { data: dupRows } = await supa
+          .from("documents")
+          .select("id, title, doc_number")
+          .eq("project_id", projectId);
+        const dup = (dupRows ?? []).find(
+          (r: any) => String(r.title ?? "").trim().toLowerCase().replace(/\s+/g, " ") === normTitle,
+        );
+        if (dup) {
+          if (finalNodeId) {
+            await supa
+              .from("canvas_nodes")
+              .update({ data: { documentId: dup.id, generationStatus: "draft row created" } })
+              .eq("id", finalNodeId)
+              .eq("project_id", projectId);
+          }
+          return {
+            ok: true,
+            message: `Document already exists: ${dup.title} (#${dup.doc_number ?? "?"}) — skipped duplicate.`,
+            id: dup.id,
+            skipped: true,
+          };
+        }
+      }
       const { data, error } = await supa
         .from("documents")
         .insert(
@@ -2080,14 +2107,20 @@ async function executeTool(
             "Cannot create final documents yet — the Final Flow is not mapped. Call create_final_documents_map first, then retry add_documents.",
         };
       }
-      // Pre-fetch existing doc_numbers to auto-assign without collision.
+      // Pre-fetch existing doc_numbers + titles to auto-assign without
+      // collision AND to skip duplicate-title inserts (the assistant
+      // sometimes calls add_documents twice for the same proposal, which
+      // previously created shadow copies under fresh doc_numbers).
+      const normTitle = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
       const { data: existingDocs } = await supa
         .from("documents")
-        .select("doc_number")
+        .select("id, doc_number, title")
         .eq("project_id", projectId);
       const usedNumbers = new Set<number>(
         (existingDocs ?? []).map((d: any) => Number(d.doc_number)).filter((n: number) => Number.isFinite(n)),
       );
+      const existingByTitle = new Map<string, { id: string; doc_number: number | null; title: string }>();
+      (existingDocs ?? []).forEach((d: any) => existingByTitle.set(normTitle(d.title ?? ""), d));
       let nextAuto = 1;
       const pickNumber = (requested: unknown): number => {
         const n = Number(requested);
@@ -2100,12 +2133,26 @@ async function executeTool(
         return nextAuto;
       };
       const created: Array<{ id: string; title: string; doc_number: number }> = [];
+      const skipped: Array<{ title: string; existingId: string; doc_number: number | null }> = [];
       const failed: Array<{ title: string; reason: string }> = [];
       for (const raw of rawDocs) {
         const d = (raw ?? {}) as Record<string, unknown>;
         const title = String(d.title ?? "").trim();
         if (!title) {
           failed.push({ title: "(missing)", reason: "title is required" });
+          continue;
+        }
+        const dup = existingByTitle.get(normTitle(title));
+        if (dup) {
+          skipped.push({ title, existingId: dup.id, doc_number: dup.doc_number });
+          const finalNodeId = typeof d.final_node_id === "string" ? d.final_node_id : null;
+          if (finalNodeId) {
+            await supa
+              .from("canvas_nodes")
+              .update({ data: { documentId: dup.id, generationStatus: "draft row created" } })
+              .eq("id", finalNodeId)
+              .eq("project_id", projectId);
+          }
           continue;
         }
         const docNumber = pickNumber(d.doc_number);
@@ -2132,6 +2179,7 @@ async function executeTool(
           continue;
         }
         created.push({ id: row.id, title: row.title, doc_number: row.doc_number ?? docNumber });
+        existingByTitle.set(normTitle(row.title), { id: row.id, doc_number: row.doc_number, title: row.title });
         if (finalNodeId) {
           await supa
             .from("canvas_nodes")
@@ -2140,10 +2188,14 @@ async function executeTool(
             .eq("project_id", projectId);
         }
       }
+      const parts = [`Created ${created.length}`];
+      if (skipped.length) parts.push(`${skipped.length} already existed (skipped)`);
+      if (failed.length) parts.push(`${failed.length} failed`);
       return {
-        ok: created.length > 0,
-        message: `Created ${created.length} document${created.length === 1 ? "" : "s"}${failed.length ? `; ${failed.length} failed` : ""}.`,
+        ok: created.length > 0 || skipped.length > 0,
+        message: parts.join("; ") + ".",
         created,
+        skipped,
         failed,
       };
     }
