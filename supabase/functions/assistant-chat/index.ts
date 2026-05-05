@@ -717,6 +717,21 @@ function optionsMatchProse(
   return options.some((o) => o?.label && haystack.includes(o.label.trim().toLowerCase()));
 }
 
+// Belt-and-suspenders: strip any user-facing mention of "Doc 0" / "Doc zero".
+// Doc 0 is an internal box-inventory item — never something the player or the
+// designer should be asked to read or draft. Range phrases like "Docs 0–40"
+// or "Doc 0 + Docs 1–40" get normalised to start at 1.
+function scrubDocZeroMentions(text: string): string {
+  if (!text) return text;
+  let out = text;
+  out = out.replace(/\bDocs?\s*0\s*[+&,]\s*(?=Docs?\s*\d)/gi, "");
+  out = out.replace(/\bDocs?\s*0\s*[–—-]\s*(\d+)/gi, "Docs 1–$1");
+  out = out.replace(/\(\s*Docs?\s*0\s*\+\s*([^)]+)\)/gi, "($1)");
+  out = out.replace(/\bDoc\s*(?:0|zero)\b[^\.\n]*[\.\n]?/gi, "");
+  out = out.replace(/[ \t]{2,}/g, " ").replace(/\n{3,}/g, "\n\n");
+  return out.trim();
+}
+
 function synthesizeOptionsFromProse(
   text: string,
 ): { options: Array<{ label: string; send: string }>; question: string | null } | null {
