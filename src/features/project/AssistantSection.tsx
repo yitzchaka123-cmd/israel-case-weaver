@@ -515,6 +515,21 @@ export function AssistantSection({
       if (!changed) return;
     }
     setInput("");
+    // Optimistic insert: drop the user's message into the chat cache RIGHT NOW
+    // so the bubble appears the instant they hit Send. Without this there's a
+    // 1–4s window where the textarea clears, no bubble shows, and it feels
+    // like nothing happened. Realtime will replace this temp row with the
+    // real DB row a moment later.
+    qc.setQueryData<Msg[]>(["chat", projectId], (prev) => [
+      ...(prev ?? []),
+      {
+        id: `optimistic-${Date.now()}`,
+        role: "user",
+        content,
+        created_at: new Date().toISOString(),
+        metadata: null,
+      },
+    ]);
     const source = baseMessages ?? messages;
     // Trim to the last 16 turns. The server prompt re-renders fresh project
     // rosters (suspects/docs/envelopes/hints/canvas nodes) every turn, so
