@@ -552,6 +552,15 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
                   onClick={() => setSelected(d.id)}
                   className="border-t cursor-pointer hover:bg-muted/40 transition-colors group"
                 >
+                  <td className="px-2 py-3" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={setSelection.has(d.id)}
+                      onChange={() => toggleInSet(d.id)}
+                      className="h-4 w-4 rounded border-input cursor-pointer"
+                      aria-label="Select for consistent set"
+                    />
+                  </td>
                   <td className="px-4 py-3 font-mono text-xs">{d.doc_number ?? "—"}</td>
                   <td className="px-4 py-3 font-medium">
                     <span className="inline-flex items-center gap-1.5">
