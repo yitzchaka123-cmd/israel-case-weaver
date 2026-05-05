@@ -993,6 +993,12 @@ const BASE_TOOLS = [
                   items: { type: "string" },
                   description: "Canvas Logic Flow node ids this document supports.",
                 },
+                linked_suspect_ids: {
+                  type: "array",
+                  items: { type: "string" },
+                  description:
+                    "Suspect ids this document is about. REQUIRED for Police Briefing and Interrogation Transcript entries — exactly one suspect id per such doc. Used to pin the suspect's portrait as the locked anchor image.",
+                },
               },
               required: ["title", "purpose"],
               additionalProperties: false,
