@@ -357,6 +357,18 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
             {jobRunning && activeJob?.mode !== "draft" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
             Generate all
           </Button>
+          {setSelection.size >= 2 && (
+            <Button
+              variant="outline"
+              onClick={runConsistentSet}
+              disabled={setRunning || setSelection.size > 8}
+              className="gap-2"
+              title="Generate matching images for the selected documents (same form, different content)"
+            >
+              {setRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageIcon className="h-4 w-4" />}
+              Generate as consistent set ({setSelection.size})
+            </Button>
+          )}
           <Button onClick={addDoc} className="gap-2"><Plus className="h-4 w-4" /> New document</Button>
         </div>
       </div>
