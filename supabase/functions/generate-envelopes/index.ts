@@ -161,7 +161,7 @@ PART C — SEAL INSTRUCTION. 2–3 lines.
 
 ANTI-SPOILER RULE (LOCKED — non-negotiable, applies to ALL three parts including the new recap):
 The task body MUST NOT:
-- Name or reference any specific document by number, title, or filename (no "pull Doc 3", no "open the autopsy report", no "look at the floor plan"). The ONLY allowed mention of a doc is Doc 0 in envelope #0, and only as the case-file index/table of contents — never as a clue.
+- Name or reference any specific document by number, title, or filename (no "pull Doc 3", no "open the autopsy report", no "look at the floor plan", no "Doc 0", no "the contents list/index/table of contents"). Documents are NEVER named in any envelope.
 - Reference a specific clue mechanic ("decode the cipher on page 2", "compare the alibis on the timeline grid", "match the prints", "check the receipts").
 - Reveal or strongly hint at the culprit, the motive, the murder method, the red herring, or which clue is decisive.
 - Tell the player which evidence proves what.
