@@ -816,6 +816,8 @@ export function AssistantSection({
                   const lastUser = [...messages].reverse().find((m) => m.role === "user");
                   if (
                     lastUser &&
+                    inFlight.created_at &&
+                    lastUser.created_at &&
                     new Date(inFlight.created_at).getTime() <
                       new Date(lastUser.created_at).getTime()
                   ) {
