@@ -2106,12 +2106,26 @@ async function executeTool(
         return nextAuto;
       };
       const created: Array<{ id: string; title: string; doc_number: number }> = [];
+      const skipped: Array<{ title: string; existingId: string; doc_number: number | null }> = [];
       const failed: Array<{ title: string; reason: string }> = [];
       for (const raw of rawDocs) {
         const d = (raw ?? {}) as Record<string, unknown>;
         const title = String(d.title ?? "").trim();
         if (!title) {
           failed.push({ title: "(missing)", reason: "title is required" });
+          continue;
+        }
+        const dup = existingByTitle.get(normTitle(title));
+        if (dup) {
+          skipped.push({ title, existingId: dup.id, doc_number: dup.doc_number });
+          const finalNodeId = typeof d.final_node_id === "string" ? d.final_node_id : null;
+          if (finalNodeId) {
+            await supa
+              .from("canvas_nodes")
+              .update({ data: { documentId: dup.id, generationStatus: "draft row created" } })
+              .eq("id", finalNodeId)
+              .eq("project_id", projectId);
+          }
           continue;
         }
         const docNumber = pickNumber(d.doc_number);
@@ -2138,6 +2152,7 @@ async function executeTool(
           continue;
         }
         created.push({ id: row.id, title: row.title, doc_number: row.doc_number ?? docNumber });
+        existingByTitle.set(normTitle(row.title), { id: row.id, doc_number: row.doc_number, title: row.title });
         if (finalNodeId) {
           await supa
             .from("canvas_nodes")
@@ -2146,10 +2161,14 @@ async function executeTool(
             .eq("project_id", projectId);
         }
       }
+      const parts = [`Created ${created.length}`];
+      if (skipped.length) parts.push(`${skipped.length} already existed (skipped)`);
+      if (failed.length) parts.push(`${failed.length} failed`);
       return {
-        ok: created.length > 0,
-        message: `Created ${created.length} document${created.length === 1 ? "" : "s"}${failed.length ? `; ${failed.length} failed` : ""}.`,
+        ok: created.length > 0 || skipped.length > 0,
+        message: parts.join("; ") + ".",
         created,
+        skipped,
         failed,
       };
     }
