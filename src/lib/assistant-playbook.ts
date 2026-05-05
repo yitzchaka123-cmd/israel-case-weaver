@@ -193,7 +193,7 @@ VOICE
 REQUIRED THREE-PART STRUCTURE — every middle and #0 envelope's task body, in this order:
 
 PART A — BRIEFING (env #0) or RECAP (envs #1..#N-2). At least 2 real paragraphs, ~180–280 words.
-- Envelope #0 (Mission Briefing): Opens with the equivalent of "Hi, Detective — you've been assigned to this case." Two paragraphs that set the scene: the victim (use approved Phase-1 facts only — never invent a different victim or solution), where and when it happened, the detective's role/jurisdiction, the mood/era of the case, and that the case file in front of them is everything they get. Mention Doc 0 ONCE as the case-file index/table of contents (Doc 0 is not a clue) — this is the only envelope where Doc 0 may be named. Vivid and atmospheric, never spoils the solution.
+- Envelope #0 (Mission Briefing): Opens with the equivalent of "Hi, Detective — you've been assigned to this case." Two paragraphs that set the scene: the victim (use approved Phase-1 facts only — never invent a different victim or solution), where and when it happened, the detective's role/jurisdiction, the mood/era of the case, and that the case file in front of them is everything they get. NEVER mention Doc 0, "the contents list", "the index", or "the table of contents" — refer to the materials only as "the case file" / "what's in front of you". Vivid and atmospheric, never spoils the solution.
 - Envelopes #1..#N-2 (Stage Recap): Opens with the equivalent of "By now you've probably worked out that…" Two paragraphs that summarise — in-world, as if the player succeeded — what the detective should have figured out by this beat, anchored to the Logic Flow node this envelope gates. Refer to suspects by name when the beat is about them. Acknowledge what's still open ahead. Never name a specific document, never reveal the final culprit/method/motive/red-herring/decisive-clue.
 
 PART B — YOUR TASK. ~80–140 words.
@@ -216,7 +216,7 @@ FINAL ENVELOPE — special shorter shape:
 
 ANTI-SPOILER RULE (LOCKED — non-negotiable, applies to ALL three parts including the new recap)
 The task body MUST NOT:
-- Name or reference any specific document by number, title, or filename. The ONLY allowed mention of a doc is Doc 0 in envelope #0, and only as the case-file index/table of contents — never as a clue.
+- Name or reference any specific document by number, title, or filename (including Doc 0, "the contents list", "the index", "the table of contents"). Documents are NEVER named in any envelope.
 - Reference a specific clue mechanic ("decode the cipher on page 2", "compare the alibis on the timeline grid", "match the prints", "check the receipts").
 - Reveal or strongly hint at the culprit, the motive, the murder method, the red herring, or which clue is decisive.
 - Tell the player which evidence proves what.
@@ -1014,7 +1014,7 @@ After writing a stage, drop a matching \`hint\` node on the canvas via \`add_can
 }
 
 export function renderEnvelopesLine(p: Playbook): string {
-  return `Envelopes (workspace default ≈ ${p.envelopes.count}; the project's APPROVED envelopes roster in CURRENT PROJECT STATE is the source of truth — match that count exactly, typically 5–6, do NOT force the default if the roster differs): ${p.envelopes.labels.join(" / ")}. Envelopes are SEALED TASK GATES, not document containers. All evidence documents live loose in the box from the start; envelopes only hold a full A4 in-character letter from the Case Officer to the Detective (the "task" — vague-but-clear goal, NEVER references specific docs/clues, NEVER spoils the solution). Each envelope has an opening trigger (the case beat that unlocks it). Envelope #0 is the mission briefing (opened first; the only envelope that may name Doc 0, and only as the case-file index — never as a clue). The final envelope is the accusation/solution reveal (shorter, ceremonial). Closing line when language matches: "${p.envelopes.closing_line_he}"`;
+  return `Envelopes (workspace default ≈ ${p.envelopes.count}; the project's APPROVED envelopes roster in CURRENT PROJECT STATE is the source of truth — match that count exactly, typically 5–6, do NOT force the default if the roster differs): ${p.envelopes.labels.join(" / ")}. Envelopes are SEALED TASK GATES, not document containers. All evidence documents live loose in the box from the start; envelopes only hold a full A4 in-character letter from the Case Officer to the Detective (the "task" — vague-but-clear goal, NEVER references specific docs/clues, NEVER spoils the solution). Each envelope has an opening trigger (the case beat that unlocks it). Envelope #0 is the mission briefing (opened first; NEVER names Doc 0 or any specific document — the case file is referred to only as "the case file" / "what's in front of you"). The final envelope is the accusation/solution reveal (shorter, ceremonial). Closing line when language matches: "${p.envelopes.closing_line_he}"`;
 }
 
 export function renderEnvelopeDesignTemplate(p: Playbook): string {
