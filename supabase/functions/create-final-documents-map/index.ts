@@ -141,6 +141,9 @@ Deno.serve(async (req) => {
           purpose: String(p.purpose ?? "Planned by the assistant from the Logic Flow."),
           sourceLogicNodeIds: linkedIds.length > 0 ? linkedIds : undefined,
           linkedLogicTitles: titlesFor(linkedIds),
+          linkedSuspectIds: Array.isArray(p.linked_suspect_ids)
+            ? (p.linked_suspect_ids as string[]).filter((x) => typeof x === "string")
+            : undefined,
           sourceDocumentId: existing?.id,
           generationStatus: statusFor(existing),
         });
