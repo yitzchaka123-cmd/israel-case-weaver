@@ -2023,6 +2023,33 @@ async function executeTool(
           };
         }
       }
+      // Skip duplicate-title inserts (the assistant sometimes retries
+      // add_document for a doc that's already in the project).
+      if (!isDoc0 && typeof insertArgs.title === "string" && insertArgs.title.trim()) {
+        const normTitle = insertArgs.title.trim().toLowerCase().replace(/\s+/g, " ");
+        const { data: dupRows } = await supa
+          .from("documents")
+          .select("id, title, doc_number")
+          .eq("project_id", projectId);
+        const dup = (dupRows ?? []).find(
+          (r: any) => String(r.title ?? "").trim().toLowerCase().replace(/\s+/g, " ") === normTitle,
+        );
+        if (dup) {
+          if (finalNodeId) {
+            await supa
+              .from("canvas_nodes")
+              .update({ data: { documentId: dup.id, generationStatus: "draft row created" } })
+              .eq("id", finalNodeId)
+              .eq("project_id", projectId);
+          }
+          return {
+            ok: true,
+            message: `Document already exists: ${dup.title} (#${dup.doc_number ?? "?"}) — skipped duplicate.`,
+            id: dup.id,
+            skipped: true,
+          };
+        }
+      }
       const { data, error } = await supa
         .from("documents")
         .insert(
