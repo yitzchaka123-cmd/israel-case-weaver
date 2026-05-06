@@ -3496,6 +3496,12 @@ async function processConversation(
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    supa
+      .from("bulk_generation_jobs")
+      .select("id, status, scope, mode, total, completed, failed, started_at, finished_at, error, current_doc_title, cancel_requested")
+      .eq("project_id", projectId)
+      .order("started_at", { ascending: false })
+      .limit(5),
   ]);
   if (!project) throw new Error("Project not found");
 
