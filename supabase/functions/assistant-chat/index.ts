@@ -259,6 +259,20 @@ const PROVIDER_MODEL: Record<string, string> = {
 // ---------- System prompt ----------
 type Tweak = { id: string; text: string; created_at?: string };
 type RosterRow = Record<string, unknown>;
+type BulkJobRow = {
+  id: string;
+  status: string;
+  scope: string;
+  mode: string;
+  total: number;
+  completed: number;
+  failed: number;
+  started_at: string;
+  finished_at: string | null;
+  error: string | null;
+  current_doc_title: string | null;
+  cancel_requested: boolean;
+};
 type Rosters = {
   suspects: RosterRow[];
   documents: RosterRow[];
@@ -267,6 +281,7 @@ type Rosters = {
   canvas_nodes: RosterRow[];
   canvas_edges_count?: number;
   logic_dirty_since_approval?: boolean;
+  bulk_jobs?: BulkJobRow[];
 };
 function truncate(s: unknown, n = 60): string {
   const str = String(s ?? "")
