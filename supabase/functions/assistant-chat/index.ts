@@ -3537,6 +3537,7 @@ async function processConversation(
       new Date((latestNode as { updated_at: string }).updated_at).getTime() >
         new Date(project.logic_approved_at).getTime(),
     ),
+    bulk_jobs: (bulkJobsRoster ?? []) as BulkJobRow[],
   };
   const lastUser = [...messages].reverse().find((m) => (m as { role: string }).role === "user") as
     | { content: string }
