@@ -50,6 +50,9 @@ interface Suspect {
   secrets: string | null;
   contradictions: string | null;
   is_red_herring: boolean;
+  thumbnail_prompt: string | null;
+  thumbnail_url: string | null;
+  uploaded_thumbnail_url: string | null;
 }
 
 const CONCURRENCY = 3;
