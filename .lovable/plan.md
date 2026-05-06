@@ -1,51 +1,37 @@
-## What's actually broken
+Three independent issues, three fixes.
 
-Two distinct problems are stacking on top of each other:
+## 1. Medium case has only 4 suspects
 
-### 1. The assistant kills its own run as a "zombie" (server bug)
+**Why it happens.** There is no difficulty → cast-size guidance anywhere in the assistant playbook. Whatever the model picked on its very first cast-creation turn becomes the locked roster (the `CAST SIZE LOCK (HARD RULE)` at line 451 explicitly forbids re-asking). For your project (`difficulty='medium'`) it picked 4, and that's now permanent unless you say "add a suspect".
 
-In `supabase/functions/assistant-chat/index.ts` (~line 3529–3551), the request handler self-heals by marking **all** `assistant_runs` for the project with `status='running'` as `auto_closed_zombie`. That sweep runs **before** the new placeholder/run row is inserted — but it filters only on `project_id` + `status=running`, with no time floor and no exclusion for the run that's about to start.
+**Fix.** In `supabase/functions/assistant-chat/index.ts` system prompt:
+- Add a CAST SIZE GUIDANCE block (used only on the *first* roster proposal): easy → 3–4, medium → 5–6, hard → 7–9 suspects. Treat as a strong default, override only on explicit user request.
+- Relax the CAST SIZE LOCK: if `difficulty` is medium/hard but `suspects.length < recommendedMin(difficulty)`, the assistant SHOULD proactively offer (via `propose_options`) to add more suspects in one turn — once — rather than silently leaving an under-cast case.
 
-Symptom in DB right now for project `ac854710…`:
-- User msg `ccbd6bc6` ("Draft all in one shot") inserted at `21:59:04.066`
-- `assistant_runs` row started `21:59:03.878`, finished `21:59:04.152` with `error = auto_closed_zombie`
-- Assistant placeholder `be3a2a78` still has `metadata.in_progress = true`, `content = ""`
-- Edge log shows `[stream-reasoning] openai-responses … effort=low tools=26` AFTER the run was already marked errored
+Result: a fresh medium case starts at 5–6, and the existing 4-suspect case will get a one-time "Add 1–2 more suspects?" prompt.
 
-Net effect: the model streams, but the run row it's tied to is already "error", so the client's `useAssistantRun` hook treats the turn as failed (silently, because `auto_closed_zombie` is in the suppressed-errors list), the placeholder bubble is hidden (in_progress + empty content), and the user sees nothing.
+## 2. Suspect portraits don't render in the Suspects UI
 
-This was almost certainly introduced or worsened by the recent "anti-stall nudge" / batching work — the sweep got stricter and now nukes the current turn.
+**Why it happens.** All 4 rows in `suspects` for this project have `thumbnail_url=null` AND `thumbnail_prompt=null`. The auto-generator in `SuspectsSection.tsx` (line 104) only fires when `thumbnail_prompt` is set; it isn't, so no portrait is ever requested. The `add_suspect` tool schema (line 927) doesn't even accept a `thumbnail_prompt` field, so the assistant has no way to seed one.
 
-### 2. The preview iframe lost its Vite client
+**Fix.**
+- Extend `add_suspect` (and `update_suspect`) tool schemas in `assistant-chat/index.ts` with optional `thumbnail_prompt` (string, ~40–80 words: photoreal portrait brief). Update the playbook to REQUIRE the assistant to write a portrait prompt for every new suspect (deriving age/look/wardrobe from `summary` + `role_in_case`). When the field is set, `SuspectsSection` already auto-generates the image — no client change needed.
+- One-time backfill for the 4 existing suspects: call the assistant tool path or, simpler, add a small backfill helper that the user can trigger from the Suspects panel: a new "Generate missing portraits" button that asks the assistant (via existing `mystudio:assistant-prompt` event) to fill `thumbnail_prompt` for any suspect missing one. (No DB migration; assistant writes the prompts and the existing pipeline takes over.)
 
-Console: `[vite] server connection lost. Polling for restart…`
-Runtime: `Failed to fetch dynamically imported module: …/virtual:tanstack-start-client-entry`
+## 3. "Reasoning while running" never appears — only after the run ends
 
-That's a separate transient — `lovable-tagger` failed to resolve `tailwind.config.ts` (this project uses Tailwind v4 via `src/styles.css`, no `tailwind.config.ts` exists), and the dev server hasn't recovered the client entry. A clean reload usually clears it; the fix is to make the tagger tolerant.
+**Why it happens.** In `AssistantSection.tsx` (lines 821–858) the live "Thinking…" bubble only renders when the last message is an assistant placeholder with `metadata.in_progress=true` whose `created_at` is **after** the last user message. The optimistic user message we insert on send uses `new Date().toISOString()` (client clock). The server placeholder uses server clock. On mobile (iOS, your current viewport is 647×1705 = phone) clock skew of even a couple of seconds makes `placeholderStale=true`, so we fall back to the static "Starting…" bubble for the entire run. When the run finishes, realtime replaces the optimistic row with the server's user row (server time), and only then does the placeholder appear "newer" — by which time `in_progress` is already false and the reasoning shows up as the final collapsed disclosure on the assistant message.
 
-## Plan
+**Fix.** In `AssistantSection.tsx`:
+- Drop the timestamp comparison entirely. While `sending` is true, an in-progress assistant placeholder is by definition the current run (the server only ever has one running placeholder per project at a time, guarded by the run's age-floor sweep we just added). Use the simpler rule: pick the **most recent** assistant message with `metadata.in_progress=true` as the live bubble; if none exists yet, show "Starting…".
+- Also tag the optimistic user message with a flag (`metadata.optimistic=true`) and prefer the server-confirmed user message ordering, so we never rely on client `created_at` for ordering decisions.
 
-### A. Fix the self-zombie sweep (root cause of "assistant isn't working")
+Result: the streaming "Thinking…" disclosure (with reasoning segments + tool receipts) appears the moment the server inserts the placeholder (~0.5–1.5s after send), and stays live for the whole run.
 
-In `supabase/functions/assistant-chat/index.ts`, change the zombie sweep that runs before creating the new placeholder so it cannot kill the in-flight turn:
+## Files touched
 
-1. Add an age floor: only mark prior runs as `auto_closed_zombie` if `started_at < now() - interval '90 seconds'` (well above any realistic concurrent send, well below the 3-min stale ceiling already used elsewhere).
-2. Same age floor on the `chat_messages` placeholder cleanup that flips `in_progress=true → false`.
-3. Move the sweep to run **after** the new `assistant_runs` row is inserted, and pass that new run's id as an explicit `neq('id', newRunId)` guard for safety.
-4. Recover the orphaned placeholder for `be3a2a78-…` once (a one-shot `UPDATE chat_messages SET metadata = jsonb_set(metadata,'{in_progress}','false')`) so the user's current "Draft all in one shot" turn doesn't sit forever on "Starting…".
+- `supabase/functions/assistant-chat/index.ts` — playbook (cast-size guidance + portrait-prompt requirement) and tool schemas (`add_suspect`/`update_suspect` gain `thumbnail_prompt`).
+- `src/features/project/SuspectsSection.tsx` — small "Generate missing portraits" action that nudges the assistant for any suspect lacking `thumbnail_prompt`.
+- `src/features/project/AssistantSection.tsx` — live-bubble selection no longer depends on client-vs-server timestamps; mark optimistic messages.
 
-### B. Make the dev-server tagger non-fatal for Tailwind v4
-
-The repo has no `tailwind.config.ts` (Tailwind v4 uses `@theme` in `src/styles.css`). `lovable-tagger` is throwing because it expects one. Add an empty stub `tailwind.config.ts` exporting `export default {}` so the tagger's esbuild step resolves. This silences the error and lets the Vite client entry rebuild reliably, fixing the "failed to fetch dynamically imported module" in the preview.
-
-### C. Verify
-
-1. After A: send a new message in the project; confirm `assistant_runs` reaches `done` and the assistant bubble fills in.
-2. After B: reload preview; confirm no `virtual:tanstack-start-client-entry` error and no tagger esbuild error in `/tmp/dev-server-logs/dev-server.log`.
-
-## Files to edit
-
-- `supabase/functions/assistant-chat/index.ts` — sweep guards (A1–A3) + one-shot recovery insert (A4, can be a small migration instead).
-- `tailwind.config.ts` (new, stub) — fix B.
-
-No schema changes required. No client changes required.
+No DB migrations needed.
