@@ -161,7 +161,7 @@ VISUAL STYLE
 - The page can include subtle stamps, routing marks, signatures, marginal notes, tabs, redactions, or filing codes ONLY when they fit this specific page style.
 
 LAYOUT
-1. Top zone: optional company logo/letterhead lockup when branding is supplied; otherwise use case-office header text or a simple file reference.
+1. Top zone: REQUIRED invented fictional logo / crest / wordmark / letterhead lockup for the issuing in-world office (precinct, dispatch, ministry, etc.). Reuse the same lockup across every page from that office. Never copy or imitate a real-world emblem.
 2. Header: the page insert label and envelope marker (Open First / 1 / 2 / 3 / 4) in the game language.
 3. Main body: visually believable dense briefing text blocks, with paragraph rhythm and section breaks.
 4. Task area: a clearly separated 'Your task' section in the game language.
