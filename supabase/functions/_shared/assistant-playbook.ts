@@ -161,7 +161,7 @@ VISUAL STYLE
 - The page can include subtle stamps, routing marks, signatures, marginal notes, tabs, redactions, or filing codes ONLY when they fit this specific page style.
 
 LAYOUT
-1. Top zone: REQUIRED invented fictional logo / crest / wordmark / letterhead lockup for the issuing in-world office (precinct, dispatch, ministry, etc.). Reuse the same lockup across every page from that office. Never copy or imitate a real-world emblem.
+1. Top zone: the WORKSPACE COMPANY BRANDING lockup (real publisher logo + company name) when configured — see the COMPANY BRANDING block in the prompt. Envelopes are publisher-branded inserts, NOT in-world agency letterhead, so do NOT invent a fictional precinct/dispatch/ministry crest here. If no company branding is configured, leave the top zone clean (small filing marker only) — do NOT invent a logo.
 2. Header: the page insert label and envelope marker (Open First / 1 / 2 / 3 / 4) in the game language.
 3. Main body: visually believable dense briefing text blocks, with paragraph rhythm and section breaks.
 4. Task area: a clearly separated 'Your task' section in the game language.
@@ -175,7 +175,7 @@ TYPOGRAPHY
 AUTHENTICITY / REALISM VARIETY
 Design realism must be chosen fresh for this exact page and must NOT repeat the same generic details across the set. Do not default to coffee stains. Only use coffee/water stains if they make story and document-style sense.
 Pick 3–6 tactile details that belong to THIS page format: examples include carbon-copy offset, stapled corner impression, fax noise, uneven typewriter baseline, registrar stamp, punched binder holes, folded dispatch crease, smudged signature, redaction tape, circled paragraph in pencil, archival scan shadow at page edge, official routing initials, courier receipt tear, docket number, or period-correct date stamp. Vary the details, paper, ink, and administrative markings from one page insert to the next.
-Looks like a real in-world printed page from the case era — NOT a modern Canva mock-up, NOT an envelope, NOT a decorative poster. Use INVENTED fictional emblems and signatures for in-world agencies — never copy or imitate real-world institutional emblems, real police seals, real news mastheads, or real signatures.`,
+Looks like a real publisher-branded printed insert from the game maker — NOT a modern Canva mock-up, NOT an envelope, NOT a decorative poster. The only logo on the page is the workspace company logo (when configured). Do NOT invent fictional in-world agency emblems for envelope inserts — those belong on documents, not envelopes.`,
     task_voice_template: `ENVELOPE TASK BODY — A4 IN-CHARACTER LETTER (workspace default)
 
 Each envelope's "task" is the FULL printed insert that goes inside the envelope. It must read like a real case-officer hand-off to the detective and EASILY FILL AN A4 PAGE — sometimes spilling onto a second. Thin notes are unacceptable.
