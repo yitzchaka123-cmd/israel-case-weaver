@@ -3452,6 +3452,7 @@ async function processConversation(
     { data: nodesRoster },
     { count: edgesCount },
     { data: latestNode },
+    { data: bulkJobsRoster },
   ] = await Promise.all([
     supa.from("projects").select("*").eq("id", projectId).single(),
     supa
