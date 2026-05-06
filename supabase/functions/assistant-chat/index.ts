@@ -657,6 +657,31 @@ Final Flow mapped: ${rosters.canvas_nodes.some((n) => n.board === "final" && n.n
 Solution summary set: ${project.solution_summary ? "YES" : "NO"}
 ${project.solution_summary ? `\n--- BEGIN solution_summary (paste this back verbatim if the user asks "what's the summary") ---\n${project.solution_summary}\n--- END solution_summary ---\n` : ""}
 ${(() => {
+  // Bulk document generation status — read from bulk_generation_jobs.
+  // The user OFTEN asks "did you finish generating?" or "is the bulk done?".
+  // Without this block the model has no signal and (truthfully) says "I don't know".
+  // ALWAYS answer status questions from this section.
+  const jobs = rosters.bulk_jobs ?? [];
+  if (jobs.length === 0)
+    return "Bulk document generation: no jobs have ever run for this project.";
+  const fmt = (j: BulkJobRow) => {
+    const pct = j.total > 0 ? Math.round((j.completed / j.total) * 100) : 0;
+    const errLine = j.error ? ` · error: ${truncate(j.error, 120)}` : "";
+    const cur = j.current_doc_title ? ` · current: "${truncate(j.current_doc_title, 60)}"` : "";
+    const cancel = j.cancel_requested ? " · CANCEL REQUESTED" : "";
+    const finish = j.finished_at ? ` · finished_at: ${j.finished_at}` : "";
+    return `  • [${j.status.toUpperCase()}] ${j.scope}/${j.mode} — ${j.completed}/${j.total} done (${j.failed} failed, ${pct}%) · started_at: ${j.started_at}${finish}${cur}${cancel}${errLine}`;
+  };
+  const running = jobs.filter((j) => j.status === "running");
+  const recent = jobs.filter((j) => j.status !== "running").slice(0, 2);
+  const sections: string[] = [];
+  if (running.length > 0)
+    sections.push(`ACTIVE bulk job(s) — ${running.length} running:\n${running.map(fmt).join("\n")}`);
+  else sections.push("No bulk job is currently running.");
+  if (recent.length > 0) sections.push(`Most recent finished/failed:\n${recent.map(fmt).join("\n")}`);
+  return `Bulk document generation status (use this to answer "did it finish?" / "is it still running?" — NEVER say "I don't know" if data is below):\n${sections.join("\n")}`;
+})()}
+${(() => {
   const set = (project as { proposed_document_set?: unknown }).proposed_document_set;
   if (!Array.isArray(set) || set.length === 0) return "";
   const status =
