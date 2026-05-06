@@ -193,7 +193,8 @@ Deno.serve(async (req) => {
           !((s.role_in_case ?? "").trim()) ||
           !((s.motives ?? "").trim()) ||
           !((s.secrets ?? "").trim()) ||
-          !((s.contradictions ?? "").trim()),
+          !((s.contradictions ?? "").trim()) ||
+          !((s.thumbnail_prompt ?? "").trim()),
         );
 
     if (todo.length === 0) {
