@@ -820,27 +820,22 @@ export function AssistantSection({
 
               {sending &&
                 (() => {
-                  // Live bubble rule: only render when the VERY LAST message is
-                  // an in-progress assistant placeholder created AFTER the last
-                  // user turn. Otherwise we'd flash stale stage/reasoning from
-                  // a previous (zombie) turn while a new one is starting.
-                  const last = messages[messages.length - 1];
+                  // Live bubble: pick the most recent assistant message that
+                  // is still in_progress. While `sending` is true, the server
+                  // guarantees at most one such row per project (zombie sweep
+                  // closes older ones), so we don't need any client-vs-server
+                  // timestamp comparison — that comparison was breaking on
+                  // mobile due to clock skew and hiding the live reasoning
+                  // disclosure for the entire run.
                   const inFlight =
-                    last && last.role === "assistant" && last.metadata?.in_progress ? last : null;
-                  const lastUser = [...messages].reverse().find((m) => m.role === "user");
-                  const placeholderStale =
-                    inFlight &&
-                    lastUser &&
-                    inFlight.created_at &&
-                    lastUser.created_at &&
-                    new Date(inFlight.created_at).getTime() <
-                      new Date(lastUser.created_at).getTime();
+                    [...messages]
+                      .reverse()
+                      .find((m) => m.role === "assistant" && m.metadata?.in_progress) ?? null;
 
-                  // Fallback minimal "Starting…" bubble while we wait for the
-                  // server to insert the in-progress assistant placeholder.
-                  // Without this, there's a 1-3s window after sending where
-                  // the UI shows nothing at all.
-                  if (!inFlight || placeholderStale) {
+                  if (!inFlight) {
+                    // Server hasn't inserted the placeholder yet (~0.5–1.5s
+                    // after send). Show a minimal "Starting…" bubble so the
+                    // user sees instant feedback.
                     return (
                       <div className="flex gap-3 items-start">
                         <Avatar role="assistant" />

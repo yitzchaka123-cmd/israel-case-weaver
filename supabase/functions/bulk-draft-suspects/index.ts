@@ -50,6 +50,9 @@ interface Suspect {
   secrets: string | null;
   contradictions: string | null;
   is_red_herring: boolean;
+  thumbnail_prompt: string | null;
+  thumbnail_url: string | null;
+  uploaded_thumbnail_url: string | null;
 }
 
 const CONCURRENCY = 3;
@@ -79,8 +82,9 @@ async function draftOne(opts: {
           motives: { type: "string", description: "Why this person could plausibly want the victim harmed (or why they look like they might). 2–3 sentences." },
           secrets: { type: "string", description: "Private fact the suspect is hiding from investigators (may be unrelated to the murder for red herrings)." },
           contradictions: { type: "string", description: "What in their statement / alibi does NOT line up with the rest of the case file. 1–2 short bullets." },
+          thumbnail_prompt: { type: "string", description: "40–80 word photoreal portrait brief: apparent age, ethnicity/build, hair, distinctive features, wardrobe, lighting/mood. Period-appropriate. English." },
         },
-        required: ["role_in_case", "summary", "motives", "secrets", "contradictions"],
+        required: ["role_in_case", "summary", "motives", "secrets", "contradictions", "thumbnail_prompt"],
         additionalProperties: false,
       },
     },
@@ -135,7 +139,7 @@ Draft the suspect now.`;
 
   // Only fill blanks (don't overwrite anything the user has already written).
   const patch: Record<string, string> = {};
-  const fields: (keyof Suspect)[] = ["name", "role_in_case", "summary", "motives", "secrets", "contradictions"];
+  const fields: (keyof Suspect)[] = ["name", "role_in_case", "summary", "motives", "secrets", "contradictions", "thumbnail_prompt"];
   for (const f of fields) {
     const current = (s[f] as string | null) ?? "";
     const next = (parsed[f as string] ?? "").trim();
@@ -189,7 +193,8 @@ Deno.serve(async (req) => {
           !((s.role_in_case ?? "").trim()) ||
           !((s.motives ?? "").trim()) ||
           !((s.secrets ?? "").trim()) ||
-          !((s.contradictions ?? "").trim()),
+          !((s.contradictions ?? "").trim()) ||
+          !((s.thumbnail_prompt ?? "").trim()),
         );
 
     if (todo.length === 0) {
