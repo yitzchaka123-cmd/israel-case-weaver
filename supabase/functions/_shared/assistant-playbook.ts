@@ -161,7 +161,7 @@ VISUAL STYLE
 - The page can include subtle stamps, routing marks, signatures, marginal notes, tabs, redactions, or filing codes ONLY when they fit this specific page style.
 
 LAYOUT
-1. Top zone: REQUIRED invented fictional logo / crest / wordmark / letterhead lockup for the issuing in-world office (precinct, dispatch, ministry, etc.). Reuse the same lockup across every page from that office. Never copy or imitate a real-world emblem.
+1. Top zone: the WORKSPACE COMPANY BRANDING lockup (real publisher logo + company name) when configured — see the COMPANY BRANDING block in the prompt. Envelopes are publisher-branded inserts, NOT in-world agency letterhead, so do NOT invent a fictional precinct/dispatch/ministry crest here. If no company branding is configured, leave the top zone clean (small filing marker only) — do NOT invent a logo.
 2. Header: the page insert label and envelope marker (Open First / 1 / 2 / 3 / 4) in the game language.
 3. Main body: visually believable dense briefing text blocks, with paragraph rhythm and section breaks.
 4. Task area: a clearly separated 'Your task' section in the game language.
