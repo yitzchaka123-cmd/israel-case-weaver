@@ -200,6 +200,14 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
     toast.success("Bulk run stopped. You can now start a new run or resume the remaining documents.");
   };
 
+  const requestStopJob = async () => {
+    if (!activeJob) return;
+    if (!confirm("Stop this bulk run after the current document finishes? Already-generated documents will keep their content.")) return;
+    await supabase.from("bulk_generation_jobs").update({ cancel_requested: true }).eq("id", activeJob.id);
+    refetchJob();
+    toast.success("Stop requested — the run will exit after the current document finishes.");
+  };
+
   const resumeRemaining = async () => {
     if (!activeJob) return;
     await launchBulk({
