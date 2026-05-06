@@ -4372,6 +4372,7 @@ Deno.serve(async (req) => {
         new Date((latestNode as { updated_at: string }).updated_at).getTime() >
           new Date(project.logic_approved_at).getTime(),
       ),
+      bulk_jobs: (bulkJobsRoster ?? []) as BulkJobRow[],
     };
     const claudeChatSkills = model.startsWith("anthropic/")
       ? await loadClaudeSkillsForSurface(supa, "chat")
