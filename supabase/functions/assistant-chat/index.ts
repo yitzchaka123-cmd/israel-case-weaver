@@ -259,6 +259,20 @@ const PROVIDER_MODEL: Record<string, string> = {
 // ---------- System prompt ----------
 type Tweak = { id: string; text: string; created_at?: string };
 type RosterRow = Record<string, unknown>;
+type BulkJobRow = {
+  id: string;
+  status: string;
+  scope: string;
+  mode: string;
+  total: number;
+  completed: number;
+  failed: number;
+  started_at: string;
+  finished_at: string | null;
+  error: string | null;
+  current_doc_title: string | null;
+  cancel_requested: boolean;
+};
 type Rosters = {
   suspects: RosterRow[];
   documents: RosterRow[];
@@ -267,6 +281,7 @@ type Rosters = {
   canvas_nodes: RosterRow[];
   canvas_edges_count?: number;
   logic_dirty_since_approval?: boolean;
+  bulk_jobs?: BulkJobRow[];
 };
 function truncate(s: unknown, n = 60): string {
   const str = String(s ?? "")
@@ -641,6 +656,31 @@ Logic flow exists: ${rosters.canvas_nodes.some((n) => n.board === "logic") ? `YE
 Final Flow mapped: ${rosters.canvas_nodes.some((n) => n.board === "final" && n.node_type === "document") ? `YES (${rosters.canvas_nodes.filter((n) => n.board === "final").length} final-board nodes)` : "NO — ask to create the Final Flow before final documents"}
 Solution summary set: ${project.solution_summary ? "YES" : "NO"}
 ${project.solution_summary ? `\n--- BEGIN solution_summary (paste this back verbatim if the user asks "what's the summary") ---\n${project.solution_summary}\n--- END solution_summary ---\n` : ""}
+${(() => {
+  // Bulk document generation status — read from bulk_generation_jobs.
+  // The user OFTEN asks "did you finish generating?" or "is the bulk done?".
+  // Without this block the model has no signal and (truthfully) says "I don't know".
+  // ALWAYS answer status questions from this section.
+  const jobs = rosters.bulk_jobs ?? [];
+  if (jobs.length === 0)
+    return "Bulk document generation: no jobs have ever run for this project.";
+  const fmt = (j: BulkJobRow) => {
+    const pct = j.total > 0 ? Math.round((j.completed / j.total) * 100) : 0;
+    const errLine = j.error ? ` · error: ${truncate(j.error, 120)}` : "";
+    const cur = j.current_doc_title ? ` · current: "${truncate(j.current_doc_title, 60)}"` : "";
+    const cancel = j.cancel_requested ? " · CANCEL REQUESTED" : "";
+    const finish = j.finished_at ? ` · finished_at: ${j.finished_at}` : "";
+    return `  • [${j.status.toUpperCase()}] ${j.scope}/${j.mode} — ${j.completed}/${j.total} done (${j.failed} failed, ${pct}%) · started_at: ${j.started_at}${finish}${cur}${cancel}${errLine}`;
+  };
+  const running = jobs.filter((j) => j.status === "running");
+  const recent = jobs.filter((j) => j.status !== "running").slice(0, 2);
+  const sections: string[] = [];
+  if (running.length > 0)
+    sections.push(`ACTIVE bulk job(s) — ${running.length} running:\n${running.map(fmt).join("\n")}`);
+  else sections.push("No bulk job is currently running.");
+  if (recent.length > 0) sections.push(`Most recent finished/failed:\n${recent.map(fmt).join("\n")}`);
+  return `Bulk document generation status (use this to answer "did it finish?" / "is it still running?" — NEVER say "I don't know" if data is below):\n${sections.join("\n")}`;
+})()}
 ${(() => {
   const set = (project as { proposed_document_set?: unknown }).proposed_document_set;
   if (!Array.isArray(set) || set.length === 0) return "";
@@ -3412,6 +3452,7 @@ async function processConversation(
     { data: nodesRoster },
     { count: edgesCount },
     { data: latestNode },
+    { data: bulkJobsRoster },
   ] = await Promise.all([
     supa.from("projects").select("*").eq("id", projectId).single(),
     supa
@@ -3456,6 +3497,12 @@ async function processConversation(
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
+    supa
+      .from("bulk_generation_jobs")
+      .select("id, status, scope, mode, total, completed, failed, started_at, finished_at, error, current_doc_title, cancel_requested")
+      .eq("project_id", projectId)
+      .order("started_at", { ascending: false })
+      .limit(5),
   ]);
   if (!project) throw new Error("Project not found");
 
@@ -3490,6 +3537,7 @@ async function processConversation(
       new Date((latestNode as { updated_at: string }).updated_at).getTime() >
         new Date(project.logic_approved_at).getTime(),
     ),
+    bulk_jobs: (bulkJobsRoster ?? []) as BulkJobRow[],
   };
   const lastUser = [...messages].reverse().find((m) => (m as { role: string }).role === "user") as
     | { content: string }
@@ -4231,6 +4279,7 @@ Deno.serve(async (req) => {
       { data: nodesRoster },
       { count: edgesCount },
       { data: latestNode },
+      { data: bulkJobsRoster },
     ] = await Promise.all([
       supa.from("projects").select("*").eq("id", projectId).single(),
       supa
@@ -4275,6 +4324,12 @@ Deno.serve(async (req) => {
         .order("updated_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
+      supa
+        .from("bulk_generation_jobs")
+        .select("id, status, scope, mode, total, completed, failed, started_at, finished_at, error, current_doc_title, cancel_requested")
+        .eq("project_id", projectId)
+        .order("started_at", { ascending: false })
+        .limit(5),
     ]);
     if (!project) {
       return new Response(JSON.stringify({ error: "Project not found" }), {
@@ -4317,6 +4372,7 @@ Deno.serve(async (req) => {
         new Date((latestNode as { updated_at: string }).updated_at).getTime() >
           new Date(project.logic_approved_at).getTime(),
       ),
+      bulk_jobs: (bulkJobsRoster ?? []) as BulkJobRow[],
     };
     const claudeChatSkills = model.startsWith("anthropic/")
       ? await loadClaudeSkillsForSurface(supa, "chat")

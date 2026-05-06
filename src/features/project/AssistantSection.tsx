@@ -834,17 +834,23 @@ export function AssistantSection({
 
                   if (!inFlight) {
                     // Server hasn't inserted the placeholder yet (~0.5–1.5s
-                    // after send). Show a minimal "Starting…" bubble so the
-                    // user sees instant feedback.
+                    // after send). Show a proper assistant bubble shape so the
+                    // user gets unmistakable "I heard you, working on it"
+                    // feedback even on slow connections.
                     return (
                       <div className="flex gap-3 items-start">
                         <Avatar role="assistant" />
-                        <div className="flex-1 pt-1.5">
-                          <div className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className="inline-block h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
-                              Starting…
+                        <div className="flex-1 pt-1.5 space-y-1.5">
+                          <div className="inline-flex items-center gap-2 text-[10px] uppercase tracking-wide text-muted-foreground font-semibold">
+                            <Bot className="h-2.5 w-2.5" /> Assistant
+                          </div>
+                          <div className="rounded-2xl rounded-tl-md bg-surface border border-border/60 px-4 py-3 shadow-sm inline-flex items-center gap-2.5">
+                            <Loader2 className="h-4 w-4 animate-spin text-accent" />
+                            <span className="text-sm text-foreground/80">Thinking…</span>
+                            <span className="inline-flex gap-1 ml-1">
+                              <span className="h-1.5 w-1.5 rounded-full bg-accent/70 animate-pulse" />
+                              <span className="h-1.5 w-1.5 rounded-full bg-accent/70 animate-pulse [animation-delay:150ms]" />
+                              <span className="h-1.5 w-1.5 rounded-full bg-accent/70 animate-pulse [animation-delay:300ms]" />
                             </span>
                           </div>
                         </div>
@@ -989,10 +995,15 @@ export function AssistantSection({
 }
 
 function isHiddenAssistantPlaceholder(m: Msg) {
+  // Hide ONLY truly empty placeholders that have nothing to show — no content,
+  // no completed tools, AND still in_progress. Once tools have landed (even with
+  // empty content), render the bubble so users see the work in flight instead
+  // of the message blinking in/out across the in_progress→done transition.
   return (
     m.role === "assistant" &&
     !m.content?.trim() &&
-    (m.metadata?.in_progress || (m.metadata?.tools ?? []).length === 0)
+    !!m.metadata?.in_progress &&
+    (m.metadata?.tools ?? []).length === 0
   );
 }
 

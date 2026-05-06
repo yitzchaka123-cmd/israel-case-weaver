@@ -122,38 +122,70 @@ export function useAssistantRun(projectId: string) {
             setRunState(qc, projectId, { ...readRunState(projectId), isRunning: true, runId: id });
           } else if (status === "done" || status === "error") {
             const cur = readRunState(projectId);
-            setRunState(qc, projectId, { isRunning: false, controller: cur.controller });
-            // Refresh anything the assistant might have touched so other tabs
-            // (Suspects, Documents, Case Board) auto-update without a visit.
-            qc.invalidateQueries({ queryKey: ["chat", projectId] });
-            qc.invalidateQueries({ queryKey: ["project-ai", projectId] });
-            qc.invalidateQueries({ queryKey: ["project", projectId] });
-            qc.invalidateQueries({ queryKey: ["suspects", projectId] });
-            qc.invalidateQueries({ queryKey: ["documents", projectId] });
-            qc.invalidateQueries({ queryKey: ["nodes", projectId] });
-            qc.invalidateQueries({ queryKey: ["envelopes", projectId] });
-            qc.invalidateQueries({ queryKey: ["hints", projectId] });
-            qc.invalidateQueries({ queryKey: ["production-dashboard", projectId] });
-            qc.invalidateQueries({ queryKey: ["phase-bar-counts", projectId] });
-            if (status === "done") toast.success("Assistant updated your case");
-            else if ((payload.new as { error?: string } | null)?.error) {
-              const error = (payload.new as { error: string }).error;
-              // Synthetic housekeeping errors written by the server-side
-              // zombie sweep (or the client watchdog) are not real failures
-              // for the user's current turn — they just retire a stale row
-              // from a previous run. Don't surface them as toasts/bubbles.
-              const isSynthetic =
-                error === "auto_closed_zombie" ||
-                error.startsWith("stale_recovered") ||
-                error.startsWith("cpu_timeout") ||
-                error === "Cancelled for edit and re-run";
-              if (!isSynthetic) {
-                toast.error(error, { duration: 9000 });
-                void writeAssistantError(projectId, error).then(() =>
-                  qc.invalidateQueries({ queryKey: ["chat", projectId] }),
-                );
+            // Defer the local isRunning=false flip until we've confirmed the
+            // assistant chat row has actually been finalized (in_progress=false
+            // OR has non-empty content). The chat_messages realtime UPDATE for
+            // the final content can lag the assistant_runs status flip by a few
+            // hundred ms — flipping isRunning immediately would unmount the
+            // live "Thinking…" bubble while the placeholder still has empty
+            // content and metadata.in_progress=true, making the answer appear
+            // to blink in/out before the final text lands.
+            const finalize = () => {
+              setRunState(qc, projectId, { isRunning: false, controller: cur.controller });
+              qc.invalidateQueries({ queryKey: ["chat", projectId] });
+              qc.invalidateQueries({ queryKey: ["project-ai", projectId] });
+              qc.invalidateQueries({ queryKey: ["project", projectId] });
+              qc.invalidateQueries({ queryKey: ["suspects", projectId] });
+              qc.invalidateQueries({ queryKey: ["documents", projectId] });
+              qc.invalidateQueries({ queryKey: ["nodes", projectId] });
+              qc.invalidateQueries({ queryKey: ["envelopes", projectId] });
+              qc.invalidateQueries({ queryKey: ["hints", projectId] });
+              qc.invalidateQueries({ queryKey: ["production-dashboard", projectId] });
+              qc.invalidateQueries({ queryKey: ["phase-bar-counts", projectId] });
+              if (status === "done") toast.success("Assistant updated your case");
+              else if ((payload.new as { error?: string } | null)?.error) {
+                const error = (payload.new as { error: string }).error;
+                const isSynthetic =
+                  error === "auto_closed_zombie" ||
+                  error.startsWith("stale_recovered") ||
+                  error.startsWith("cpu_timeout") ||
+                  error === "Cancelled for edit and re-run" ||
+                  error === "round_budget_exhausted" ||
+                  error === "empty_model_response" ||
+                  error.startsWith("auto-closed");
+                if (!isSynthetic) {
+                  toast.error(error, { duration: 9000 });
+                  void writeAssistantError(projectId, error).then(() =>
+                    qc.invalidateQueries({ queryKey: ["chat", projectId] }),
+                  );
+                }
               }
-            }
+            };
+            // Poll briefly for the finalized assistant message before flipping.
+            let attempts = 0;
+            const SAFETY_MS = 1500;
+            const startedAt = Date.now();
+            const tick = async () => {
+              attempts += 1;
+              const { data } = await supabase
+                .from("chat_messages")
+                .select("id, content, metadata, created_at")
+                .eq("project_id", projectId)
+                .eq("role", "assistant")
+                .order("created_at", { ascending: false })
+                .limit(1);
+              const row = (data ?? [])[0] as
+                | { content: string; metadata: { in_progress?: boolean } | null }
+                | undefined;
+              const finalized =
+                !!row && (!row.metadata?.in_progress || (row.content?.trim()?.length ?? 0) > 0);
+              if (finalized || Date.now() - startedAt > SAFETY_MS || attempts > 8) {
+                finalize();
+                return;
+              }
+              setTimeout(() => void tick(), 200);
+            };
+            void tick();
           }
         },
       )
