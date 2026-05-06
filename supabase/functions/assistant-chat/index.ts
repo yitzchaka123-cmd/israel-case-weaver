@@ -4279,6 +4279,7 @@ Deno.serve(async (req) => {
       { data: nodesRoster },
       { count: edgesCount },
       { data: latestNode },
+      { data: bulkJobsRoster },
     ] = await Promise.all([
       supa.from("projects").select("*").eq("id", projectId).single(),
       supa
@@ -4323,6 +4324,12 @@ Deno.serve(async (req) => {
         .order("updated_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
+      supa
+        .from("bulk_generation_jobs")
+        .select("id, status, scope, mode, total, completed, failed, started_at, finished_at, error, current_doc_title, cancel_requested")
+        .eq("project_id", projectId)
+        .order("started_at", { ascending: false })
+        .limit(5),
     ]);
     if (!project) {
       return new Response(JSON.stringify({ error: "Project not found" }), {
