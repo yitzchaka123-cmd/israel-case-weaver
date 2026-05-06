@@ -1375,7 +1375,11 @@ const BASE_TOOLS = [
           secrets: { type: "string" },
           contradictions: { type: "string" },
           is_red_herring: { type: "boolean" },
-        },
+          thumbnail_prompt: {
+            type: "string",
+            description:
+              "Optional. Set this to (re)seed the suspect's portrait — a 40–80 word photoreal brief. The Suspects panel auto-generates a new portrait the moment this field changes from empty to set.",
+          },
         required: ["id"],
         additionalProperties: false,
       },
