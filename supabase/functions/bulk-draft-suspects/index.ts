@@ -139,7 +139,7 @@ Draft the suspect now.`;
 
   // Only fill blanks (don't overwrite anything the user has already written).
   const patch: Record<string, string> = {};
-  const fields: (keyof Suspect)[] = ["name", "role_in_case", "summary", "motives", "secrets", "contradictions"];
+  const fields: (keyof Suspect)[] = ["name", "role_in_case", "summary", "motives", "secrets", "contradictions", "thumbnail_prompt"];
   for (const f of fields) {
     const current = (s[f] as string | null) ?? "";
     const next = (parsed[f as string] ?? "").trim();
