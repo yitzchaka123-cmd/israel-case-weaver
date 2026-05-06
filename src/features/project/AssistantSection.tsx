@@ -989,10 +989,15 @@ export function AssistantSection({
 }
 
 function isHiddenAssistantPlaceholder(m: Msg) {
+  // Hide ONLY truly empty placeholders that have nothing to show — no content,
+  // no completed tools, AND still in_progress. Once tools have landed (even with
+  // empty content), render the bubble so users see the work in flight instead
+  // of the message blinking in/out across the in_progress→done transition.
   return (
     m.role === "assistant" &&
     !m.content?.trim() &&
-    (m.metadata?.in_progress || (m.metadata?.tools ?? []).length === 0)
+    !!m.metadata?.in_progress &&
+    (m.metadata?.tools ?? []).length === 0
   );
 }
 
