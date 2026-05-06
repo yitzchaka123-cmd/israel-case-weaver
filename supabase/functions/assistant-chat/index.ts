@@ -936,8 +936,13 @@ const BASE_TOOLS = [
           secrets: { type: "string" },
           contradictions: { type: "string" },
           is_red_herring: { type: "boolean" },
+          thumbnail_prompt: {
+            type: "string",
+            description:
+              "REQUIRED for every new suspect. A 40–80 word photoreal portrait brief covering apparent age, ethnicity, build, hair, distinctive features, wardrobe, lighting and mood — derived from name + summary + role_in_case. The Suspects panel auto-generates the portrait the moment this field is set.",
+          },
         },
-        required: ["name"],
+        required: ["name", "thumbnail_prompt"],
         additionalProperties: false,
       },
     },
