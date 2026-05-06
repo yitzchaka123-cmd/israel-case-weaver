@@ -418,6 +418,14 @@ export function DocumentsSection({ projectId }: { projectId: string }) {
               {activeJob.failed > 0 && <span className="text-destructive">· {activeJob.failed} failed</span>}
             </div>
             <div className="flex items-center gap-2">
+              {jobRunning && !activeJob.cancel_requested && (
+                <Button size="sm" variant="destructive" onClick={requestStopJob} className="gap-1.5">
+                  <X className="h-3.5 w-3.5" /> Stop
+                </Button>
+              )}
+              {jobRunning && activeJob.cancel_requested && (
+                <span className="text-xs text-muted-foreground italic">Stopping after current doc…</span>
+              )}
               {!jobRunning && stoppedEarly && (
                 <Button size="sm" variant="outline" onClick={resumeRemaining}>Resume remaining</Button>
               )}
