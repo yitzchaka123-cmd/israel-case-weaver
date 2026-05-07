@@ -141,18 +141,6 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
     },
   });
   const playbook = useMemo(() => resolvePlaybook(playbookRaw), [playbookRaw]);
-  const slots = useMemo(
-    () => {
-      const dbMax = (data ?? []).reduce((m, e) => Math.max(m, e.number ?? 0), 0);
-      const total = Math.max(playbook.envelopes.count, dbMax);
-      return Array.from({ length: total }, (_, i) => ({
-        n: i + 1,
-        label: playbook.envelopes.labels[i] ?? `Envelope ${i + 1}`,
-      }));
-    },
-    [playbook, data],
-  );
-
   const { data } = useQuery({
     queryKey: ["envelopes", projectId],
     queryFn: async () => {
@@ -165,6 +153,18 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
       return data as Envelope[];
     },
   });
+
+  const slots = useMemo(
+    () => {
+      const dbMax = (data ?? []).reduce((m, e) => Math.max(m, e.number ?? 0), 0);
+      const total = Math.max(playbook.envelopes.count, dbMax);
+      return Array.from({ length: total }, (_, i) => ({
+        n: i + 1,
+        label: playbook.envelopes.labels[i] ?? `Envelope ${i + 1}`,
+      }));
+    },
+    [playbook, data],
+  );
 
   const { data: project } = useQuery({
     queryKey: ["project-language", projectId],
