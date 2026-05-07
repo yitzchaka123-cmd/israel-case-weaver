@@ -205,7 +205,7 @@ PART C — SEAL INSTRUCTION. 2–3 lines.
 - The equivalent of "Only break the seal on the next envelope once you are sure you have completed this task correctly." Always references "the next envelope" generically — never hints what is inside it.
 - One-line sign-off + in-character signature.
 
-ENVELOPE #0 — also:
+ENVELOPE #1 — also:
 - Part A is the BRIEFING variant above. No "you've probably worked out…" — the case is brand new.
 - Part B walks the player into the first beat of the Logic Flow with a vague-but-clear goal.
 
