@@ -624,14 +624,49 @@ function EnvelopeCard({
               dir={["Hebrew", "Arabic", "Persian", "Urdu", "Yiddish"].includes(gameLanguage) ? "rtl" : "ltr"}
               rows={14}
               className="text-sm leading-relaxed font-serif"
-              value={value("task") as string}
+              value={stripTaskMarkers((value("task") as string) ?? "")}
               onChange={(e) => onUpdate({ task: e.target.value })}
               placeholder="Detective — you've caught a case…&#10;&#10;Full A4 letter from the Case Officer to the Detective. Vague-but-clear task. Never name specific docs or clues."
             />
             <p className="text-[11px] text-muted-foreground">
-              This is the full A4 page the player reads when they open this envelope. Aim for a real briefing — at least 400 words.
+              This is the full A4 page the player reads when they open this envelope. Aim for a real briefing — at least 400 words. The "Your task:" line will print as a bold red line on the A4 mock-up.
             </p>
           </div>
+
+          {/* Optional: rare follow-up clue note (any envelope) */}
+          <div className="space-y-1.5">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+              Follow-up clue note (optional, rare)
+            </Label>
+            <Textarea
+              rows={2}
+              className="text-xs"
+              value={(value("followup_clue_note") as string) ?? ""}
+              onChange={(e) => onUpdate({ followup_clue_note: e.target.value })}
+              placeholder='e.g. "We brought Nick back for a second interrogation — focus on the alibi gap."'
+            />
+            <p className="text-[11px] text-muted-foreground">
+              When set, the next AI draft will weave a short "extra enclosure" note into the body. Doesn't generate a separate document — keep this as a freeform note only.
+            </p>
+          </div>
+
+          {/* Final envelope only: solution video URL for the QR */}
+          {slot.n === playbookCount && (
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+                Solution video URL (final envelope QR)
+              </Label>
+              <Input
+                type="url"
+                value={(value("solution_video_url") as string) ?? ""}
+                onChange={(e) => onUpdate({ solution_video_url: e.target.value })}
+                placeholder="https://youtube.com/watch?v=…"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Paste the YouTube link to the fake news report. The page mock-up will print a QR placeholder; the scannable QR is composited at print time.
+              </p>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
