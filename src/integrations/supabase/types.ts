@@ -681,6 +681,7 @@ export type Database = {
           created_at: string
           created_by_message_id: string | null
           design_instructions: string | null
+          followup_clue_note: string | null
           id: string
           label: string | null
           linked_document_ids: string[] | null
@@ -689,6 +690,8 @@ export type Database = {
           notes: string | null
           number: number
           project_id: string
+          solution_text: string | null
+          solution_video_url: string | null
           status: string
           task: string | null
           updated_at: string
@@ -702,6 +705,7 @@ export type Database = {
           created_at?: string
           created_by_message_id?: string | null
           design_instructions?: string | null
+          followup_clue_note?: string | null
           id?: string
           label?: string | null
           linked_document_ids?: string[] | null
@@ -710,6 +714,8 @@ export type Database = {
           notes?: string | null
           number: number
           project_id: string
+          solution_text?: string | null
+          solution_video_url?: string | null
           status?: string
           task?: string | null
           updated_at?: string
@@ -723,6 +729,7 @@ export type Database = {
           created_at?: string
           created_by_message_id?: string | null
           design_instructions?: string | null
+          followup_clue_note?: string | null
           id?: string
           label?: string | null
           linked_document_ids?: string[] | null
@@ -731,6 +738,8 @@ export type Database = {
           notes?: string | null
           number?: number
           project_id?: string
+          solution_text?: string | null
+          solution_video_url?: string | null
           status?: string
           task?: string | null
           updated_at?: string
