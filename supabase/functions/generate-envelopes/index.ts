@@ -91,10 +91,14 @@ The image generator will receive the logo file separately. In the design_instruc
 
     const { data: existing } = await supa
       .from("envelopes")
-      .select("id, number")
+      .select("id, number, solution_video_url, followup_clue_note")
       .eq("project_id", projectId);
     const existingByNumber = new Map<number, string>(
       (existing ?? []).map((e) => [e.number as number, e.id as string]),
+    );
+    type ExistingRow = { number: number | null; solution_video_url: string | null; followup_clue_note: string | null };
+    const existingMeta = new Map<number, ExistingRow>(
+      (existing ?? []).map((e) => [e.number as number, e as ExistingRow]),
     );
 
     const { data: suspects } = await supa
