@@ -216,8 +216,8 @@ DOCUMENTS in the box (${docs?.length ?? 0} total — all available to the player
 ${(docs ?? []).slice(0, 30).map((d) => `#${d.doc_number ?? "?"} ${d.title} (${d.doc_type ?? "—"})`).join("\n") || "(none yet)"}
 
 ${onlyNumber !== null
-  ? `Produce ONLY envelope #${onlyNumber} (label starting point: "${labels[Math.max(0, Math.min(count - 1, onlyNumber))]}"). Return a single-element envelopes array containing just that envelope. Follow every rule above as if it were part of the full set — its task body must respect the three-part structure and the recap/briefing distinction for its position in the chain.`
-  : `Produce all ${count} envelopes now in numerical order. Reuse the labels above as the starting point for the "label" field but you may refine them. Each envelope must have a distinct opening_trigger anchored in this case's logic flow.`}`;
+  ? `Produce ONLY envelope #${onlyNumber} (label starting point: "${labels[Math.max(0, Math.min(count - 1, onlyNumber - 1))]}"). Return a single-element envelopes array containing just that envelope. Follow every rule above as if it were part of the full set — its task body must respect the three-part structure and the recap/briefing distinction for its position in the chain.`
+  : `Produce all ${count} envelopes now in numerical order (numbered 1..${count}). Reuse the labels above as the starting point for the "label" field but you may refine them. Each envelope must have a distinct opening_trigger anchored in this case's logic flow.`}`;
 
     const tool = {
       type: "function",
@@ -232,7 +232,7 @@ ${onlyNumber !== null
               items: {
                 type: "object",
                 properties: {
-                  number: { type: "number", description: `0..${count - 1}` },
+                  number: { type: "number", description: `1..${count}` },
                   label: { type: "string" },
                   task: { type: "string", description: "Full A4 in-character letter from the Case Officer to the Detective, ~450–700 words (hard floor 400) for env #1 and middle envelopes, ~150–250 for the final envelope. Three-part structure: PART A briefing (env #1) or recap 'By now you've probably worked out…' (middle envelopes), at least 2 paragraphs ~180–280 words; PART B 'Your task:' line + one vague-but-clear case-specific goal + 3–5 general investigative prompts; PART C 2–3 line seal instruction telling the player to only open the next envelope when sure, plus in-character sign-off. Strictly NEVER references specific document numbers/titles, specific clue mechanics, or the solution. Closing line is appended by UI — do not include it." },
                   opening_trigger: { type: "string", description: "1-sentence description of when the player should open this envelope (in the game language)." },
@@ -286,7 +286,7 @@ ${onlyNumber !== null
 
     let written = 0;
     for (const env of parsed.envelopes) {
-      const number = Math.max(0, Math.min(count - 1, Math.round(env.number)));
+      const number = Math.max(1, Math.min(count, Math.round(env.number)));
       const id = existingByNumber.get(number);
       const trigger = (env.opening_trigger ?? "").trim();
       const notes = trigger ? `Opening trigger: ${trigger}` : null;
