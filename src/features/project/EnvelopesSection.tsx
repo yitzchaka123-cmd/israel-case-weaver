@@ -336,7 +336,7 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
           headers: { "Content-Type": "application/json", Authorization: auth },
           body: JSON.stringify({
             projectId, target: "envelope", targetId: env.id,
-            mode: "background", prompt: pageInsertPrompt((env.design_instructions ?? "").trim(), displayLabel(env.number)),
+            mode: "background", prompt: pageInsertPrompt((env.design_instructions ?? "").trim(), displayLabel(env.number), { isFinal: env.number === playbook.envelopes.count, qrPayload: env.solution_video_url }),
             modelOverride, quality, aspect: "portrait", category: "envelope",
             title: `Envelope ${displayLabel(env.number)} page insert — ${env.label ?? ""}`,
           }),
