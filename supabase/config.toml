@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.drive-oauth-callback]
 verify_jwt = false
+
+[functions.generate-consistent-envelope-images]
+verify_jwt = false

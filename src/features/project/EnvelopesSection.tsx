@@ -33,6 +33,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
   Mail,
   Sparkles,
   Wand2,
@@ -43,6 +52,7 @@ import {
   FileText,
   ChevronDown,
   Trash2,
+  Layers,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
@@ -145,6 +155,9 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
   const [draft, setDraft] = useState<Record<number, Partial<Envelope>>>({});
   const [generatingAll, setGeneratingAll] = useState(false);
   const [generatingAllCovers, setGeneratingAllCovers] = useState(false);
+  const [consistentOpen, setConsistentOpen] = useState(false);
+  const [consistentSelected, setConsistentSelected] = useState<Set<string>>(new Set());
+  const [consistentRunning, setConsistentRunning] = useState(false);
   const coverBatch = useImageBatchProgress(projectId);
   const { create: createNotification } = useProjectNotifications(projectId);
 
@@ -358,6 +371,43 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
     }
   };
 
+  const openConsistentDialog = () => {
+    const eligible = (data ?? []).filter((e) => (e.design_instructions ?? "").trim());
+    if (eligible.length < 2) {
+      toast.error("Need at least 2 envelopes with design instructions to run a consistent set");
+      return;
+    }
+    setConsistentSelected(new Set(eligible.map((e) => e.id)));
+    setConsistentOpen(true);
+  };
+
+  const runConsistentBatch = async () => {
+    const ids = Array.from(consistentSelected);
+    if (ids.length < 2) { toast.error("Pick at least 2 envelopes"); return; }
+    if (ids.length > 10) { toast.error("Max 10 envelopes per consistent batch"); return; }
+    setConsistentRunning(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const auth = `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`;
+      const resp = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-consistent-envelope-images`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: auth },
+          body: JSON.stringify({ projectId, envelopeIds: ids, quality: envelopeImageQuality() }),
+        },
+      );
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(json.error ?? `Failed (${resp.status})`);
+      toast.success(`Consistent batch started for ${ids.length} envelopes — pages will appear as they finish`);
+      setConsistentOpen(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Consistent batch failed");
+    } finally {
+      setConsistentRunning(false);
+    }
+  };
+
   return (
     <TooltipProvider>
       <div className="max-w-5xl mx-auto px-6 md:px-10 py-8 space-y-6">
@@ -399,8 +449,74 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
               )}
               Generate all page mock-ups
             </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={openConsistentDialog}
+                >
+                  <Layers className="h-4 w-4" />
+                  Generate as consistent set (ChatGPT)
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs">
+                One ChatGPT call per envelope, sharing paper/typography/era — each later page uses the first as a visual reference so the whole set looks like the same world.
+              </TooltipContent>
+            </Tooltip>
           </div>
         </div>
+
+        <Dialog open={consistentOpen} onOpenChange={setConsistentOpen}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2"><Layers className="h-4 w-4" /> Consistent envelope set</DialogTitle>
+              <DialogDescription>
+                Pick the envelopes to render as one visually consistent set. The first picked (lowest number) becomes the visual anchor; each later page is generated with the anchor attached as a reference image so paper, typography, and era stay locked. The final envelope keeps its QR card.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="max-h-72 overflow-y-auto space-y-1 border rounded-md p-2">
+              {(data ?? []).map((env) => {
+                const eligible = Boolean((env.design_instructions ?? "").trim());
+                const checked = consistentSelected.has(env.id);
+                return (
+                  <label
+                    key={env.id}
+                    className={`flex items-start gap-2 p-2 rounded text-sm ${eligible ? "hover:bg-muted/50 cursor-pointer" : "opacity-50"}`}
+                  >
+                    <Checkbox
+                      checked={checked}
+                      disabled={!eligible}
+                      onCheckedChange={(v) => {
+                        setConsistentSelected((prev) => {
+                          const next = new Set(prev);
+                          if (v) next.add(env.id); else next.delete(env.id);
+                          return next;
+                        });
+                      }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium">#{env.number} {env.label ?? ""}</div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {eligible ? (env.design_instructions ?? "").slice(0, 100) : "No design instructions yet"}
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {consistentSelected.size} selected · min 2, max 10. Uses gpt-image-2 at {envelopeImageQuality()} quality.
+            </p>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setConsistentOpen(false)} disabled={consistentRunning}>Cancel</Button>
+              <Button onClick={runConsistentBatch} disabled={consistentRunning || consistentSelected.size < 2} className="gap-2">
+                {consistentRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Layers className="h-4 w-4" />}
+                Generate {consistentSelected.size > 0 ? consistentSelected.size : ""} as set
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <InlineBatchStrip progress={coverBatch.progress} onDismiss={coverBatch.dismiss} />
 
