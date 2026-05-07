@@ -33,6 +33,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
   Mail,
   Sparkles,
   Wand2,
@@ -43,6 +52,7 @@ import {
   FileText,
   ChevronDown,
   Trash2,
+  Layers,
 } from "lucide-react";
 import { toast } from "sonner";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
