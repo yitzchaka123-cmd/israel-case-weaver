@@ -219,14 +219,17 @@ ENVELOPE #2 RECAP RULE:
 OPTIONAL FOLLOW-UP-CLUE INSERT (any envelope, rare):
 - If the writer attaches a follow-up clue note to an envelope, weave a short 2–3 sentence beat into the body telling the detective that an additional in-world enclosure is included in this envelope (e.g. "you'll find a fresh page in this envelope — handle it as new evidence"). Do NOT spoil what's on the extra page.
 
-FINAL ENVELOPE — special shorter shape (~200–320 words):
-- One short Part-A-style recap of the whole case so far (1 paragraph).
-- SOLUTION CONFIRMATION (the ONE place the answer is allowed): in-character paragraph that confirms the correct accusation — "If you've named [Culprit], you've cracked it. Here's how it really went down…" + 2–4 sentences of what actually happened.
-- VIDEO / QR CALL-OUT: instruct the detective to scan the QR code printed on this same page to view the official news report on the case (a fake YouTube news segment). The page mock-up must include a printed QR placeholder + caption.
-- Closing line. Does NOT contain a next-task list.
+FINAL ENVELOPE — CINEMATIC VERDICT + REVEAL (~280–420 words, four beats — NOT a thin postscript):
+- BEAT 1: cinematic 2–3 sentence closing scene that bookends env #1's opener.
+- BEAT 2: single bold red <TASK_RED_LINE> verdict that NAMES the culprit and victim — e.g. "Verdict: {Culprit} killed {Victim}."
+- BEAT 3: 4–7 sentence reveal paragraph confirming culprit, method, motive (drawn from Solution Summary). Acknowledge the red herring by name if any.
+- BEAT 4: short in-character thank-you sign-off + a clearly delimited paragraph pointing the detective to the framed QR card printed on the lower portion of this same page (equivalent of "Scan the card below to watch the official news report").
+
+NO-WRITING RULE (LOCKED):
+There is NO notepad in this game. NEVER tell the player to "write down", "jot", "note down", "record", "list", "make a chart", "fill in", or "mark on paper" anything. Replace every such instruction with mental-tracking phrasing: equivalents of "keep in mind", "remember", "hold onto", "pay attention to", "stay aware of". Applies to PART A, PART B (incl. env #1 tips), PART C, and the final envelope.
 
 ANTI-SPOILER RULE (LOCKED — non-negotiable, applies to ALL three parts including the new recap)
-The task body MUST NOT:
+The task body MUST NOT (except in the FINAL envelope where the solution IS the point):
 - Name or reference any specific document by number, title, or filename (including Doc 0, "the contents list", "the index", "the table of contents"). Documents are NEVER named in any envelope.
 - Reference a specific clue mechanic ("decode the cipher on page 2", "compare the alibis on the timeline grid", "match the prints", "check the receipts").
 - Reveal or strongly hint at the culprit, the motive, the murder method, the red herring, or which clue is decisive.

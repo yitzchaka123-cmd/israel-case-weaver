@@ -117,9 +117,9 @@ const pageInsertPrompt = (
     lines.push("Red task line: the 'Your task:' sentence must be printed as a SINGLE BOLD RED LINE on its own line, visually unmistakable (period-appropriate equivalents are fine: red typewriter ribbon, red rubber stamp, red marker underline). Supporting prompts that follow stay in normal body type.");
   }
   if (opts?.isFinal) {
-    lines.push("Final envelope: include a printed QR code in a clearly framed spot in the lower portion of the page, with a short caption underneath (game-language: a phrase equivalent to 'Scan to view the official case-closure broadcast'). Render the QR as a believable printed black-and-white square — the actual scannable QR is composited later by the app.");
+    lines.push("Final envelope QR CARD: reserve the BOTTOM ~35% of the A4 page for a single LARGE FRAMED QR CARD — not a small inline graphic. Render it as a clearly bordered card (thin printed border or evidence-tape frame fitting the era) containing, top-to-bottom: a short bold label in the game language (equivalent of 'Official News Report'), then a believable printed black-and-white QR square roughly 5×5 cm centered inside the frame, then a short helper line directly under the QR (equivalent of 'Scan to watch'), then the URL printed in small monospace type as a fallback. The QR itself stays a believable printed black-and-white square — the actual scannable QR is composited later by the app. The QR card must visually punch as the page's closing element.");
     if (opts.qrPayload) {
-      lines.push(`The QR will encode: ${opts.qrPayload.slice(0, 200)} (do NOT print the URL itself anywhere on the page — only the caption).`);
+      lines.push(`QR card URL fallback (PRINT this URL beneath the helper line in small monospace type): ${opts.qrPayload.slice(0, 200)}`);
     }
   }
   lines.push(`Page marker/slot: ${label}.`);
