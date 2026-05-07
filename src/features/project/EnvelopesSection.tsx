@@ -48,6 +48,7 @@ import { toast } from "sonner";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { DownloadButton } from "@/components/DownloadButton";
+import { FinalEnvelopeQrCard } from "./envelopes/FinalEnvelopeQrCard";
 import {
   ImageModelPicker,
   getStoredImageModel,
@@ -117,7 +118,7 @@ const pageInsertPrompt = (
     lines.push("Red task line: the 'Your task:' sentence must be printed as a SINGLE BOLD RED LINE on its own line, visually unmistakable (period-appropriate equivalents are fine: red typewriter ribbon, red rubber stamp, red marker underline). Supporting prompts that follow stay in normal body type.");
   }
   if (opts?.isFinal) {
-    lines.push("Final envelope QR CARD: reserve the BOTTOM ~35% of the A4 page for a single LARGE FRAMED QR CARD — not a small inline graphic. Render it as a clearly bordered card (thin printed border or evidence-tape frame fitting the era) containing, top-to-bottom: a short bold label in the game language (equivalent of 'Official News Report'), then a believable printed black-and-white QR square roughly 5×5 cm centered inside the frame, then a short helper line directly under the QR (equivalent of 'Scan to watch'), then the URL printed in small monospace type as a fallback. The QR itself stays a believable printed black-and-white square — the actual scannable QR is composited later by the app. The QR card must visually punch as the page's closing element.");
+    lines.push("Final envelope QR CARD: reserve the BOTTOM ~35% of the A4 page for a single LARGE FRAMED QR CARD — not a small inline graphic. STRUCTURE (locked): a clearly bordered card containing, top-to-bottom: a short bold label in the game language (equivalent of 'Official News Report'), then a believable printed black-and-white QR square roughly 5×5 cm centered inside the frame, then a short helper line directly under the QR (equivalent of 'Scan to watch'), then the URL printed in small monospace type as a fallback. VISUAL STYLING (adaptive): derive the card's paper texture, border treatment, label typography, and any tape/stamp/seal accents from the envelope's own era, genre, and tone established earlier in this design brief — do NOT default to a generic modern frame. If the case is noir, lean ink-stamped and aged; if period, match the period stationery; if modern/sci-fi, match that idiom. The QR itself stays a believable printed black-and-white square — the actual scannable QR is composited later by the app. The QR card must visually punch as the page's closing element.");
     if (opts.qrPayload) {
       lines.push(`QR card URL fallback (PRINT this URL beneath the helper line in small monospace type): ${opts.qrPayload.slice(0, 200)}`);
     }
@@ -652,20 +653,10 @@ function EnvelopeCard({
 
           {/* Final envelope only: solution video URL for the QR */}
           {slot.n === playbookCount && (
-            <div className="space-y-1.5">
-              <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-                Solution video URL (final envelope QR)
-              </Label>
-              <Input
-                type="url"
-                value={(value("solution_video_url") as string) ?? ""}
-                onChange={(e) => onUpdate({ solution_video_url: e.target.value })}
-                placeholder="https://youtube.com/watch?v=…"
-              />
-              <p className="text-[11px] text-muted-foreground">
-                Paste the YouTube link to the fake news report. The page mock-up will print a QR placeholder; the scannable QR is composited at print time.
-              </p>
-            </div>
+            <FinalEnvelopeQrCard
+              value={(value("solution_video_url") as string) ?? ""}
+              onChange={(next: string) => onUpdate({ solution_video_url: next })}
+            />
           )}
 
           <div className="space-y-1.5">
