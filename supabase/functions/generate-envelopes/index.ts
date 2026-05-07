@@ -176,6 +176,7 @@ Allowed in Part A: naming suspects (they're public), naming the victim, summaris
 ENVELOPE #1 (Cinematic Mission Briefing) — additional rules:
 - Part A is the BRIEFING variant with the cinematic 2–4 sentence opener. No "you've probably worked out…" — the case is brand new.
 - Part B walks the player into the first beat of the Logic Flow with ONE straightforward task on the red bold line.
+- GENERAL TIPS BLOCK (env #1 ONLY): After Part B's red task line, include a short paragraph or 3–5 bullet block titled the ${gameLanguage} equivalent of "A few tips for the road" — GENERAL, spoiler-free advice for working through the entire game (e.g. "read every page slowly", "take notes on names and times", "compare what each suspect says against the others", "don't break a seal until you're confident"). NEVER reference the specific solution, culprit, decisive clue, or any later envelope's task. This is the ONLY envelope that contains tips. All other envelopes (#2..#${count - 1}) MUST NOT include any tips, how-to-solve guidance, or supporting investigative prompts after the red task line.
 
 FINAL ENVELOPE (#${count}) — special shorter shape (~200–320 words total):
 - One short Part-A-style recap of the whole case so far (1 paragraph).
