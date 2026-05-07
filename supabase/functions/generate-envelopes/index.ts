@@ -144,7 +144,7 @@ ENVELOPE FLOW RULES (workspace defaults — follow):
 TASK FIELD — A4 IN-CHARACTER LETTER (CRITICAL — read carefully):
 The "task" field is the FULL printed insert that goes inside the envelope. It must read like a real case-officer hand-off to the detective and EASILY FILL AN A4 PAGE — sometimes spilling onto a second. Thin notes are unacceptable.
 
-LENGTH: ~380–560 words for envelopes #1..#${count - 1}. Hard floor of 340 words — do NOT ship short. The final envelope (#${count}) may be shorter (~200–320 words) — it carries the solution confirmation and the QR code call-out.
+LENGTH: ~380–560 words for envelopes #1..#${count - 1}. Hard floor of 340 words — do NOT ship short. The final envelope (#${count}) is ~280–420 words — it must feel like a real ending, not a thin postscript.
 
 VOICE: second-person, addressing "Detective" (or the ${gameLanguage} equivalent). Written in-world by a Case Officer / Dispatcher / Captain. Sober, direct, period- and setting-appropriate. End with a short signature line in character (e.g. "— Dispatch, Central Precinct").
 
