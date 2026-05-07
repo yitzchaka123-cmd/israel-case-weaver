@@ -48,6 +48,7 @@ import { toast } from "sonner";
 import { AssistantOriginBadge } from "@/components/AssistantOriginBadge";
 import { AiOriginBadge } from "@/components/AiOriginBadge";
 import { DownloadButton } from "@/components/DownloadButton";
+import { FinalEnvelopeQrCard } from "./envelopes/FinalEnvelopeQrCard";
 import {
   ImageModelPicker,
   getStoredImageModel,
