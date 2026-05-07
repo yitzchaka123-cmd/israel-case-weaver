@@ -79,6 +79,8 @@ interface Envelope {
   created_by_message_id: string | null;
   cover_effective_model?: string | null;
   cover_fallback?: string | null;
+  solution_video_url?: string | null;
+  followup_clue_note?: string | null;
 }
 
 interface DocOption {
