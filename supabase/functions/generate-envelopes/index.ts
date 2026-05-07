@@ -163,6 +163,9 @@ PART C — SEAL INSTRUCTION. 2–3 lines.
 - The ${gameLanguage} equivalent of "Only break the seal on the next envelope once you are sure you have completed this task correctly." Always references "the next envelope" generically — never hints what is inside it.
 - One-line sign-off + in-character signature.
 
+NO-WRITING RULE (LOCKED — non-negotiable):
+There is NO notepad, no worksheet, no pen-and-paper component in this game. The detective tracks everything mentally and by re-reading the documents. NEVER instruct the player to "write down", "jot", "note down", "record on paper", "list", "make a chart", "fill in", "mark on the page", or any equivalent. Replace every such instruction with mental-tracking phrasing in the game language: equivalents of "keep in mind", "remember", "hold onto the thought that…", "pay attention to", "stay aware of". This rule applies to PART A, PART B (including the general-tips block in env #1), and PART C. Forbidden verbs (and their game-language equivalents): write, jot, note (as a verb), record, list, chart, log, fill in, mark on paper, scribble.
+
 ANTI-SPOILER RULE (LOCKED — non-negotiable, applies to ALL three parts including the new recap):
 The task body MUST NOT (except in the FINAL envelope where the solution IS the point):
 - Name or reference any specific document by number, title, or filename (no "pull Doc 3", no "open the autopsy report", no "look at the floor plan", no "Doc 0", no "the contents list/index/table of contents"). Documents are NEVER named in any envelope.
