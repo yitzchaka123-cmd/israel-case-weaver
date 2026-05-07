@@ -3466,7 +3466,7 @@ async function processConversation(
       .select("id, doc_number, title, doc_type, status")
       .eq("project_id", projectId)
       .order("doc_number", { ascending: true, nullsFirst: false })
-      .limit(25),
+      .limit(200),
     supa
       .from("envelopes")
       .select("id, number, label")
