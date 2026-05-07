@@ -449,8 +449,74 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
               )}
               Generate all page mock-ups
             </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={openConsistentDialog}
+                >
+                  <Layers className="h-4 w-4" />
+                  Generate as consistent set (ChatGPT)
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs">
+                One ChatGPT call per envelope, sharing paper/typography/era — each later page uses the first as a visual reference so the whole set looks like the same world.
+              </TooltipContent>
+            </Tooltip>
           </div>
         </div>
+
+        <Dialog open={consistentOpen} onOpenChange={setConsistentOpen}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2"><Layers className="h-4 w-4" /> Consistent envelope set</DialogTitle>
+              <DialogDescription>
+                Pick the envelopes to render as one visually consistent set. The first picked (lowest number) becomes the visual anchor; each later page is generated with the anchor attached as a reference image so paper, typography, and era stay locked. The final envelope keeps its QR card.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="max-h-72 overflow-y-auto space-y-1 border rounded-md p-2">
+              {(data ?? []).map((env) => {
+                const eligible = Boolean((env.design_instructions ?? "").trim());
+                const checked = consistentSelected.has(env.id);
+                return (
+                  <label
+                    key={env.id}
+                    className={`flex items-start gap-2 p-2 rounded text-sm ${eligible ? "hover:bg-muted/50 cursor-pointer" : "opacity-50"}`}
+                  >
+                    <Checkbox
+                      checked={checked}
+                      disabled={!eligible}
+                      onCheckedChange={(v) => {
+                        setConsistentSelected((prev) => {
+                          const next = new Set(prev);
+                          if (v) next.add(env.id); else next.delete(env.id);
+                          return next;
+                        });
+                      }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium">#{env.number} {env.label ?? ""}</div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {eligible ? (env.design_instructions ?? "").slice(0, 100) : "No design instructions yet"}
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {consistentSelected.size} selected · min 2, max 10. Uses gpt-image-2 at {envelopeImageQuality()} quality.
+            </p>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setConsistentOpen(false)} disabled={consistentRunning}>Cancel</Button>
+              <Button onClick={runConsistentBatch} disabled={consistentRunning || consistentSelected.size < 2} className="gap-2">
+                {consistentRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Layers className="h-4 w-4" />}
+                Generate {consistentSelected.size > 0 ? consistentSelected.size : ""} as set
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         <InlineBatchStrip progress={coverBatch.progress} onDismiss={coverBatch.dismiss} />
 
