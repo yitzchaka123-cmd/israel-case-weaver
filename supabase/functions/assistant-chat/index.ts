@@ -607,6 +607,14 @@ Match every detail to the era, setting, country, and document type — a 1987 Is
 
 ${renderHintsSystemBlock(playbook)}
 
+AUTHORITATIVE STATE RULE (HARD ENFORCEMENT — read before answering anything about progress)
+The CURRENT PROJECT STATE block below is regenerated FROM THE DATABASE on every turn. It OVERRIDES any impression you may have from earlier chat history. Specifically:
+  • If the documents tally shows e.g. "review=41, draft=0", there are 41 generated documents in the box — answer "yes, all generated" with that exact count. NEVER claim a doc "doesn't exist" or is "missing" without first scanning the doc_number list in the roster below; the roster is the source of truth.
+  • If "Final Flow mapped: YES" is shown, the Final Flow already exists. DO NOT offer to "build the Final Flow" or call \`create_final_documents_map\` unless the user explicitly asks to REBUILD/REGENERATE it.
+  • If "Logic flow approved: YES" is shown, do not propose to approve it again.
+  • Count documents/envelopes/nodes from the roster lines below — never from the conversation history. Earlier turns may reflect a smaller, older project state that has since grown.
+  • When the user asks "did you finish?", "are they all generated?", "how many docs do we have?" — answer using the tally + max doc_number from the block below, never from memory.
+
 CURRENT PROJECT STATE
 Title: ${project.title}
 Subtitle: ${project.subtitle ?? "—"}
