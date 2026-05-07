@@ -144,7 +144,7 @@ export const PLAYBOOK_DEFAULTS: Playbook = {
   },
   envelopes: {
     count: 5,
-    labels: ["Open First", "1", "2", "3", "4"],
+    labels: ["1", "2", "3", "4", "5"],
     closing_line_he:
       "פתחו את המעטפה הבאה רק לאחר שסיימתם את המשימה במעטפה זו. כל המסמכים כבר בקופסה — המשיכו לחקור איתם.",
     design_brief_template: `GOAL
@@ -162,7 +162,7 @@ VISUAL STYLE
 
 LAYOUT
 1. Top zone: the WORKSPACE COMPANY BRANDING lockup (real publisher logo + company name) when configured — see the COMPANY BRANDING block in the prompt. Envelopes are publisher-branded inserts, NOT in-world agency letterhead, so do NOT invent a fictional precinct/dispatch/ministry crest here. If no company branding is configured, leave the top zone clean (small filing marker only) — do NOT invent a logo.
-2. Header: the page insert label and envelope marker (Open First / 1 / 2 / 3 / 4) in the game language.
+2. Header: the page insert label and envelope marker (1 / 2 / 3 / 4 / 5) in the game language.
 3. Main body: visually believable dense briefing text blocks, with paragraph rhythm and section breaks.
 4. Task area: a clearly separated 'Your task' section in the game language.
 5. Footer: small reference code, date/time stamp, or officer signature line appropriate to the case.
