@@ -155,6 +155,9 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
   const [draft, setDraft] = useState<Record<number, Partial<Envelope>>>({});
   const [generatingAll, setGeneratingAll] = useState(false);
   const [generatingAllCovers, setGeneratingAllCovers] = useState(false);
+  const [consistentOpen, setConsistentOpen] = useState(false);
+  const [consistentSelected, setConsistentSelected] = useState<Set<string>>(new Set());
+  const [consistentRunning, setConsistentRunning] = useState(false);
   const coverBatch = useImageBatchProgress(projectId);
   const { create: createNotification } = useProjectNotifications(projectId);
 
