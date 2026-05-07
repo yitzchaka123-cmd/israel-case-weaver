@@ -499,7 +499,7 @@ function EnvelopeCard({
     const quality = envelopeImageQuality();
     try {
       await coverJob.start({
-        prompt: pageInsertPrompt(prompt, displayLabel(slot.n)),
+        prompt: pageInsertPrompt(prompt, displayLabel(slot.n), { isFinal: slot.n === playbookCount, qrPayload: (value("solution_video_url") as string | null) ?? null }),
         modelOverride,
         quality,
         aspect: "portrait",
