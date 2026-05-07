@@ -142,12 +142,15 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
   });
   const playbook = useMemo(() => resolvePlaybook(playbookRaw), [playbookRaw]);
   const slots = useMemo(
-    () =>
-      Array.from({ length: playbook.envelopes.count }, (_, i) => ({
+    () => {
+      const dbMax = (data ?? []).reduce((m, e) => Math.max(m, e.number ?? 0), 0);
+      const total = Math.max(playbook.envelopes.count, dbMax);
+      return Array.from({ length: total }, (_, i) => ({
         n: i + 1,
         label: playbook.envelopes.labels[i] ?? `Envelope ${i + 1}`,
-      })),
-    [playbook],
+      }));
+    },
+    [playbook, data],
   );
 
   const { data } = useQuery({
