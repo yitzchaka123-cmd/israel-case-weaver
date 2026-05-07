@@ -655,7 +655,7 @@ function EnvelopeCard({
           {slot.n === playbookCount && (
             <FinalEnvelopeQrCard
               value={(value("solution_video_url") as string) ?? ""}
-              onChange={(next) => onUpdate({ solution_video_url: next })}
+              onChange={(next: string) => onUpdate({ solution_video_url: next })}
             />
           )}
 
