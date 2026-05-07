@@ -100,17 +100,37 @@ const displayLabel = (n: number): string => String(n);
 const envelopeImageModel = () => getStoredImageModel("envelope", "chatgpt-image-2");
 const envelopeImageQuality = () => getStoredImageQuality("envelope", "medium");
 
-const pageInsertPrompt = (raw: string, label: string) => {
+const pageInsertPrompt = (
+  raw: string,
+  label: string,
+  opts?: { qrPayload?: string | null; isFinal?: boolean },
+) => {
   const compact = raw.replace(/\s+/g, " ").trim().slice(0, 3200);
-  return [
+  const lines = [
     "Top-down (bird's-eye) photograph of a SINGLE printed A4 page lying flat on a neutral surface. The page fills almost the entire frame in portrait orientation, with only a thin margin of surface visible at the edges.",
     "This is a PAGE, not an envelope. Absolutely no envelopes, flaps, wax seals, kraft mailers, manila sleeves, string-and-button closures, postage, or outside-envelope labels anywhere in the image. If the saved design notes mention any of those, ignore that framing and render only the printed page that would go inside.",
     "Treat this exactly like the other in-world documents in this case: the printed sheet is the subject — typed/printed text, headers, stamps, handwritten annotations, etc. — shot from directly above as if photographed on a desk for evidence intake.",
     "Realism rule: render ONLY the tactile details described in the design notes below for THIS specific page. Do not invent or add generic realism details that aren't in the notes. Do not reuse coffee stains, fold lines, binder holes, fax noise, carbon-copy offset, redaction tape, scan-edge shadow, or any other tactile motif unless the notes for THIS page explicitly call for it. Each page in this set has its own document type, paper, ink, era, and wear pattern — honor what's written and nothing else.",
-    `Page marker/slot: ${label}.`,
-    compact,
-  ].join("\n\n");
+    "Page fill: this insert must read as a FULL A4 page — generous body text, smart spacing, clear paragraph rhythm. No half-empty pages.",
+  ];
+  if (!opts?.isFinal) {
+    lines.push("Red task line: the 'Your task:' sentence must be printed as a SINGLE BOLD RED LINE on its own line, visually unmistakable (period-appropriate equivalents are fine: red typewriter ribbon, red rubber stamp, red marker underline). Supporting prompts that follow stay in normal body type.");
+  }
+  if (opts?.isFinal) {
+    lines.push("Final envelope: include a printed QR code in a clearly framed spot in the lower portion of the page, with a short caption underneath (game-language: a phrase equivalent to 'Scan to view the official case-closure broadcast'). Render the QR as a believable printed black-and-white square — the actual scannable QR is composited later by the app.");
+    if (opts.qrPayload) {
+      lines.push(`The QR will encode: ${opts.qrPayload.slice(0, 200)} (do NOT print the URL itself anywhere on the page — only the caption).`);
+    }
+  }
+  lines.push(`Page marker/slot: ${label}.`);
+  lines.push(compact);
+  return lines.join("\n\n");
 };
+
+/** Strip the <TASK_RED_LINE>...</TASK_RED_LINE> markers used by the generator;
+ *  keep the inner text. The rendered preview wraps it visually elsewhere. */
+const stripTaskMarkers = (text: string): string =>
+  text.replace(/<\/?TASK_RED_LINE>/g, "");
 
 const STATUS_TIP =
   "Production status — used by the Production Dashboard to count progress, NOT by the player.\n" +
