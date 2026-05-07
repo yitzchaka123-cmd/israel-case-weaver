@@ -181,7 +181,7 @@ Looks like a real in-world printed page from the case era — NOT a modern Canva
 Each envelope's "task" is the FULL printed insert that goes inside the envelope. It must read like a real case-officer hand-off to the detective and EASILY FILL AN A4 PAGE — sometimes spilling onto a second. Thin notes are unacceptable.
 
 LENGTH
-- Envelope #1 and middle envelopes: ~450–700 words. Hard floor: 400 words. Do NOT ship short.
+- Envelope #1 and middle envelopes: ~380–560 words. Hard floor: 340 words. Do NOT ship short.
 - Final envelope (accusation / solution reveal): ~150–250 words — it carries the accusation form / solution card.
 
 VOICE
@@ -192,14 +192,14 @@ VOICE
 
 REQUIRED THREE-PART STRUCTURE — every middle and #1 envelope's task body, in this order:
 
-PART A — BRIEFING (env #1) or RECAP (envs #2..#N-1). At least 2 real paragraphs, ~180–280 words.
+PART A — BRIEFING (env #1) or RECAP (envs #2..#N-1). At least 2 real paragraphs, ~200–320 words.
 - Envelope #1 (Mission Briefing): Opens with the equivalent of "Hi, Detective — you've been assigned to this case." Two paragraphs that set the scene: the victim (use approved Phase-1 facts only — never invent a different victim or solution), where and when it happened, the detective's role/jurisdiction, the mood/era of the case, and that the case file in front of them is everything they get. NEVER mention Doc 0, "the contents list", "the index", or "the table of contents" — refer to the materials only as "the case file" / "what's in front of you". Vivid and atmospheric, never spoils the solution.
 - Envelopes #2..#N-1 (Stage Recap): Opens with the equivalent of "By now you've probably worked out that…" Two paragraphs that summarise — in-world, as if the player succeeded — what the detective should have figured out by this beat, anchored to the Logic Flow node this envelope gates. Refer to suspects by name when the beat is about them. Acknowledge what's still open ahead. Never name a specific document, never reveal the final culprit/method/motive/red-herring/decisive-clue.
 
-PART B — YOUR TASK. ~80–140 words.
+PART B — YOUR TASK. ~40–80 words.
 - A clear, visually set-off line: "Your task:" (game-language equivalent).
 - ONE vague-but-clear investigative goal in the world, invented to fit THIS case's beat — not template phrasing. Examples of the SHAPE only: "Identify which of the suspects is lying in their statement.", "Place each suspect on the map between 21:00 and 22:30.", "Decide who actually had a reason to want him dead." Use the Logic Flow node and case context to write a fresh, specific-to-this-case goal each time.
-- Then 3–5 GENERAL investigative prompts — verbs like work out, narrow down, account for, rule out, reconstruct. NO specific doc/clue/mechanic references.
+- DO NOT add any "tips", how-to-solve guidance, supporting investigative prompts, or bullet checklist after the red task line. The red task line stands alone. (Exception: envelope #1 — see below.)
 
 PART C — SEAL INSTRUCTION. 2–3 lines.
 - The equivalent of "Only break the seal on the next envelope once you are sure you have completed this task correctly." Always references "the next envelope" generically — never hints what is inside it.
@@ -208,9 +208,10 @@ PART C — SEAL INSTRUCTION. 2–3 lines.
 ENVELOPE #1 — also:
 - Part A is the BRIEFING variant above, with a 2–4 sentence CINEMATIC scene-set opener (weather/place/mood, the moment the case file lands on the desk) before the case-officer's greeting. The case is brand new — no "you've probably worked out…".
 - Part B walks the player into the first beat of the Logic Flow with ONE straightforward task on the red bold line.
+- GENERAL TIPS BLOCK (env #1 ONLY): After the red task line, append a short paragraph or 3–5 bullet block titled the equivalent of "A few tips for the road" — GENERAL, spoiler-free advice for working through the entire game (read every page slowly, take notes on names and times, compare statements, don't break a seal until confident). NEVER reference the specific solution, culprit, decisive clue, or any later envelope's task. This is the ONLY envelope that contains tips — every other envelope ends Part B at the red task line.
 
 PART B FORMATTING — RED BOLD TASK LINE (envs #1..#N-1):
-- The "Your task:" sentence is ONE single bold red line, on its own line, visually unmistakable on the printed A4 page (period-appropriate equivalents: red typewriter ribbon, red rubber stamp, red marker underline). The 3–5 supporting prompts that follow stay in normal body type.
+- The "Your task:" sentence is ONE single bold red line, on its own line, visually unmistakable on the printed A4 page (period-appropriate equivalents: red typewriter ribbon, red rubber stamp, red marker underline). For env #1, the general-tips block sits below it in normal body type. For all other envelopes, nothing follows the red task line until Part C.
 
 ENVELOPE #2 RECAP RULE:
 - Envelope #2 must open by recapping what the player should have discovered after working through envelope #1's task, then deliver its own follow-up task.
