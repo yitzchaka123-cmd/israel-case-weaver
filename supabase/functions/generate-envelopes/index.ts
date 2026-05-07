@@ -226,6 +226,17 @@ ${(logicNodes ?? []).slice(0, 40).map((n) => `- [${n.node_type}] ${n.title}${n.d
 DOCUMENTS in the box (${docs?.length ?? 0} total — all available to the player from the start; do NOT use these to fill envelopes):
 ${(docs ?? []).slice(0, 30).map((d) => `#${d.doc_number ?? "?"} ${d.title} (${d.doc_type ?? "—"})`).join("\n") || "(none yet)"}
 
+PER-ENVELOPE WRITER NOTES (optional follow-up-clue inserts and final-envelope solution video). Apply ONLY to the matching envelope number; if blank, ignore:
+${Array.from({ length: count }, (_, i) => i + 1).map((n) => {
+  const meta = existingMeta.get(n);
+  const followup = (meta?.followup_clue_note ?? "").trim();
+  const video = (meta?.solution_video_url ?? "").trim();
+  const bits: string[] = [];
+  if (followup) bits.push(`follow-up clue: ${followup} → weave a 2–3 sentence note into Part A or between Part A and Part B telling the detective that a small additional in-world enclosure is included in this envelope (e.g. "you'll find a fresh page in this envelope — handle it as new evidence"); do NOT spoil what's on it.`);
+  if (n === count && video) bits.push(`solution video URL (for QR caption ONLY — do NOT print the URL itself): ${video}`);
+  return bits.length ? `#${n}: ${bits.join(" | ")}` : `#${n}: (none)`;
+}).join("\n")}
+
 ${onlyNumber !== null
   ? `Produce ONLY envelope #${onlyNumber} (label starting point: "${labels[Math.max(0, Math.min(count - 1, onlyNumber - 1))]}"). Return a single-element envelopes array containing just that envelope. Follow every rule above as if it were part of the full set — its task body must respect the three-part structure and the recap/briefing distinction for its position in the chain.`
   : `Produce all ${count} envelopes now in numerical order (numbered 1..${count}). Reuse the labels above as the starting point for the "label" field but you may refine them. Each envelope must have a distinct opening_trigger anchored in this case's logic flow.`}`;
