@@ -206,13 +206,23 @@ PART C — SEAL INSTRUCTION. 2–3 lines.
 - One-line sign-off + in-character signature.
 
 ENVELOPE #1 — also:
-- Part A is the BRIEFING variant above. No "you've probably worked out…" — the case is brand new.
-- Part B walks the player into the first beat of the Logic Flow with a vague-but-clear goal.
+- Part A is the BRIEFING variant above, with a 2–4 sentence CINEMATIC scene-set opener (weather/place/mood, the moment the case file lands on the desk) before the case-officer's greeting. The case is brand new — no "you've probably worked out…".
+- Part B walks the player into the first beat of the Logic Flow with ONE straightforward task on the red bold line.
 
-FINAL ENVELOPE — special shorter shape:
-- One short Part-A-style recap of the whole case so far (1 paragraph, no spoilers).
-- Ceremonial accusation prompt: tells the detective they've reached the end and must now name the culprit, pointing them at the accusation form / solution card folded inside this same envelope.
-- Closing line. Does NOT contain the answer. Does NOT contain a next-task list.
+PART B FORMATTING — RED BOLD TASK LINE (envs #1..#N-1):
+- The "Your task:" sentence is ONE single bold red line, on its own line, visually unmistakable on the printed A4 page (period-appropriate equivalents: red typewriter ribbon, red rubber stamp, red marker underline). The 3–5 supporting prompts that follow stay in normal body type.
+
+ENVELOPE #2 RECAP RULE:
+- Envelope #2 must open by recapping what the player should have discovered after working through envelope #1's task, then deliver its own follow-up task.
+
+OPTIONAL FOLLOW-UP-CLUE INSERT (any envelope, rare):
+- If the writer attaches a follow-up clue note to an envelope, weave a short 2–3 sentence beat into the body telling the detective that an additional in-world enclosure is included in this envelope (e.g. "you'll find a fresh page in this envelope — handle it as new evidence"). Do NOT spoil what's on the extra page.
+
+FINAL ENVELOPE — special shorter shape (~200–320 words):
+- One short Part-A-style recap of the whole case so far (1 paragraph).
+- SOLUTION CONFIRMATION (the ONE place the answer is allowed): in-character paragraph that confirms the correct accusation — "If you've named [Culprit], you've cracked it. Here's how it really went down…" + 2–4 sentences of what actually happened.
+- VIDEO / QR CALL-OUT: instruct the detective to scan the QR code printed on this same page to view the official news report on the case (a fake YouTube news segment). The page mock-up must include a printed QR placeholder + caption.
+- Closing line. Does NOT contain a next-task list.
 
 ANTI-SPOILER RULE (LOCKED — non-negotiable, applies to ALL three parts including the new recap)
 The task body MUST NOT:
