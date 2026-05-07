@@ -190,7 +190,7 @@ VOICE
 - Sober, direct, a little weight to it. Period- and setting-appropriate.
 - Ends with a short in-character signature line (e.g. "— Dispatch, Central Precinct").
 
-REQUIRED THREE-PART STRUCTURE — every middle and #0 envelope's task body, in this order:
+REQUIRED THREE-PART STRUCTURE — every middle and #1 envelope's task body, in this order:
 
 PART A — BRIEFING (env #1) or RECAP (envs #2..#N-1). At least 2 real paragraphs, ~180–280 words.
 - Envelope #1 (Mission Briefing): Opens with the equivalent of "Hi, Detective — you've been assigned to this case." Two paragraphs that set the scene: the victim (use approved Phase-1 facts only — never invent a different victim or solution), where and when it happened, the detective's role/jurisdiction, the mood/era of the case, and that the case file in front of them is everything they get. NEVER mention Doc 0, "the contents list", "the index", or "the table of contents" — refer to the materials only as "the case file" / "what's in front of you". Vivid and atmospheric, never spoils the solution.
