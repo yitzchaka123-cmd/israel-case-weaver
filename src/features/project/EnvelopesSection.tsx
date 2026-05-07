@@ -371,6 +371,43 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
     }
   };
 
+  const openConsistentDialog = () => {
+    const eligible = (data ?? []).filter((e) => (e.design_instructions ?? "").trim());
+    if (eligible.length < 2) {
+      toast.error("Need at least 2 envelopes with design instructions to run a consistent set");
+      return;
+    }
+    setConsistentSelected(new Set(eligible.map((e) => e.id)));
+    setConsistentOpen(true);
+  };
+
+  const runConsistentBatch = async () => {
+    const ids = Array.from(consistentSelected);
+    if (ids.length < 2) { toast.error("Pick at least 2 envelopes"); return; }
+    if (ids.length > 10) { toast.error("Max 10 envelopes per consistent batch"); return; }
+    setConsistentRunning(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const auth = `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`;
+      const resp = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-consistent-envelope-images`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: auth },
+          body: JSON.stringify({ projectId, envelopeIds: ids, quality: envelopeImageQuality() }),
+        },
+      );
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(json.error ?? `Failed (${resp.status})`);
+      toast.success(`Consistent batch started for ${ids.length} envelopes — pages will appear as they finish`);
+      setConsistentOpen(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Consistent batch failed");
+    } finally {
+      setConsistentRunning(false);
+    }
+  };
+
   return (
     <TooltipProvider>
       <div className="max-w-5xl mx-auto px-6 md:px-10 py-8 space-y-6">
