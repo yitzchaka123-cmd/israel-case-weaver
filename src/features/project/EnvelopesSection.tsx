@@ -652,20 +652,10 @@ function EnvelopeCard({
 
           {/* Final envelope only: solution video URL for the QR */}
           {slot.n === playbookCount && (
-            <div className="space-y-1.5">
-              <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
-                Solution video URL (final envelope QR)
-              </Label>
-              <Input
-                type="url"
-                value={(value("solution_video_url") as string) ?? ""}
-                onChange={(e) => onUpdate({ solution_video_url: e.target.value })}
-                placeholder="https://youtube.com/watch?v=…"
-              />
-              <p className="text-[11px] text-muted-foreground">
-                Paste the YouTube link to the fake news report. The page mock-up will print a QR placeholder; the scannable QR is composited at print time.
-              </p>
-            </div>
+            <FinalEnvelopeQrCard
+              value={(value("solution_video_url") as string) ?? ""}
+              onChange={(next) => onUpdate({ solution_video_url: next })}
+            />
           )}
 
           <div className="space-y-1.5">
