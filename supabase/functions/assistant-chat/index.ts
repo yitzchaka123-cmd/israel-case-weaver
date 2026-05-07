@@ -654,14 +654,33 @@ Envelope settings: ${(() => {
       : `(${keys.length} keys: ${truncate(keys.join(", "), 80)})`;
   })()}
 ${suspectCount > 0 ? `Existing suspects (${suspectCount}):\n${suspectsList}` : ""}
-${docCount > 0 ? `Existing documents (${docCount} — status tally: ${(() => { const t: Record<string, number> = {}; for (const d of rosters.documents) { const s = d.status ?? "draft"; t[s] = (t[s] ?? 0) + 1; } return Object.entries(t).map(([k, v]) => `${k}=${v}`).join(", "); })()}):\n${documentsList}\n(USE THE TALLY ABOVE to answer "are they all generated?" — a doc with status='review' or 'final' HAS been generated; only 'draft' means not yet generated.)` : ""}
+${docCount > 0 ? (() => {
+    const t: Record<string, number> = {};
+    const nums: number[] = [];
+    for (const d of rosters.documents) {
+      const s = d.status ?? "draft";
+      t[s] = (t[s] ?? 0) + 1;
+      if (typeof d.doc_number === "number") nums.push(d.doc_number);
+    }
+    nums.sort((a, b) => a - b);
+    const min = nums[0] ?? 0;
+    const max = nums[nums.length - 1] ?? 0;
+    const present = new Set(nums);
+    const gaps: number[] = [];
+    for (let i = min; i <= max; i++) if (!present.has(i)) gaps.push(i);
+    const tally = Object.entries(t).map(([k, v]) => `${k}=${v}`).join(", ");
+    const gapStr = gaps.length === 0 ? "no gaps" : `MISSING: ${gaps.join(",")}`;
+    return `Documents in DB: ${docCount} total (${tally}). doc_number range: ${min}–${max} (${gapStr}).
+(AUTHORITATIVE — answer "are they all generated?" from this line. status='review' or 'final' = generated; only 'draft' = not yet generated. NEVER say a doc doesn't exist if its number falls within the range above with no gap.)
+Roster:\n${documentsList}`;
+  })() : ""}
 ${rosters.envelopes.length > 0 ? `Existing envelopes (${rosters.envelopes.length}):\n${envelopesList}` : ""}
 ${rosters.hints.length > 0 ? `Existing hints (${rosters.hints.length}):\n${hintsList}` : ""}
 ${rosters.canvas_nodes.length > 0 ? `Existing canvas nodes (${rosters.canvas_nodes.length}):\n${nodesList}` : ""}
-Logic flow approved: ${project.logic_approved_at ? "YES (" + project.logic_approved_at + ")" : "NO — must be approved on the Canvas before generating documents"}
+Logic flow approved: ${project.logic_approved_at ? "YES (" + project.logic_approved_at + ") — do NOT propose to approve again" : "NO — must be approved on the Canvas before generating documents"}
 Canvas edges: ${rosters.canvas_edges_count ?? 0}${rosters.logic_dirty_since_approval ? " — ⚠️ LOGIC GRAPH HAS BEEN EDITED SINCE APPROVAL: solution_summary and any existing Final Flow may be stale. Offer the user the post-approval follow-up buttons (see POST-APPROVAL EDIT RULE)." : ""}
 Logic flow exists: ${rosters.canvas_nodes.some((n) => n.board === "logic") ? `YES (${rosters.canvas_nodes.filter((n) => n.board === "logic").length} logic-board nodes — IF YOU REWRITE solution_summary YOU MUST OFFER TO REBUILD THE FLOW, see SUMMARY-REWRITE RULE)` : "NO"}
-Final Flow mapped: ${rosters.canvas_nodes.some((n) => n.board === "final" && n.node_type === "document") ? `YES (${rosters.canvas_nodes.filter((n) => n.board === "final").length} final-board nodes)` : "NO — ask to create the Final Flow before final documents"}
+Final Flow mapped: ${rosters.canvas_nodes.some((n) => n.board === "final" && n.node_type === "document") ? `YES (${rosters.canvas_nodes.filter((n) => n.board === "final").length} final-board nodes) — DO NOT offer to "build the Final Flow" or call create_final_documents_map unless the user explicitly asks to REBUILD it` : "NO — ask to create the Final Flow before final documents"}
 Solution summary set: ${project.solution_summary ? "YES" : "NO"}
 ${project.solution_summary ? `\n--- BEGIN solution_summary (paste this back verbatim if the user asks "what's the summary") ---\n${project.solution_summary}\n--- END solution_summary ---\n` : ""}
 ${(() => {
