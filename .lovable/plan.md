@@ -1,42 +1,43 @@
 ## Problem
 
-The assistant told you "25 document rows total… Docs 25–40 don't exist" and offered to "build Final Flow & draft missing docs". Both are wrong:
+The Envelopes tab opens with an empty "Open First" card (slot 0), then 1–4. You want envelopes numbered **1, 2, 3, … N** (5/6/7 etc.) — no "Open First" zero slot.
 
-- Database actually has **41 documents** (Doc 0 + Docs 1–40), all with status `review` (i.e. generated).
-- The Final Flow board already has **77 nodes** mapped — it's done, not missing.
-- The project row confirms: `phase=documents`, `proposed_document_set_status=approved`, `target_doc_count=40`, proposed set has 40 entries.
-
-The runtime system prompt we build for the model already contains the correct facts:
-- `Existing documents (41 — status tally: review=41)` with the full list
-- `Final Flow mapped: YES (77 final-board nodes)`
-- `Logic flow approved: YES`
-
-So the model is **ignoring its own runtime context** and hallucinating a stale "24 docs / no Final Flow" state — almost certainly anchored on earlier turns in the conversation history where the project was smaller.
+The cause: `EnvelopesSection.tsx` builds slots as `Array.from({ length: count }, (_, i) => ({ n: i }))`, so it always starts at `n=0`. A `displayLabel` helper renders `0 → "Open First"`. The current project's DB rows are already `1..6`, so slot 0 has no matching row → blank card; the real envelopes 5 and 6 are clipped because the playbook count is 5.
 
 ## Fix
 
-Tighten the assistant-chat system prompt so the live runtime block is treated as the single source of truth and the model cannot contradict it.
+### 1. UI — `src/features/project/EnvelopesSection.tsx`
+- Build slots starting at **1**: `Array.from({ length: count }, (_, i) => ({ n: i + 1, label: labels[i] ?? \`Envelope ${i + 1}\` }))`.
+- Delete the `displayLabel` helper and replace every `displayLabel(slot.n)` / `displayLabel(env.number)` / `displayLabel(otherEnv)` call with the raw number (`String(n)`).
+- Update the bulk "draft all" loop (line ~267) so it iterates `1..count` instead of `0..count-1`.
+- Sub-header counter: `{slot.n} of {playbookCount}` (already uses index math — switch to `slot.n` directly).
 
-### `supabase/functions/assistant-chat/index.ts` — `buildSystemPrompt`
+### 2. Playbook defaults — both copies
+Files: `src/lib/assistant-playbook.ts` and `supabase/functions/_shared/assistant-playbook.ts`
+- Change default `envelopes.labels` from `["Open First", "1", "2", "3", "4"]` to `["1", "2", "3", "4", "5"]` (length still matches default `count: 5`; user can bump count to 6/7 in Settings → Playbook as today).
+- Update the prose lines that say "Envelope #0 is the mission briefing" → "Envelope #1 is the mission briefing", and "Open First / 1 / 2 / 3 / 4" → "1 / 2 / 3 / 4 / 5" in:
+  - the `design_brief_template` LAYOUT section
+  - the `task_voice_template` (PART A: "Envelope #0 (Mission Briefing)" → "Envelope #1 (Mission Briefing)"; "Envelopes #1..#N-2" → "Envelopes #2..#N-1")
+  - the runtime envelope-roster string (line ~1017): "Envelope #0 is the mission briefing" → "Envelope #1"
 
-1. Add a top-of-prompt **AUTHORITATIVE STATE** rule:
-   - "The CURRENT PROJECT STATE block below is regenerated from the database on every turn and OVERRIDES anything implied by earlier chat messages. If the tally says `review=41`, there are 41 generated documents — do not claim fewer. If `Final Flow mapped: YES`, do not offer to build it. Never invent missing doc numbers by counting the conversation; count from the roster."
-2. Reformat the documents line so the count and tally are unmissable: render as `Documents in DB: 41 total (review=41, draft=0, final=0). Highest doc_number: 40. Doc numbers present: 0–40 (no gaps).`
-   - Compute `min/max doc_number` and a gap list server-side so the model can't miscount.
-3. Expand the Final Flow line to: `Final Flow mapped: YES (77 nodes) — DO NOT propose 'build Final Flow' or 'create_final_documents_map' unless the user explicitly asks to rebuild it.`
-4. Add an explicit forbidden-response rule: "If the user asks whether docs are generated and the tally shows zero `draft`, answer YES with the exact count. Never tell the user a doc 'doesn't exist' without first checking the roster id list above."
+### 3. Edge functions touching envelope numbers
+- `supabase/functions/generate-envelopes/index.ts` — ensure scaffolded rows are numbered `1..count` (not `0..count-1`).
+- `supabase/functions/generate-logic-flow/index.ts` — the scaffold prompt already says "numbered 1..N"; double-check no `0`-based seed.
+- `supabase/functions/generate-document/index.ts` — Doc 0 inventory text refers to "מעטפה 2"; keep as-is (envelopes start at 1, fine).
+- `supabase/functions/create-final-documents-map/index.ts` — `if (number === 0) return; // Doc 0 already added by playbook` is about **documents**, not envelopes; leave untouched.
+- `supabase/functions/assistant-chat/index.ts` — search for "#0" / "Open First" references in envelope prose and update to "#1" / drop "Open First".
 
-### `supabase/functions/_shared/assistant-playbook.ts`
+### 4. Data migration (this project's DB is already correct)
+DB rows for the active project are already `1..6`. No migration needed. For projects that may have a row at `number=0`, the UI will simply stop rendering it — leave the row in place; the user can delete it manually if desired. (No destructive auto-cleanup.)
 
-Add a short "TRUST RUNTIME CONTEXT" rule mirroring the above so it survives playbook edits.
+## Out of scope
+- Playbook count/labels editor in Settings already lets the owner set 5/6/7 envelopes; no change needed there beyond the new defaults flowing through.
+- No styling, layout, or other behavior changes.
 
-### Optional sanity check
-
-Add a debug log line in `processConversation` that prints `docCount`, `tally`, and `finalFlowNodes` whenever the model's reply contains phrases like "don't exist", "missing docs", "build Final Flow" — so we can catch future drift in edge function logs.
-
-## Files
-
-- `supabase/functions/assistant-chat/index.ts` (prompt builder around lines 610–656)
+## Files touched
+- `src/features/project/EnvelopesSection.tsx`
+- `src/lib/assistant-playbook.ts`
 - `supabase/functions/_shared/assistant-playbook.ts`
-
-No DB migration, no UI changes.
+- `supabase/functions/generate-envelopes/index.ts`
+- `supabase/functions/generate-logic-flow/index.ts` (verify only)
+- `supabase/functions/assistant-chat/index.ts` (prose references)

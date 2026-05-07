@@ -92,8 +92,8 @@ const STATUSES = ["draft", "in_progress", "review", "final"] as const;
 const FOOTNOTE_HE =
   "פתחו את המעטפה הבאה רק אם אתם בטוחים שביצעתם את המשימה הקודמת כראוי.";
 
-/** Player-facing envelope label: 0 → "Open First", N → "N". */
-const displayLabel = (n: number): string => (n === 0 ? "Open First" : String(n));
+/** Player-facing envelope label — envelopes are numbered 1..N. */
+const displayLabel = (n: number): string => String(n);
 
 const envelopeImageModel = () => getStoredImageModel("envelope", "chatgpt-image-2");
 const envelopeImageQuality = () => getStoredImageQuality("envelope", "medium");
@@ -141,15 +141,6 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
     },
   });
   const playbook = useMemo(() => resolvePlaybook(playbookRaw), [playbookRaw]);
-  const slots = useMemo(
-    () =>
-      Array.from({ length: playbook.envelopes.count }, (_, i) => ({
-        n: i,
-        label: playbook.envelopes.labels[i] ?? `Envelope ${i}`,
-      })),
-    [playbook],
-  );
-
   const { data } = useQuery({
     queryKey: ["envelopes", projectId],
     queryFn: async () => {
@@ -162,6 +153,18 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
       return data as Envelope[];
     },
   });
+
+  const slots = useMemo(
+    () => {
+      const dbMax = (data ?? []).reduce((m, e) => Math.max(m, e.number ?? 0), 0);
+      const total = Math.max(playbook.envelopes.count, dbMax);
+      return Array.from({ length: total }, (_, i) => ({
+        n: i + 1,
+        label: playbook.envelopes.labels[i] ?? `Envelope ${i + 1}`,
+      }));
+    },
+    [playbook, data],
+  );
 
   const { data: project } = useQuery({
     queryKey: ["project-language", projectId],
@@ -264,7 +267,7 @@ export function EnvelopesSection({ projectId }: { projectId: string }) {
       const auth = `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`;
       // Fan out per-envelope so each model call is small (one ~600-word letter)
       // and we don't hit the gateway timeout on a single 5×600-word request.
-      const numbers = Array.from({ length: slots.length }, (_, i) => i);
+      const numbers = Array.from({ length: slots.length }, (_, i) => i + 1);
       const results = await runWithConcurrency(numbers, 3, async (n) => {
         const resp = await fetch(
           `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-envelopes`,
@@ -518,7 +521,7 @@ function EnvelopeCard({
             {createdByMsg && <AssistantOriginBadge messageId={createdByMsg} />}
           </div>
           <div className="text-xs text-muted-foreground">
-            {slot.n + 1} of {playbookCount}
+            {slot.n} of {playbookCount}
           </div>
         </div>
         <div className="flex items-center gap-1.5">
