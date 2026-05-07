@@ -646,7 +646,7 @@ Envelope settings: ${(() => {
       : `(${keys.length} keys: ${truncate(keys.join(", "), 80)})`;
   })()}
 ${suspectCount > 0 ? `Existing suspects (${suspectCount}):\n${suspectsList}` : ""}
-${docCount > 0 ? `Existing documents (${docCount}):\n${documentsList}` : ""}
+${docCount > 0 ? `Existing documents (${docCount} — status tally: ${(() => { const t: Record<string, number> = {}; for (const d of rosters.documents) { const s = d.status ?? "draft"; t[s] = (t[s] ?? 0) + 1; } return Object.entries(t).map(([k, v]) => `${k}=${v}`).join(", "); })()}):\n${documentsList}\n(USE THE TALLY ABOVE to answer "are they all generated?" — a doc with status='review' or 'final' HAS been generated; only 'draft' means not yet generated.)` : ""}
 ${rosters.envelopes.length > 0 ? `Existing envelopes (${rosters.envelopes.length}):\n${envelopesList}` : ""}
 ${rosters.hints.length > 0 ? `Existing hints (${rosters.hints.length}):\n${hintsList}` : ""}
 ${rosters.canvas_nodes.length > 0 ? `Existing canvas nodes (${rosters.canvas_nodes.length}):\n${nodesList}` : ""}
@@ -3466,7 +3466,7 @@ async function processConversation(
       .select("id, doc_number, title, doc_type, status")
       .eq("project_id", projectId)
       .order("doc_number", { ascending: true, nullsFirst: false })
-      .limit(25),
+      .limit(200),
     supa
       .from("envelopes")
       .select("id, number, label")
