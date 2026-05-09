@@ -246,7 +246,11 @@ ${Array.from({ length: count }, (_, i) => i + 1).map((n) => {
 
 ${onlyNumber !== null
   ? `Produce ONLY envelope #${onlyNumber} (label starting point: "${labels[Math.max(0, Math.min(count - 1, onlyNumber - 1))]}"). Return a single-element envelopes array containing just that envelope. Follow every rule above as if it were part of the full set — its task body must respect the three-part structure and the recap/briefing distinction for its position in the chain.`
-  : `Produce all ${count} envelopes now in numerical order (numbered 1..${count}). Reuse the labels above as the starting point for the "label" field but you may refine them. Each envelope must have a distinct opening_trigger anchored in this case's logic flow.`}`;
+  : `Produce all ${count} envelopes now in numerical order (numbered 1..${count}). Reuse the labels above as the starting point for the "label" field but you may refine them. Each envelope must have a distinct opening_trigger anchored in this case's logic flow.
+
+FINAL CHECK BEFORE EMITTING JSON (LOCKED):
+1. Each red task line targets a DIFFERENT Logic Flow beat — no two envelopes share the same task verb + target. No generic "go through the evidence / find the next task / review what you have" wording in any language.
+2. Each Part A recap (#2..#${count - 1}) talks ONLY about the PREVIOUS envelope's task — not the cumulative case state, not earlier envelopes' tasks, not later beats.`}`;
 
     const tool = {
       type: "function",
