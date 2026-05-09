@@ -1,52 +1,53 @@
 ## Goal
 
-Upgrade the **Solution video URL (final envelope QR)** block in the envelope editor (`src/features/project/EnvelopesSection.tsx`, lines ~653–669) from a bare input + helper text into a polished QR control card. The QR remains final-envelope only. The composited print QR is unchanged — this plan focuses on the editor UI.
+Fix two prompt-side issues in **`supabase/functions/generate-envelopes/index.ts`** (and mirror the same wording in the workspace task-voice template at `supabase/functions/_shared/assistant-playbook.ts` + `src/lib/assistant-playbook.ts`):
 
-## What changes
+1. **Generic / duplicate tasks** — the model sometimes ships envelopes whose "Your task:" line is something like *"go through all the evidence in this envelope and find the next task"*, or repeats the same idea across envelopes.
+2. **Spoiler-heavy recaps** — Part A in envelopes #2..#N-1 currently summarises "everything the detective should have figured out by this beat", which the model treats as a cumulative recap of all prior beats. You want each recap scoped strictly to **the previous envelope's task only**.
 
-### 1. New component: `FinalEnvelopeQrCard`
+This is a prompt-tightening change. No DB, no UI, no edge-function plumbing changes.
 
-Co-located inside `EnvelopesSection.tsx` (or split into `src/features/project/envelopes/FinalEnvelopeQrCard.tsx` if it grows). Replaces the current `<Label> + <Input> + <p>` block.
+## Changes
 
-**Layout (single rounded card, two columns on ≥sm, stacked on mobile — viewport is 647px so stacked on phone):**
+### 1. Tighten the **task uniqueness + concreteness** rule (Part B)
 
-- **Left / top — URL controls**
-  - Section title: "Final envelope QR" with a small QR icon.
-  - One-line description: "Scanned by the player after the verdict to watch the cinematic news report."
-  - URL input with inline status badge:
-    - empty → muted "Add a link"
-    - invalid URL → destructive "Invalid URL"
-    - valid non-YouTube → warning "Link saved (not a YouTube URL)"
-    - valid YouTube → success "YouTube link ready"
-  - Action row: **Test scan** (opens URL in new tab, disabled until valid), **Copy URL**, **Clear**.
+In the system prompt (around lines 157–160) add a locked rule:
 
-- **Right / bottom — Live QR preview**
-  - Renders QR client-side via the existing `qrcode` package already used in `src/features/project/marketing/qr.ts` (no new dep).
-  - ~160px square, white background, rounded border, subtle shadow.
-  - Below QR: small monospace truncated URL, "Scan to watch" helper.
-  - Empty state: dashed placeholder + "Live preview appears here".
-  - Debounced render (200ms) so typing doesn't thrash.
+- Each envelope's red task line must be a **distinct, concrete investigative action** anchored to a **different Logic Flow node** than every other envelope in the set. No two envelopes may share the same task verb + target.
+- **Forbidden generic task patterns** (and their game-language equivalents): "go through the evidence", "review what you have", "look at everything in this envelope", "find the next task", "examine the case file", "study the documents", "decide what to do next", "figure out the next step", "open this envelope and continue", "see what's in here". These are non-tasks — they describe *opening an envelope*, not *doing investigative work*.
+- The task must name **what the detective is investigating** (a suspect interaction, a contradiction, a timeline window, a location, a relationship, a motive question — at the category level, never naming a specific document or clue) and **what mental conclusion they should reach** before opening the next envelope.
+- Add explicit cross-envelope check: when generating the full set, verify each task targets a different Logic Flow beat — restate the constraint right before the JSON tool schema.
 
-### 2. Theme-aware styling note for the AI page mock-up
+### 2. Rewrite the **Part A recap scope rule** (envs #2..#N-1)
 
-The user picked **"Match envelope era/theme automatically"** for the printed QR card on the page. The current `pageInsertPrompt` in `EnvelopesSection.tsx` line 120 hardcodes a generic frame. Update that single prompt line so it tells the image model to derive the QR card's visual treatment (paper texture, border style, label typography, tape/stamp accents) from the envelope's own era/genre established by the rest of the design instructions, instead of dictating a fixed look. Keep all structural rules: bottom 35% of page, ~5×5cm QR, label, helper line, printed URL fallback.
+Replace the current Part A recap rule (lines ~155 in the system prompt and the matching block in `task_voice_template`) with a strictly narrowed version:
 
-### 3. Minor surrounding cleanup
+- The recap covers **ONLY the task that was printed inside the previous envelope** — what that single task asked the detective to do, and the in-world conclusion they should now hold in mind from doing it.
+- It must NOT summarise the cumulative state of the case, must NOT touch beats from envelopes #1..#N-2 beyond the one immediately before, must NOT list other things the detective has figured out so far.
+- Keep the in-world voice and the "by now you've worked out…" style, but the *subject* of that sentence is the previous envelope's task topic and nothing else.
+- Re-state the existing anti-spoiler rule with this narrower scope: don't reveal anything about beats AFTER the previous task and don't pre-summarise beats BEFORE the previous task.
+- Word count for Part A stays the same (~180–280 words) — the recap goes deeper into the single previous beat rather than wider across all beats.
 
-- Remove the now-redundant standalone `<p>` helper text (folded into the new card).
-- Keep `solution_video_url` field name and DB column unchanged — pure UI change.
+### 3. Mirror in the workspace task-voice template
+
+Apply the same two edits inside the `task_voice_template` string in:
+- `supabase/functions/_shared/assistant-playbook.ts` (the runtime copy used by the edge function)
+- `src/lib/assistant-playbook.ts` (the client mirror — keep the two files in sync as they are today)
+
+So the workspace owner's source-of-truth template carries the same constraints (the system prompt already says "if anything conflicts, the stricter rule wins", but keeping both copies aligned avoids drift).
+
+### 4. Anti-spoiler rule — small addition
+
+Add one bullet to the existing ANTI-SPOILER block: "Part A may reference the previous envelope's task topic only. It MUST NOT recap or hint at any earlier envelope's task or any later beat."
 
 ## Files touched
 
-- `src/features/project/EnvelopesSection.tsx`
-  - Replace lines ~653–669 with `<FinalEnvelopeQrCard value={...} onChange={...} />`.
-  - Add the component definition near the bottom of the file.
-  - Tweak the `pageInsertPrompt` final-envelope branch (line 120) to make the QR card era/theme-adaptive instead of hardcoded.
-- No DB migration. No new dependencies (`qrcode` already installed via marketing panel).
-- No changes to the generator edge function or playbooks.
+- `supabase/functions/generate-envelopes/index.ts` — Part A recap rule, Part B task rules + forbidden-generic list, anti-spoiler bullet, pre-schema reminder.
+- `supabase/functions/_shared/assistant-playbook.ts` — same two rules in `envelopes.task_voice_template`.
+- `src/lib/assistant-playbook.ts` — mirror of the above.
 
-## Out of scope (per your answers)
+## Out of scope
 
-- No real composited scannable QR on the exported page (still placeholder, composited at print time as today).
-- No printable standalone QR card.
-- No QR on box back or other envelopes.
+- No regeneration of existing envelopes is triggered automatically — you'll regenerate the affected envelopes (single or batch / consistent set) once the prompt is updated.
+- No structural change to envelope generation flow, schema, or UI.
+- Final envelope verdict/reveal block is unchanged (spoilers are intentional there).
