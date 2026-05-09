@@ -146,7 +146,7 @@ export const PLAYBOOK_DEFAULTS: Playbook = {
     count: 5,
     labels: ["1", "2", "3", "4", "5"],
     closing_line_he:
-      "פתחו את המעטפה הבאה רק אם הגעתם לרגע המתאים בחקירה. כל המסמכים כבר בקופסה — המשיכו לחקור איתם.",
+      "פתחו את המעטפה הבאה רק לאחר שסיימתם את המשימה במעטפה זו. כל המסמכים כבר בקופסה — המשיכו לחקור איתם.",
     design_brief_template: `GOAL
 A single full-page A4 case-officer briefing page that will be placed inside a physical envelope by the game maker. This is NOT an envelope cover and must never look like an envelope, folder, package, wax-sealed object, or external mailer. It is the printed insert the player reads after opening the physical envelope: an in-world task briefing, recap, or final accusation hand-off.
 
@@ -161,7 +161,7 @@ VISUAL STYLE
 - The page can include subtle stamps, routing marks, signatures, marginal notes, tabs, redactions, or filing codes ONLY when they fit this specific page style.
 
 LAYOUT
-1. Top zone: optional company logo/letterhead lockup when branding is supplied; otherwise use case-office header text or a simple file reference.
+1. Top zone: the WORKSPACE COMPANY BRANDING lockup (real publisher logo + company name) when configured — see the COMPANY BRANDING block in the prompt. Envelopes are publisher-branded inserts, NOT in-world agency letterhead, so do NOT invent a fictional precinct/dispatch/ministry crest here. If no company branding is configured, leave the top zone clean (small filing marker only) — do NOT invent a logo.
 2. Header: the page insert label and envelope marker (1 / 2 / 3 / 4 / 5) in the game language.
 3. Main body: visually believable dense briefing text blocks, with paragraph rhythm and section breaks.
 4. Task area: a clearly separated 'Your task' section in the game language.
@@ -175,7 +175,7 @@ TYPOGRAPHY
 AUTHENTICITY / REALISM VARIETY
 Design realism must be chosen fresh for this exact page and must NOT repeat the same generic details across the set. Do not default to coffee stains. Only use coffee/water stains if they make story and document-style sense.
 Pick 3–6 tactile details that belong to THIS page format: examples include carbon-copy offset, stapled corner impression, fax noise, uneven typewriter baseline, registrar stamp, punched binder holes, folded dispatch crease, smudged signature, redaction tape, circled paragraph in pencil, archival scan shadow at page edge, official routing initials, courier receipt tear, docket number, or period-correct date stamp. Vary the details, paper, ink, and administrative markings from one page insert to the next.
-Looks like a real in-world printed page from the case era — NOT a modern Canva mock-up, NOT an envelope, NOT a decorative poster. Never invent real institutional emblems or signatures.`,
+Looks like a real publisher-branded printed insert from the game maker — NOT a modern Canva mock-up, NOT an envelope, NOT a decorative poster. The only logo on the page is the workspace company logo (when configured). Do NOT invent fictional in-world agency emblems for envelope inserts — those belong on documents, not envelopes.`,
     task_voice_template: `ENVELOPE TASK BODY — A4 IN-CHARACTER LETTER (workspace default)
 
 Each envelope's "task" is the FULL printed insert that goes inside the envelope. It must read like a real case-officer hand-off to the detective and EASILY FILL AN A4 PAGE — sometimes spilling onto a second. Thin notes are unacceptable.
@@ -194,11 +194,13 @@ REQUIRED THREE-PART STRUCTURE — every middle and #1 envelope's task body, in t
 
 PART A — BRIEFING (env #1) or RECAP (envs #2..#N-1). At least 2 real paragraphs, ~200–320 words.
 - Envelope #1 (Mission Briefing): Opens with the equivalent of "Hi, Detective — you've been assigned to this case." Two paragraphs that set the scene: the victim (use approved Phase-1 facts only — never invent a different victim or solution), where and when it happened, the detective's role/jurisdiction, the mood/era of the case, and that the case file in front of them is everything they get. NEVER mention Doc 0, "the contents list", "the index", or "the table of contents" — refer to the materials only as "the case file" / "what's in front of you". Vivid and atmospheric, never spoils the solution.
-- Envelopes #2..#N-1 (Stage Recap): Opens with the equivalent of "By now you've probably worked out that…" Two paragraphs that summarise — in-world, as if the player succeeded — what the detective should have figured out by this beat, anchored to the Logic Flow node this envelope gates. Refer to suspects by name when the beat is about them. Acknowledge what's still open ahead. Never name a specific document, never reveal the final culprit/method/motive/red-herring/decisive-clue.
+- Envelopes #2..#N-1 (Stage Recap): Opens with the equivalent of "By now you've worked through [the PREVIOUS envelope's task topic] — and you've probably worked out that…" The recap is SCOPED STRICTLY TO THE PREVIOUS ENVELOPE'S TASK AND NOTHING ELSE. Two paragraphs that go DEEP into that single previous task: what the detective was asked to do and the in-world conclusion they should now hold in mind from doing it. HARD LIMITS — the recap MUST NOT: summarise the cumulative state of the case, recap or hint at any earlier envelope's task (anything before #N-1), list other things figured out across the whole investigation, pre-summarise or foreshadow later beats, name a specific document, or reveal the culprit/method/motive/red-herring/decisive clue. Refer to suspects by name only when the PREVIOUS task was about them. Go deeper into that one beat — never wider.
 
 PART B — YOUR TASK. ~40–80 words.
 - A clear, visually set-off line: "Your task:" (game-language equivalent).
-- ONE vague-but-clear investigative goal in the world, invented to fit THIS case's beat — not template phrasing. Examples of the SHAPE only: "Identify which of the suspects is lying in their statement.", "Place each suspect on the map between 21:00 and 22:30.", "Decide who actually had a reason to want him dead." Use the Logic Flow node and case context to write a fresh, specific-to-this-case goal each time.
+- ONE concrete, case-specific investigative goal invented to fit THIS case's beat — not template phrasing. Examples of the SHAPE only: "Identify which of the suspects is lying in their statement.", "Place each suspect on the map between 21:00 and 22:30.", "Decide who actually had a reason to want him dead." The task must name WHAT is being investigated (a suspect interaction, a contradiction, a timeline window, a location, a relationship, a motive question — at the category level only, never naming a specific document or clue) AND the mental conclusion to reach before the next envelope.
+- TASK UNIQUENESS (LOCKED): each envelope's task targets a DIFFERENT Logic Flow beat than every other envelope. No two envelopes share the same task verb + target.
+- FORBIDDEN GENERIC TASKS (any language): "go through all the evidence in this envelope", "go through the evidence", "review what you have", "review the case file", "look at everything in this envelope", "find the next task", "find out the next task", "figure out the next step", "decide what to do next", "examine the case file", "study the documents", "open this envelope and continue", "see what's in here", "read everything carefully", "take stock of what you have". These describe OPENING an envelope, not doing investigative work — never ship them. If a task could equally apply to any envelope in any case, rewrite it.
 - DO NOT add any "tips", how-to-solve guidance, supporting investigative prompts, or bullet checklist after the red task line. The red task line stands alone. (Exception: envelope #1 — see below.)
 
 PART C — SEAL INSTRUCTION. 2–3 lines.
@@ -235,6 +237,7 @@ The task body MUST NOT (except in the FINAL envelope where the solution IS the p
 - Reveal or strongly hint at the culprit, the motive, the murder method, the red herring, or which clue is decisive.
 - Tell the player which evidence proves what.
 - In Part A recap, reveal answers to beats AFTER the previous envelope's task — only summarise what should already be solved.
+- Part A recap may reference the PREVIOUS envelope's task topic only. It MUST NOT recap or hint at any earlier envelope's task (anything before #N-1) and MUST NOT pre-summarise any later beat.
 
 Allowed in Part A: naming suspects (they're public), naming the victim, summarising in-world events, naming what the detective is still unsure about. Goals stay at the category level at most ("the materials in your case file", "what you've gathered so far", "the statements you have").`,
   },
