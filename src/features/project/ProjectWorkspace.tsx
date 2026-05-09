@@ -279,7 +279,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
                 { v: "documents", l: "Documents", icon: FileText },
                 { v: "envelopes", l: "Envelopes", icon: Mail },
                 { v: "hints", l: "Hints", icon: Lightbulb },
-                { v: "marketing", l: "Marketing", icon: Megaphone },
+                { v: "marketing", l: "Packaging", icon: Megaphone },
                 { v: "generation", l: "Generation", icon: Sparkles },
                 { v: "media", l: "Media", icon: ImageIcon },
               ].map((t) => {
