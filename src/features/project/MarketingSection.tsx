@@ -40,9 +40,10 @@ function MarketingSectionInner({ projectId }: { projectId: string }) {
       .on("postgres_changes", { event: "*", schema: "public", table: "project_storyboards", filter: `project_id=eq.${projectId}` }, () =>
         qc.invalidateQueries({ queryKey: ["project-storyboards", projectId] }),
       )
-      .on("postgres_changes", { event: "*", schema: "public", table: "company_profiles" }, () =>
-        qc.invalidateQueries({ queryKey: ["company-profile-readonly"] }),
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "company_profiles_v2" }, () => {
+        qc.invalidateQueries({ queryKey: ["company-profiles-v2"] });
+        qc.invalidateQueries({ queryKey: ["active-company-profile", projectId] });
+      })
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [projectId, qc]);
@@ -50,16 +51,16 @@ function MarketingSectionInner({ projectId }: { projectId: string }) {
   return (
     <div className="max-w-6xl mx-auto px-6 md:px-10 py-8 space-y-6">
       <div>
-        <div className="text-[10px] font-medium tracking-widest uppercase text-muted-foreground mb-1">Marketing</div>
+        <div className="text-[10px] font-medium tracking-widest uppercase text-muted-foreground mb-1">Packaging</div>
         <h2 className="font-display text-3xl">Box, copy & promo</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Cover art, professional box text, barcode, company info, and a Script → Prompts → Storyboard mini-movie pipeline.
+          Start with the box text — it feeds the back-of-box, then the front cover. Company branding and the storyboard mini-movie come last.
         </p>
       </div>
 
       <div className="sticky top-0 z-10 -mx-2 rounded-xl border bg-background/85 p-2 backdrop-blur supports-[backdrop-filter]:bg-background/70">
         <div className="flex gap-2 overflow-x-auto scrollbar-none">
-          {marketingNav.map((item) => (
+          {packagingNav.map((item) => (
             <a
               key={item.id}
               href={`#${item.id}`}
@@ -73,19 +74,19 @@ function MarketingSectionInner({ projectId }: { projectId: string }) {
 
       {batch && <BatchProgressPill progress={batch.progress} onDismiss={batch.dismiss} />}
 
-      <section id="marketing-cover-visuals" className="scroll-mt-24">
-        <CoverAndVisuals projectId={projectId} />
-      </section>
-      <section id="marketing-box-text" className="scroll-mt-24">
+      <section id="packaging-box-text" className="scroll-mt-24">
         <BoxCopyPanel projectId={projectId} />
       </section>
-      <section id="marketing-barcode" className="scroll-mt-24">
+      <section id="packaging-barcode" className="scroll-mt-24">
         <BarcodeAndBackPanel projectId={projectId} />
       </section>
-      <section id="marketing-company-profile" className="scroll-mt-24">
-        <CompanyProfileSummary />
+      <section id="packaging-cover-visuals" className="scroll-mt-24">
+        <CoverAndVisuals projectId={projectId} />
       </section>
-      <section id="marketing-storyboard" className="scroll-mt-24">
+      <section id="packaging-company-profile" className="scroll-mt-24">
+        <CompanyProfileSummary projectId={projectId} />
+      </section>
+      <section id="packaging-storyboard" className="scroll-mt-24">
         <StoryboardStudio projectId={projectId} />
       </section>
     </div>
