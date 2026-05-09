@@ -458,6 +458,93 @@ export type Database = {
         }
         Relationships: []
       }
+      company_profiles_v2: {
+        Row: {
+          address: string | null
+          age_rating: string | null
+          box_footer_line: string | null
+          company_name: string | null
+          country: string | null
+          cover_design_brief: string | null
+          created_at: string
+          distributed_by: string | null
+          id: string
+          is_default: boolean
+          language: string
+          legal_text: string | null
+          logo_url: string | null
+          made_in: string | null
+          manufactured_by: string | null
+          name: string
+          owner_id: string
+          phone: string | null
+          reference_covers: Json
+          social: Json
+          support_email: string | null
+          tagline: string | null
+          updated_at: string
+          vat_number: string | null
+          warning_text: string | null
+          website: string | null
+        }
+        Insert: {
+          address?: string | null
+          age_rating?: string | null
+          box_footer_line?: string | null
+          company_name?: string | null
+          country?: string | null
+          cover_design_brief?: string | null
+          created_at?: string
+          distributed_by?: string | null
+          id?: string
+          is_default?: boolean
+          language?: string
+          legal_text?: string | null
+          logo_url?: string | null
+          made_in?: string | null
+          manufactured_by?: string | null
+          name?: string
+          owner_id: string
+          phone?: string | null
+          reference_covers?: Json
+          social?: Json
+          support_email?: string | null
+          tagline?: string | null
+          updated_at?: string
+          vat_number?: string | null
+          warning_text?: string | null
+          website?: string | null
+        }
+        Update: {
+          address?: string | null
+          age_rating?: string | null
+          box_footer_line?: string | null
+          company_name?: string | null
+          country?: string | null
+          cover_design_brief?: string | null
+          created_at?: string
+          distributed_by?: string | null
+          id?: string
+          is_default?: boolean
+          language?: string
+          legal_text?: string | null
+          logo_url?: string | null
+          made_in?: string | null
+          manufactured_by?: string | null
+          name?: string
+          owner_id?: string
+          phone?: string | null
+          reference_covers?: Json
+          social?: Json
+          support_email?: string | null
+          tagline?: string | null
+          updated_at?: string
+          vat_number?: string | null
+          warning_text?: string | null
+          website?: string | null
+        }
+        Relationships: []
+      }
       document_inline_images: {
         Row: {
           active_version: string
@@ -1374,12 +1461,15 @@ export type Database = {
           ai_reasoning_effort: string
           assistant_origins: Json
           case_goal: string | null
+          company_profile_id: string | null
           cover_active_version: string
           cover_effective_model: string | null
           cover_fallback: string | null
           cover_image_url: string | null
           cover_prompt: string | null
           cover_prompt_history: Json
+          cover_reference_notes: string | null
+          cover_reference_url: string | null
           created_at: string
           deleted_at: string | null
           difficulty: string | null
@@ -1422,12 +1512,15 @@ export type Database = {
           ai_reasoning_effort?: string
           assistant_origins?: Json
           case_goal?: string | null
+          company_profile_id?: string | null
           cover_active_version?: string
           cover_effective_model?: string | null
           cover_fallback?: string | null
           cover_image_url?: string | null
           cover_prompt?: string | null
           cover_prompt_history?: Json
+          cover_reference_notes?: string | null
+          cover_reference_url?: string | null
           created_at?: string
           deleted_at?: string | null
           difficulty?: string | null
@@ -1470,12 +1563,15 @@ export type Database = {
           ai_reasoning_effort?: string
           assistant_origins?: Json
           case_goal?: string | null
+          company_profile_id?: string | null
           cover_active_version?: string
           cover_effective_model?: string | null
           cover_fallback?: string | null
           cover_image_url?: string | null
           cover_prompt?: string | null
           cover_prompt_history?: Json
+          cover_reference_notes?: string | null
+          cover_reference_url?: string | null
           created_at?: string
           deleted_at?: string | null
           difficulty?: string | null
