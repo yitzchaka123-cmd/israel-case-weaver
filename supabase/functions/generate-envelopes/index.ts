@@ -175,6 +175,7 @@ The task body MUST NOT (except in the FINAL envelope where the solution IS the p
 - Reveal or strongly hint at the culprit, the motive, the murder method, the red herring, or which clue is decisive.
 - Tell the player which evidence proves what.
 - In Part A recap, reveal answers to beats AFTER the previous envelope's task — only summarise what should already be solved.
+- Part A recap may reference the PREVIOUS envelope's task topic only. It MUST NOT recap or hint at any earlier envelope's task (anything before #N-1) and MUST NOT pre-summarise any later beat.
 
 Allowed in Part A: naming suspects (they're public), naming the victim, summarising in-world events, naming what the detective is still unsure about. Goals stay at the category level at most ("the materials in your case file", "what you've gathered so far", "the statements you have").
 
