@@ -1,4 +1,5 @@
-// Top-level Marketing tab for a project. Stacks five panels.
+// Top-level Packaging tab for a project. Box Text leads, then Barcode/Back,
+// then Cover & Visuals, then the Company Profile picker, then Storyboard.
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -10,12 +11,12 @@ import { StoryboardStudio } from "./marketing/StoryboardStudio";
 import { BatchProgressProvider, useBatchProgress } from "./marketing/BatchProgressContext";
 import { BatchProgressPill } from "./marketing/BatchProgressPill";
 
-const marketingNav = [
-  { id: "marketing-cover-visuals", label: "Cover & Visuals" },
-  { id: "marketing-box-text", label: "Box Text" },
-  { id: "marketing-barcode", label: "Barcode" },
-  { id: "marketing-company-profile", label: "Company Profile" },
-  { id: "marketing-storyboard", label: "Storyboard Studio" },
+const packagingNav = [
+  { id: "packaging-box-text", label: "Box Text" },
+  { id: "packaging-barcode", label: "Barcode & Back" },
+  { id: "packaging-cover-visuals", label: "Cover & Visuals" },
+  { id: "packaging-company-profile", label: "Company Profile" },
+  { id: "packaging-storyboard", label: "Storyboard Studio" },
 ];
 
 export function MarketingSection({ projectId }: { projectId: string }) {
