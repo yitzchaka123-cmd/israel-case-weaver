@@ -180,7 +180,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   useEffect(() => {
     const url = project?.cover_image_url;
     if (!url || url.includes("cover-final-") || bakingFrontRef.current.has(url)) return;
-    if (!project?.title && !project?.subtitle && !company?.logo_url && !marketing?.front_company_slogan && !marketing?.front_subtext) return;
+    if (!project?.title && !project?.subtitle && !company?.logo_url && !marketing?.front_subtext) return;
     bakingFrontRef.current.add(url);
     void (async () => {
       try {
@@ -190,8 +190,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
           title: project?.title ?? null,
           subtitle: project?.subtitle ?? null,
           logoUrl: company?.logo_url ?? null,
-          companySlogan: marketing?.front_company_slogan ?? null,
-          frontSubtext: marketing?.front_subtext ?? null,
+          bottomParagraph: marketing?.front_subtext ?? null,
         });
         await supabase.from("projects").update({ cover_image_url: finalUrl }).eq("id", projectId);
       } catch (e) {
@@ -199,7 +198,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
         bakingFrontRef.current.delete(url);
       }
     })();
-  }, [project?.cover_image_url, project?.title, project?.subtitle, company?.logo_url, marketing?.front_company_slogan, marketing?.front_subtext, projectId]);
+  }, [project?.cover_image_url, project?.title, project?.subtitle, company?.logo_url, marketing?.front_subtext, projectId]);
 
   const handleRebakeCover = async () => {
     if (!project?.cover_image_url) return;
@@ -211,8 +210,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
         title: project?.title ?? null,
         subtitle: project?.subtitle ?? null,
         logoUrl: company?.logo_url ?? null,
-        companySlogan: marketing?.front_company_slogan ?? null,
-        frontSubtext: marketing?.front_subtext ?? null,
+        bottomParagraph: marketing?.front_subtext ?? null,
       });
       await supabase.from("projects").update({ cover_image_url: finalUrl }).eq("id", projectId);
       toast.success("Cover re-baked with latest title, subtitle & logo");
