@@ -9,6 +9,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { ImagePromptAssistant } from "@/components/ImagePromptAssistant";
 import { ImageHistoryStrip, type ImageHistoryRow } from "@/components/ImageHistoryStrip";
 import { FinalAssetPicker } from "@/components/FinalAssetPicker";
@@ -21,7 +23,7 @@ import { bakeFrontCover } from "./bakeCover";
 import { useActiveCompanyProfile } from "@/lib/useActiveCompanyProfile";
 import { composeFrontPrompt as buildFrontPrompt, composeBackPrompt, composeCoverPairPrompt } from "./composePrompts";
 
-import { Copy, Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2, Sparkles, Wand2, AlertTriangle, Download, Star } from "lucide-react";
+import { Copy, Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2, Sparkles, Wand2, AlertTriangle, Download, Star, Eye } from "lucide-react";
 import { downloadAsset, slugify } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -62,6 +64,8 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const [rebaking, setRebaking] = useState(false);
   const [coverOutputType, setCoverOutputType] = useState<OutputType>("image");
   const [extraOutputType, setExtraOutputType] = useState<OutputType>("image");
+  const [promptPreview, setPromptPreview] = useState<{ text: string; refs: { url: string; label: string }[] } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   const { data: company } = useActiveCompanyProfile(projectId);
 
