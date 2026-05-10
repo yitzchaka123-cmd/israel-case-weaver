@@ -13,8 +13,12 @@ export interface ProjectMeta {
 }
 
 export interface FrontMarketingMeta {
-  /** The single bottom paragraph (was `front_subtext`). */
+  /** Tagline baked directly under the title. */
+  tagline?: string | null;
+  /** Bottom paragraph baked across the bottom strip. */
   front_subtext?: string | null;
+  /** Age / duration / players, also baked on the front. */
+  back_specs?: string | null;
 }
 
 export interface BackMarketingMeta {
@@ -22,10 +26,7 @@ export interface BackMarketingMeta {
   back_body?: string | null;
   back_teaser?: string | null;
   back_whats_in_box?: string | null;
-  back_how_to_play?: string | null;
-  back_feature_bullets?: string | null;
   back_specs?: string | null;
-  back_content_note?: string | null;
   back_footer_text?: string | null;
   tagline?: string | null;
   barcode_value?: string | null;
