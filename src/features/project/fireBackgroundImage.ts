@@ -26,6 +26,11 @@ export interface FireBackgroundImageInput {
   aspect?: "portrait" | "landscape" | "square";
   category?: string;
   title?: string;
+  /** Optional brand/style reference image (URL). When provided, the model
+   *  receives it as a real vision input — not just mentioned in text — so the
+   *  output inherits the same publisher's visual identity. */
+  referenceImageUrl?: string | null;
+  referenceLabel?: string | null;
 }
 
 export interface FireBackgroundImageResult {

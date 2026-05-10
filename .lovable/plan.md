@@ -1,157 +1,43 @@
+## Goal
 
-# Packaging stage — plan
+When a project has a `cover_reference_url` selected from the active company profile, the front-cover generator should pass that image as a **real vision reference** to the image model — not just mention its URL in the text prompt — and the prompt should explicitly tell the model that the new cover is for the **same publisher/brand** as the reference and must match its visual identity.
 
-This plan covers three things you asked about:
+## What changes
 
-1. The flow once documents + envelopes are done (assistant hands off → hints → packaging).
-2. Renaming "Marketing" to "Packaging" and reordering the panels.
-3. Rebuilding the front-cover design flow around a **reference cover** stored on a **company profile**, with multiple profiles per user (so English & Hebrew companies can coexist).
+### 1. Frontend — `CoverAndVisuals.tsx`
 
----
+- In `composeFrontPrompt`, when a `cover_reference_url` is present, replace the current "Reference cover to emulate: <url>" line with a strong, structured **brand-match preface** placed at the top of the prompt:
 
-## 1. Stage handoff (assistant behavior)
+  > "BRAND CONTINUITY — CRITICAL: This cover is a new release in the SAME publisher line as the attached REFERENCE IMAGE (publisher: `<company.company_name>`). Treat the reference as our house style guide. Match its illustration technique, color palette, lighting, typography hierarchy, framing, paper/print finish and overall mood. Do NOT copy its scene or subject — tell THIS case's story with the same brand fingerprint, so the two boxes sit side-by-side as siblings on a shelf."
+  > Plus the optional `cover_reference_notes` and the always-on `company.cover_design_brief`.
 
-No new tab — just a new prompt-side rule for the assistant:
+- In `handleGenerateCover`, pass two new fields into `fireBackgroundImage`:
+  - `referenceImageUrl: project.cover_reference_url`
+  - `referenceLabel: company?.company_name ?? null` (used only for logging/telemetry)
 
-- When all envelopes are `status = 'final'` (or all docs final + all envelopes have a cover image), the assistant proactively says: *"Documents and envelopes are done. Next stage is **Hints** — want me to draft the hint sheets?"*
-- When all hint sheets exist and have content, the assistant says: *"Hints are done. Next stage is **Packaging** — should I start with the box text?"* and links/scrolls into the Packaging tab.
-- These are added as two new beats in `_shared/assistant-playbook.ts` (stage transitions section). No DB changes.
+### 2. Frontend — `fireBackgroundImage.ts`
 
----
+- Extend `FireBackgroundImageInput` with optional `referenceImageUrl?: string` and `referenceLabel?: string`. Forward them in the POST body to `generate-image`.
 
-## 2. Tab rename + panel reorder
+### 3. Edge function — `supabase/functions/generate-image/index.ts`
 
-**Rename Marketing → Packaging everywhere:**
+- Accept `referenceImageUrl` on the `Body` type and persist it through the background-mode synthetic request (already passes raw body, so no extra plumbing).
+- When `referenceImageUrl` is set, fetch the image once as bytes (with size guard, e.g. ≤ 8 MB) before calling the model.
+- **OpenAI path (`gpt-image-2` / `gpt-image-1`)**: switch from `POST /v1/images/generations` to `POST /v1/images/edits` (multipart/form-data) with fields `model`, `prompt`, `size`, `quality`, `n`, `image=<reference bytes>`. Keep the existing generations call when no reference is provided. Response shape (`data[0].b64_json`) is identical.
+- **Gemini direct path** (`generateImage` in `_shared/ai-router.ts`): extend the helper to accept an optional `referenceImage: { bytes: Uint8Array; mime: string }`. When present, append a second `parts` entry with `inlineData: { mimeType, data: base64(bytes) }` alongside the text part. This is the documented Nano Banana edit-mode input.
+- **Lovable AI Gateway fallback path**: when used, pass the reference as a `image_url` content block in the `messages` array (gateway already supports `modalities: ["image","text"]` with mixed text + image_url content — see the AI-gateway docs in context).
+- Log the reference URL on the prompt excerpt (truncated) so `ai_run_logs` shows that brand-continuity mode was used.
 
-- Tab label, section heading, in-app copy.
-- Route segment: `MarketingSection.tsx` → `PackagingSection.tsx`, folder `src/features/project/marketing/` → `src/features/project/packaging/`.
-- Anchor IDs renamed (`marketing-cover-visuals` → `packaging-cover-visuals`, etc.).
-- Wherever code references "marketing" as a *category* on `media_assets` (e.g. `marketing-extra`, `marketing-back`) we **leave the DB strings alone** — those are data, not UI. Only UI labels change. (Keeps history intact.)
-- The project tab in `ProjectWorkspace` updated to "Packaging".
+### 4. No DB migration needed
+`projects.cover_reference_url` and `projects.cover_reference_notes` already exist; `company_profiles_v2.reference_covers` already feeds the picker.
 
-**New panel order in the Packaging tab:**
+## Out of scope (intentionally)
+- Changing the storyboard / barcode / back-of-box generators to also vision-attach the reference. This plan is front-cover only — same-brand visual continuity is what the user asked for.
+- Multi-reference (passing several covers at once). Single reference per project for now; the picker already enforces that.
+- UI changes to the picker itself.
 
-```text
-1. Box Text                  ← was #2, now first
-2. Barcode + Back of box     ← was #3
-3. Cover & Visuals           ← was #1, moves down
-4. Company Profile           ← unchanged position-wise (4)
-5. Storyboard Studio         ← unchanged (5)
-```
-
-The sticky sub-nav at the top reflects the new order.
-
----
-
-## 3. Front cover design model — the big one
-
-You asked: *is the assistant the graphic designer?* Answer in this plan: **yes, but anchored to a reference cover** you pick from a company profile. Concretely:
-
-### 3a. Reference covers live on Company Profiles
-
-- A user can have **multiple company profiles** (e.g. "Acme EN", "אקמה HE").
-- Each profile has its existing fields **plus**:
-  - `language` (e.g. `English`, `Hebrew`) — drives copy language for that brand.
-  - `is_default` (boolean).
-  - `reference_covers` — a small gallery (1–6 images) the user uploads of real game boxes whose design language they want to emulate. Each entry: `{ url, label, design_notes }`.
-  - `cover_design_brief` — long-form text the user writes once: "Our covers always use heavy serif title, muted noir palette, photo-real central object, brand bar at the bottom…"
-
-### 3b. Project picks which profile to use
-
-- `projects.company_profile_id` (nullable FK to a row in the new `company_profiles` table layout).
-- A picker in Project Overview (and at the top of the Packaging tab) lets you switch which profile this case ships under. Falls back to the user's default profile if unset.
-- Box-text generation, back-of-box, storyboard end-card, and the front cover all read this profile instead of the current `owner_id`-only lookup.
-
-### 3c. Front cover generation flow (new)
-
-The Cover & Visuals panel keeps its current bake-on-overlay (so title/tagline stay crisp), but the **prompt building** changes:
-
-1. User picks one of the profile's reference covers (or "no reference, free design").
-2. Assistant composes the cover prompt from:
-   - The reference cover image (passed as a vision reference into ChatGPT image edit / Gemini).
-   - The profile's `cover_design_brief`.
-   - The case's `front_title_note` (the unified "title lockup graphic-design brief" — see 3d).
-   - Tagline + `front_subtext` (acting as the front hook, per your answer).
-   - Project facts (mystery_type, setting, era, etc.).
-3. Generation uses ChatGPT Image-2 (already wired) with the reference image as input → produces a cover that mimics layout/typography hierarchy of the reference but with this case's art.
-4. The bake step then overlays the actual title/tagline text crisply (current pipeline).
-
-### 3d. "Game title lockup note" becomes a unified design brief
-
-Per your description, `front_title_note` is **one** graphic-design instruction that covers:
-
-- How the title should feel (typography family, weight, treatment).
-- How the tagline directly under it should sit (size relationship, alignment, color).
-- Where the front hook goes relative to the lockup.
-
-Field stays single-input but its label/helper updates to: *"Title + tagline + hook lockup brief — graphic design instructions for the whole top-of-cover wordmark group."*
-
-`tagline` and `front_subtext` (the hook) remain as separate **copy** fields — the design brief just tells the designer how to lay them out together.
-
-### 3e. Box Text panel becomes the entry point
-
-- Box Text is now panel #1. Its "Draft all box text" button is the natural first action when entering Packaging.
-- After drafting, a small banner at the bottom suggests: *"Box text ready → next: Barcode & back, then Cover."*
-
----
-
-## Technical section
-
-### DB migration
-
-```sql
--- New table: many profiles per user
-create table public.company_profiles_v2 (
-  id uuid primary key default gen_random_uuid(),
-  owner_id uuid not null,
-  name text not null,            -- "Acme EN"
-  language text not null default 'English',
-  is_default boolean not null default false,
-  -- all existing company_profiles fields copied:
-  company_name text, tagline text, legal_text text, support_email text,
-  website text, address text, country text, age_rating text, made_in text,
-  logo_url text, phone text, vat_number text, manufactured_by text,
-  distributed_by text, warning_text text, box_footer_line text,
-  social jsonb not null default '{}'::jsonb,
-  -- new fields:
-  reference_covers jsonb not null default '[]'::jsonb,  -- [{url,label,design_notes}]
-  cover_design_brief text,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-alter table public.company_profiles_v2 enable row level security;
--- RLS: owner_id = auth.uid() for select/insert/update/delete.
-
--- Project link
-alter table public.projects add column company_profile_id uuid;
--- + a function-side migration that copies the user's existing
---   company_profiles row into one v2 row marked is_default=true,
---   then links existing projects to it.
-
--- Selected reference cover per project (optional)
-alter table public.projects
-  add column cover_reference_url text,
-  add column cover_reference_notes text;
-```
-
-We keep the old `company_profiles` table around read-only for a release, then drop it.
-
-### Code changes
-
-- `src/features/settings/CompanyProfilePanel.tsx` → list view of profiles, "Add profile", per-profile editor with reference-cover uploads + design brief.
-- New hook `useActiveCompanyProfile(projectId)` used by Box Copy, Cover & Visuals, Back/Barcode, Storyboard.
-- `src/features/project/MarketingSection.tsx` → renamed/moved to `packaging/PackagingSection.tsx`, panels reordered.
-- `ProjectWorkspace.tsx` tab label "Marketing" → "Packaging", route param value updated.
-- `CoverAndVisuals.tsx`: add reference-cover picker (reads `reference_covers` from active profile), pass selected reference URL to the image function as a vision reference, include `cover_design_brief` in `composeFrontPrompt`.
-- `generate-marketing-copy` edge function: accept `companyProfileId`, use that profile's language to write copy in the correct language.
-- `_shared/assistant-playbook.ts`: add stage-transition beats (envelopes done → hints; hints done → packaging starting at box text).
-
-### Out of scope for this plan (call out separately if you want them)
-
-- Auto-translating one profile's copy into the other language.
-- Per-profile pricing / SKU defaults.
-- Sharing reference covers across profiles.
-
----
-
-If this matches what you want, approve and I'll implement in this order: migration → settings multi-profile UI → tab rename + reorder → cover reference picker + prompt rebuild → assistant stage-transition beats.
+## Acceptance check
+After shipping, generating a cover with a reference selected should:
+1. Send a multipart `images/edits` request to OpenAI (or `inlineData` to Gemini) — verifiable via `supabase--edge_function_logs`.
+2. The resulting image visibly inherits palette / illustration style / typography mood from the reference, while depicting this case's own scene.
+3. The prompt logged in `ai_run_logs` starts with the BRAND CONTINUITY preface naming the publisher.
