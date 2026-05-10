@@ -1,5 +1,5 @@
-// Top-level Packaging tab for a project. Box Text leads, then Barcode/Back,
-// then Cover & Visuals, then the Company Profile picker, then Storyboard.
+// Top-level Packaging tab. Single scroll: Box Cover (text + front/back generate),
+// QR Codes, Storyboard, Company Profile.
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -10,14 +10,6 @@ import { CompanyProfileSummary } from "./packaging/CompanyProfileSummary";
 import { StoryboardStudio } from "./packaging/StoryboardStudio";
 import { BatchProgressProvider, useBatchProgress } from "./packaging/BatchProgressContext";
 import { BatchProgressPill } from "./packaging/BatchProgressPill";
-
-const packagingNav = [
-  { id: "packaging-box-text", label: "Box Text" },
-  { id: "packaging-cover-visuals", label: "Cover & Visuals" },
-  { id: "packaging-barcode", label: "Barcode & QR" },
-  { id: "packaging-company-profile", label: "Company Profile" },
-  { id: "packaging-storyboard", label: "Storyboard Studio" },
-];
 
 export function PackagingSection({ projectId }: { projectId: string }) {
   return (
@@ -58,36 +50,22 @@ function PackagingSectionInner({ projectId }: { projectId: string }) {
         </p>
       </div>
 
-      <div className="sticky top-0 z-10 -mx-2 rounded-xl border bg-background/85 p-2 backdrop-blur supports-[backdrop-filter]:bg-background/70">
-        <div className="flex gap-2 overflow-x-auto scrollbar-none">
-          {packagingNav.map((item) => (
-            <a
-              key={item.id}
-              href={`#${item.id}`}
-              className="shrink-0 rounded-lg px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              {item.label}
-            </a>
-          ))}
-        </div>
-      </div>
-
       {batch && <BatchProgressPill progress={batch.progress} onDismiss={batch.dismiss} />}
 
       <section id="packaging-box-text" className="scroll-mt-24">
         <BoxCopyPanel projectId={projectId} />
       </section>
-      <section id="packaging-barcode" className="scroll-mt-24">
-        <BarcodeAndBackPanel projectId={projectId} />
-      </section>
       <section id="packaging-cover-visuals" className="scroll-mt-24">
         <CoverAndVisuals projectId={projectId} />
       </section>
-      <section id="packaging-company-profile" className="scroll-mt-24">
-        <CompanyProfileSummary projectId={projectId} />
+      <section id="packaging-barcode" className="scroll-mt-24">
+        <BarcodeAndBackPanel projectId={projectId} />
       </section>
       <section id="packaging-storyboard" className="scroll-mt-24">
         <StoryboardStudio projectId={projectId} />
+      </section>
+      <section id="packaging-company-profile" className="scroll-mt-24">
+        <CompanyProfileSummary projectId={projectId} />
       </section>
     </div>
   );

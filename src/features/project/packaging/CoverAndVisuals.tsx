@@ -9,6 +9,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { ImagePromptAssistant } from "@/components/ImagePromptAssistant";
 import { ImageHistoryStrip, type ImageHistoryRow } from "@/components/ImageHistoryStrip";
 import { FinalAssetPicker } from "@/components/FinalAssetPicker";
@@ -21,7 +23,7 @@ import { bakeFrontCover } from "./bakeCover";
 import { useActiveCompanyProfile } from "@/lib/useActiveCompanyProfile";
 import { composeFrontPrompt as buildFrontPrompt, composeBackPrompt, composeCoverPairPrompt } from "./composePrompts";
 
-import { Copy, Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2, Sparkles, Wand2, AlertTriangle, Download, Star } from "lucide-react";
+import { Copy, Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2, Sparkles, Wand2, AlertTriangle, Download, Star, Eye } from "lucide-react";
 import { downloadAsset, slugify } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -62,6 +64,8 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const [rebaking, setRebaking] = useState(false);
   const [coverOutputType, setCoverOutputType] = useState<OutputType>("image");
   const [extraOutputType, setExtraOutputType] = useState<OutputType>("image");
+  const [promptPreview, setPromptPreview] = useState<{ text: string; refs: { url: string; label: string }[] } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   const { data: company } = useActiveCompanyProfile(projectId);
 
@@ -243,6 +247,57 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const houseDefaultRef = (company?.reference_covers ?? []).find((r) => r.is_default) ?? null;
   const effectiveReferenceUrl = project?.cover_reference_url || houseDefaultRef?.url || null;
 
+  const buildPromptBundle = async (basePrompt: string) => {
+    const { data: sceneRows } = await supabase
+      .from("media_assets")
+      .select("url")
+      .eq("project_id", projectId)
+      .eq("category", "in-game-scene")
+      .not("url", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(4);
+    const sceneUrls = (sceneRows ?? []).map((r) => r.url).filter((u): u is string => !!u);
+    const primaryQr = (qrCodes ?? []).find((q) => q.is_primary && q.qr_image_url);
+    const barcodeUrl = marketing?.barcode_url ?? null;
+
+    const frontHalf = buildFrontPrompt({ basePrompt, project, marketing, company });
+    const backHalf = composeBackPrompt({
+      draft: marketing?.back_cover_prompt ?? "",
+      back: marketing,
+      company,
+      qrCodes: qrCodes ?? [],
+    });
+    const combinedPrompt = composeCoverPairPrompt({
+      frontPrompt: frontHalf,
+      backPrompt: backHalf,
+      publisherName: company?.company_name ?? null,
+      hasReference: !!effectiveReferenceUrl,
+      sceneCount: sceneUrls.length,
+      hasQrRef: !!primaryQr?.qr_image_url,
+      hasBarcodeRef: !!barcodeUrl,
+    });
+
+    const refs: { url: string; label: string }[] = [];
+    if (effectiveReferenceUrl) refs.push({ url: effectiveReferenceUrl, label: `Brand reference (${company?.company_name ?? "house style"})` });
+    sceneUrls.forEach((u, i) => refs.push({ url: u, label: `In-game scene ${i + 1}` }));
+    if (primaryQr?.qr_image_url) refs.push({ url: primaryQr.qr_image_url, label: `Primary QR (${primaryQr.label ?? "scan"})` });
+    if (barcodeUrl) refs.push({ url: barcodeUrl, label: `EAN-13 barcode${marketing?.barcode_value ? ` (${marketing.barcode_value})` : ""}` });
+
+    return { combinedPrompt, sceneUrls, primaryQrUrl: primaryQr?.qr_image_url ?? null, barcodeUrl, refs };
+  };
+
+  const handleViewPrompt = async () => {
+    setPreviewLoading(true);
+    try {
+      const { combinedPrompt, refs } = await buildPromptBundle(coverPromptDraft);
+      setPromptPreview({ text: combinedPrompt, refs });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not build prompt");
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
   const handleGenerateCover = async (prompt: string) => {
     if (!frontReady) {
       toast.error(`Missing: ${frontMissing.join(", ")}.`, { duration: 10000 });
@@ -250,36 +305,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
     }
     setGeneratingCover(true);
     try {
-      // Pull the latest 4 in-game scene images (if any) to attach as additional refs.
-      const { data: sceneRows } = await supabase
-        .from("media_assets")
-        .select("url")
-        .eq("project_id", projectId)
-        .eq("category", "in-game-scene")
-        .not("url", "is", null)
-        .order("created_at", { ascending: false })
-        .limit(4);
-      const sceneUrls = (sceneRows ?? []).map((r) => r.url).filter((u): u is string => !!u);
-
-      const frontHalf = buildFrontPrompt({
-        basePrompt: prompt,
-        project,
-        marketing,
-        company,
-      });
-      const backHalf = composeBackPrompt({
-        draft: marketing?.back_cover_prompt ?? "",
-        back: marketing,
-        company,
-        qrCodes: qrCodes ?? [],
-      });
-      const combinedPrompt = composeCoverPairPrompt({
-        frontPrompt: frontHalf,
-        backPrompt: backHalf,
-        publisherName: company?.company_name ?? null,
-        hasReference: !!effectiveReferenceUrl,
-        sceneCount: sceneUrls.length,
-      });
+      const { combinedPrompt, sceneUrls, primaryQrUrl, barcodeUrl } = await buildPromptBundle(prompt);
 
       const quality = getStoredImageQuality("marketing-cover", "high");
       const { data: { session } } = await supabase.auth.getSession();
@@ -295,6 +321,8 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
           referenceImageUrl: effectiveReferenceUrl,
           referenceLabel: company?.company_name ?? null,
           inGameSceneUrls: sceneUrls,
+          qrImageUrl: primaryQrUrl,
+          barcodeImageUrl: barcodeUrl,
           quality,
         }),
       });
@@ -482,10 +510,16 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
             prompt={coverPromptDraft}
             onChange={persistCoverPrompt}
           />
-          <Button onClick={() => handleGenerateCover(coverPromptDraft)} disabled={generatingCover || !coverPromptDraft.trim() || !frontReady} className="w-full gap-2">
-            {generatingCover ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-            Generate front + back cover (single gpt-image-2 call)
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={() => handleGenerateCover(coverPromptDraft)} disabled={generatingCover || !coverPromptDraft.trim() || !frontReady} className="flex-1 gap-2">
+              {generatingCover ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+              Generate front + back cover
+            </Button>
+            <Button variant="outline" onClick={handleViewPrompt} disabled={previewLoading || !coverPromptDraft.trim()} className="gap-2">
+              {previewLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
+              View prompt
+            </Button>
+          </div>
           <ImageHistoryStrip
             items={coverHistory ?? []}
             currentUrl={project?.cover_image_url ?? null}
@@ -605,6 +639,44 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
           )}
         </div>
       )}
+      <Dialog open={!!promptPreview} onOpenChange={(o) => !o && setPromptPreview(null)}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Prompt sent to ChatGPT (gpt-image-2)</DialogTitle>
+            <DialogDescription>
+              Reference images are attached in the order shown below. The QR PNG and EAN-13 PNG are also included as references so the layout is preserved — the actual scannable codes are stamped on after generation in the bake step.
+            </DialogDescription>
+          </DialogHeader>
+          {promptPreview && (
+            <div className="space-y-4">
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <Label className="text-xs uppercase tracking-wider text-muted-foreground">Reference images ({promptPreview.refs.length})</Label>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  {promptPreview.refs.length === 0 && <p className="text-xs text-muted-foreground">No reference images attached.</p>}
+                  {promptPreview.refs.map((r, i) => (
+                    <div key={i} className="w-24 text-center space-y-1">
+                      <img src={r.url} alt={r.label} className="h-24 w-24 rounded border bg-white object-contain" />
+                      <div className="text-[10px] text-muted-foreground leading-tight">{i + 1}. {r.label}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <Label className="text-xs uppercase tracking-wider text-muted-foreground">Combined prompt ({promptPreview.text.length.toLocaleString()} chars)</Label>
+                  <Button size="sm" variant="ghost" className="h-7 gap-1 text-[11px]" onClick={() => { navigator.clipboard.writeText(promptPreview.text); toast.success("Prompt copied"); }}>
+                    <Copy className="h-3 w-3" /> Copy
+                  </Button>
+                </div>
+                <Textarea readOnly value={promptPreview.text} className="font-mono text-[11px] leading-relaxed min-h-[300px]" />
+              </div>
+              <p className="text-[10px] text-muted-foreground">After generation, the bake step stamps on: title, tagline, specs badge, logo, the real QR PNG and the real EAN-13 PNG over the reserved zones.</p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

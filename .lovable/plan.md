@@ -1,59 +1,113 @@
-## Goal
-Clean up the Packaging → Box Text panel so it matches the final field list. Front cover section moves to the top with only the fields that get baked. Back cover gets pruned to the must-have selling fields, plus a live brand/footer preview and brand selector.
+## Goals
 
-## Front cover text (top of Box Text UI)
-Show in this order, with a read-only Title row pulled from the project:
+1. Merge **Front cover** + **Back cover** into ONE unified "Box Cover" panel with a single Generate button + a **View Prompt** dialog showing the exact mega-prompt sent to ChatGPT.
+2. Pull **QR codes** out into their own dedicated Packaging sub-panel (kept — only the *mention* of the QR in the printed Contents is removed).
+3. Move **Company Profile** to the bottom of the Packaging page.
+4. Remove the **mini-movie QR** concept entirely (not the real QR codes).
+5. Keep `address` and `legal_text` in Settings → Company Profile, **per brand**, and make sure they're attached to the back-cover generation prompt.
+6. Rewrite the **Contents** field so it lists actual game components by type + quantity (e.g. "25 evidence documents · 10 interrogation scripts · 5 photos · 3 maps"), driven per-case by what the writer actually generates. The contents string must NOT mention QR codes.
+7. Remove the sticky **"Box Text · Cover Visuals · Barcode · …"** sub-nav bar in the Packaging page — it's just a long scroll now.
+8. Pass the **QR PNG and EAN-13 barcode PNG** as additional reference images to ChatGPT in the cover-pair generation (in addition to the brand reference + 4 in-game scenes), so layout placement is respected.
+9. Keep the **marketing-extras** image manager (extra promo images) on the Box Cover panel as a collapsed sub-section.
 
-1. **Title** — read-only, sourced from `projects.title` (link to Overview to edit).
-2. **Tagline (under title)** — uses existing `project_marketing.tagline`. Baked under the title on the front cover.
-3. **Bottom paragraph** — existing `front_subtext`.
-4. **Design notes** — existing `projects.cover_prompt` (or new `front_design_notes` if cleaner). Helper text explicitly says: *"These notes are sent to the cover generator together with the brand reference image."*
+---
 
-A small chip near the top of the section shows the active brand reference thumbnail (from active company profile's house default) so the user sees what "the reference" means.
+## Packaging page — new layout
 
-## Back cover text
-Replace the current 9-field block with exactly these fields, in order:
+```
+[ Page header ]
+   (no sticky sub-nav — just scroll)
 
-1. **Back headline** (`back_headline`)
-2. **Short teaser → QR** (`back_teaser`) — helper updated: *"Ends with an arrow pointing to the QR; the YouTube teaser must match this copy."* Renders next to the **primary QR preview** inline (small thumb pulled from `project_qr_codes` where `is_primary=true`).
-3. **In-game scenes (4)** — embed the existing `InGameScenesPanel` here so it lives with the rest of the back-cover deck instead of in Barcode & Back.
-4. **Main back description** (`back_body`)
-5. **Contents** (`back_whats_in_box`, relabel to "Contents")
-6. **Age / duration / players** (`back_specs`) — helper notes this is also baked on the front.
-7. **Company / legal / footer text** (`back_footer_text`)
-8. **EAN-13 barcode** — inline preview + Generate/Regenerate button (move from Barcode & Back panel).
-9. **Brand footer preview** — read-only card built from the active company profile (logo, name, address, legal, warning, made-in, age rating). Includes a **brand selector** (dropdown of `company_profiles_v2` for this owner) that updates `projects.company_profile_id`.
+1. Box Cover  (front + back combined)
+   ├── Left: copy fields
+   │     • Front: Title (read-only), Tagline, Bottom paragraph, Design notes
+   │     • Back: Headline, Teaser → QR, Main description, Contents (auto-built),
+   │             Age/Duration/Players, Legal/footer text
+   │     • In-game scenes (4) — embedded
+   │     • EAN-13 barcode (value + Generate/Regenerate)
+   │     • Brand reference image picker
+   ├── Right: Front | Back preview side-by-side
+   │     + carousel of every prior front/back pair (click to restore)
+   │     + actions: [Generate front + back] [View prompt] [Re-bake overlays]
+   └── Marketing extras (collapsed sub-section, kept)
+2. QR Codes  (dedicated panel — primary + secondaries, labels, target URLs, PNG previews)
+3. Storyboard Studio
+4. Company Profile  (brand selector + brand preview, moved to bottom)
+```
 
-## Removals
-Delete from the UI (and from the back/front prompt composers in `composePrompts.ts` and the marketing-copy edge function so they stop being drafted):
-- `back_how_to_play`
-- `back_feature_bullets`
-- `back_content_note`
-- Mini-movie QR sub-card (`mini_movie_url`, `qr_label`, `qr_helper_text`, `qr_code_url`) — replaced by the inline primary QR next to the teaser. Existing primary QR managed in Barcode & Back is reused.
-- The standalone "Front cover text" card's logo chip stays, but the redundant front fields stay removed (already done in prior pass).
+---
 
-DB columns are kept (no migration) so old data isn't lost; they're just no longer surfaced or composed into prompts.
+## "View Prompt" dialog
 
-## Layout move
-- `BarcodeAndBackPanel`: keep barcode generation logic accessible but the UI moves into the new "EAN-13 barcode" row inside Box Text. The QR code manager (multi-QR list) stays in `BarcodeAndBackPanel` since it's more than the single primary QR. The 4 in-game scenes panel moves out of Barcode & Back into Box Text.
-- Packaging nav order updated: **Box Text → Cover & Visuals → Barcode & QR → Company Profile → Storyboard**.
+Triggered by a button next to Generate front + back.
 
-## Front-cover bake updates
-`bakeCover.bakeFrontCover` already takes title/subtitle/logo/bottomParagraph. Add:
-- `tagline` (drawn under the title)
-- `specs` (Age / duration / players, drawn as a small badge above the bottom strip)
+Shows:
+- The exact `combinedPrompt` string we send to `generate-cover-pair` (composed via `composeCoverPairPrompt`)
+- Thumbnails of all attached reference images, in the same order ChatGPT sees them:
+  1. Brand reference image
+  2. 4 in-game scenes
+  3. Primary QR PNG  ← newly attached
+  4. EAN-13 barcode PNG  ← newly attached
+- A note listing post-generation bake overlays (title, tagline, specs badge, logo, real QR PNG stamped over the reserved zone, real EAN-13 stamped over the reserved zone)
+- Copy-to-clipboard button
 
-`composeFrontPrompt` updated to mention the tagline and specs as additional reserved zones.
+---
 
-## Files touched
-- `src/features/project/packaging/BoxCopyPanel.tsx` — field list rewrite, brand preview card, inline barcode + primary-QR previews, embed `InGameScenesPanel`.
-- `src/features/project/packaging/BarcodeAndBackPanel.tsx` — remove the now-relocated barcode UI + scenes panel; keep multi-QR manager and the existing back-cover image generator.
-- `src/features/project/packaging/composePrompts.ts` — drop removed fields, add tagline + specs to front prompt.
-- `src/features/project/packaging/bakeCover.ts` — add tagline + specs rendering on front.
-- `src/features/project/PackagingSection.tsx` — reorder nav items.
-- `supabase/functions/generate-marketing-copy/index.ts` — stop generating the removed fields; ensure tagline + back_specs are still produced.
+## Contents field — auto-built per case
 
-No DB schema changes.
+Replace the free-text `back_whats_in_box` editing flow with an auto-composed string built from what the case actually contains. Pull live counts from the project's own data:
 
-## Open question
-Do you want the **EAN-13 barcode** generator to stay duplicated (inline preview in Box Text *and* the existing card in Barcode & QR), or fully move it into Box Text and leave Barcode & QR for QR codes only? The plan above assumes the latter.
+| Component | Source |
+|---|---|
+| Evidence documents | `documents` table where category = evidence/case-doc/forensics/etc. |
+| Interrogation scripts | `documents` where category = interrogation/script |
+| Photos | `media_assets` where category = envelope-photo / scene-photo |
+| Maps / floorplans | `documents` where category = map |
+| Envelopes | `envelopes` table count |
+| Suspect dossiers | `suspects` table count |
+| Hints | `hints` table count |
+
+(Exact category mapping confirmed against the schema during build.)
+
+UI:
+- "Contents" row shows the auto-built string ("25 evidence documents · 10 interrogation scripts · 5 photos · 3 maps · 4 envelopes …") with a refresh icon
+- An **override** textarea is available if the writer wants to hand-edit; otherwise the auto string is what bakes onto the back cover and what goes into the prompt
+- The composer **strips any QR-code mention** — QR codes are not a printed component
+
+Persisted to `project_marketing.back_whats_in_box` so existing bake/prompt code keeps working unchanged.
+
+---
+
+## QR codes panel (unchanged in concept, just relocated)
+
+- Primary QR + secondary QRs (label, target URL, generated PNG) — full manager kept
+- Mini-movie QR sub-card removed (`mini_movie_url`, `qr_label`, `qr_helper_text`, `qr_code_url` fields no longer surfaced or written by the marketing-copy edge function; DB columns retained, no migration)
+
+---
+
+## Company Profile (Settings) — address + legal stay, per brand
+
+- Keep `address` and `legal_text` fields in `CompanyProfilePanel` so each brand stores its own
+- `composeBackPrompt` already reads `company.address` and `company.legal_text`; verify they're included in every back-cover generation and surface them in the read-only "Brand footer preview" inside Box Cover
+- The brand selector in Box Cover sets `projects.company_profile_id`, which drives which brand's address/legal/logo gets baked + sent to ChatGPT
+
+---
+
+## Files to touch
+
+- `src/features/project/PackagingSection.tsx` — remove sticky nav bar; reorder sections; drop `BarcodeAndBackPanel` import; add `QrCodesPanel` and reorder.
+- `src/features/project/packaging/BoxCopyPanel.tsx` → refactored into `BoxCoverPanel.tsx`: merges front+back text, in-game scenes, EAN-13, brand-ref picker, paired generate button, View Prompt dialog, paired-cover carousel, marketing-extras sub-section, auto-built Contents.
+- `src/features/project/packaging/CoverAndVisuals.tsx` — its "generate front+back" + carousel logic merges into `BoxCoverPanel`; file deleted (or thinned to the marketing-extras section that gets imported by BoxCoverPanel).
+- `src/features/project/packaging/BarcodeAndBackPanel.tsx` — deleted.
+- `src/features/project/packaging/QrCodesPanel.tsx` — NEW (extracted multi-QR manager).
+- `src/features/project/packaging/composeContents.ts` — NEW: builds the "25 evidence documents · …" string from project data.
+- `src/features/project/packaging/composePrompts.ts` — drop mini-movie references; keep address/legal in back-prompt; mention the new QR + barcode reference images in the brand-continuity preface.
+- `supabase/functions/generate-cover-pair/index.ts` — accept `qrImageUrl` + `barcodeImageUrl` in body and append them to the FormData refs.
+- `supabase/functions/generate-marketing-copy/index.ts` — stop generating mini-movie/removed fields; stop generating `back_whats_in_box` (now auto-built).
+- `src/features/settings/CompanyProfilePanel.tsx` — leave address + legal as-is (no removal).
+
+No DB migrations.
+
+---
+
+Ready to build on approval.
