@@ -83,14 +83,26 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   };
 
   const { data: marketing } = useQuery({
-    queryKey: ["project-marketing-front", projectId],
+    queryKey: ["project-marketing-pair", projectId],
     queryFn: async () => {
       const { data } = await supabase
         .from("project_marketing")
-        .select("front_subtext, front_company_slogan, front_logo_note, front_title_note, front_bottom_explanation, tagline")
+        .select("front_subtext, front_company_slogan, front_logo_note, front_title_note, front_bottom_explanation, tagline, back_headline, back_body, back_cover_prompt, back_teaser, back_whats_in_box, back_how_to_play, back_feature_bullets, back_specs, back_content_note, back_footer_text, barcode_value, barcode_url, back_cover_url")
         .eq("project_id", projectId)
         .maybeSingle();
       return data;
+    },
+  });
+
+  const { data: qrCodes } = useQuery({
+    queryKey: ["project-qr-codes-cover", projectId],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("project_qr_codes")
+        .select("id, label, target_url, qr_image_url, is_primary, position")
+        .eq("project_id", projectId)
+        .order("position", { ascending: true });
+      return data ?? [];
     },
   });
 
