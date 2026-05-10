@@ -21,9 +21,13 @@ interface BakeFrontInput {
   baseImageUrl: string;
   title?: string | null;
   subtitle?: string | null;
+  /** Tagline drawn directly under the title. */
+  tagline?: string | null;
   logoUrl?: string | null;
   /** Single bottom paragraph baked across the bottom strip. */
   bottomParagraph?: string | null;
+  /** Small specs badge (Age / duration / players). */
+  specs?: string | null;
 }
 
 interface BakeBackInput {
@@ -109,7 +113,7 @@ async function uploadComposed(
 // =====================================================================
 
 export async function bakeFrontCover(input: BakeFrontInput): Promise<string> {
-  const { projectId, baseImageUrl, title, subtitle, logoUrl, bottomParagraph } = input;
+  const { projectId, baseImageUrl, title, subtitle, tagline, logoUrl, bottomParagraph, specs } = input;
 
   await ensureFontsLoaded();
   const base = await loadImage(baseImageUrl);
@@ -150,10 +154,23 @@ export async function bakeFrontCover(input: BakeFrontInput): Promise<string> {
     }
     ctx.shadowBlur = 0;
 
+    if (tagline) {
+      const tagSize = Math.round(W * 0.034);
+      ctx.font = `600 ${tagSize}px 'Inter', 'Helvetica Neue', sans-serif`;
+      ctx.fillStyle = "rgba(255,255,255,0.96)";
+      ctx.shadowColor = "rgba(0,0,0,0.6)";
+      ctx.shadowBlur = Math.round(tagSize * 0.45);
+      const tagLines = wrapText(ctx, tagline, W * 0.82);
+      for (const line of tagLines) {
+        ctx.fillText(line, W / 2, y + tagSize * 0.35);
+        y += tagSize * 1.25;
+      }
+      ctx.shadowBlur = 0;
+    }
     if (subtitle) {
-      const subSize = Math.round(W * 0.032);
+      const subSize = Math.round(W * 0.028);
       ctx.font = `400 ${subSize}px 'Inter', 'Helvetica Neue', sans-serif`;
-      ctx.fillStyle = "rgba(255,255,255,0.92)";
+      ctx.fillStyle = "rgba(255,255,255,0.88)";
       ctx.shadowColor = "rgba(0,0,0,0.6)";
       ctx.shadowBlur = Math.round(subSize * 0.4);
       const subLines = wrapText(ctx, subtitle, W * 0.8);
@@ -163,6 +180,31 @@ export async function bakeFrontCover(input: BakeFrontInput): Promise<string> {
       }
       ctx.shadowBlur = 0;
     }
+  }
+
+  // Specs badge (small, above bottom strip on the right).
+  if (specs) {
+    const fs = Math.round(W * 0.022);
+    ctx.font = `600 ${fs}px 'Inter', sans-serif`;
+    ctx.textAlign = "right";
+    ctx.textBaseline = "bottom";
+    const pad = Math.round(W * 0.035);
+    const text = specs.replace(/\s+/g, " ").trim();
+    const metrics = ctx.measureText(text);
+    const boxPadX = Math.round(fs * 0.6);
+    const boxPadY = Math.round(fs * 0.35);
+    const boxW = metrics.width + boxPadX * 2;
+    const boxH = fs + boxPadY * 2;
+    // Lift the badge above the bottom paragraph strip.
+    const liftFromBottom = Math.round(W * 0.22);
+    const x = W - pad;
+    const y = H - liftFromBottom;
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillRect(x - boxW, y - boxH, boxW, boxH);
+    ctx.fillStyle = "#fff";
+    ctx.fillText(text, x - boxPadX, y - boxPadY);
+    ctx.textAlign = "start";
+    ctx.textBaseline = "alphabetic";
   }
 
   // Company logo (top LEFT, small) — brand-driven, always top-left now.

@@ -13,8 +13,8 @@ import { BatchProgressPill } from "./packaging/BatchProgressPill";
 
 const packagingNav = [
   { id: "packaging-box-text", label: "Box Text" },
-  { id: "packaging-barcode", label: "Barcode & Back" },
   { id: "packaging-cover-visuals", label: "Cover & Visuals" },
+  { id: "packaging-barcode", label: "Barcode & QR" },
   { id: "packaging-company-profile", label: "Company Profile" },
   { id: "packaging-storyboard", label: "Storyboard Studio" },
 ];

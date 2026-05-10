@@ -37,15 +37,13 @@ const PLANNING_MODEL: Record<string, string> = {
 };
 
 type Field =
+  | "tagline"
   | "front_subtext"
   | "back_headline"
   | "back_teaser"
   | "back_body"
   | "back_whats_in_box"
-  | "back_how_to_play"
-  | "back_feature_bullets"
   | "back_specs"
-  | "back_content_note"
   | "back_footer_text"
   | "front"
   | "back"
@@ -146,8 +144,8 @@ Deno.serve(async (req) => {
 ${company.cover_design_brief ? `- Cover design brief (house style): ${company.cover_design_brief}` : ""}`
       : "(No company profile set yet — write generic copy.)";
 
-    const frontFields = ["front_subtext"];
-    const backFields = ["back_headline", "back_teaser", "back_body", "back_whats_in_box", "back_how_to_play", "back_feature_bullets", "back_specs", "back_content_note", "back_footer_text"];
+    const frontFields = ["tagline", "front_subtext"];
+    const backFields = ["back_headline", "back_teaser", "back_body", "back_whats_in_box", "back_specs", "back_footer_text"];
     const fieldsRequested = field === "all"
       ? [...frontFields, ...backFields]
       : field === "front"
@@ -173,18 +171,16 @@ Voice: ${playbook.identity.brand_voice}
 Final language: ${gameLanguage} — but write the selling point in English (it's a planning field, not in-game text).`
       : `
 Each field must follow these rules:
-FRONT COVER TEXT (only ONE field — title, subtitle, and brand logo come from elsewhere)
-- "front_subtext": 1 short paragraph (3–5 short lines, max ~50 words) that goes baked across the BOTTOM of the front cover. It should explain what the boxed game is and hook the buyer. No tagline, no headline — just the bottom paragraph.
+FRONT COVER TEXT
+- "tagline": ONE short line, max 8 words, baked directly under the title.
+- "front_subtext": 1 short paragraph (3–5 short lines, max ~50 words) baked across the BOTTOM of the front cover.
 
 BACK COVER TEXT
 - "back_headline": 1 punchy sentence, max 14 words, sets the stakes.
-- "back_teaser": 1–2 cinematic setup sentences.
+- "back_teaser": 1–2 cinematic setup sentences that END WITH AN ARROW (→) directing the reader to scan the QR code for the matching YouTube teaser.
 - "back_body": 80–130 words, paragraph form, mentions player role, ${docCount} documents (all in the box from the start) and ${envCount} sealed task envelopes (opened only at the matching beat in the case), age rating if known, but NEVER spoils the solution.
-- "back_whats_in_box": line-separated list of physical contents. State that ALL ${docCount} case documents are loose in the box from the start, and that the ${envCount} sealed envelopes are task gates the player opens only when they reach the matching moment. Include props, evidence, and mini-movie QR when appropriate.
-- "back_how_to_play": 2–4 clear sentences explaining the player experience. MUST clarify: all evidence documents are available immediately and the player works through them freely; the sealed envelopes are opened ONLY when the player reaches the specific case beat marked on each one (each envelope contains a task or a reveal — never new evidence to read at random). The final envelope holds the accusation/solution reveal.
-- "back_feature_bullets": 3–5 line-separated selling bullets.
-- "back_specs": packaging metadata, e.g. Ages, duration, players, difficulty.
-- "back_content_note": optional spoiler-safe warning or tone note.
+- "back_whats_in_box": Contents — line-separated list of physical contents (documents, sealed envelopes, props, evidence, mini-movie QR).
+- "back_specs": Age / duration / players, e.g. "Ages 14+ · 60–120 min · 1–6 players". This is also baked on the FRONT cover as a small badge.
 - "back_footer_text": company/legal/support footer text, using company profile details when available.
 
 Voice: ${playbook.identity.brand_voice}
