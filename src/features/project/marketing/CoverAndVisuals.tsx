@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/lib/auth";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -50,7 +50,7 @@ const MARKETING_CATEGORIES = ["cover", "back", "marketing-back", "marketing-extr
 
 export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
-  const { user } = useAuth();
+  
   const batch = useBatchProgress();
   const [adding, setAdding] = useState(false);
   const [newTitle, setNewTitle] = useState("");
