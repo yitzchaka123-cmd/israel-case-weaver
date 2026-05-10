@@ -247,6 +247,57 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const houseDefaultRef = (company?.reference_covers ?? []).find((r) => r.is_default) ?? null;
   const effectiveReferenceUrl = project?.cover_reference_url || houseDefaultRef?.url || null;
 
+  const buildPromptBundle = async (basePrompt: string) => {
+    const { data: sceneRows } = await supabase
+      .from("media_assets")
+      .select("url")
+      .eq("project_id", projectId)
+      .eq("category", "in-game-scene")
+      .not("url", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(4);
+    const sceneUrls = (sceneRows ?? []).map((r) => r.url).filter((u): u is string => !!u);
+    const primaryQr = (qrCodes ?? []).find((q) => q.is_primary && q.qr_image_url);
+    const barcodeUrl = marketing?.barcode_url ?? null;
+
+    const frontHalf = buildFrontPrompt({ basePrompt, project, marketing, company });
+    const backHalf = composeBackPrompt({
+      draft: marketing?.back_cover_prompt ?? "",
+      back: marketing,
+      company,
+      qrCodes: qrCodes ?? [],
+    });
+    const combinedPrompt = composeCoverPairPrompt({
+      frontPrompt: frontHalf,
+      backPrompt: backHalf,
+      publisherName: company?.company_name ?? null,
+      hasReference: !!effectiveReferenceUrl,
+      sceneCount: sceneUrls.length,
+      hasQrRef: !!primaryQr?.qr_image_url,
+      hasBarcodeRef: !!barcodeUrl,
+    });
+
+    const refs: { url: string; label: string }[] = [];
+    if (effectiveReferenceUrl) refs.push({ url: effectiveReferenceUrl, label: `Brand reference (${company?.company_name ?? "house style"})` });
+    sceneUrls.forEach((u, i) => refs.push({ url: u, label: `In-game scene ${i + 1}` }));
+    if (primaryQr?.qr_image_url) refs.push({ url: primaryQr.qr_image_url, label: `Primary QR (${primaryQr.label ?? "scan"})` });
+    if (barcodeUrl) refs.push({ url: barcodeUrl, label: `EAN-13 barcode${marketing?.barcode_value ? ` (${marketing.barcode_value})` : ""}` });
+
+    return { combinedPrompt, sceneUrls, primaryQrUrl: primaryQr?.qr_image_url ?? null, barcodeUrl, refs };
+  };
+
+  const handleViewPrompt = async () => {
+    setPreviewLoading(true);
+    try {
+      const { combinedPrompt, refs } = await buildPromptBundle(coverPromptDraft);
+      setPromptPreview({ text: combinedPrompt, refs });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not build prompt");
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
   const handleGenerateCover = async (prompt: string) => {
     if (!frontReady) {
       toast.error(`Missing: ${frontMissing.join(", ")}.`, { duration: 10000 });
@@ -254,36 +305,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
     }
     setGeneratingCover(true);
     try {
-      // Pull the latest 4 in-game scene images (if any) to attach as additional refs.
-      const { data: sceneRows } = await supabase
-        .from("media_assets")
-        .select("url")
-        .eq("project_id", projectId)
-        .eq("category", "in-game-scene")
-        .not("url", "is", null)
-        .order("created_at", { ascending: false })
-        .limit(4);
-      const sceneUrls = (sceneRows ?? []).map((r) => r.url).filter((u): u is string => !!u);
-
-      const frontHalf = buildFrontPrompt({
-        basePrompt: prompt,
-        project,
-        marketing,
-        company,
-      });
-      const backHalf = composeBackPrompt({
-        draft: marketing?.back_cover_prompt ?? "",
-        back: marketing,
-        company,
-        qrCodes: qrCodes ?? [],
-      });
-      const combinedPrompt = composeCoverPairPrompt({
-        frontPrompt: frontHalf,
-        backPrompt: backHalf,
-        publisherName: company?.company_name ?? null,
-        hasReference: !!effectiveReferenceUrl,
-        sceneCount: sceneUrls.length,
-      });
+      const { combinedPrompt, sceneUrls, primaryQrUrl, barcodeUrl } = await buildPromptBundle(prompt);
 
       const quality = getStoredImageQuality("marketing-cover", "high");
       const { data: { session } } = await supabase.auth.getSession();
@@ -299,6 +321,8 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
           referenceImageUrl: effectiveReferenceUrl,
           referenceLabel: company?.company_name ?? null,
           inGameSceneUrls: sceneUrls,
+          qrImageUrl: primaryQrUrl,
+          barcodeImageUrl: barcodeUrl,
           quality,
         }),
       });
