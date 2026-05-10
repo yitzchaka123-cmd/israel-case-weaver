@@ -639,6 +639,44 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
           )}
         </div>
       )}
+      <Dialog open={!!promptPreview} onOpenChange={(o) => !o && setPromptPreview(null)}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Prompt sent to ChatGPT (gpt-image-2)</DialogTitle>
+            <DialogDescription>
+              Reference images are attached in the order shown below. The QR PNG and EAN-13 PNG are also included as references so the layout is preserved — the actual scannable codes are stamped on after generation in the bake step.
+            </DialogDescription>
+          </DialogHeader>
+          {promptPreview && (
+            <div className="space-y-4">
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <Label className="text-xs uppercase tracking-wider text-muted-foreground">Reference images ({promptPreview.refs.length})</Label>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  {promptPreview.refs.length === 0 && <p className="text-xs text-muted-foreground">No reference images attached.</p>}
+                  {promptPreview.refs.map((r, i) => (
+                    <div key={i} className="w-24 text-center space-y-1">
+                      <img src={r.url} alt={r.label} className="h-24 w-24 rounded border bg-white object-contain" />
+                      <div className="text-[10px] text-muted-foreground leading-tight">{i + 1}. {r.label}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <Label className="text-xs uppercase tracking-wider text-muted-foreground">Combined prompt ({promptPreview.text.length.toLocaleString()} chars)</Label>
+                  <Button size="sm" variant="ghost" className="h-7 gap-1 text-[11px]" onClick={() => { navigator.clipboard.writeText(promptPreview.text); toast.success("Prompt copied"); }}>
+                    <Copy className="h-3 w-3" /> Copy
+                  </Button>
+                </div>
+                <Textarea readOnly value={promptPreview.text} className="font-mono text-[11px] leading-relaxed min-h-[300px]" />
+              </div>
+              <p className="text-[10px] text-muted-foreground">After generation, the bake step stamps on: title, tagline, specs badge, logo, the real QR PNG and the real EAN-13 PNG over the reserved zones.</p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
