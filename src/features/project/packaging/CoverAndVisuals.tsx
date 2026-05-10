@@ -87,7 +87,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
     queryFn: async () => {
       const { data } = await supabase
         .from("project_marketing")
-        .select("front_subtext, front_company_slogan, front_logo_note, front_title_note, front_bottom_explanation, tagline, back_headline, back_body, back_cover_prompt, back_teaser, back_whats_in_box, back_how_to_play, back_feature_bullets, back_specs, back_content_note, back_footer_text, barcode_value, barcode_url, back_cover_url")
+        .select("front_subtext, tagline, back_headline, back_body, back_cover_prompt, back_teaser, back_whats_in_box, back_specs, back_footer_text, barcode_value, barcode_url, back_cover_url")
         .eq("project_id", projectId)
         .maybeSingle();
       return data;
@@ -180,7 +180,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   useEffect(() => {
     const url = project?.cover_image_url;
     if (!url || url.includes("cover-final-") || bakingFrontRef.current.has(url)) return;
-    if (!project?.title && !project?.subtitle && !company?.logo_url && !marketing?.front_subtext) return;
+    if (!project?.title && !project?.subtitle && !company?.logo_url && !marketing?.front_subtext && !marketing?.tagline && !marketing?.back_specs) return;
     bakingFrontRef.current.add(url);
     void (async () => {
       try {
@@ -189,8 +189,10 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
           baseImageUrl: url,
           title: project?.title ?? null,
           subtitle: project?.subtitle ?? null,
+          tagline: marketing?.tagline ?? null,
           logoUrl: company?.logo_url ?? null,
           bottomParagraph: marketing?.front_subtext ?? null,
+          specs: marketing?.back_specs ?? null,
         });
         await supabase.from("projects").update({ cover_image_url: finalUrl }).eq("id", projectId);
       } catch (e) {
@@ -198,7 +200,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
         bakingFrontRef.current.delete(url);
       }
     })();
-  }, [project?.cover_image_url, project?.title, project?.subtitle, company?.logo_url, marketing?.front_subtext, projectId]);
+  }, [project?.cover_image_url, project?.title, project?.subtitle, company?.logo_url, marketing?.front_subtext, marketing?.tagline, marketing?.back_specs, projectId]);
 
   const handleRebakeCover = async () => {
     if (!project?.cover_image_url) return;
@@ -209,11 +211,13 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
         baseImageUrl: project.cover_image_url,
         title: project?.title ?? null,
         subtitle: project?.subtitle ?? null,
+        tagline: marketing?.tagline ?? null,
         logoUrl: company?.logo_url ?? null,
         bottomParagraph: marketing?.front_subtext ?? null,
+        specs: marketing?.back_specs ?? null,
       });
       await supabase.from("projects").update({ cover_image_url: finalUrl }).eq("id", projectId);
-      toast.success("Cover re-baked with latest title, subtitle & logo");
+      toast.success("Cover re-baked with latest title, tagline, specs & logo");
     } catch (e) {
       toast.error("Re-bake failed: " + (e instanceof Error ? e.message : "unknown"));
     } finally {
