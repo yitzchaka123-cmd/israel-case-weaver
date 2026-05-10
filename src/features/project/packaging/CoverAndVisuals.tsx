@@ -270,6 +270,8 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
           modelOverride,
           aspect: "portrait",
           quality,
+          referenceImageUrl: project?.cover_reference_url ?? null,
+          referenceLabel: company?.company_name ?? null,
         });
         if (!result.ok) {
           toast.error(result.error ?? "Could not start cover generation", { duration: 10000 });
