@@ -27,6 +27,7 @@ import { useProjectNotifications } from "@/features/project/notifications/usePro
 import { fireBackgroundImage } from "@/features/project/fireBackgroundImage";
 import { useBatchProgress } from "./BatchProgressContext";
 import { useActiveCompanyProfile } from "@/lib/useActiveCompanyProfile";
+import { InGameScenesPanel } from "./InGameScenesPanel";
 
 type OutputType = "image" | "document" | "both";
 
