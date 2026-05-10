@@ -179,7 +179,7 @@ Final language: ${gameLanguage} — but write the selling point in English (it's
       : `
 Each field must follow these rules:
 FRONT COVER TEXT
-- "front_title_note": 1–2 short sentences describing a professional title lockup treatment.
+- "front_title_note": 2–3 sentences of GRAPHIC-DESIGN instructions for the entire top-of-cover wordmark group: typography family/weight/treatment for the title, how the tagline sits directly under it (size relationship, alignment, color), and where the front hook (front_subtext) goes relative to the lockup. This is a designer brief, not body copy.
 - "tagline": 1 line, max 9 words, directly under the game name.
 - "front_subtext": 1–2 short lines selling the case premise.
 - "front_bottom_explanation": 1 concise sentence explaining the boxed game near the bottom of the cover.

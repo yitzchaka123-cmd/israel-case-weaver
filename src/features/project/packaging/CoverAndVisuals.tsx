@@ -230,7 +230,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
     if (marketing?.front_subtext) meta.push(`Front subtext block: "${marketing.front_subtext}"`);
     if (marketing?.front_company_slogan) meta.push(`Company slogan to leave room for: "${marketing.front_company_slogan}"`);
     if (marketing?.front_logo_note) meta.push(`Logo placement: ${marketing.front_logo_note}`);
-    if (marketing?.front_title_note) meta.push(`Title styling note: ${marketing.front_title_note}`);
+    if (marketing?.front_title_note) meta.push(`Title + tagline + hook lockup brief (graphic-design instructions for the whole top-of-cover wordmark group): ${marketing.front_title_note}`);
     if (marketing?.front_bottom_explanation) meta.push(`Bottom strip text: "${marketing.front_bottom_explanation}"`);
     if (company?.company_name) meta.push(`Publisher: ${company.company_name}`);
     if (company?.cover_design_brief) meta.push(`Publisher cover design brief (always-on house style): ${company.cover_design_brief}`);

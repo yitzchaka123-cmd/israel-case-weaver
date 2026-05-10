@@ -76,7 +76,7 @@ type Body = ScriptBody | PromptBody;
 async function projectContext(supa: ReturnType<typeof createClient>, projectId: string) {
   const { data: project } = await supa
     .from("projects")
-    .select("title, subtitle, genre, mystery_type, setting, year, player_role, case_goal, selling_point, game_language, ai_provider_planning, owner_id")
+    .select("title, subtitle, genre, mystery_type, setting, year, player_role, case_goal, selling_point, game_language, ai_provider_planning, owner_id, company_profile_id")
     .eq("id", projectId)
     .single();
   if (!project) return null;
@@ -86,6 +86,18 @@ async function projectContext(supa: ReturnType<typeof createClient>, projectId: 
     .eq("project_id", projectId)
     .order("position")
     .limit(8);
+
+  // Resolve active company profile (v2): project link → owner default → any v2 profile.
+  let company: Record<string, unknown> | null = null;
+  if (project.company_profile_id) {
+    const { data } = await supa.from("company_profiles_v2").select("*").eq("id", project.company_profile_id).maybeSingle();
+    company = data ?? null;
+  }
+  if (!company && project.owner_id) {
+    const { data } = await supa.from("company_profiles_v2").select("*").eq("owner_id", project.owner_id).order("is_default", { ascending: false }).order("created_at", { ascending: true }).limit(1).maybeSingle();
+    company = data ?? null;
+  }
+
   const ctx = [
     project.title && `Title: ${project.title}`,
     project.subtitle && `Subtitle: ${project.subtitle}`,
@@ -96,7 +108,9 @@ async function projectContext(supa: ReturnType<typeof createClient>, projectId: 
     project.player_role && `Player role: ${project.player_role}`,
     project.case_goal && `Case goal: ${project.case_goal}`,
     project.selling_point && `Selling point: ${project.selling_point}`,
-    `Game language: ${project.game_language ?? "Hebrew"}`,
+    `Game language: ${(company?.language as string) ?? project.game_language ?? "Hebrew"}`,
+    company?.company_name && `Publisher (end-card): ${company.company_name}${company.tagline ? ` — "${company.tagline}"` : ""}`,
+    company?.cover_design_brief && `Publisher house style (use for end-card / brand frames): ${company.cover_design_brief}`,
     suspects?.length && `Key characters: ${suspects.map((s) => `${s.name}${s.role_in_case ? ` (${s.role_in_case})` : ""}`).join("; ")}`,
   ].filter(Boolean).join("\n");
   return { project, ctx };

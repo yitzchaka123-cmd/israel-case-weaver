@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/lib/auth";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,6 +26,7 @@ import { downloadAsset, slugify } from "@/lib/utils";
 import { useProjectNotifications } from "@/features/project/notifications/useProjectNotifications";
 import { fireBackgroundImage } from "@/features/project/fireBackgroundImage";
 import { useBatchProgress } from "./BatchProgressContext";
+import { useActiveCompanyProfile } from "@/lib/useActiveCompanyProfile";
 
 type OutputType = "image" | "document" | "both";
 
@@ -111,7 +112,7 @@ LAYOUT REQUIREMENTS (these are PRINT-CRITICAL — overlays will be added later):
 
 export function BarcodeAndBackPanel({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
-  const { user } = useAuth();
+  
   const batch = useBatchProgress();
   const [generatingBarcode, setGeneratingBarcode] = useState(false);
   const [generatingBack, setGeneratingBack] = useState(false);
@@ -137,19 +138,7 @@ export function BarcodeAndBackPanel({ projectId }: { projectId: string }) {
     },
   });
 
-  const { data: company } = useQuery({
-    queryKey: ["company-profile-for-back", user?.id],
-    queryFn: async (): Promise<CompanyLite | null> => {
-      if (!user) return null;
-      const { data } = await supabase
-        .from("company_profiles")
-        .select("company_name, logo_url, address, legal_text, warning_text, box_footer_line, manufactured_by, distributed_by, tagline")
-        .eq("owner_id", user.id)
-        .maybeSingle();
-      return (data as CompanyLite) ?? null;
-    },
-    enabled: !!user,
-  });
+  const { data: company } = useActiveCompanyProfile(projectId);
 
   const { data } = useQuery({
     queryKey: ["project-marketing-barcode", projectId],

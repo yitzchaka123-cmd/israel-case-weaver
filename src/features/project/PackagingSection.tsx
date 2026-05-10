@@ -3,13 +3,13 @@
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { CoverAndVisuals } from "./marketing/CoverAndVisuals";
-import { BoxCopyPanel } from "./marketing/BoxCopyPanel";
-import { BarcodeAndBackPanel } from "./marketing/BarcodeAndBackPanel";
-import { CompanyProfileSummary } from "./marketing/CompanyProfileSummary";
-import { StoryboardStudio } from "./marketing/StoryboardStudio";
-import { BatchProgressProvider, useBatchProgress } from "./marketing/BatchProgressContext";
-import { BatchProgressPill } from "./marketing/BatchProgressPill";
+import { CoverAndVisuals } from "./packaging/CoverAndVisuals";
+import { BoxCopyPanel } from "./packaging/BoxCopyPanel";
+import { BarcodeAndBackPanel } from "./packaging/BarcodeAndBackPanel";
+import { CompanyProfileSummary } from "./packaging/CompanyProfileSummary";
+import { StoryboardStudio } from "./packaging/StoryboardStudio";
+import { BatchProgressProvider, useBatchProgress } from "./packaging/BatchProgressContext";
+import { BatchProgressPill } from "./packaging/BatchProgressPill";
 
 const packagingNav = [
   { id: "packaging-box-text", label: "Box Text" },
@@ -19,15 +19,15 @@ const packagingNav = [
   { id: "packaging-storyboard", label: "Storyboard Studio" },
 ];
 
-export function MarketingSection({ projectId }: { projectId: string }) {
+export function PackagingSection({ projectId }: { projectId: string }) {
   return (
     <BatchProgressProvider projectId={projectId}>
-      <MarketingSectionInner projectId={projectId} />
+      <PackagingSectionInner projectId={projectId} />
     </BatchProgressProvider>
   );
 }
 
-function MarketingSectionInner({ projectId }: { projectId: string }) {
+function PackagingSectionInner({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
   const batch = useBatchProgress();
 
