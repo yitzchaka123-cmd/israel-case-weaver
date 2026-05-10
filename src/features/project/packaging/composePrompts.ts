@@ -165,20 +165,36 @@ export function composeCoverPairPrompt(args: {
   hasReference: boolean;
   /** Number of in-game scene reference images attached after the brand ref. */
   sceneCount?: number;
+  /** Whether the primary QR PNG is attached as a reference image. */
+  hasQrRef?: boolean;
+  /** Whether the EAN-13 barcode PNG is attached as a reference image. */
+  hasBarcodeRef?: boolean;
 }): string {
-  const { frontPrompt, backPrompt, publisherName, hasReference, sceneCount = 0 } = args;
+  const { frontPrompt, backPrompt, publisherName, hasReference, sceneCount = 0, hasQrRef = false, hasBarcodeRef = false } = args;
   const publisher = publisherName ? `publisher: ${publisherName}` : "the same publisher";
   const refLines: string[] = [];
+  let cursor = 1;
   if (hasReference) {
     refLines.push(
-      `REFERENCE 1 (BRAND HOUSE STYLE — ${publisher}): match its palette, lighting, illustration technique, typography mood and paper finish. Do NOT copy its scene; tell THIS case's story with the same brand fingerprint.`,
+      `REFERENCE ${cursor++} (BRAND HOUSE STYLE — ${publisher}): match its palette, lighting, illustration technique, typography mood and paper finish. Do NOT copy its scene; tell THIS case's story with the same brand fingerprint.`,
     );
   }
   if (sceneCount > 0) {
-    const start = hasReference ? 2 : 1;
-    const end = start + sceneCount - 1;
+    const start = cursor;
+    cursor += sceneCount;
+    const end = cursor - 1;
     refLines.push(
       `REFERENCES ${start}–${end} (${sceneCount} IN-GAME SCENES from this case): these images already exist INSIDE this case's world. The FRONT cover may quote a hero detail from them; the BACK cover MUST visually unify with them — same palette, same lighting, same world.`,
+    );
+  }
+  if (hasQrRef) {
+    refLines.push(
+      `REFERENCE ${cursor++} (PRIMARY QR CODE PNG): this is the EXACT pixel artwork that will be stamped into the LOWER-LEFT QR zone on the BACK cover. Match the reserved zone's size and surrounding negative space so the real QR sits perfectly. Do NOT redraw a fake QR — leave the zone clean.`,
+    );
+  }
+  if (hasBarcodeRef) {
+    refLines.push(
+      `REFERENCE ${cursor++} (EAN-13 BARCODE PNG): the EXACT barcode artwork that will be stamped into the LOWER-RIGHT barcode zone on the BACK cover. Reserve a clean, untextured rectangle of matching aspect — the real barcode pixels are baked in after generation. Do NOT invent a fake barcode.`,
     );
   }
   if (refLines.length === 0) {
