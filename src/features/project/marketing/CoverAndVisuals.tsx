@@ -412,6 +412,37 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
               ))}
             </div>
           </div>
+          {(company?.reference_covers ?? []).length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Reference cover (publisher gallery)</Label>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                <button
+                  type="button"
+                  onClick={() => setCoverReference(null)}
+                  className={`shrink-0 h-20 w-16 rounded border-2 text-[10px] font-medium flex items-center justify-center text-center px-1 transition ${!project?.cover_reference_url ? "border-accent bg-accent/10 text-accent" : "border-muted bg-muted/30 text-muted-foreground hover:border-foreground/40"}`}
+                >
+                  No reference
+                </button>
+                {(company!.reference_covers ?? []).map((ref, i) => {
+                  const selected = project?.cover_reference_url === ref.url;
+                  return (
+                    <button
+                      key={ref.url + i}
+                      type="button"
+                      onClick={() => setCoverReference(ref.url)}
+                      title={ref.label ?? `Reference ${i + 1}`}
+                      className={`shrink-0 h-20 w-16 rounded border-2 overflow-hidden transition ${selected ? "border-accent ring-2 ring-accent/30" : "border-muted hover:border-foreground/40"}`}
+                    >
+                      <img src={ref.url} alt={ref.label ?? `Reference ${i + 1}`} className="w-full h-full object-cover" />
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                The selected reference's URL + the publisher's design brief are passed to the cover prompt so the generator emulates that layout.
+              </p>
+            </div>
+          )}
           <ImagePromptAssistant
             projectId={projectId}
             surface="cover"
