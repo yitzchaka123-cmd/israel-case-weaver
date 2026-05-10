@@ -531,37 +531,13 @@ Square-ish print panel, no on-image text, no logos, no UI overlays. Will be crop
   return (
     <section className="rounded-2xl border bg-card p-6 shadow-soft space-y-5">
       <div>
-        <h3 className="font-display text-xl">Barcode, QR & back of box</h3>
+        <h3 className="font-display text-xl">QR codes & back of box</h3>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Generate the EAN-13, add as many QR codes as you need, then generate the back cover — barcode, primary QR, company logo, and address strip are all baked on automatically.
+          Add as many QR codes as you need (the primary one is baked large on the back cover). The barcode and in-game scenes live in <strong>Box Text</strong>.
         </p>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-5">
-        {/* Barcode */}
-        <div className="rounded-xl border bg-muted/30 p-4 space-y-3">
-          <div className="flex items-center gap-2 text-sm font-medium">
-            <BarcodeIcon className="h-4 w-4" /> EAN-13 barcode
-          </div>
-          <div className="aspect-[5/2] bg-white rounded-lg flex items-center justify-center overflow-hidden border">
-            {data?.barcode_value ? (
-              <div className="w-full h-full flex items-center justify-center" dangerouslySetInnerHTML={{ __html: ean13ToSvg(data.barcode_value) }} />
-            ) : (
-              <span className="text-xs text-muted-foreground">No barcode yet</span>
-            )}
-          </div>
-          {data?.barcode_value && (
-            <div className="text-xs font-mono text-center text-muted-foreground">{data.barcode_value}</div>
-          )}
-          <div className="flex gap-2">
-            <Button onClick={handleGenerateBarcode} disabled={generatingBarcode} variant={barcodeReady ? "outline" : "default"} size="sm" className="flex-1 gap-1.5">
-              {generatingBarcode ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : barcodeReady ? <RefreshCw className="h-3.5 w-3.5" /> : <BarcodeIcon className="h-3.5 w-3.5" />}
-              {barcodeReady ? "Generate new barcode" : "Generate barcode"}
-            </Button>
-            {data?.barcode_url && <DownloadButton url={data.barcode_url} title={`barcode-${data.barcode_value ?? ""}`} variant="outline" />}
-          </div>
-        </div>
-
+      <div className="grid md:grid-cols-1 gap-5">
         {/* QR codes */}
         <div className="rounded-xl border bg-muted/30 p-4 space-y-3">
           <div className="flex items-center gap-2 text-sm font-medium">
@@ -626,13 +602,6 @@ Square-ish print panel, no on-image text, no logos, no UI overlays. Will be crop
           )}
         </div>
       </div>
-
-      {/* In-game scenes (4) — generated as one batch, fed into back cover */}
-      <InGameScenesPanel
-        projectId={projectId}
-        brandReferenceUrl={(company?.reference_covers ?? []).find((r) => r.is_default)?.url ?? null}
-        brandLabel={company?.company_name ?? null}
-      />
 
       {/* Back cover generator */}
       <div className="rounded-xl border bg-muted/30 p-4 space-y-3">
