@@ -330,21 +330,44 @@ async function runImageGeneration(req: Request): Promise<Response> {
 
       let oResp: Response;
       try {
-        oResp = await fetch("https://api.openai.com/v1/images/generations", {
-          method: "POST",
-          signal: ctrl.signal,
-          headers: { Authorization: `Bearer ${openAiPick!.key}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model,
-            prompt: finalPrompt,
-            size,
-            quality: q,
-            n: 1,
-            moderation: "auto",
-            output_format: "jpeg",
-            output_compression: 90,
-          }),
-        });
+        if (referenceImage) {
+          // Vision-reference mode: use /v1/images/edits with the brand reference attached.
+          const form = new FormData();
+          form.append("model", model);
+          form.append("prompt", finalPrompt);
+          form.append("size", size);
+          form.append("quality", q);
+          form.append("n", "1");
+          form.append("output_format", "jpeg");
+          form.append("output_compression", "90");
+          form.append(
+            "image",
+            new Blob([referenceImage.bytes], { type: referenceImage.mime }),
+            `reference.${referenceImage.mime.split("/")[1] ?? "png"}`,
+          );
+          oResp = await fetch("https://api.openai.com/v1/images/edits", {
+            method: "POST",
+            signal: ctrl.signal,
+            headers: { Authorization: `Bearer ${openAiPick!.key}` },
+            body: form,
+          });
+        } else {
+          oResp = await fetch("https://api.openai.com/v1/images/generations", {
+            method: "POST",
+            signal: ctrl.signal,
+            headers: { Authorization: `Bearer ${openAiPick!.key}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model,
+              prompt: finalPrompt,
+              size,
+              quality: q,
+              n: 1,
+              moderation: "auto",
+              output_format: "jpeg",
+              output_compression: 90,
+            }),
+          });
+        }
       } catch (e) {
         clearTimeout(timeoutId);
         if (e instanceof Error && e.name === "AbortError") {
