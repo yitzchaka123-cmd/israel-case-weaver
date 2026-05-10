@@ -18,6 +18,7 @@ import { ClaudeSkillsPanel } from "./ClaudeSkillsPanel";
 import { TeamAccessPanel } from "./TeamAccessPanel";
 import { AiRunLog } from "./AiRunLog";
 import { VisibleModelsPanel } from "./VisibleModelsPanel";
+import { CompanyProfilePanel } from "./CompanyProfilePanel";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LOGIC_FLOW_MODELS, LOGIC_FLOW_MODEL_KEY, LOGIC_FLOW_MODEL_DEFAULT } from "@/features/project/CanvasSection";
 import { Textarea } from "@/components/ui/textarea";
@@ -25,7 +26,7 @@ import { DISPLAY_BACKGROUNDS, DEFAULT_DISPLAY_BACKGROUND, normalizeDisplayBackgr
 import { useHiddenModels, filterModelOptions } from "@/lib/hidden-models";
 
 const SETTINGS_SECTIONS = [
-  { id: "branding", label: "Branding" },
+  { id: "branding", label: "Company Branding" },
   { id: "appearance", label: "Appearance" },
   { id: "display", label: "Display" },
   { id: "profile", label: "Profile" },
@@ -151,31 +152,45 @@ export function SettingsPage() {
     switch (section) {
       case "branding":
         return (
-          <Section id="branding" title="Branding" desc="Set your studio logo that appears across the app.">
-            <div className="flex items-center gap-5">
-              <div className="h-20 w-20 rounded-2xl border bg-muted flex items-center justify-center overflow-hidden">
-                {logoUrl ? (
-                  <img src={logoUrl} alt="Logo" className="h-full w-full object-cover" />
-                ) : (
-                  <Upload className="h-6 w-6 text-muted-foreground" />
-                )}
-              </div>
+          <Section
+            id="branding"
+            title="Company Branding"
+            desc="Manage one or more publisher brands. Each brand has its own logo, language, company info, cover-design brief and reference-cover gallery. Pick which brand a case ships under from its Packaging tab."
+          >
+            <div className="space-y-8">
               <div>
-                <input
-                  type="file"
-                  accept="image/*"
-                  ref={fileInput}
-                  className="hidden"
-                  onChange={(e) => e.target.files?.[0] && uploadLogo(e.target.files[0])}
-                />
-                <Button variant="outline" onClick={() => fileInput.current?.click()}>
-                  Upload logo
-                </Button>
-                {logoUrl && (
-                  <Button variant="ghost" className="ml-2" onClick={() => persistLogoUrl(null)}>
-                    Remove
-                  </Button>
-                )}
+                <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Workspace logo</Label>
+                <p className="text-[11px] text-muted-foreground mb-3">Small icon shown in the app chrome. Separate from your publisher brand logos below.</p>
+                <div className="flex items-center gap-5">
+                  <div className="h-16 w-16 rounded-xl border bg-muted flex items-center justify-center overflow-hidden">
+                    {logoUrl ? (
+                      <img src={logoUrl} alt="Logo" className="h-full w-full object-cover" />
+                    ) : (
+                      <Upload className="h-5 w-5 text-muted-foreground" />
+                    )}
+                  </div>
+                  <div>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      ref={fileInput}
+                      className="hidden"
+                      onChange={(e) => e.target.files?.[0] && uploadLogo(e.target.files[0])}
+                    />
+                    <Button variant="outline" size="sm" onClick={() => fileInput.current?.click()}>
+                      Upload logo
+                    </Button>
+                    {logoUrl && (
+                      <Button variant="ghost" size="sm" className="ml-2" onClick={() => persistLogoUrl(null)}>
+                        Remove
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t pt-6">
+                <CompanyProfilePanel />
               </div>
             </div>
           </Section>
