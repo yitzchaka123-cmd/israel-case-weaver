@@ -217,14 +217,20 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   // Subtitle is recommended but not required; warn rather than block.
   const frontReady = frontMissing.length === 0;
 
+  const houseDefaultRef = (company?.reference_covers ?? []).find((r) => r.is_default) ?? null;
+  const effectiveReferenceUrl = project?.cover_reference_url || houseDefaultRef?.url || null;
+  const effectiveReferenceNotes = project?.cover_reference_url
+    ? project?.cover_reference_notes
+    : (houseDefaultRef?.design_notes ?? null);
+
   const composeFrontPrompt = (basePrompt: string): string => {
     const parts: string[] = [];
-    if (project?.cover_reference_url) {
+    if (effectiveReferenceUrl) {
       const publisher = company?.company_name ? `publisher: ${company.company_name}` : "the same publisher";
       parts.push(
         `BRAND CONTINUITY — CRITICAL: This cover is a NEW release in the SAME publisher line as the attached REFERENCE IMAGE (${publisher}). Treat the reference as our house style guide. Match its illustration technique, color palette, lighting, typography hierarchy, framing, paper/print finish and overall mood. Do NOT copy its scene or subject — tell THIS case's story with the same brand fingerprint, so the two boxes sit side-by-side as siblings on a shelf.`,
       );
-      if (project?.cover_reference_notes) parts.push(`Reference notes from the team: ${project.cover_reference_notes}`);
+      if (effectiveReferenceNotes) parts.push(`Reference notes: ${effectiveReferenceNotes}`);
       parts.push("");
     }
     parts.push(basePrompt.trim());
@@ -270,7 +276,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
           modelOverride,
           aspect: "portrait",
           quality,
-          referenceImageUrl: project?.cover_reference_url ?? null,
+          referenceImageUrl: effectiveReferenceUrl,
           referenceLabel: company?.company_name ?? null,
         });
         if (!result.ok) {
