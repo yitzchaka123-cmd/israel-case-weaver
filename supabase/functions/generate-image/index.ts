@@ -80,6 +80,11 @@ interface Body {
   targetId?: string;
   aspect?: "portrait" | "landscape" | "square";
   quality?: Quality;
+  /** Optional brand/style reference image URL. When set, the image model
+   *  receives it as a real vision input (OpenAI images/edits or Gemini
+   *  inlineData), so the output inherits the same publisher's visual identity. */
+  referenceImageUrl?: string | null;
+  referenceLabel?: string | null;
   /**
    * When "background", we insert a pending image_generations row, return its
    * id immediately, and finish the work via EdgeRuntime.waitUntil. The browser
@@ -90,6 +95,27 @@ interface Body {
    * call sites keep working untouched.
    */
   mode?: "sync" | "background";
+}
+
+/** Fetch a reference image and return its bytes + mime, with size guard. */
+async function fetchReferenceImage(url: string): Promise<{ bytes: Uint8Array; mime: string } | null> {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) {
+      console.warn(`reference image fetch failed: ${r.status} ${url}`);
+      return null;
+    }
+    const buf = new Uint8Array(await r.arrayBuffer());
+    if (buf.byteLength > 8 * 1024 * 1024) {
+      console.warn(`reference image too large (${buf.byteLength} bytes), skipping`);
+      return null;
+    }
+    const mime = r.headers.get("content-type")?.split(";")[0]?.trim() || "image/png";
+    return { bytes: buf, mime };
+  } catch (e) {
+    console.warn("reference image fetch threw", e);
+    return null;
+  }
 }
 
 // Maps the request target to the source_* columns on image_generations so the
@@ -248,11 +274,14 @@ async function runImageGeneration(req: Request): Promise<Response> {
   try {
     userId = await getUserIdFromAuth(req);
     const body = (await req.json()) as Body;
-    const { projectId, prompt, title, category, modelOverride, targetId, aspect, quality } = body;
+    const { projectId, prompt, title, category, modelOverride, targetId, aspect, quality, referenceImageUrl } = body;
     const target: Target = body.target ?? "media";
     projectIdForLog = projectId ?? null;
     targetIdForLog = targetId ?? null;
-    promptForLog = prompt ?? "";
+    promptForLog = referenceImageUrl ? `[brand-ref:${referenceImageUrl.slice(0, 80)}] ${prompt ?? ""}` : (prompt ?? "");
+
+    // Pre-fetch the reference image bytes once; both OpenAI and Gemini paths reuse them.
+    const referenceImage = referenceImageUrl ? await fetchReferenceImage(referenceImageUrl) : null;
 
     if (!projectId || !prompt) {
       return new Response(JSON.stringify({ error: "projectId and prompt required" }), {
@@ -301,21 +330,44 @@ async function runImageGeneration(req: Request): Promise<Response> {
 
       let oResp: Response;
       try {
-        oResp = await fetch("https://api.openai.com/v1/images/generations", {
-          method: "POST",
-          signal: ctrl.signal,
-          headers: { Authorization: `Bearer ${openAiPick!.key}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model,
-            prompt: finalPrompt,
-            size,
-            quality: q,
-            n: 1,
-            moderation: "auto",
-            output_format: "jpeg",
-            output_compression: 90,
-          }),
-        });
+        if (referenceImage) {
+          // Vision-reference mode: use /v1/images/edits with the brand reference attached.
+          const form = new FormData();
+          form.append("model", model);
+          form.append("prompt", finalPrompt);
+          form.append("size", size);
+          form.append("quality", q);
+          form.append("n", "1");
+          form.append("output_format", "jpeg");
+          form.append("output_compression", "90");
+          form.append(
+            "image",
+            new Blob([referenceImage.bytes], { type: referenceImage.mime }),
+            `reference.${referenceImage.mime.split("/")[1] ?? "png"}`,
+          );
+          oResp = await fetch("https://api.openai.com/v1/images/edits", {
+            method: "POST",
+            signal: ctrl.signal,
+            headers: { Authorization: `Bearer ${openAiPick!.key}` },
+            body: form,
+          });
+        } else {
+          oResp = await fetch("https://api.openai.com/v1/images/generations", {
+            method: "POST",
+            signal: ctrl.signal,
+            headers: { Authorization: `Bearer ${openAiPick!.key}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model,
+              prompt: finalPrompt,
+              size,
+              quality: q,
+              n: 1,
+              moderation: "auto",
+              output_format: "jpeg",
+              output_compression: 90,
+            }),
+          });
+        }
       } catch (e) {
         clearTimeout(timeoutId);
         if (e instanceof Error && e.name === "AbortError") {
@@ -362,7 +414,7 @@ async function runImageGeneration(req: Request): Promise<Response> {
     } else {
       const hasGeminiDirect = !!Deno.env.get("GEMINI_API_KEY");
       const FALLBACK_MODEL = "google/gemini-2.5-flash-image";
-      const tryGenerate = async (m: string) => generateImage({ prompt: finalPrompt, model: m });
+      const tryGenerate = async (m: string) => generateImage({ prompt: finalPrompt, model: m, referenceImage: referenceImage ?? undefined });
 
       try {
         const result = await tryGenerate(model);
