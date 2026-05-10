@@ -748,18 +748,34 @@ export interface ImageResult { bytes: Uint8Array; mime: string; provider: "gemin
  * here is the gateway-style id; the Google direct call strips the "google/"
  * prefix automatically. No Lovable fallback is used for document assets.
  */
-export async function generateImage(opts: { prompt: string; model: string }): Promise<ImageResult> {
-  const { prompt, model } = opts;
+export async function generateImage(opts: {
+  prompt: string;
+  model: string;
+  /** Optional brand/style reference image. Sent as inlineData so Nano Banana
+   *  treats it as a real vision input (edit-mode), not just text. */
+  referenceImage?: { bytes: Uint8Array; mime: string };
+}): Promise<ImageResult> {
+  const { prompt, model, referenceImage } = opts;
 
   // Prefer direct Google when key configured.
   if (GEMINI_API_KEY) {
     const directModel = model.startsWith("google/") ? model.slice("google/".length) : model;
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(directModel)}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`;
+    const userParts: Array<Record<string, unknown>> = [{ text: prompt }];
+    if (referenceImage) {
+      // base64-encode reference bytes for inlineData
+      let b64 = "";
+      const chunk = 0x8000;
+      for (let i = 0; i < referenceImage.bytes.length; i += chunk) {
+        b64 += String.fromCharCode(...referenceImage.bytes.subarray(i, i + chunk));
+      }
+      userParts.unshift({ inlineData: { mimeType: referenceImage.mime, data: btoa(b64) } });
+    }
     const resp = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        contents: [{ role: "user", parts: userParts }],
         generationConfig: { responseModalities: ["IMAGE", "TEXT"] },
       }),
     });
