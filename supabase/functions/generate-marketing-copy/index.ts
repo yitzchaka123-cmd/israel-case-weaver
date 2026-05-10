@@ -78,12 +78,11 @@ Deno.serve(async (req) => {
 
     const supa = createClient(SUPABASE_URL, SERVICE);
 
-    const [{ data: project }, { data: suspects }, docsRes, envRes, companyRes] = await Promise.all([
-      supa.from("projects").select("title, subtitle, genre, mystery_type, setting, year, player_role, case_goal, selling_point, difficulty, game_language, owner_id, ai_provider_planning, target_doc_count").eq("id", projectId).single(),
+    const [{ data: project }, { data: suspects }, docsRes, envRes] = await Promise.all([
+      supa.from("projects").select("title, subtitle, genre, mystery_type, setting, year, player_role, case_goal, selling_point, difficulty, game_language, owner_id, ai_provider_planning, target_doc_count, company_profile_id, cover_reference_url, cover_reference_notes").eq("id", projectId).single(),
       supa.from("suspects").select("name, role_in_case").eq("project_id", projectId).order("position"),
       supa.from("documents").select("id", { count: "exact", head: true }).eq("project_id", projectId),
       supa.from("envelopes").select("id", { count: "exact", head: true }).eq("project_id", projectId),
-      supa.from("company_profiles").select("*"),
     ]);
     if (!project) {
       return new Response(JSON.stringify({ error: "Project not found" }), {
@@ -91,9 +90,20 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Pick the company profile owned by the project owner (or first one).
-    const companies = (companyRes.data ?? []) as Array<Record<string, unknown>>;
-    const company = companies.find((c) => c.owner_id === project.owner_id) ?? companies[0] ?? null;
+    // Resolve active company profile: project link → owner default v2 → any v2 → legacy.
+    let company: Record<string, unknown> | null = null;
+    if (project.company_profile_id) {
+      const { data } = await supa.from("company_profiles_v2").select("*").eq("id", project.company_profile_id).maybeSingle();
+      if (data) company = data as Record<string, unknown>;
+    }
+    if (!company) {
+      const { data } = await supa.from("company_profiles_v2").select("*").eq("owner_id", project.owner_id).order("is_default", { ascending: false }).order("created_at", { ascending: true }).limit(1).maybeSingle();
+      if (data) company = data as Record<string, unknown>;
+    }
+    if (!company) {
+      const { data } = await supa.from("company_profiles").select("*").eq("owner_id", project.owner_id).maybeSingle();
+      if (data) company = data as Record<string, unknown>;
+    }
 
     // Pull the owner's playbook so the marketing rules are honored.
     const { data: profile } = await supa
@@ -109,7 +119,9 @@ Deno.serve(async (req) => {
 
     const docCount = docsRes.count ?? 0;
     const envCount = envRes.count ?? playbook.envelopes.count;
-    const gameLanguage = String(project.game_language ?? "Hebrew").trim() || "Hebrew";
+    // Profile language wins over project.game_language so EN/HE companies write in their own voice.
+    const profileLanguage = company && typeof company.language === "string" ? String(company.language).trim() : "";
+    const gameLanguage = profileLanguage || String(project.game_language ?? "Hebrew").trim() || "Hebrew";
 
     const ctx = [
       project.title && `Title: ${project.title}`,
@@ -131,10 +143,12 @@ Deno.serve(async (req) => {
     const companyBlock = company
       ? `COMPANY PROFILE
 - Company: ${company.company_name ?? ""}
+- Profile language: ${profileLanguage || "(unset)"}
 - Tagline: ${company.tagline ?? ""}
 - Legal: ${company.legal_text ?? ""}
 - Country: ${company.country ?? ""}
-- Age rating: ${company.age_rating ?? ""}`
+- Age rating: ${company.age_rating ?? ""}
+${company.cover_design_brief ? `- Cover design brief (house style): ${company.cover_design_brief}` : ""}`
       : "(No company profile set yet — write generic copy.)";
 
     const frontFields = ["front_title_note", "tagline", "front_subtext", "front_bottom_explanation", "front_company_slogan", "front_logo_note"];

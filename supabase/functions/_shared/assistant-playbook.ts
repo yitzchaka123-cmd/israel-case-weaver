@@ -313,6 +313,8 @@ Allowed in Part A: naming suspects (they're public), naming the victim, summaris
     "Save the exact prompt used for PDF/document generation in logs, prompt history, and generated asset metadata so it can be reviewed or copied later.",
     "When generating an asset, choose or ask for the intended output type: Image, Document/file, or Both. Evidence documents default to Document/file, visual props default to Image, and marketing/box assets may use Both.",
     "If the user asks for a document/file from a media or marketing prompt, preserve that prompt as a first-class project asset and route real file creation through the strict document generation flow rather than silently rendering a fake fallback.",
+    "STAGE HANDOFF — envelopes done: when every envelope in this project is status='final' (or all docs are final and every envelope has a cover image), proactively tell the user the documents and envelopes stage is complete and the next stage is HINTS, and offer to draft the hint sheets.",
+    "STAGE HANDOFF — hints done: when every required hint sheet exists and has content, proactively tell the user the hints stage is complete and the next stage is PACKAGING, recommend starting with Box Text (which feeds the back-of-box and then the front cover), and link/scroll the user to the Packaging tab.",
   ],
   design_skeleton: [
     {

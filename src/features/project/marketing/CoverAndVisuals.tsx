@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/lib/auth";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +18,7 @@ import { DownloadButton } from "@/components/DownloadButton";
 import { fireBackgroundImage } from "@/features/project/fireBackgroundImage";
 import { useBatchProgress } from "./BatchProgressContext";
 import { bakeFrontCover } from "./bakeCover";
+import { useActiveCompanyProfile } from "@/lib/useActiveCompanyProfile";
 import { Copy, Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2, Sparkles, Wand2, AlertTriangle, Download } from "lucide-react";
 import { downloadAsset, slugify } from "@/lib/utils";
 import { toast } from "sonner";
@@ -49,7 +50,7 @@ const MARKETING_CATEGORIES = ["cover", "back", "marketing-back", "marketing-extr
 
 export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
-  const { user } = useAuth();
+  
   const batch = useBatchProgress();
   const [adding, setAdding] = useState(false);
   const [newTitle, setNewTitle] = useState("");
@@ -60,31 +61,24 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const [coverOutputType, setCoverOutputType] = useState<OutputType>("image");
   const [extraOutputType, setExtraOutputType] = useState<OutputType>("image");
 
-  const { data: company } = useQuery({
-    queryKey: ["company-profile-for-front", user?.id],
-    queryFn: async () => {
-      if (!user) return null;
-      const { data } = await supabase
-        .from("company_profiles")
-        .select("logo_url, company_name")
-        .eq("owner_id", user.id)
-        .maybeSingle();
-      return data;
-    },
-    enabled: !!user,
-  });
+  const { data: company } = useActiveCompanyProfile(projectId);
 
   const { data: project } = useQuery({
     queryKey: ["project-cover-only", projectId],
     queryFn: async () => {
       const { data } = await supabase
         .from("projects")
-        .select("title, cover_image_url, uploaded_cover_url, cover_active_version, cover_prompt, cover_effective_model, cover_fallback, ai_provider_images, mystery_type, setting, subtitle, genre, year")
+        .select("title, cover_image_url, uploaded_cover_url, cover_active_version, cover_prompt, cover_effective_model, cover_fallback, ai_provider_images, mystery_type, setting, subtitle, genre, year, cover_reference_url, cover_reference_notes")
         .eq("id", projectId)
         .maybeSingle();
       return data;
     },
   });
+
+  const setCoverReference = async (url: string | null) => {
+    await supabase.from("projects").update({ cover_reference_url: url } as never).eq("id", projectId);
+    qc.invalidateQueries({ queryKey: ["project-cover-only", projectId] });
+  };
 
   const { data: marketing } = useQuery({
     queryKey: ["project-marketing-front", projectId],
@@ -239,6 +233,11 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
     if (marketing?.front_title_note) meta.push(`Title styling note: ${marketing.front_title_note}`);
     if (marketing?.front_bottom_explanation) meta.push(`Bottom strip text: "${marketing.front_bottom_explanation}"`);
     if (company?.company_name) meta.push(`Publisher: ${company.company_name}`);
+    if (company?.cover_design_brief) meta.push(`Publisher cover design brief (always-on house style): ${company.cover_design_brief}`);
+    if (project?.cover_reference_url) {
+      meta.push(`Reference cover to emulate (layout, typography hierarchy, color mood): ${project.cover_reference_url}`);
+      if (project?.cover_reference_notes) meta.push(`Reference notes: ${project.cover_reference_notes}`);
+    }
     if (meta.length) {
       parts.push("");
       parts.push("BOX-COVER COPY DECK (leave clean zones for these — they will be baked on top):");
@@ -413,6 +412,37 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
               ))}
             </div>
           </div>
+          {(company?.reference_covers ?? []).length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Reference cover (publisher gallery)</Label>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                <button
+                  type="button"
+                  onClick={() => setCoverReference(null)}
+                  className={`shrink-0 h-20 w-16 rounded border-2 text-[10px] font-medium flex items-center justify-center text-center px-1 transition ${!project?.cover_reference_url ? "border-accent bg-accent/10 text-accent" : "border-muted bg-muted/30 text-muted-foreground hover:border-foreground/40"}`}
+                >
+                  No reference
+                </button>
+                {(company!.reference_covers ?? []).map((ref, i) => {
+                  const selected = project?.cover_reference_url === ref.url;
+                  return (
+                    <button
+                      key={ref.url + i}
+                      type="button"
+                      onClick={() => setCoverReference(ref.url)}
+                      title={ref.label ?? `Reference ${i + 1}`}
+                      className={`shrink-0 h-20 w-16 rounded border-2 overflow-hidden transition ${selected ? "border-accent ring-2 ring-accent/30" : "border-muted hover:border-foreground/40"}`}
+                    >
+                      <img src={ref.url} alt={ref.label ?? `Reference ${i + 1}`} className="w-full h-full object-cover" />
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                The selected reference's URL + the publisher's design brief are passed to the cover prompt so the generator emulates that layout.
+              </p>
+            </div>
+          )}
           <ImagePromptAssistant
             projectId={projectId}
             surface="cover"
