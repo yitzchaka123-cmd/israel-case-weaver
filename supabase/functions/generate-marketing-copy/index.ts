@@ -37,12 +37,7 @@ const PLANNING_MODEL: Record<string, string> = {
 };
 
 type Field =
-  | "front_title_note"
-  | "tagline"
   | "front_subtext"
-  | "front_bottom_explanation"
-  | "front_company_slogan"
-  | "front_logo_note"
   | "back_headline"
   | "back_teaser"
   | "back_body"
@@ -151,7 +146,7 @@ Deno.serve(async (req) => {
 ${company.cover_design_brief ? `- Cover design brief (house style): ${company.cover_design_brief}` : ""}`
       : "(No company profile set yet — write generic copy.)";
 
-    const frontFields = ["front_title_note", "tagline", "front_subtext", "front_bottom_explanation", "front_company_slogan", "front_logo_note"];
+    const frontFields = ["front_subtext"];
     const backFields = ["back_headline", "back_teaser", "back_body", "back_whats_in_box", "back_how_to_play", "back_feature_bullets", "back_specs", "back_content_note", "back_footer_text"];
     const fieldsRequested = field === "all"
       ? [...frontFields, ...backFields]
@@ -178,13 +173,8 @@ Voice: ${playbook.identity.brand_voice}
 Final language: ${gameLanguage} — but write the selling point in English (it's a planning field, not in-game text).`
       : `
 Each field must follow these rules:
-FRONT COVER TEXT
-- "front_title_note": 2–3 sentences of GRAPHIC-DESIGN instructions for the entire top-of-cover wordmark group: typography family/weight/treatment for the title, how the tagline sits directly under it (size relationship, alignment, color), and where the front hook (front_subtext) goes relative to the lockup. This is a designer brief, not body copy.
-- "tagline": 1 line, max 9 words, directly under the game name.
-- "front_subtext": 1–2 short lines selling the case premise.
-- "front_bottom_explanation": 1 concise sentence explaining the boxed game near the bottom of the cover.
-- "front_company_slogan": use/adapt the company tagline when available; otherwise write a short brand slogan.
-- "front_logo_note": short instruction for placing the company logo/brand mark on the front cover.
+FRONT COVER TEXT (only ONE field — title, subtitle, and brand logo come from elsewhere)
+- "front_subtext": 1 short paragraph (3–5 short lines, max ~50 words) that goes baked across the BOTTOM of the front cover. It should explain what the boxed game is and hook the buyer. No tagline, no headline — just the bottom paragraph.
 
 BACK COVER TEXT
 - "back_headline": 1 punchy sentence, max 14 words, sets the stakes.
