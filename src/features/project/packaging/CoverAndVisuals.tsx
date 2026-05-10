@@ -218,7 +218,16 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const frontReady = frontMissing.length === 0;
 
   const composeFrontPrompt = (basePrompt: string): string => {
-    const parts = [basePrompt.trim()];
+    const parts: string[] = [];
+    if (project?.cover_reference_url) {
+      const publisher = company?.company_name ? `publisher: ${company.company_name}` : "the same publisher";
+      parts.push(
+        `BRAND CONTINUITY — CRITICAL: This cover is a NEW release in the SAME publisher line as the attached REFERENCE IMAGE (${publisher}). Treat the reference as our house style guide. Match its illustration technique, color palette, lighting, typography hierarchy, framing, paper/print finish and overall mood. Do NOT copy its scene or subject — tell THIS case's story with the same brand fingerprint, so the two boxes sit side-by-side as siblings on a shelf.`,
+      );
+      if (project?.cover_reference_notes) parts.push(`Reference notes from the team: ${project.cover_reference_notes}`);
+      parts.push("");
+    }
+    parts.push(basePrompt.trim());
     const meta: string[] = [];
     if (project?.title) meta.push(`TITLE (must appear large on cover): "${project.title}"`);
     if (project?.subtitle) meta.push(`SUBTITLE: "${project.subtitle}"`);
@@ -234,16 +243,12 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
     if (marketing?.front_bottom_explanation) meta.push(`Bottom strip text: "${marketing.front_bottom_explanation}"`);
     if (company?.company_name) meta.push(`Publisher: ${company.company_name}`);
     if (company?.cover_design_brief) meta.push(`Publisher cover design brief (always-on house style): ${company.cover_design_brief}`);
-    if (project?.cover_reference_url) {
-      meta.push(`Reference cover to emulate (layout, typography hierarchy, color mood): ${project.cover_reference_url}`);
-      if (project?.cover_reference_notes) meta.push(`Reference notes: ${project.cover_reference_notes}`);
-    }
     if (meta.length) {
       parts.push("");
       parts.push("BOX-COVER COPY DECK (leave clean zones for these — they will be baked on top):");
       parts.push(meta.map((m) => `- ${m}`).join("\n"));
     }
-    return parts.filter(Boolean).join("\n");
+    return parts.filter((p) => p !== undefined && p !== null).join("\n");
   };
 
   const handleGenerateCover = async (prompt: string) => {
