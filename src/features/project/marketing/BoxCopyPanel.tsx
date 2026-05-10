@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { createQrPngBlob } from "./qr";
 import { ImageIcon, Loader2, QrCode, Save, Sparkles } from "lucide-react";
+import { useActiveCompanyProfile } from "@/lib/useActiveCompanyProfile";
 import { toast } from "sonner";
 
 type CopyField =
@@ -124,14 +125,7 @@ export function BoxCopyPanel({ projectId }: { projectId: string }) {
     },
   });
 
-  const { data: company } = useQuery({
-    queryKey: ["box-text-company", projectId],
-    queryFn: async (): Promise<CompanyProfile | null> => {
-      const { data: project } = await supabase.from("projects").select("owner_id").eq("id", projectId).maybeSingle();
-      const { data } = await supabase.from("company_profiles").select("company_name, tagline, legal_text, logo_url").eq("owner_id", project?.owner_id ?? "").maybeSingle();
-      return (data as CompanyProfile) ?? null;
-    },
-  });
+  const { data: company } = useActiveCompanyProfile(projectId);
 
   useEffect(() => {
     if (!data) return;
