@@ -17,6 +17,7 @@ import {
 import { useActiveCompanyProfile, useUserCompanyProfiles } from "@/lib/useActiveCompanyProfile";
 import { ean13ToPngBlob, ean13ToSvg, generateEan13 } from "./ean13";
 import { InGameScenesPanel } from "./InGameScenesPanel";
+import { buildContentsString } from "./composeContents";
 import { DownloadButton } from "@/components/DownloadButton";
 import { toast } from "sonner";
 
@@ -318,17 +319,41 @@ export function BoxCopyPanel({ projectId }: { projectId: string }) {
           onGenerate={() => generateField("back_body")}
         />
 
-        <FieldEditor
-          label="Contents"
-          helper="What's in the box — documents, envelopes, props, evidence."
-          rows={5}
-          multiline
-          value={form.back_whats_in_box}
-          origin={origins.back_whats_in_box}
-          busy={!!busy.back_whats_in_box}
-          onChange={(v) => update("back_whats_in_box", v)}
-          onGenerate={() => generateField("back_whats_in_box")}
-        />
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between gap-3">
+            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+              Contents {origins.back_whats_in_box === "ai" && <span className="ml-1.5 text-accent normal-case tracking-normal">· AI draft</span>}
+            </Label>
+            <Button
+              variant="ghost" size="sm" className="h-6 gap-1 text-[11px]"
+              disabled={!!busy.back_whats_in_box}
+              onClick={async () => {
+                setBusy((b) => ({ ...b, back_whats_in_box: true }));
+                try {
+                  const s = await buildContentsString(projectId);
+                  update("back_whats_in_box", s);
+                  setOrigins((o) => ({ ...o, back_whats_in_box: "auto" }));
+                  toast.success("Contents auto-built from this case");
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : "Failed to build contents");
+                } finally {
+                  setBusy((b) => ({ ...b, back_whats_in_box: false }));
+                }
+              }}
+            >
+              {busy.back_whats_in_box ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+              Auto-build from case
+            </Button>
+          </div>
+          <Textarea
+            rows={5}
+            value={form.back_whats_in_box}
+            onChange={(e) => update("back_whats_in_box", e.target.value)}
+            placeholder="e.g. 25 evidence documents · 10 interrogation scripts · 5 photos · 3 maps · 4 sealed envelopes"
+            className="text-sm"
+          />
+          <p className="text-[10px] text-muted-foreground">Counts the documents, photos, suspects and envelopes in this case. QR codes are never listed — they're not a printed component.</p>
+        </div>
 
         <FieldEditor
           label="Age / duration / players"
