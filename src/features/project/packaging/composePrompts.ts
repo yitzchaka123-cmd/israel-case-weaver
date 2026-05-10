@@ -56,8 +56,9 @@ export const FRONT_LAYOUT_SUFFIX = `
 LAYOUT REQUIREMENTS (PRINT-CRITICAL — overlays will be added later):
 - Vertical 3:4 print-ready canvas, atmospheric, evocative.
 - Reserve a CLEAN UNTEXTURED rectangle at TOP-CENTER (~30% × 12%) for the title wordmark.
-- Reserve a CLEAN UNTEXTURED rectangle directly under the title (~60% × 6%) for the subtitle.
+- Reserve a CLEAN UNTEXTURED rectangle directly under the title (~60% × 5%) for the tagline.
 - Reserve a CLEAN UNTEXTURED rectangle in the TOP-LEFT (~18% × 12%) for the publisher logo.
+- Reserve a CLEAN UNTEXTURED small badge near the BOTTOM-RIGHT (~22% × 6%) for the specs badge (age/duration/players).
 - Reserve a CLEAN UNTEXTURED strip across the BOTTOM (~100% × 14%) for the bottom paragraph.
 - No text rendered into the artwork itself — typography is added in post.`;
 
@@ -87,12 +88,14 @@ export function composeFrontPrompt(args: {
   parts.push(basePrompt.trim() || "Atmospheric front cover for a boxed murder-mystery game.");
   const meta: string[] = [];
   if (project?.title) meta.push(`TITLE (must appear large on cover, top-center): "${project.title}"`);
-  if (project?.subtitle) meta.push(`SUBTITLE (directly under the title): "${project.subtitle}"`);
+  if (marketing?.tagline) meta.push(`TAGLINE (baked directly under the title): "${marketing.tagline}"`);
+  if (project?.subtitle) meta.push(`SUBTITLE (small line under title/tagline): "${project.subtitle}"`);
   if (project?.mystery_type) meta.push(`Mystery type: ${project.mystery_type}`);
   if (project?.setting) meta.push(`Setting: ${project.setting}`);
   if (project?.genre) meta.push(`Genre: ${project.genre}`);
   if (project?.year) meta.push(`Year: ${project.year}`);
   if (marketing?.front_subtext) meta.push(`BOTTOM PARAGRAPH (baked across the bottom strip): "${marketing.front_subtext}"`);
+  if (marketing?.back_specs) meta.push(`SPECS BADGE (small, baked above the bottom strip — Age / duration / players): "${marketing.back_specs}"`);
   if (company?.company_name) meta.push(`Publisher (logo will be baked TOP-LEFT): ${company.company_name}`);
   if (company?.cover_design_brief) meta.push(`Publisher cover design brief (always-on house style): ${company.cover_design_brief}`);
   if (meta.length) {
@@ -120,12 +123,9 @@ export function composeBackPrompt(args: {
   const primaryQr = (qrCodes ?? []).find((q) => q.is_primary);
   const secondaryQrs = (qrCodes ?? []).filter((q) => !q.is_primary);
   const copyDeck: string[] = [];
-  if (back?.back_teaser) copyDeck.push(`TEASER: "${back.back_teaser}"`);
-  if (back?.back_whats_in_box) copyDeck.push(`WHAT'S IN THE BOX: ${back.back_whats_in_box}`);
-  if (back?.back_how_to_play) copyDeck.push(`HOW TO PLAY: ${back.back_how_to_play}`);
-  if (back?.back_feature_bullets) copyDeck.push(`FEATURE BULLETS:\n${back.back_feature_bullets}`);
-  if (back?.back_specs) copyDeck.push(`SPECS: ${back.back_specs}`);
-  if (back?.back_content_note) copyDeck.push(`CONTENT NOTE: ${back.back_content_note}`);
+  if (back?.back_teaser) copyDeck.push(`TEASER (ends with arrow → primary QR; YouTube teaser must match): "${back.back_teaser}"`);
+  if (back?.back_whats_in_box) copyDeck.push(`CONTENTS: ${back.back_whats_in_box}`);
+  if (back?.back_specs) copyDeck.push(`SPECS (Age / duration / players): ${back.back_specs}`);
   if (back?.back_footer_text) copyDeck.push(`FOOTER LINE: "${back.back_footer_text}"`);
   if (company?.company_name) copyDeck.push(`PUBLISHER: ${company.company_name}${company.tagline ? ` — "${company.tagline}"` : ""}`);
   if (company?.address) copyDeck.push(`ADDRESS (printed in bottom strip): ${company.address}`);
