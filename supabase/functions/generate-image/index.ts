@@ -80,6 +80,11 @@ interface Body {
   targetId?: string;
   aspect?: "portrait" | "landscape" | "square";
   quality?: Quality;
+  /** Optional brand/style reference image URL. When set, the image model
+   *  receives it as a real vision input (OpenAI images/edits or Gemini
+   *  inlineData), so the output inherits the same publisher's visual identity. */
+  referenceImageUrl?: string | null;
+  referenceLabel?: string | null;
   /**
    * When "background", we insert a pending image_generations row, return its
    * id immediately, and finish the work via EdgeRuntime.waitUntil. The browser
@@ -90,6 +95,27 @@ interface Body {
    * call sites keep working untouched.
    */
   mode?: "sync" | "background";
+}
+
+/** Fetch a reference image and return its bytes + mime, with size guard. */
+async function fetchReferenceImage(url: string): Promise<{ bytes: Uint8Array; mime: string } | null> {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) {
+      console.warn(`reference image fetch failed: ${r.status} ${url}`);
+      return null;
+    }
+    const buf = new Uint8Array(await r.arrayBuffer());
+    if (buf.byteLength > 8 * 1024 * 1024) {
+      console.warn(`reference image too large (${buf.byteLength} bytes), skipping`);
+      return null;
+    }
+    const mime = r.headers.get("content-type")?.split(";")[0]?.trim() || "image/png";
+    return { bytes: buf, mime };
+  } catch (e) {
+    console.warn("reference image fetch threw", e);
+    return null;
+  }
 }
 
 // Maps the request target to the source_* columns on image_generations so the
