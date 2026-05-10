@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/lib/auth";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -112,7 +112,7 @@ LAYOUT REQUIREMENTS (these are PRINT-CRITICAL — overlays will be added later):
 
 export function BarcodeAndBackPanel({ projectId }: { projectId: string }) {
   const qc = useQueryClient();
-  const { user } = useAuth();
+  
   const batch = useBatchProgress();
   const [generatingBarcode, setGeneratingBarcode] = useState(false);
   const [generatingBack, setGeneratingBack] = useState(false);
