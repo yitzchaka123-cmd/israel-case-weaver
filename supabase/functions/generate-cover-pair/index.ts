@@ -21,6 +21,8 @@ interface Body {
   combinedPrompt: string;
   referenceImageUrl?: string | null;
   referenceLabel?: string | null;
+  /** Optional in-game scene URLs to attach as additional reference images. */
+  inGameSceneUrls?: string[];
   quality?: "low" | "medium" | "high";
 }
 
@@ -88,12 +90,15 @@ async function runPair(body: Body, userId: string | null, frontJobId: string, ba
   }
 
   const reference = body.referenceImageUrl ? await fetchReferenceImage(body.referenceImageUrl) : null;
+  const sceneUrls = (body.inGameSceneUrls ?? []).slice(0, 4);
+  const sceneRefs = (await Promise.all(sceneUrls.map((u) => fetchReferenceImage(u)))).filter(Boolean) as Array<{ bytes: Uint8Array; mime: string }>;
   const size = "1024x1536";
   const quality = body.quality ?? "high";
+  const useEdits = !!reference || sceneRefs.length > 0;
 
   let oResp: Response;
   try {
-    if (reference) {
+    if (useEdits) {
       const form = new FormData();
       form.append("model", model);
       form.append("prompt", body.combinedPrompt);
@@ -102,11 +107,14 @@ async function runPair(body: Body, userId: string | null, frontJobId: string, ba
       form.append("n", "2");
       form.append("output_format", "jpeg");
       form.append("output_compression", "90");
-      form.append(
-        "image",
-        new Blob([reference.bytes], { type: reference.mime }),
-        `reference.${reference.mime.split("/")[1] ?? "png"}`,
-      );
+      const allRefs = [...(reference ? [reference] : []), ...sceneRefs];
+      allRefs.forEach((ref, idx) => {
+        form.append(
+          "image[]",
+          new Blob([ref.bytes], { type: ref.mime }),
+          `ref-${idx}.${ref.mime.split("/")[1] ?? "png"}`,
+        );
+      });
       oResp = await fetch("https://api.openai.com/v1/images/edits", {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}` },

@@ -12,12 +12,7 @@ import { useActiveCompanyProfile } from "@/lib/useActiveCompanyProfile";
 import { toast } from "sonner";
 
 type CopyField =
-  | "front_title_note"
-  | "tagline"
   | "front_subtext"
-  | "front_bottom_explanation"
-  | "front_company_slogan"
-  | "front_logo_note"
   | "back_headline"
   | "back_teaser"
   | "back_body"
@@ -42,12 +37,7 @@ interface Marketing {
 
 
 const FRONT_FIELDS: Array<{ key: CopyField; label: string; helper: string; rows: number; multiline: boolean }> = [
-  { key: "front_title_note", label: "Title + tagline + hook lockup brief", helper: "Graphic-design instructions for the whole top-of-cover wordmark group — typography family/weight/treatment for the title, how the tagline sits under it (size, alignment, color), and where the front hook goes relative to the lockup.", rows: 3, multiline: true },
-  { key: "tagline", label: "Tagline under title", helper: "Short line directly under the game name — under 9 words.", rows: 1, multiline: false },
-  { key: "front_subtext", label: "Front hook / subtext", helper: "1–2 lines selling the case premise.", rows: 3, multiline: true },
-  { key: "front_bottom_explanation", label: "Bottom explanation", helper: "Short bottom-front explanation of what the boxed game is.", rows: 3, multiline: true },
-  { key: "front_company_slogan", label: "Company slogan", helper: "Brand slogan for the cover; can use the company profile tagline.", rows: 1, multiline: false },
-  { key: "front_logo_note", label: "Logo / brand note", helper: "Instruction for including the company logo on the front layout.", rows: 2, multiline: true },
+  { key: "front_subtext", label: "Bottom paragraph", helper: "Single paragraph baked across the bottom of the front cover. Title, subtitle, and brand logo are wired automatically — this is the only front-cover copy field.", rows: 4, multiline: true },
 ];
 
 const BACK_FIELDS: Array<{ key: CopyField; label: string; helper: string; rows: number; multiline: boolean }> = [
@@ -69,12 +59,7 @@ const QR_FIELDS: Array<{ key: CopyField; label: string; helper: string }> = [
 ];
 
 const EMPTY_FORM: Record<CopyField, string> = {
-  front_title_note: "",
-  tagline: "",
   front_subtext: "",
-  front_bottom_explanation: "",
-  front_company_slogan: "",
-  front_logo_note: "",
   back_headline: "",
   back_teaser: "",
   back_body: "",

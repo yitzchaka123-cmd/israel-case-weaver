@@ -180,7 +180,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   useEffect(() => {
     const url = project?.cover_image_url;
     if (!url || url.includes("cover-final-") || bakingFrontRef.current.has(url)) return;
-    if (!project?.title && !project?.subtitle && !company?.logo_url && !marketing?.front_company_slogan && !marketing?.front_subtext) return;
+    if (!project?.title && !project?.subtitle && !company?.logo_url && !marketing?.front_subtext) return;
     bakingFrontRef.current.add(url);
     void (async () => {
       try {
@@ -190,8 +190,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
           title: project?.title ?? null,
           subtitle: project?.subtitle ?? null,
           logoUrl: company?.logo_url ?? null,
-          companySlogan: marketing?.front_company_slogan ?? null,
-          frontSubtext: marketing?.front_subtext ?? null,
+          bottomParagraph: marketing?.front_subtext ?? null,
         });
         await supabase.from("projects").update({ cover_image_url: finalUrl }).eq("id", projectId);
       } catch (e) {
@@ -199,7 +198,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
         bakingFrontRef.current.delete(url);
       }
     })();
-  }, [project?.cover_image_url, project?.title, project?.subtitle, company?.logo_url, marketing?.front_company_slogan, marketing?.front_subtext, projectId]);
+  }, [project?.cover_image_url, project?.title, project?.subtitle, company?.logo_url, marketing?.front_subtext, projectId]);
 
   const handleRebakeCover = async () => {
     if (!project?.cover_image_url) return;
@@ -211,8 +210,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
         title: project?.title ?? null,
         subtitle: project?.subtitle ?? null,
         logoUrl: company?.logo_url ?? null,
-        companySlogan: marketing?.front_company_slogan ?? null,
-        frontSubtext: marketing?.front_subtext ?? null,
+        bottomParagraph: marketing?.front_subtext ?? null,
       });
       await supabase.from("projects").update({ cover_image_url: finalUrl }).eq("id", projectId);
       toast.success("Cover re-baked with latest title, subtitle & logo");
@@ -248,6 +246,17 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
     }
     setGeneratingCover(true);
     try {
+      // Pull the latest 4 in-game scene images (if any) to attach as additional refs.
+      const { data: sceneRows } = await supabase
+        .from("media_assets")
+        .select("url")
+        .eq("project_id", projectId)
+        .eq("category", "in-game-scene")
+        .not("url", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(4);
+      const sceneUrls = (sceneRows ?? []).map((r) => r.url).filter((u): u is string => !!u);
+
       const frontHalf = buildFrontPrompt({
         basePrompt: prompt,
         project,
@@ -265,6 +274,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
         backPrompt: backHalf,
         publisherName: company?.company_name ?? null,
         hasReference: !!effectiveReferenceUrl,
+        sceneCount: sceneUrls.length,
       });
 
       const quality = getStoredImageQuality("marketing-cover", "high");
@@ -280,6 +290,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
           combinedPrompt,
           referenceImageUrl: effectiveReferenceUrl,
           referenceLabel: company?.company_name ?? null,
+          inGameSceneUrls: sceneUrls,
           quality,
         }),
       });
@@ -293,7 +304,8 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
         { id: json.backJobId as string, label: "Back cover" },
       ].filter((s) => Boolean(s.id));
       if (slots.length) batch?.start(slots, "Front + back cover");
-      toast.success("Generating front + back together — this takes ~60–90s. You can leave this page.");
+      const sceneNote = sceneUrls.length ? ` (with ${sceneUrls.length} in-game scenes attached)` : "";
+      toast.success(`Generating front + back together${sceneNote} — ~60–90s. You can leave this page.`);
       qc.invalidateQueries({ queryKey: ["project-cover-only", projectId] });
     } finally {
       setGeneratingCover(false);
