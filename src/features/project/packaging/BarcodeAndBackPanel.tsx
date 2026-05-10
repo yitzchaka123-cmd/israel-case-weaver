@@ -627,6 +627,13 @@ Square-ish print panel, no on-image text, no logos, no UI overlays. Will be crop
         </div>
       </div>
 
+      {/* In-game scenes (4) — generated as one batch, fed into back cover */}
+      <InGameScenesPanel
+        projectId={projectId}
+        brandReferenceUrl={(company?.reference_covers ?? []).find((r) => r.is_default)?.url ?? null}
+        brandLabel={company?.company_name ?? null}
+      />
+
       {/* Back cover generator */}
       <div className="rounded-xl border bg-muted/30 p-4 space-y-3">
         <div className="flex items-center gap-2 text-sm font-medium">
