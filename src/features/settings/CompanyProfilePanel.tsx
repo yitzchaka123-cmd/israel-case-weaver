@@ -229,6 +229,13 @@ function ProfileEditor({
     update("reference_covers", next);
   };
 
+  const setDefaultReference = (idx: number) => {
+    const list = form.reference_covers ?? [];
+    const wasDefault = !!list[idx]?.is_default;
+    const next = list.map((r, i) => ({ ...r, is_default: !wasDefault && i === idx }));
+    update("reference_covers", next);
+  };
+
   const save = async () => {
     setSaving(true);
     const payload = { ...form };
@@ -365,7 +372,7 @@ function ProfileEditor({
         ) : (
           <div className="grid sm:grid-cols-2 gap-3">
             {(form.reference_covers ?? []).map((r, i) => (
-              <div key={`${r.url}-${i}`} className="rounded-xl border bg-card p-3 flex gap-3">
+              <div key={`${r.url}-${i}`} className={`rounded-xl border bg-card p-3 flex gap-3 ${r.is_default ? "border-accent ring-2 ring-accent/30" : ""}`}>
                 <img src={r.url} alt={r.label ?? `Reference ${i + 1}`} className="h-28 w-20 object-cover rounded border bg-muted shrink-0" />
                 <div className="flex-1 min-w-0 space-y-1.5">
                   <div className="flex items-center gap-1">
@@ -375,6 +382,15 @@ function ProfileEditor({
                       placeholder="Label"
                       className="text-xs h-7"
                     />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={`h-7 w-7 ${r.is_default ? "text-accent" : "text-muted-foreground hover:text-accent"}`}
+                      title={r.is_default ? "House default — used when a case has no reference picked" : "Make house default"}
+                      onClick={() => setDefaultReference(i)}
+                    >
+                      <Star className={`h-3.5 w-3.5 ${r.is_default ? "fill-accent" : ""}`} />
+                    </Button>
                     <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={() => removeReference(i)}>
                       <X className="h-3.5 w-3.5" />
                     </Button>

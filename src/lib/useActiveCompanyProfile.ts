@@ -11,6 +11,7 @@ export interface ReferenceCover {
   url: string;
   label?: string | null;
   design_notes?: string | null;
+  is_default?: boolean;
 }
 
 export interface CompanyProfileV2 {
