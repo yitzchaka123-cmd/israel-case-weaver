@@ -652,11 +652,25 @@ Square-ish print panel, no on-image text, no logos, no UI overlays. Will be crop
             )}
           </div>
           <div className="space-y-3">
+            <div className="rounded-md border border-accent/40 bg-accent/5 px-3 py-2 text-xs">
+              <div className="font-medium">Back cover is now generated together with the front.</div>
+              <div className="text-muted-foreground mt-0.5">
+                One gpt-image-2 call returns both halves so they share style. Edit the back-cover art-direction prompt below — it's read by the combined generator in <strong>Cover &amp; Visuals</strong>.
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-2 h-7 gap-1.5 text-[11px]"
+                onClick={() => document.getElementById("packaging-cover-visuals")?.scrollIntoView({ behavior: "smooth" })}
+              >
+                <Wand2 className="h-3 w-3" /> Go to Cover &amp; Visuals
+              </Button>
+            </div>
             {!backReady && (
               <div className="rounded-md border border-amber-300/50 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-xs flex items-start gap-2">
                 <AlertTriangle className="h-3.5 w-3.5 text-amber-600 mt-0.5 shrink-0" />
                 <div>
-                  <div className="font-medium text-amber-800 dark:text-amber-200">Need these before generating:</div>
+                  <div className="font-medium text-amber-800 dark:text-amber-200">Need these before the combined generator runs:</div>
                   <ul className="text-amber-800/80 dark:text-amber-200/80 mt-0.5 list-disc list-inside">
                     {backMissing.map((m) => <li key={m}>{m}</li>)}
                   </ul>
@@ -672,33 +686,6 @@ Square-ish print panel, no on-image text, no logos, no UI overlays. Will be crop
               prompt={promptDraft}
               onChange={persistPrompt}
             />
-            <ImageModelPicker surface="marketing-back" defaultModel="chatgpt-image-2" />
-            <div className="flex items-center justify-between gap-2 rounded-lg border bg-surface/70 p-2">
-              <span className="text-xs font-medium text-muted-foreground">Output type</span>
-              <div className="inline-flex rounded-md border bg-muted/40 p-0.5">
-                {OUTPUT_TYPES.map((option) => (
-                  <button key={option.value} type="button" onClick={() => setBackOutputType(option.value)}
-                    className={`h-7 rounded px-2 text-xs font-medium transition ${backOutputType === option.value ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"}`}>
-                    {option.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex items-center justify-between gap-2 rounded-lg border bg-surface/70 p-2">
-              <span className="text-xs font-medium text-muted-foreground">Generate options</span>
-              <div className="inline-flex rounded-md border bg-muted/40 p-0.5">
-                {([1, 2, 4] as const).map((count) => (
-                  <button key={count} type="button" onClick={() => setGenerateCount(count)}
-                    className={`h-7 min-w-8 rounded px-2 text-xs font-medium transition ${generateCount === count ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"}`}>
-                    {count}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <Button onClick={handleGenerateBack} disabled={generatingBack || !backReady || !promptDraft.trim()} size="sm" className="w-full gap-1.5">
-              {generatingBack ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-              {data?.back_cover_url ? "Generate more back-cover options" : "Generate back-cover options"}
-            </Button>
           </div>
         </div>
 

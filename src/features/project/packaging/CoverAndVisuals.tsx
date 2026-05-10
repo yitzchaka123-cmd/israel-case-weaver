@@ -19,6 +19,8 @@ import { fireBackgroundImage } from "@/features/project/fireBackgroundImage";
 import { useBatchProgress } from "./BatchProgressContext";
 import { bakeFrontCover } from "./bakeCover";
 import { useActiveCompanyProfile } from "@/lib/useActiveCompanyProfile";
+import { composeFrontPrompt as buildFrontPrompt, composeBackPrompt, composeCoverPairPrompt } from "./composePrompts";
+
 import { Copy, Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2, Sparkles, Wand2, AlertTriangle, Download, Star } from "lucide-react";
 import { downloadAsset, slugify } from "@/lib/utils";
 import { toast } from "sonner";
@@ -81,14 +83,26 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   };
 
   const { data: marketing } = useQuery({
-    queryKey: ["project-marketing-front", projectId],
+    queryKey: ["project-marketing-pair", projectId],
     queryFn: async () => {
       const { data } = await supabase
         .from("project_marketing")
-        .select("front_subtext, front_company_slogan, front_logo_note, front_title_note, front_bottom_explanation, tagline")
+        .select("front_subtext, front_company_slogan, front_logo_note, front_title_note, front_bottom_explanation, tagline, back_headline, back_body, back_cover_prompt, back_teaser, back_whats_in_box, back_how_to_play, back_feature_bullets, back_specs, back_content_note, back_footer_text, barcode_value, barcode_url, back_cover_url")
         .eq("project_id", projectId)
         .maybeSingle();
       return data;
+    },
+  });
+
+  const { data: qrCodes } = useQuery({
+    queryKey: ["project-qr-codes-cover", projectId],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("project_qr_codes")
+        .select("id, label, target_url, qr_image_url, is_primary, position")
+        .eq("project_id", projectId)
+        .order("position", { ascending: true });
+      return data ?? [];
     },
   });
 
@@ -212,84 +226,74 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const cover = project?.cover_image_url;
   const extras = (assets ?? []).filter((a) => a.category === "marketing-extra" || a.category === "back" || a.category === "marketing-back");
 
+  // Combined front+back validation — both halves must be ready before we
+  // fire the single gpt-image-2 call.
   const frontMissing: string[] = [];
   if (!project?.title?.trim()) frontMissing.push("Title (Overview)");
-  // Subtitle is recommended but not required; warn rather than block.
+  if (!marketing?.barcode_url) frontMissing.push("Barcode (Barcode & Back)");
+  if (!(qrCodes ?? []).some((q) => q.is_primary && q.qr_image_url)) frontMissing.push("Primary QR (Barcode & Back)");
+  if (!marketing?.back_headline) frontMissing.push("Back headline (Box Text)");
+  if (!marketing?.back_body) frontMissing.push("Back body copy (Box Text)");
+  if (!company?.company_name) frontMissing.push("Company name (Settings)");
+  if (!company?.logo_url) frontMissing.push("Company logo (Settings)");
   const frontReady = frontMissing.length === 0;
 
   const houseDefaultRef = (company?.reference_covers ?? []).find((r) => r.is_default) ?? null;
   const effectiveReferenceUrl = project?.cover_reference_url || houseDefaultRef?.url || null;
-  const effectiveReferenceNotes = project?.cover_reference_url
-    ? project?.cover_reference_notes
-    : (houseDefaultRef?.design_notes ?? null);
-
-  const composeFrontPrompt = (basePrompt: string): string => {
-    const parts: string[] = [];
-    if (effectiveReferenceUrl) {
-      const publisher = company?.company_name ? `publisher: ${company.company_name}` : "the same publisher";
-      parts.push(
-        `BRAND CONTINUITY — CRITICAL: This cover is a NEW release in the SAME publisher line as the attached REFERENCE IMAGE (${publisher}). Treat the reference as our house style guide. Match its illustration technique, color palette, lighting, typography hierarchy, framing, paper/print finish and overall mood. Do NOT copy its scene or subject — tell THIS case's story with the same brand fingerprint, so the two boxes sit side-by-side as siblings on a shelf.`,
-      );
-      if (effectiveReferenceNotes) parts.push(`Reference notes: ${effectiveReferenceNotes}`);
-      parts.push("");
-    }
-    parts.push(basePrompt.trim());
-    const meta: string[] = [];
-    if (project?.title) meta.push(`TITLE (must appear large on cover): "${project.title}"`);
-    if (project?.subtitle) meta.push(`SUBTITLE: "${project.subtitle}"`);
-    if (project?.mystery_type) meta.push(`Mystery type: ${project.mystery_type}`);
-    if (project?.setting) meta.push(`Setting: ${project.setting}`);
-    if (project?.genre) meta.push(`Genre: ${project.genre}`);
-    if (project?.year) meta.push(`Year: ${project.year}`);
-    if (marketing?.tagline) meta.push(`Tagline: "${marketing.tagline}"`);
-    if (marketing?.front_subtext) meta.push(`Front subtext block: "${marketing.front_subtext}"`);
-    if (marketing?.front_company_slogan) meta.push(`Company slogan to leave room for: "${marketing.front_company_slogan}"`);
-    if (marketing?.front_logo_note) meta.push(`Logo placement: ${marketing.front_logo_note}`);
-    if (marketing?.front_title_note) meta.push(`Title + tagline + hook lockup brief (graphic-design instructions for the whole top-of-cover wordmark group): ${marketing.front_title_note}`);
-    if (marketing?.front_bottom_explanation) meta.push(`Bottom strip text: "${marketing.front_bottom_explanation}"`);
-    if (company?.company_name) meta.push(`Publisher: ${company.company_name}`);
-    if (company?.cover_design_brief) meta.push(`Publisher cover design brief (always-on house style): ${company.cover_design_brief}`);
-    if (meta.length) {
-      parts.push("");
-      parts.push("BOX-COVER COPY DECK (leave clean zones for these — they will be baked on top):");
-      parts.push(meta.map((m) => `- ${m}`).join("\n"));
-    }
-    return parts.filter((p) => p !== undefined && p !== null).join("\n");
-  };
 
   const handleGenerateCover = async (prompt: string) => {
     if (!frontReady) {
-      toast.error(`Fill in: ${frontMissing.join(", ")} before generating the front cover.`, { duration: 8000 });
+      toast.error(`Missing: ${frontMissing.join(", ")}.`, { duration: 10000 });
       return;
     }
-    const finalPrompt = composeFrontPrompt(prompt);
     setGeneratingCover(true);
     try {
-      if (coverOutputType === "image" || coverOutputType === "both") {
-        const modelOverride = getStoredImageModel("marketing-cover", "chatgpt-image-2");
-        const quality = getStoredImageQuality("marketing-cover", "high");
-        const result = await fireBackgroundImage({
+      const frontHalf = buildFrontPrompt({
+        basePrompt: prompt,
+        project,
+        marketing,
+        company,
+      });
+      const backHalf = composeBackPrompt({
+        draft: marketing?.back_cover_prompt ?? "",
+        back: marketing,
+        company,
+        qrCodes: qrCodes ?? [],
+      });
+      const combinedPrompt = composeCoverPairPrompt({
+        frontPrompt: frontHalf,
+        backPrompt: backHalf,
+        publisherName: company?.company_name ?? null,
+        hasReference: !!effectiveReferenceUrl,
+      });
+
+      const quality = getStoredImageQuality("marketing-cover", "high");
+      const { data: { session } } = await supabase.auth.getSession();
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-cover-pair`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({
           projectId,
-          category: "cover",
-          target: "project-cover",
-          prompt: finalPrompt,
-          modelOverride,
-          aspect: "portrait",
-          quality,
+          combinedPrompt,
           referenceImageUrl: effectiveReferenceUrl,
           referenceLabel: company?.company_name ?? null,
-        });
-        if (!result.ok) {
-          toast.error(result.error ?? "Could not start cover generation", { duration: 10000 });
-          if (coverOutputType === "image") return;
-        } else if (result.jobId) {
-          batch?.start([{ id: result.jobId, label: "Front cover" }], "Front cover");
-        }
+          quality,
+        }),
+      });
+      const json = await resp.json().catch(() => ({} as Record<string, unknown>));
+      if (!resp.ok) {
+        toast.error((json.error as string) ?? `Could not start (${resp.status})`, { duration: 10000 });
+        return;
       }
-      if (coverOutputType === "document" || coverOutputType === "both") {
-        await supabase.from("media_assets").insert({ project_id: projectId, category: "cover", title: "Cover document prompt", prompt: finalPrompt, provider: "direct-model-file", asset_type: "document", document_format: "pdf", generation_mode: "direct_model_file", status: "failed", error_message: "Create a document row to generate a real file directly with the selected document model." } as never);
-      }
-      toast.success(coverOutputType === "document" ? "Cover document prompt saved" : "Generating cover in background — feel free to leave this page");
+      const slots = [
+        { id: json.frontJobId as string, label: "Front cover" },
+        { id: json.backJobId as string, label: "Back cover" },
+      ].filter((s) => Boolean(s.id));
+      if (slots.length) batch?.start(slots, "Front + back cover");
+      toast.success("Generating front + back together — this takes ~60–90s. You can leave this page.");
       qc.invalidateQueries({ queryKey: ["project-cover-only", projectId] });
     } finally {
       setGeneratingCover(false);
@@ -397,34 +401,23 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
 
         <div className="rounded-xl border bg-surface/60 p-4 space-y-3">
           <div>
-            <h4 className="font-display text-lg">Generate front cover</h4>
-            <p className="text-xs text-muted-foreground mt-0.5">Updates the real project cover used across the app.</p>
+            <h4 className="font-display text-lg">Generate front + back cover</h4>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              One <strong>gpt-image-2</strong> call returns BOTH the front and back of the box together
+              so they share palette, illustration style and brand fingerprint as siblings on a shelf.
+            </p>
           </div>
           {!frontReady && (
             <div className="rounded-md border border-amber-300/50 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-xs flex items-start gap-2">
               <AlertTriangle className="h-3.5 w-3.5 text-amber-600 mt-0.5 shrink-0" />
               <div>
-                <div className="font-medium text-amber-800 dark:text-amber-200">Missing required fields</div>
-                <div className="text-amber-800/80 dark:text-amber-200/80 mt-0.5">
-                  Fill in <strong>{frontMissing.join(", ")}</strong> on the Overview before generating the front cover.
-                </div>
+                <div className="font-medium text-amber-800 dark:text-amber-200">Need these before generating both covers:</div>
+                <ul className="text-amber-800/80 dark:text-amber-200/80 mt-0.5 list-disc list-inside">
+                  {frontMissing.map((m) => <li key={m}>{m}</li>)}
+                </ul>
               </div>
             </div>
           )}
-          <div className="space-y-1.5">
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Image model</Label>
-            <ImageModelPicker surface="marketing-cover" defaultModel="chatgpt-image-2" />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Output type</Label>
-            <div className="inline-flex rounded-md border bg-muted/40 p-0.5">
-              {OUTPUT_TYPES.map((option) => (
-                <button key={option.value} type="button" onClick={() => setCoverOutputType(option.value)} className={`h-8 rounded px-3 text-xs font-medium transition ${coverOutputType === option.value ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground"}`}>
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
           {(company?.reference_covers ?? []).length > 0 && (
             <div className="space-y-1.5">
               <Label className="text-xs uppercase tracking-wider text-muted-foreground font-medium">Reference cover (publisher gallery)</Label>
@@ -458,9 +451,9 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
                 })}
               </div>
               <p className="text-[10px] text-muted-foreground">
-                {houseDefaultRef && !project?.cover_reference_url
-                  ? `No per-case pick — falling back to house default (${houseDefaultRef.label ?? "starred reference"}).`
-                  : "The selected reference's URL + the publisher's design brief are passed to the cover prompt so the generator emulates that layout."}
+                {effectiveReferenceUrl
+                  ? "Reference is sent as a real vision input to gpt-image-2 — both halves of the pair inherit its style."
+                  : "No reference selected — pick one for tighter brand continuity."}
               </p>
             </div>
           )}
@@ -475,7 +468,7 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
           />
           <Button onClick={() => handleGenerateCover(coverPromptDraft)} disabled={generatingCover || !coverPromptDraft.trim() || !frontReady} className="w-full gap-2">
             {generatingCover ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-            Generate {coverOutputType === "both" ? "both" : coverOutputType}
+            Generate front + back cover (single gpt-image-2 call)
           </Button>
           <ImageHistoryStrip
             items={coverHistory ?? []}
