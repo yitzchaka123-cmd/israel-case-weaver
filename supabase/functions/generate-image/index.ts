@@ -414,7 +414,7 @@ async function runImageGeneration(req: Request): Promise<Response> {
     } else {
       const hasGeminiDirect = !!Deno.env.get("GEMINI_API_KEY");
       const FALLBACK_MODEL = "google/gemini-2.5-flash-image";
-      const tryGenerate = async (m: string) => generateImage({ prompt: finalPrompt, model: m });
+      const tryGenerate = async (m: string) => generateImage({ prompt: finalPrompt, model: m, referenceImage: referenceImage ?? undefined });
 
       try {
         const result = await tryGenerate(model);
