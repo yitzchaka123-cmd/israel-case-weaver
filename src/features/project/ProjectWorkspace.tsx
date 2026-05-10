@@ -15,7 +15,7 @@ import { EnvelopesSection } from "./EnvelopesSection";
 import { HintsSection } from "./HintsSection";
 import { MediaSection } from "./MediaSection";
 import { MediaLibrarySection } from "./MediaLibrarySection";
-import { MarketingSection } from "./MarketingSection";
+import { PackagingSection } from "./PackagingSection";
 import { ExportMenu } from "./ExportMenu";
 import { PhaseStatusBar } from "./PhaseStatusBar";
 import { NotificationBell } from "./notifications/NotificationBell";
@@ -361,7 +361,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
             <HintsSection projectId={projectId} />
           </TabsContent>
           <TabsContent value="marketing" className="h-full overflow-auto m-0">
-            <MarketingSection projectId={projectId} />
+            <PackagingSection projectId={projectId} />
           </TabsContent>
           <TabsContent value="generation" className="h-full overflow-auto m-0">
             <MediaSection projectId={projectId} />
