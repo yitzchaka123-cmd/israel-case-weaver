@@ -13,12 +13,8 @@ export interface ProjectMeta {
 }
 
 export interface FrontMarketingMeta {
-  tagline?: string | null;
+  /** The single bottom paragraph (was `front_subtext`). */
   front_subtext?: string | null;
-  front_company_slogan?: string | null;
-  front_logo_note?: string | null;
-  front_title_note?: string | null;
-  front_bottom_explanation?: string | null;
 }
 
 export interface BackMarketingMeta {
@@ -59,8 +55,9 @@ export const FRONT_LAYOUT_SUFFIX = `
 LAYOUT REQUIREMENTS (PRINT-CRITICAL — overlays will be added later):
 - Vertical 3:4 print-ready canvas, atmospheric, evocative.
 - Reserve a CLEAN UNTEXTURED rectangle at TOP-CENTER (~30% × 12%) for the title wordmark.
-- Reserve a CLEAN UNTEXTURED strip across the BOTTOM (~100% × 10%) for the subtitle / company slogan.
+- Reserve a CLEAN UNTEXTURED rectangle directly under the title (~60% × 6%) for the subtitle.
 - Reserve a CLEAN UNTEXTURED rectangle in the TOP-LEFT (~18% × 12%) for the publisher logo.
+- Reserve a CLEAN UNTEXTURED strip across the BOTTOM (~100% × 14%) for the bottom paragraph.
 - No text rendered into the artwork itself — typography is added in post.`;
 
 export const BACK_LAYOUT_SUFFIX = `
@@ -88,19 +85,14 @@ export function composeFrontPrompt(args: {
   const parts: string[] = [];
   parts.push(basePrompt.trim() || "Atmospheric front cover for a boxed murder-mystery game.");
   const meta: string[] = [];
-  if (project?.title) meta.push(`TITLE (must appear large on cover): "${project.title}"`);
-  if (project?.subtitle) meta.push(`SUBTITLE: "${project.subtitle}"`);
+  if (project?.title) meta.push(`TITLE (must appear large on cover, top-center): "${project.title}"`);
+  if (project?.subtitle) meta.push(`SUBTITLE (directly under the title): "${project.subtitle}"`);
   if (project?.mystery_type) meta.push(`Mystery type: ${project.mystery_type}`);
   if (project?.setting) meta.push(`Setting: ${project.setting}`);
   if (project?.genre) meta.push(`Genre: ${project.genre}`);
   if (project?.year) meta.push(`Year: ${project.year}`);
-  if (marketing?.tagline) meta.push(`Tagline: "${marketing.tagline}"`);
-  if (marketing?.front_subtext) meta.push(`Front subtext block: "${marketing.front_subtext}"`);
-  if (marketing?.front_company_slogan) meta.push(`Company slogan to leave room for: "${marketing.front_company_slogan}"`);
-  if (marketing?.front_logo_note) meta.push(`Logo placement: ${marketing.front_logo_note}`);
-  if (marketing?.front_title_note) meta.push(`Title + tagline lockup brief: ${marketing.front_title_note}`);
-  if (marketing?.front_bottom_explanation) meta.push(`Bottom strip text: "${marketing.front_bottom_explanation}"`);
-  if (company?.company_name) meta.push(`Publisher: ${company.company_name}`);
+  if (marketing?.front_subtext) meta.push(`BOTTOM PARAGRAPH (baked across the bottom strip): "${marketing.front_subtext}"`);
+  if (company?.company_name) meta.push(`Publisher (logo will be baked TOP-LEFT): ${company.company_name}`);
   if (company?.cover_design_brief) meta.push(`Publisher cover design brief (always-on house style): ${company.cover_design_brief}`);
   if (meta.length) {
     parts.push("");
@@ -170,17 +162,34 @@ export function composeCoverPairPrompt(args: {
   backPrompt: string;
   publisherName: string | null;
   hasReference: boolean;
+  /** Number of in-game scene reference images attached after the brand ref. */
+  sceneCount?: number;
 }): string {
-  const { frontPrompt, backPrompt, publisherName, hasReference } = args;
+  const { frontPrompt, backPrompt, publisherName, hasReference, sceneCount = 0 } = args;
   const publisher = publisherName ? `publisher: ${publisherName}` : "the same publisher";
-  const refLine = hasReference
-    ? `Both images must share the SAME palette, lighting, illustration technique, typography mood, paper finish and brand fingerprint as the attached REFERENCE IMAGE (${publisher}). Treat the reference as the house style guide. Do NOT copy its scene — tell THIS case's story with the same brand fingerprint.`
-    : `Both images must share the SAME palette, lighting, illustration technique, typography mood and brand fingerprint (${publisher}).`;
+  const refLines: string[] = [];
+  if (hasReference) {
+    refLines.push(
+      `REFERENCE 1 (BRAND HOUSE STYLE — ${publisher}): match its palette, lighting, illustration technique, typography mood and paper finish. Do NOT copy its scene; tell THIS case's story with the same brand fingerprint.`,
+    );
+  }
+  if (sceneCount > 0) {
+    const start = hasReference ? 2 : 1;
+    const end = start + sceneCount - 1;
+    refLines.push(
+      `REFERENCES ${start}–${end} (${sceneCount} IN-GAME SCENES from this case): these images already exist INSIDE this case's world. The FRONT cover may quote a hero detail from them; the BACK cover MUST visually unify with them — same palette, same lighting, same world.`,
+    );
+  }
+  if (refLines.length === 0) {
+    refLines.push(
+      `Both images must share the SAME palette, lighting, illustration technique, typography mood and brand fingerprint (${publisher}).`,
+    );
+  }
 
   return `You are producing a TWO-IMAGE BATCH for the FRONT and BACK of the SAME boxed murder-mystery game.
 
-CRITICAL — BRAND CONTINUITY:
-${refLine}
+CRITICAL — BRAND & WORLD CONTINUITY:
+${refLines.join("\n")}
 Both images must look like the front and back of the SAME physical box: same world, same color palette, same illustration technique, same lighting, same paper/print finish, same typographic mood. They will sit on the same shelf together.
 
 ================================
