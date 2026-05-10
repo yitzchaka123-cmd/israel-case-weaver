@@ -143,10 +143,12 @@ Deno.serve(async (req) => {
     const companyBlock = company
       ? `COMPANY PROFILE
 - Company: ${company.company_name ?? ""}
+- Profile language: ${profileLanguage || "(unset)"}
 - Tagline: ${company.tagline ?? ""}
 - Legal: ${company.legal_text ?? ""}
 - Country: ${company.country ?? ""}
-- Age rating: ${company.age_rating ?? ""}`
+- Age rating: ${company.age_rating ?? ""}
+${company.cover_design_brief ? `- Cover design brief (house style): ${company.cover_design_brief}` : ""}`
       : "(No company profile set yet — write generic copy.)";
 
     const frontFields = ["front_title_note", "tagline", "front_subtext", "front_bottom_explanation", "front_company_slogan", "front_logo_note"];
