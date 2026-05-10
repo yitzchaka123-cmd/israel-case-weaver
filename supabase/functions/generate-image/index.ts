@@ -274,11 +274,14 @@ async function runImageGeneration(req: Request): Promise<Response> {
   try {
     userId = await getUserIdFromAuth(req);
     const body = (await req.json()) as Body;
-    const { projectId, prompt, title, category, modelOverride, targetId, aspect, quality } = body;
+    const { projectId, prompt, title, category, modelOverride, targetId, aspect, quality, referenceImageUrl } = body;
     const target: Target = body.target ?? "media";
     projectIdForLog = projectId ?? null;
     targetIdForLog = targetId ?? null;
-    promptForLog = prompt ?? "";
+    promptForLog = referenceImageUrl ? `[brand-ref:${referenceImageUrl.slice(0, 80)}] ${prompt ?? ""}` : (prompt ?? "");
+
+    // Pre-fetch the reference image bytes once; both OpenAI and Gemini paths reuse them.
+    const referenceImage = referenceImageUrl ? await fetchReferenceImage(referenceImageUrl) : null;
 
     if (!projectId || !prompt) {
       return new Response(JSON.stringify({ error: "projectId and prompt required" }), {
