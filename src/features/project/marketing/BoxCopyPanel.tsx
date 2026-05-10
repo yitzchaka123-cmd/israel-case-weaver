@@ -40,12 +40,6 @@ interface Marketing {
   [key: string]: string | Record<string, string> | null;
 }
 
-interface CompanyProfile {
-  company_name: string | null;
-  tagline: string | null;
-  legal_text: string | null;
-  logo_url: string | null;
-}
 
 const FRONT_FIELDS: Array<{ key: CopyField; label: string; helper: string; rows: number; multiline: boolean }> = [
   { key: "front_title_note", label: "Game title lockup note", helper: "How the title should feel visually on the box front.", rows: 2, multiline: true },
