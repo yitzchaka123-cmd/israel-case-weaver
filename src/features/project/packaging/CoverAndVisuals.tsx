@@ -20,7 +20,7 @@ import { useBatchProgress } from "./BatchProgressContext";
 import { bakeFrontCover } from "./bakeCover";
 import { useActiveCompanyProfile } from "@/lib/useActiveCompanyProfile";
 import { composeFrontPrompt as buildFrontPrompt, composeBackPrompt, composeCoverPairPrompt } from "./composePrompts";
-import { getStoredImageQuality } from "@/components/ImageModelPicker";
+
 import { Copy, Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2, Sparkles, Wand2, AlertTriangle, Download, Star } from "lucide-react";
 import { downloadAsset, slugify } from "@/lib/utils";
 import { toast } from "sonner";
