@@ -18,6 +18,7 @@ import { DownloadButton } from "@/components/DownloadButton";
 import { fireBackgroundImage } from "@/features/project/fireBackgroundImage";
 import { useBatchProgress } from "./BatchProgressContext";
 import { bakeFrontCover } from "./bakeCover";
+import { useActiveCompanyProfile } from "@/lib/useActiveCompanyProfile";
 import { Copy, Plus, Trash2, Image as ImageIcon, ExternalLink, Loader2, Sparkles, Wand2, AlertTriangle, Download } from "lucide-react";
 import { downloadAsset, slugify } from "@/lib/utils";
 import { toast } from "sonner";
@@ -60,31 +61,24 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
   const [coverOutputType, setCoverOutputType] = useState<OutputType>("image");
   const [extraOutputType, setExtraOutputType] = useState<OutputType>("image");
 
-  const { data: company } = useQuery({
-    queryKey: ["company-profile-for-front", user?.id],
-    queryFn: async () => {
-      if (!user) return null;
-      const { data } = await supabase
-        .from("company_profiles")
-        .select("logo_url, company_name")
-        .eq("owner_id", user.id)
-        .maybeSingle();
-      return data;
-    },
-    enabled: !!user,
-  });
+  const { data: company } = useActiveCompanyProfile(projectId);
 
   const { data: project } = useQuery({
     queryKey: ["project-cover-only", projectId],
     queryFn: async () => {
       const { data } = await supabase
         .from("projects")
-        .select("title, cover_image_url, uploaded_cover_url, cover_active_version, cover_prompt, cover_effective_model, cover_fallback, ai_provider_images, mystery_type, setting, subtitle, genre, year")
+        .select("title, cover_image_url, uploaded_cover_url, cover_active_version, cover_prompt, cover_effective_model, cover_fallback, ai_provider_images, mystery_type, setting, subtitle, genre, year, cover_reference_url, cover_reference_notes")
         .eq("id", projectId)
         .maybeSingle();
       return data;
     },
   });
+
+  const setCoverReference = async (url: string | null) => {
+    await supabase.from("projects").update({ cover_reference_url: url } as never).eq("id", projectId);
+    qc.invalidateQueries({ queryKey: ["project-cover-only", projectId] });
+  };
 
   const { data: marketing } = useQuery({
     queryKey: ["project-marketing-front", projectId],
@@ -239,6 +233,11 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
     if (marketing?.front_title_note) meta.push(`Title styling note: ${marketing.front_title_note}`);
     if (marketing?.front_bottom_explanation) meta.push(`Bottom strip text: "${marketing.front_bottom_explanation}"`);
     if (company?.company_name) meta.push(`Publisher: ${company.company_name}`);
+    if (company?.cover_design_brief) meta.push(`Publisher cover design brief (always-on house style): ${company.cover_design_brief}`);
+    if (project?.cover_reference_url) {
+      meta.push(`Reference cover to emulate (layout, typography hierarchy, color mood): ${project.cover_reference_url}`);
+      if (project?.cover_reference_notes) meta.push(`Reference notes: ${project.cover_reference_notes}`);
+    }
     if (meta.length) {
       parts.push("");
       parts.push("BOX-COVER COPY DECK (leave clean zones for these — they will be baked on top):");
