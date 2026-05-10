@@ -23,6 +23,10 @@ interface Body {
   referenceLabel?: string | null;
   /** Optional in-game scene URLs to attach as additional reference images. */
   inGameSceneUrls?: string[];
+  /** Primary QR PNG URL — attached so the model preserves the reserved QR zone. */
+  qrImageUrl?: string | null;
+  /** EAN-13 barcode PNG URL — attached so the model preserves the reserved barcode zone. */
+  barcodeImageUrl?: string | null;
   quality?: "low" | "medium" | "high";
 }
 
@@ -92,9 +96,11 @@ async function runPair(body: Body, userId: string | null, frontJobId: string, ba
   const reference = body.referenceImageUrl ? await fetchReferenceImage(body.referenceImageUrl) : null;
   const sceneUrls = (body.inGameSceneUrls ?? []).slice(0, 4);
   const sceneRefs = (await Promise.all(sceneUrls.map((u) => fetchReferenceImage(u)))).filter(Boolean) as Array<{ bytes: Uint8Array; mime: string }>;
+  const qrRef = body.qrImageUrl ? await fetchReferenceImage(body.qrImageUrl) : null;
+  const barcodeRef = body.barcodeImageUrl ? await fetchReferenceImage(body.barcodeImageUrl) : null;
   const size = "1024x1536";
   const quality = body.quality ?? "high";
-  const useEdits = !!reference || sceneRefs.length > 0;
+  const useEdits = !!reference || sceneRefs.length > 0 || !!qrRef || !!barcodeRef;
 
   let oResp: Response;
   try {
@@ -107,7 +113,12 @@ async function runPair(body: Body, userId: string | null, frontJobId: string, ba
       form.append("n", "2");
       form.append("output_format", "jpeg");
       form.append("output_compression", "90");
-      const allRefs = [...(reference ? [reference] : []), ...sceneRefs];
+      const allRefs = [
+        ...(reference ? [reference] : []),
+        ...sceneRefs,
+        ...(qrRef ? [qrRef] : []),
+        ...(barcodeRef ? [barcodeRef] : []),
+      ];
       allRefs.forEach((ref, idx) => {
         form.append(
           "image[]",
