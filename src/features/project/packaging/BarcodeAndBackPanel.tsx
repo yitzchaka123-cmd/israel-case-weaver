@@ -138,19 +138,7 @@ export function BarcodeAndBackPanel({ projectId }: { projectId: string }) {
     },
   });
 
-  const { data: company } = useQuery({
-    queryKey: ["company-profile-for-back", user?.id],
-    queryFn: async (): Promise<CompanyLite | null> => {
-      if (!user) return null;
-      const { data } = await supabase
-        .from("company_profiles")
-        .select("company_name, logo_url, address, legal_text, warning_text, box_footer_line, manufactured_by, distributed_by, tagline")
-        .eq("owner_id", user.id)
-        .maybeSingle();
-      return (data as CompanyLite) ?? null;
-    },
-    enabled: !!user,
-  });
+  const { data: company } = useActiveCompanyProfile(projectId);
 
   const { data } = useQuery({
     queryKey: ["project-marketing-barcode", projectId],
