@@ -434,25 +434,33 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
                   onClick={() => setCoverReference(null)}
                   className={`shrink-0 h-20 w-16 rounded border-2 text-[10px] font-medium flex items-center justify-center text-center px-1 transition ${!project?.cover_reference_url ? "border-accent bg-accent/10 text-accent" : "border-muted bg-muted/30 text-muted-foreground hover:border-foreground/40"}`}
                 >
-                  No reference
+                  {houseDefaultRef ? "Use house default" : "No reference"}
                 </button>
                 {(company!.reference_covers ?? []).map((ref, i) => {
                   const selected = project?.cover_reference_url === ref.url;
+                  const isHouse = !!ref.is_default;
                   return (
                     <button
                       key={ref.url + i}
                       type="button"
                       onClick={() => setCoverReference(ref.url)}
-                      title={ref.label ?? `Reference ${i + 1}`}
-                      className={`shrink-0 h-20 w-16 rounded border-2 overflow-hidden transition ${selected ? "border-accent ring-2 ring-accent/30" : "border-muted hover:border-foreground/40"}`}
+                      title={`${ref.label ?? `Reference ${i + 1}`}${isHouse ? " (house default)" : ""}`}
+                      className={`relative shrink-0 h-20 w-16 rounded border-2 overflow-hidden transition ${selected ? "border-accent ring-2 ring-accent/30" : isHouse ? "border-accent/60" : "border-muted hover:border-foreground/40"}`}
                     >
                       <img src={ref.url} alt={ref.label ?? `Reference ${i + 1}`} className="w-full h-full object-cover" />
+                      {isHouse && (
+                        <span className="absolute top-0.5 right-0.5 bg-accent text-accent-foreground rounded-full h-4 w-4 flex items-center justify-center" title="House default">
+                          <Star className="h-2.5 w-2.5 fill-current" />
+                        </span>
+                      )}
                     </button>
                   );
                 })}
               </div>
               <p className="text-[10px] text-muted-foreground">
-                The selected reference's URL + the publisher's design brief are passed to the cover prompt so the generator emulates that layout.
+                {houseDefaultRef && !project?.cover_reference_url
+                  ? `No per-case pick — falling back to house default (${houseDefaultRef.label ?? "starred reference"}).`
+                  : "The selected reference's URL + the publisher's design brief are passed to the cover prompt so the generator emulates that layout."}
               </p>
             </div>
           )}
