@@ -27,6 +27,7 @@ import { useProjectNotifications } from "@/features/project/notifications/usePro
 import { fireBackgroundImage } from "@/features/project/fireBackgroundImage";
 import { useBatchProgress } from "./BatchProgressContext";
 import { useActiveCompanyProfile } from "@/lib/useActiveCompanyProfile";
+import { InGameScenesPanel } from "./InGameScenesPanel";
 
 type OutputType = "image" | "document" | "both";
 
@@ -625,6 +626,13 @@ Square-ish print panel, no on-image text, no logos, no UI overlays. Will be crop
           )}
         </div>
       </div>
+
+      {/* In-game scenes (4) — generated as one batch, fed into back cover */}
+      <InGameScenesPanel
+        projectId={projectId}
+        brandReferenceUrl={(company?.reference_covers ?? []).find((r) => r.is_default)?.url ?? null}
+        brandLabel={company?.company_name ?? null}
+      />
 
       {/* Back cover generator */}
       <div className="rounded-xl border bg-muted/30 p-4 space-y-3">
