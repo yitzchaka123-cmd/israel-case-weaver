@@ -510,10 +510,16 @@ export function CoverAndVisuals({ projectId }: { projectId: string }) {
             prompt={coverPromptDraft}
             onChange={persistCoverPrompt}
           />
-          <Button onClick={() => handleGenerateCover(coverPromptDraft)} disabled={generatingCover || !coverPromptDraft.trim() || !frontReady} className="w-full gap-2">
-            {generatingCover ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-            Generate front + back cover (single gpt-image-2 call)
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={() => handleGenerateCover(coverPromptDraft)} disabled={generatingCover || !coverPromptDraft.trim() || !frontReady} className="flex-1 gap-2">
+              {generatingCover ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+              Generate front + back cover
+            </Button>
+            <Button variant="outline" onClick={handleViewPrompt} disabled={previewLoading || !coverPromptDraft.trim()} className="gap-2">
+              {previewLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
+              View prompt
+            </Button>
+          </div>
           <ImageHistoryStrip
             items={coverHistory ?? []}
             currentUrl={project?.cover_image_url ?? null}
