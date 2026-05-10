@@ -21,9 +21,13 @@ interface BakeFrontInput {
   baseImageUrl: string;
   title?: string | null;
   subtitle?: string | null;
+  /** Tagline drawn directly under the title. */
+  tagline?: string | null;
   logoUrl?: string | null;
   /** Single bottom paragraph baked across the bottom strip. */
   bottomParagraph?: string | null;
+  /** Small specs badge (Age / duration / players). */
+  specs?: string | null;
 }
 
 interface BakeBackInput {
@@ -109,7 +113,7 @@ async function uploadComposed(
 // =====================================================================
 
 export async function bakeFrontCover(input: BakeFrontInput): Promise<string> {
-  const { projectId, baseImageUrl, title, subtitle, logoUrl, bottomParagraph } = input;
+  const { projectId, baseImageUrl, title, subtitle, tagline, logoUrl, bottomParagraph, specs } = input;
 
   await ensureFontsLoaded();
   const base = await loadImage(baseImageUrl);
